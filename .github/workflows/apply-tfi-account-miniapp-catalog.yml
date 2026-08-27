@@ -1,0 +1,104 @@
+name: Apply TFI account Mini App catalog convergence repair
+
+on:
+  push:
+    branches:
+      - fix/tfi-m2-sync-account-miniapp-catalog
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/tfi-m2-sync-account-miniapp-catalog
+          fetch-depth: 1
+      - name: Apply deterministic account catalog repair
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          account = Path('desktop/src/account-sync-client.ts')
+          text = account.read_text()
+          text = text.replace(
+            "import { invokeNativeDesktop } from '../../frontend/apps/web/src/lib/fabushi-runtime/native-desktop';\n",
+            "import { invokeNativeDesktop } from '../../frontend/apps/web/src/lib/fabushi-runtime/native-desktop';\nimport type { MarketplacePluginSummary } from '../../frontend/apps/web/src/lib/mahayana-host/transport';\n",
+            1,
+          )
+          old_type = '''export type AccountMiniAppList = {\n  protocol?: string;\n  apps: Array<{\n    id: string;\n    version: string;\n    title?: string;\n    bot?: Record<string, unknown>;\n  }>;\n  accountSynchronized?: boolean;\n  cursor?: string | null;\n};\n'''
+          new_type = '''export type AccountMiniAppList = {\n  protocol?: string;\n  apps: Array<{\n    id: string;\n    version: string;\n    title?: string;\n    description?: string;\n    bot?: Record<string, unknown>;\n    commands?: unknown[];\n    surfaces?: unknown[];\n    distribution?: Record<string, unknown>;\n  }>;\n  accountSynchronized?: boolean;\n  cursor?: string | null;\n};\n'''
+          if text.count(old_type) != 1:
+            raise SystemExit('AccountMiniAppList shape marker missing')
+          text = text.replace(old_type, new_type, 1)
+          anchor = '''export async function readAccountMiniApps(): Promise<AccountMiniAppList> {\n  return invokeNativeDesktop<AccountMiniAppList>('getAccountMiniApps', {});\n}\n'''
+          helper = '''export async function readAccountMiniApps(): Promise<AccountMiniAppList> {\n  return invokeNativeDesktop<AccountMiniAppList>('getAccountMiniApps', {});\n}\n\nexport function accountMiniAppsAsMarketplaceSummaries(account: AccountMiniAppList): MarketplacePluginSummary[] {\n  return (Array.isArray(account?.apps) ? account.apps : []).flatMap((app) => {\n    const pluginId = typeof app?.id === 'string' ? app.id.trim() : '';\n    if (!pluginId) return [];\n    const distribution = app.distribution && typeof app.distribution === 'object' ? app.distribution : {};\n    return [{\n      pluginId,\n      displayName: typeof app.title === 'string' && app.title.trim() ? app.title.trim() : pluginId,\n      description: typeof app.description === 'string' ? app.description : '',\n      latestVersion: typeof app.version === 'string' && app.version.trim() ? app.version.trim() : '0',\n      bot: app.bot,\n      commands: Array.isArray(app.commands) ? app.commands : [],\n      surfaces: Array.isArray(app.surfaces) ? app.surfaces : [],\n      installMode: typeof distribution.installMode === 'string' ? distribution.installMode : undefined,\n    } satisfies MarketplacePluginSummary];\n  });\n}\n'''
+          if text.count(anchor) != 1:
+            raise SystemExit('readAccountMiniApps marker missing')
+          account.write_text(text.replace(anchor, helper, 1))
+
+          shell = Path('desktop/src/messaging-shell-v2.tsx')
+          text = shell.read_text()
+          old_import = '''  appendMiniAppBotMessages,\n  readAccountBots,\n  readAccountSync,\n'''
+          new_import = '''  accountMiniAppsAsMarketplaceSummaries,\n  appendMiniAppBotMessages,\n  readAccountBots,\n  readAccountMiniApps,\n  readAccountSync,\n'''
+          if text.count(old_import) != 1:
+            raise SystemExit('account sync import marker missing')
+          text = text.replace(old_import, new_import, 1)
+          old_refresh = '''      const catalogPromise = transport.marketplaceBrowse(query);\n      const identityCatalogPromise = query.trim() ? transport.marketplaceBrowse('') : catalogPromise;\n      const [catalogResult, identityCatalogResult, installedResult] = await Promise.allSettled([\n        catalogPromise,\n        identityCatalogPromise,\n        transport.pluginListInstalled(),\n      ]);\n'''
+          new_refresh = '''      const catalogPromise = transport.marketplaceBrowse(query);\n      const identityCatalogPromise = query.trim() ? transport.marketplaceBrowse('') : catalogPromise;\n      const accountCatalogPromise = readAccountMiniApps();\n      const [catalogResult, identityCatalogResult, accountCatalogResult, installedResult] = await Promise.allSettled([\n        catalogPromise,\n        identityCatalogPromise,\n        accountCatalogPromise,\n        transport.pluginListInstalled(),\n      ]);\n'''
+          if text.count(old_refresh) != 1:
+            raise SystemExit('refresh promise marker missing')
+          text = text.replace(old_refresh, new_refresh, 1)
+          old_identity = '''      if (identityCatalogResult.status === 'fulfilled') {\n        setMiniAppIdentityCatalog(identityCatalogResult.value.plugins);\n      } else {\n        setError(identityCatalogResult.reason instanceof Error ? identityCatalogResult.reason.message : String(identityCatalogResult.reason));\n      }\n'''
+          new_identity = '''      const discoveredIdentityCatalog = identityCatalogResult.status === 'fulfilled'\n        ? identityCatalogResult.value.plugins\n        : [];\n      const accountIdentityCatalog = accountCatalogResult.status === 'fulfilled'\n        ? accountMiniAppsAsMarketplaceSummaries(accountCatalogResult.value)\n        : [];\n      if (discoveredIdentityCatalog.length || accountIdentityCatalog.length) {\n        const merged = new Map(discoveredIdentityCatalog.map((app) => [app.pluginId, app]));\n        for (const accountApp of accountIdentityCatalog) {\n          const discovered = merged.get(accountApp.pluginId);\n          merged.set(accountApp.pluginId, {\n            ...discovered,\n            ...accountApp,\n            bot: accountApp.bot ?? discovered?.bot,\n            commands: accountApp.commands?.length ? accountApp.commands : discovered?.commands,\n            surfaces: accountApp.surfaces?.length ? accountApp.surfaces : discovered?.surfaces,\n          });\n        }\n        setMiniAppIdentityCatalog([...merged.values()]);\n      } else if (identityCatalogResult.status === 'rejected') {\n        setError(identityCatalogResult.reason instanceof Error ? identityCatalogResult.reason.message : String(identityCatalogResult.reason));\n      } else if (accountCatalogResult.status === 'rejected') {\n        setError(accountCatalogResult.reason instanceof Error ? accountCatalogResult.reason.message : String(accountCatalogResult.reason));\n      }\n'''
+          if text.count(old_identity) != 1:
+            raise SystemExit('identity catalog marker missing')
+          shell.write_text(text.replace(old_identity, new_identity, 1))
+
+          test_platform = Path('desktop/electron/test-platform-account.cjs')
+          text = test_platform.read_text()
+          old_installed = '''  installedMiniApps(state) {\n    return Object.values(state.miniApps).sort((left, right) => left.id.localeCompare(right.id));\n  }\n'''
+          new_installed = '''  installedMiniApps(state) {\n    return Object.values(state.miniApps)\n      .map((installed) => {\n        const definition = appDefinition(installed.id);\n        return {\n          ...definition,\n          ...installed,\n          bot: installed.bot ?? definition.bot,\n          commands: definition.commands,\n        };\n      })\n      .sort((left, right) => left.id.localeCompare(right.id));\n  }\n'''
+          if text.count(old_installed) != 1:
+            raise SystemExit('test platform installedMiniApps marker missing')
+          test_platform.write_text(text.replace(old_installed, new_installed, 1))
+
+          edge_test = Path('desktop/electron/edge-ipc.test.cjs')
+          text = edge_test.read_text()
+          old_assert = "    assert.deepEqual(apps.data.apps.map((item) => item.id), ['global-dharma']);\n"
+          new_assert = old_assert + "    assert.ok(apps.data.apps[0].commands.some((command) => command.name === 'status'));\n"
+          if text.count(old_assert) != 1:
+            raise SystemExit('test platform account assertion marker missing')
+          edge_test.write_text(text.replace(old_assert, new_assert, 1))
+
+          gate = Path('.github/scripts/assert-product-ui-contracts.py')
+          text = gate.read_text()
+          old_consumer = "for marker in ['recordValue(app.bot)', 'Array.isArray(app.commands)']:\n"
+          new_consumer = "for marker in ['recordValue(app.bot)', 'Array.isArray(app.commands)', 'readAccountMiniApps()', 'accountMiniAppsAsMarketplaceSummaries']:\n"
+          if text.count(old_consumer) != 1:
+            raise SystemExit('product UI Mini App consumer guard marker missing')
+          gate.write_text(text.replace(old_consumer, new_consumer, 1))
+
+          task = Path('projects/telegram-fabushi-integration/management/tasks/M2-SYNC-002-telegram-multidevice-account-sync.md')
+          text = task.read_text()
+          marker = '## Open-source-first decision\n'
+          note = '''## Fifth exact-main acceptance result\n\nElectron exact-main run `33027760877` against `fdb24deedc2973e817efb645e60f67a61b6d52a4` again stopped before Linux packaging at the single Mini App `/` command assertion. The fourth repair correctly taught `miniAppBotProjection()` how to consume canonical top-level Marketplace metadata, but the shipping Messenger identity catalog was still populated primarily from Feature Host `marketplaceBrowse()`. In real-Host test mode that discovery catalog intentionally contains only local installation summaries, while the authenticated account endpoint `/v1/marketplace/added` is the cross-device source of truth and already rejoins installed ids to full Marketplace manifests in production.\n\nThe follow-up therefore makes installed Mini App identity metadata explicitly account-authoritative: `refreshMiniApps()` reads `getAccountMiniApps()` alongside discovery, converts its full manifests to Messenger summaries and lets account metadata override discovery metadata for the same plugin. The deterministic test account platform is aligned with production by returning command declarations in its installed-app snapshot. The product UI contract gate now requires this account-catalog consumption path. Artifact `9629100578` captures the fifth exact-main failure.\n\n'''
+          if '## Fifth exact-main acceptance result' not in text:
+            if marker not in text:
+              raise SystemExit('task insertion marker missing')
+            task.write_text(text.replace(marker, note + marker, 1))
+          PY
+      - name: Remove one-shot workflow
+        run: rm .github/workflows/apply-tfi-account-miniapp-catalog.yml
+      - name: Commit repair
+        shell: bash
+        run: |
+          git config user.name "bhrum"
+          git config user.email "bhrumom@gmail.com"
+          git add desktop/src/account-sync-client.ts desktop/src/messaging-shell-v2.tsx desktop/electron/test-platform-account.cjs desktop/electron/edge-ipc.test.cjs .github/scripts/assert-product-ui-contracts.py projects/telegram-fabushi-integration/management/tasks/M2-SYNC-002-telegram-multidevice-account-sync.md .github/workflows/apply-tfi-account-miniapp-catalog.yml
+          git commit -m "fix(tfi): make account Mini App catalog authoritative"
+          git push origin HEAD:fix/tfi-m2-sync-account-miniapp-catalog
