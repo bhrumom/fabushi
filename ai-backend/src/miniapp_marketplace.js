@@ -528,7 +528,9 @@ const officialSeeds = [
     surfaces: [
       { id: 'web-ui', kind: 'web', title: '口播提词与录制控制', entry: 'index.html', platforms: ['desktop'], priority: 100 },
     ],
-    commands: [],
+    commands: [
+      { name: 'open_recorder', description: '打开口播提词与录制界面', surfaceId: 'web-ui', tool: 'open_recorder', aliases: ['打开提词器'], naturalLanguageHints: ['打开口播提词器', '开始口播录制'] },
+    ],
     permissions: ['camera', 'microphone', 'conversation-media-write'],
     stats: { monthlyActiveUsers: 0 },
   }),
@@ -904,7 +906,7 @@ export class MiniAppMarketplace {
     const manifest = this.get(id, { includeUnapproved: true });
     if (!manifest) throw new MiniAppMarketplaceError('NOT_FOUND', `mini app ${id} was not found`);
     if (manifest.publisher.id !== String(publisherId ?? '').trim().toLocaleLowerCase()) {
-      throw new MiniAppMarketplaceError('FORBIDDEN', `publisher does not own mini app ${id}`);
+      throw new MiniAppMarketplaceError('FORBIDDEN', 'publisher does not own this mini app');
     }
     return manifest;
   }
@@ -918,14 +920,19 @@ export class MiniAppMarketplace {
   }
 }
 
-function parseCommandArguments(source) {
-  const text = String(source ?? '').trim();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { input: text };
+function parseCommandArguments(raw) {
+  if (!raw) return {};
+  const trimmed = String(raw).trim();
+  if (!trimmed) return {};
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch {
+      // Keep raw text below.
+    }
   }
+  return { text: trimmed };
 }
 
 export class MiniAppMarketplaceError extends Error {
