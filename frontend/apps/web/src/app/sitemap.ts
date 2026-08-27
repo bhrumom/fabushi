@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { fabushiAnswerIntents } from "../lib/ai-discovery";
 import { getAllArticles } from "../lib/content";
 import { marketplaceApps } from "../lib/marketplace";
 import { siteUrl } from "../lib/site-url";
@@ -106,6 +107,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: app.featured ? 0.95 : 0.9,
   }));
 
+  const appMachinePages: MetadataRoute.Sitemap = marketplaceApps.map((app) => ({
+    url: siteUrl(`/ai/apps/${app.slug}.json`),
+    lastModified: app.updatedAt,
+    changeFrequency: "weekly",
+    priority: 0.75,
+  }));
+
   const appContentPages: MetadataRoute.Sitemap = marketplaceApps.flatMap((app) =>
     app.content.map((item) => ({
       url: siteUrl(`/apps/${app.slug}/content/${item.id}`),
@@ -115,6 +123,26 @@ export default function sitemap(): MetadataRoute.Sitemap {
     })),
   );
 
+  const answerPages: MetadataRoute.Sitemap = fabushiAnswerIntents.map((answer) => ({
+    url: siteUrl(`/answers/${answer.slug}`),
+    lastModified: answer.updatedAt,
+    changeFrequency: "monthly",
+    priority: 0.85,
+  }));
+
+  const aiIndexPages: MetadataRoute.Sitemap = [
+    "/ai/apps.json",
+    "/ai/content.json",
+    "/ai/answers.json",
+    "/llms.txt",
+    "/llms-full.txt",
+  ].map((route) => ({
+    url: siteUrl(route),
+    lastModified: "2026-08-27",
+    changeFrequency: "weekly" as const,
+    priority: route === "/ai/apps.json" ? 0.85 : 0.7,
+  }));
+
   const articlePages: MetadataRoute.Sitemap = getAllArticles().map((article) => ({
     url: siteUrl(`/insights/${article.slug}`),
     lastModified: new Date(article.updatedAt ?? article.publishedAt),
@@ -122,5 +150,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: article.featured ? 0.8 : 0.65,
   }));
 
-  return [...pages, ...appPages, ...appContentPages, ...articlePages];
+  return [
+    ...pages,
+    ...appPages,
+    ...appMachinePages,
+    ...appContentPages,
+    ...answerPages,
+    ...aiIndexPages,
+    ...articlePages,
+  ];
 }
