@@ -58,7 +58,10 @@ function normalizeInjection(raw = {}) {
   if (type === 'bearer') return { type: 'bearer' };
   if (type === 'header') {
     const headerName = normalizeHeaderName(value.headerName ?? value.header ?? 'X-API-Key');
-    const prefix = cleanString(value.prefix, 120);
+    // Prefix whitespace is semantically meaningful for schemes such as `Token `
+    // or `Key `. Do not trim it like user-facing labels; only strip NUL and
+    // reject CR/LF before it can become a request header.
+    const prefix = String(value.prefix ?? '').replace(/\0/g, '').slice(0, 120);
     if (/[\r\n]/.test(prefix)) throw new Error('Credential header prefix cannot contain newlines.');
     return { type: 'header', headerName, ...(prefix ? { prefix } : {}) };
   }
