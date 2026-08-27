@@ -90,6 +90,15 @@ The repair branch therefore:
 - adds a deterministic, file-backed test account platform used only when `FABUSHI_FEATURE_HOST_MODE=test` so the real Rust Host E2E remains network-free while preserving Mini App installs, Bot memberships, Bot history, CloudStorage and account cursor across process restart;
 - leaves production `platform.request` behavior unchanged.
 
+## Second exact-main acceptance result
+
+Electron exact-main run `33025670225` against `ab6e3eb4787f9570aaff00342362000e1e960973` again blocked release before Linux packaging. This run proved the native-edge repair itself is active: edge parity reported 184 methods, all 37 Electron main-process tests passed, including account-sync edge coverage and deterministic test-account restart persistence. The remaining failures were acceptance-test contract drift rather than a missing product edge:
+
+- the real UI successfully opened the Global Dharma iframe and displayed `Mini App · 已安装线上包 · 账号云同步`, while two older E2E assertions still expected the historical `受控宿主容器` copy;
+- `miniapp-bot-parity.spec.ts` checked onboarding/login selectors before the first DOM surface had stabilized, so the onboarding dialog could mount after the helper had already moved on to waiting for Messenger. Other long-lived E2E helpers already guard this race with an initial surface poll.
+
+Diagnostic artifact `9628343898` (`fabushi-electron-linux-e2e-diagnostics`) contains screenshots, traces and error contexts. The follow-up synchronizes assertions to the current product copy and uses the established deterministic first-surface wait before onboarding/login handling. Product sync semantics are unchanged.
+
 ## Open-source-first decision
 
 - Learn/adapt the update-state and get-difference behavior from `tdlib/td` (`Boost-1.0`), especially gap detection, durable state, pagination and restart catch-up.
