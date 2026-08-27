@@ -218,7 +218,7 @@ private struct MiniAppWebView: UIViewRepresentable {
             let scene = UIApplication.shared.connectedScenes
                 .compactMap { $0 as? UIWindowScene }
                 .first { $0.activationState == .foregroundActive }
-            var controller = scene?.windows.first(where: \ .isKeyWindow)?.rootViewController
+            var controller = scene?.windows.first(where: \.isKeyWindow)?.rootViewController
             while let presented = controller?.presentedViewController {
                 controller = presented
             }
