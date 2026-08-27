@@ -15,6 +15,10 @@ test -f .github/workflows/electron-desktop.yml || fail 'Electron desktop quality
 test -f .github/workflows/native-mobile.yml || fail 'native mobile quality workflow is missing'
 test -f .github/workflows/native-electron-release.yml || fail 'native Electron release workflow is missing'
 test -f .github/workflows/google-play-delivery.yml || fail 'native Android Google Play delivery workflow is missing'
+test -x .github/scripts/macos-codesign-wrapper/codesign || fail 'secure-timestamp codesign wrapper is missing or not executable'
+bash -n .github/scripts/macos-codesign-wrapper/codesign || fail 'secure-timestamp codesign wrapper has invalid shell syntax'
+grep -q 'Timestamp=' .github/scripts/macos-codesign-wrapper/codesign || fail 'codesign wrapper must verify the secure Timestamp field'
+grep -q 'GITHUB_PATH' .github/scripts/build-offline-asr-engine.mjs || fail 'macOS build must install the codesign wrapper for later signing steps'
 
 grep -q '"electron"' desktop/package.json || fail 'desktop does not declare Electron'
 grep -q 'mahayana-app-host-desktop' desktop/package.json || fail 'Electron must build the desktop-only Rust sidecar wrapper'
