@@ -1,11 +1,18 @@
 import Foundation
 import Observation
 
-struct MarketplacePlugin: Identifiable, Equatable {
+struct MiniAppToolContract: Equatable, Sendable {
+    let name: String
+    let description: String
+    let approval: String
+}
+
+struct MarketplacePlugin: Identifiable, Equatable, Sendable {
     let pluginId: String
     let displayName: String
     let description: String
     let latestVersion: String?
+    let tools: [MiniAppToolContract]
     var id: String { pluginId }
 }
 
@@ -197,18 +204,23 @@ final class MarketplaceModel {
         defer { loading = false }
         do {
             let result = try await host.request(
-                method: "marketplace.browse",
+                method: "feature.marketplace.browse",
                 params: ["query": query.isEmpty ? NSNull() : query, "platform": "ios"]
             )
             let object = result.value as? [String: Any]
             let rows = object?["plugins"] as? [[String: Any]] ?? []
             plugins = rows.compactMap { item in
                 guard let id = item["pluginId"] as? String, !id.isEmpty else { return nil }
+                let source = item["source"] as? [String: Any]
+                let commands = source?["commands"] as? [[String: Any]]
+                    ?? item["commands"] as? [[String: Any]]
+                    ?? []
                 return MarketplacePlugin(
                     pluginId: id,
                     displayName: item["displayName"] as? String ?? id,
                     description: item["description"] as? String ?? "无描述",
-                    latestVersion: item["latestVersion"] as? String
+                    latestVersion: item["latestVersion"] as? String,
+                    tools: commands.compactMap(Self.toolContract(from:))
                 )
             }
             message = "原生 iOS · Rust Host 已连接"
@@ -226,14 +238,14 @@ final class MarketplaceModel {
         message = "正在安装 \(plugin.pluginId)@\(version)…"
         do {
             let metadata = try await host.request(
-                method: "marketplace.release",
+                method: "feature.marketplace.release",
                 params: ["pluginId": plugin.pluginId, "version": version]
             )
             guard let release = (metadata.value as? [String: Any])?["releaseManifest"] as? [String: Any] else {
                 throw MahayanaHost.HostError.invalidResponse
             }
             let installed = try await host.request(
-                method: "plugin.install",
+                method: "feature.plugin.install",
                 params: ["release": release, "platform": "ios"]
             )
             guard let object = installed.value as? [String: Any] else {
@@ -309,5 +321,48 @@ final class MarketplaceModel {
             message = "\(pluginId) 已安装但启动失败：\(error.localizedDescription)"
         }
         installingPluginId = nil
+    }
+
+    func loadLocalMiniAppHtml(pluginId: String) async -> String? {
+        do {
+            let result = try await host.request(
+                method: "feature.plugin.uiDocument",
+                params: ["pluginId": pluginId]
+            )
+            let html = (result.value as? [String: Any])?["html"] as? String
+            return html?.isEmpty == false ? html : nil
+        } catch {
+            return nil
+        }
+    }
+
+    func callRuntimeTool(pluginId: String, name: String, arguments: [String: Any]) async throws -> Any {
+        guard name.range(of: #"^[A-Za-z0-9_.-]{1,128}$"#, options: .regularExpression) != nil else {
+            throw MahayanaHost.HostError.requestFailed("Invalid WebMCP tool name")
+        }
+        let result = try await host.request(
+            method: "runtime.call",
+            params: [
+                "pluginId": pluginId,
+                "name": name,
+                "arguments": arguments,
+            ]
+        )
+        return result.value
+    }
+
+    private static func toolContract(from command: [String: Any]) -> MiniAppToolContract? {
+        let name = ((command["tool"] as? String) ?? (command["name"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty,
+              name.range(of: #"^[A-Za-z0-9_.-]{1,128}$"#, options: .regularExpression) != nil
+        else { return nil }
+        let description = ((command["description"] as? String) ?? name)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return MiniAppToolContract(
+            name: name,
+            description: description.isEmpty ? name : description,
+            approval: (command["approval"] as? String) ?? "none"
+        )
     }
 }
