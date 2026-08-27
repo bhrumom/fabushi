@@ -161,15 +161,12 @@ async function callCredentialTool(pluginId: string, args: Record<string, unknown
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(method)) {
     throw new Error(`Unsupported credential request method ${method}`);
   }
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
-    if (!window.confirm(`允许 ${pluginId} 使用 ${secretRef} 执行 ${method} 请求？\n\n密钥不会显示给 MiniApp 或模型，但这个请求可能修改远端状态。`)) {
-      throw new Error('用户取消了写入型凭据请求');
-    }
-  }
   const headers = args.headers && typeof args.headers === 'object' && !Array.isArray(args.headers)
     ? args.headers as Record<string, unknown>
     : undefined;
   const body = typeof args.body === 'string' ? args.body : undefined;
+  // Write approval is intentionally enforced again inside Electron main by the
+  // credential gateway. Renderer/WebMCP code cannot mint or bypass it.
   const result = await invokeNativeDesktop<CredentialFetchResult>('egressFetch', {
     secretRef,
     url,
