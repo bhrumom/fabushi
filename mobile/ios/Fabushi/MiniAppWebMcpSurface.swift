@@ -179,86 +179,100 @@ private struct MiniAppWebView: UIViewRepresentable {
                             return
                         }
                     }
-                    let result = try await model.callMiniAppTool(
+                    let result = try await model.callRuntimeTool(
                         pluginId: plugin.pluginId,
                         name: name,
-                        input: input
+                        arguments: input
                     )
-                    resolve(webView: webView, requestId: requestId, payload: [
-                        "ok": true,
-                        "result": result,
-                    ])
+                    resolve(webView: webView, requestId: requestId, payload: ["ok": true, "result": result])
                 } catch {
                     resolve(webView: webView, requestId: requestId, payload: [
                         "ok": false,
-                        "error": String(describing: error),
+                        "error": error.localizedDescription,
                     ])
                 }
             }
         }
 
         private func requestApproval(_ tool: MiniAppToolContract) async -> Bool {
-            await withCheckedContinuation { continuation in
-                model.permissionRequest = PluginPermissionRequest(
-                    pluginId: plugin.pluginId,
-                    permissions: ["tool:\(tool.name)"],
-                    resume: continuation
+            guard let presenter = topViewController() else { return false }
+            let warning = tool.approval == "destructive"
+                ? "该操作可能产生破坏性修改。"
+                : "该操作会修改小程序或后台状态。"
+            return await withCheckedContinuation { continuation in
+                let alert = UIAlertController(
+                    title: "允许 WebMCP 调用 \(tool.name)？",
+                    message: "\(tool.description)\n\n\(warning)",
+                    preferredStyle: .alert
                 )
+                alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in
+                    continuation.resume(returning: false)
+                })
+                alert.addAction(UIAlertAction(title: "允许", style: .default) { _ in
+                    continuation.resume(returning: true)
+                })
+                presenter.present(alert, animated: true)
             }
+        }
+
+        private func topViewController() -> UIViewController? {
+            let scene = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first { $0.activationState == .foregroundActive }
+            var controller = scene?.windows.first(where: \.isKeyWindow)?.rootViewController
+            while let presented = controller?.presentedViewController {
+                controller = presented
+            }
+            return controller
         }
 
         private func resolve(webView: WKWebView, requestId: String, payload: [String: Any]) {
             guard JSONSerialization.isValidJSONObject(payload),
                   let data = try? JSONSerialization.data(withJSONObject: payload),
                   let json = String(data: data, encoding: .utf8),
-                  let requestData = try? JSONSerialization.data(withJSONObject: requestId),
+                  let requestData = try? JSONEncoder().encode(requestId),
                   let requestJson = String(data: requestData, encoding: .utf8)
             else { return }
-            let script = "window.__fabushiWebMcpResolve?.(\(requestJson), \(json));"
-            webView.evaluateJavaScript(script)
+            webView.evaluateJavaScript("window.__fabushiNativeResolve?.(\(requestJson),\(json));")
         }
     }
 }
 
 private func injectLocalWebMcp(_ html: String, plugin: MarketplacePlugin) -> String {
-    let tools = plugin.tools.map { tool in
+    let definitions = plugin.tools.map { tool in
         [
             "name": tool.name,
             "description": tool.description,
-            "approval": tool.approval,
-            "inputSchema": tool.inputSchema,
+            "readOnlyHint": tool.approval == "none",
         ] as [String: Any]
     }
-    let data = (try? JSONSerialization.data(withJSONObject: tools)) ?? Data("[]".utf8)
+    let data = (try? JSONSerialization.data(withJSONObject: definitions)) ?? Data("[]".utf8)
     let toolsJson = String(data: data, encoding: .utf8) ?? "[]"
-    let bridge = """
+    let bootstrap = """
     <script>
-    (() => {
-      const definitions = \(toolsJson);
-      const pending = new Map();
-      let nextId = 1;
-      window.__fabushiWebMcp = {
-        list: () => definitions,
-        call: (name, input = {}) => new Promise((resolve, reject) => {
-          const requestId = String(nextId++);
-          pending.set(requestId, { resolve, reject });
-          window.webkit.messageHandlers.\(webMcpMessageHandler).postMessage({ requestId, name, input });
-        })
-      };
-      window.__fabushiWebMcpResolve = (requestId, payload) => {
-        const waiter = pending.get(String(requestId));
-        if (!waiter) return;
-        pending.delete(String(requestId));
-        if (payload && payload.ok) waiter.resolve(payload.result);
-        else waiter.reject(new Error(payload?.error || 'WebMCP call failed'));
-      };
+    (function(){
+      const definitions=\(toolsJson);
+      const localTools=new Map();const controllers=[];const pending=new Map();let sequence=0;
+      window.__fabushiNativeResolve=(requestId,payload)=>{const task=pending.get(requestId);if(!task)return;pending.delete(requestId);if(payload&&payload.ok)task.resolve(payload.result);else task.reject(new Error(payload?.error||'WebMCP runtime call failed'));};
+      function callNative(name,input){return new Promise((resolve,reject)=>{const requestId='webmcp-'+Date.now()+'-'+(++sequence);pending.set(requestId,{resolve,reject});window.webkit.messageHandlers.\(webMcpMessageHandler).postMessage({requestId,name,input:input||{}});});}
+      function publicTool(tool){const copy={...tool};delete copy.execute;return copy;}
+      function register(item){const tool={name:item.name,description:item.description||item.name,inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:item.readOnlyHint===true},execute:(input)=>callNative(item.name,input)};localTools.set(tool.name,tool);if(document.modelContext&&typeof document.modelContext.registerTool==='function'){const controller=new AbortController();controllers.push(controller);Promise.resolve(document.modelContext.registerTool(tool,{signal:controller.signal})).catch(()=>{});}}
+      for(const item of definitions)register(item);
+      Object.defineProperty(window,'__fabushiWebMcp',{configurable:true,value:{version:1,list:()=>Array.from(localTools.values()).map(publicTool),call:async(name,input={})=>{const tool=localTools.get(name);if(!tool)throw new Error('Unknown WebMCP tool: '+name);return tool.execute(input);}}});
+      window.addEventListener('pagehide',()=>{for(const controller of controllers)controller.abort();pending.clear();},{once:true});
+      window.dispatchEvent(new CustomEvent('fabushi:webmcp-ready',{detail:{pluginId:\(jsonString(plugin.pluginId)),tools:definitions.map(t=>t.name)}}));
     })();
     </script>
     """
     if let range = html.range(of: "</head>", options: .caseInsensitive) {
-        var copy = html
-        copy.insert(contentsOf: bridge, at: range.lowerBound)
-        return copy
+        var result = html
+        result.insert(contentsOf: bootstrap, at: range.lowerBound)
+        return result
     }
-    return bridge + html
+    return bootstrap + html
+}
+
+private func jsonString(_ value: String) -> String {
+    guard let data = try? JSONEncoder().encode(value) else { return "\"\"" }
+    return String(data: data, encoding: .utf8) ?? "\"\""
 }
