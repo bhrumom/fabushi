@@ -54,7 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          git diff --check "$BASE_SHA"...HEAD
+          git diff --check "$BASE_SHA" HEAD
           if git grep -n -E '^(<<<<<<<|=======|>>>>>>>)' -- mobile third_party/mahayana/mahayana-rs ':!**/target/**'; then
             echo 'Unresolved merge markers found in native inputs.' >&2
             exit 1
