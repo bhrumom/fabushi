@@ -63,6 +63,19 @@ export function listRegisteredWebMcpTools(): Array<Omit<WebMcpTool, "execute">> 
   return [...localTools.values()].map(publicTool);
 }
 
+export async function callRegisteredWebMcpTool(
+  name: string,
+  input: Record<string, unknown> = {},
+): Promise<unknown> {
+  const nativeExecute = typeof document !== "undefined" ? document.modelContext?.executeTool : undefined;
+  if (typeof nativeExecute === "function") {
+    return nativeExecute.call(document.modelContext, name, input);
+  }
+  const tool = localTools.get(name);
+  if (!tool) throw new Error(`Unknown WebMCP tool: ${name}`);
+  return tool.execute(input);
+}
+
 export function registerWebMcpTool(tool: WebMcpTool): () => void {
   if (!tool.name.trim()) throw new Error("WebMCP tool name is required");
   localTools.set(tool.name, tool);
