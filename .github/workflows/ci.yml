@@ -247,6 +247,8 @@ jobs:
             frontend-next-${{ runner.os }}-v1-${{ hashFiles('frontend/pnpm-lock.yaml') }}-
       - name: Typecheck frontend workspace
         run: pnpm typecheck
+      - name: Verify AI discovery contracts
+        run: pnpm --filter @fabushi/web test:ai-discovery
       - name: Build official web frontend
         run: pnpm build:web
 
