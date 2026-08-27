@@ -2127,6 +2127,7 @@
 .pink { background: linear-gradient(145deg, #ff79aa, #c73a79); }
 .cyan { background: linear-gradient(145deg, #47d7de, #1b859d); }
 .yellow { background: linear-gradient(145deg, #f6c84f, #b88818); }
+.slate { background: linear-gradient(145deg, #8b97a7, #46515f); }
 
 .marketCopy {
   min-width: 0;
@@ -2149,6 +2150,24 @@
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.marketMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--faint);
+  font-size: 9px;
+}
+
+.marketMeta a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.marketMeta a:hover {
+  text-decoration: underline;
 }
 
 .connectedDot {
