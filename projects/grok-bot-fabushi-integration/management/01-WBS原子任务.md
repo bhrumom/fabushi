@@ -49,6 +49,7 @@
 | GBF-702 | M7 | 权限/拒绝路径安全测试 | GBF-401..407,701 | high-risk denial suite green | security test suite | evidence/GBF-702 | NOT_STARTED | M4/M7 | 扩充安全用例 |
 | GBF-703 | M7 | 来源/许可证阻塞清零 | GBF-105 + impl | retained source blocking=0 | provenance audit | evidence/GBF-703 | NOT_STARTED | GBF-105 | 审查每个迁移 PR |
 | GBF-704 | M7 | secret/log/privacy 审计 | GBF-603,702 | 无秘密泄漏/多余持久化 | log/privacy tests | evidence/GBF-704 | NOT_STARTED | GBF-603/702 | 扫描 telemetry |
+| GBF-705 | M7 | SecretRef 凭据保险库与最后一跳注入 | GBF-303,406,704 | 密钥不进入模型/Renderer；仅向显式绑定 HTTPS 目标注入；支持轮换/撤销/元数据审计 | credential gateway unit/security + edge parity + packaged E2E + privacy scan | evidence/GBF-705 | IN_PROGRESS | PR/CI/package/main closure pending | 完成 Agent/Connector 复用入口并通过正式门禁 |
 | GBF-801 | M8 | 全平台回归 | M2..M7 | affected suites 全绿 | CI + platform E2E | evidence/GBF-801 | NOT_STARTED | M2-M7 | 启动 release candidate |
 | GBF-802 | M8 | 灰度与回滚演练 | GBF-801 | rollback 在目标环境验证 | runbook drill | evidence/GBF-802 | NOT_STARTED | GBF-801 | 执行回滚演练 |
 | GBF-803 | M8 | 正式发布 | GBF-801,802 | release/post-release smoke 通过 | GitHub release/deploy evidence | evidence/GBF-803 | NOT_STARTED | GBF-802 | 发布目标版本 |
