@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var model: MarketplaceModel
+    @State private var openedMiniApp: MarketplacePlugin?
 
     var body: some View {
         NavigationStack {
@@ -25,7 +26,7 @@ struct ContentView: View {
                 }
 
                 Section("本地插件市场") {
-                    Text("iOS UI 使用 SwiftUI；插件安装、权限与运行时由共享 Mahayana Rust Host 管理。")
+                    Text("iOS 主壳使用 SwiftUI；MiniApp 使用受控 WebMCP Surface；插件安装、权限与后台运行由共享 Mahayana Rust Host 管理。")
                     TextField("搜索插件", text: $model.query)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -66,17 +67,27 @@ struct ContentView: View {
                             .accessibilityElement(children: .combine)
                             .accessibilityIdentifier("plugin-\(plugin.pluginId)")
 
-                            Button(model.installingPluginId == plugin.pluginId ? "处理中…" : "安装 / 更新") {
-                                Task { await model.install(plugin) }
+                            HStack(spacing: 8) {
+                                Button("打开 WebMCP") {
+                                    openedMiniApp = plugin
+                                }
+                                .accessibilityIdentifier("open-\(plugin.pluginId)")
+
+                                Button(model.installingPluginId == plugin.pluginId ? "处理中…" : "安装 / 更新") {
+                                    Task { await model.install(plugin) }
+                                }
+                                .disabled(plugin.latestVersion == nil || model.installingPluginId != nil)
+                                .accessibilityIdentifier("install-\(plugin.pluginId)")
                             }
-                            .disabled(plugin.latestVersion == nil || model.installingPluginId != nil)
-                            .accessibilityIdentifier("install-\(plugin.pluginId)")
                         }
                     }
                 }
             }
             .navigationTitle("法布施")
             .refreshable { await model.refresh() }
+            .fullScreenCover(item: $openedMiniApp) { plugin in
+                MiniAppWebMcpSurface(plugin: plugin)
+            }
             .alert("插件权限", isPresented: Binding(
                 get: { model.permissionRequest != nil },
                 set: { if !$0 { model.denyPermissions() } }
