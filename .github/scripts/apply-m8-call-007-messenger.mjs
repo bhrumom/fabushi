@@ -168,19 +168,19 @@ replaceOnce('MiniApp call execution helpers', `  async function startCall(kind: 
   }
 
   async function runMiniAppCallCommand(session: MiniAppCallSession, command: string, args?: Record<string, unknown>): Promise<void> {
-    const suffix = args && Object.keys(args).length ? ` ${JSON.stringify(args)}` : '';
-    const input = `/${session.miniAppId}:${command}${suffix}`;
-    await appendMiniAppCallExchange(session.miniAppId, input, `通话服务 · /${command}`);
+    const suffix = args && Object.keys(args).length ? ' ' + JSON.stringify(args) : '';
+    const input = '/' + session.miniAppId + ':' + command + suffix;
+    await appendMiniAppCallExchange(session.miniAppId, input, '通话服务 · /' + command);
   }
 
   async function saveMiniAppCallRecording(session: MiniAppCallSession, blob: Blob, mimeType: string): Promise<void> {
     const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
-    const fileName = `teleprompter-${new Date().toISOString().replaceAll(':', '-')}.${extension}`;
+    const fileName = 'teleprompter-' + new Date().toISOString().replaceAll(':', '-') + '.' + extension;
     const file = new File([blob], fileName, { type: mimeType || 'video/webm' });
-    setAttachmentProgress(`正在保存 ${fileName}…`);
+    setAttachmentProgress('正在保存 ' + fileName + '…');
     try {
       const media = await selfHosted.uploadBlob(file, (uploaded, total) => {
-        setAttachmentProgress(`正在保存 ${fileName} · ${Math.round((uploaded / Math.max(total, 1)) * 100)}%`);
+        setAttachmentProgress('正在保存 ' + fileName + ' · ' + Math.round((uploaded / Math.max(total, 1)) * 100) + '%');
       });
       const message: DisplayMessage = {
         id: nextRequestId('miniapp-call-video'),
@@ -218,7 +218,7 @@ replaceOnce('MiniApp call execution helpers', `  async function startCall(kind: 
     if (activePeer.miniAppId) {
       const program = activePeer.miniAppCalls?.[kind];
       if (!program) {
-        setError(`这个 Mini App 没有声明${kind === 'video' ? '视频' : '语音'}通话程序。`);
+        setError('这个 Mini App 没有声明' + (kind === 'video' ? '视频' : '语音') + '通话程序。');
         return;
       }
       setError(null);
@@ -231,7 +231,7 @@ replaceOnce('MiniApp call execution helpers', `  async function startCall(kind: 
           html = document.html;
         }
         setMiniAppCall({
-          callId: `miniapp-call:${crypto.randomUUID()}`,
+          callId: 'miniapp-call:' + crypto.randomUUID(),
           miniAppId: activePeer.miniAppId,
           title: activePeer.title,
           kind,
@@ -259,7 +259,7 @@ replaceOnce('MiniApp call dialog render', `      {localCall ? <CallDialog call={
         html={miniAppCall.html}
         onCommand={(command, args) => runMiniAppCallCommand(miniAppCall, command, args)}
         onNaturalLanguage={miniAppCall.program.aiMode === 'optional'
-          ? (input) => appendMiniAppCallExchange(miniAppCall.miniAppId, input, `通话语音/自然语言 · ${input}`)
+          ? (input) => appendMiniAppCallExchange(miniAppCall.miniAppId, input, '通话语音/自然语言 · ' + input)
           : undefined}
         onSaveRecording={(blob, mimeType) => saveMiniAppCallRecording(miniAppCall, blob, mimeType)}
         onClose={() => setMiniAppCall(null)}
