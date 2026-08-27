@@ -159,12 +159,13 @@ private struct MiniAppWebView: UIViewRepresentable {
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == webMcpMessageHandler,
+                  let webView,
+                  webView.url?.host == localWebMcpOriginHost,
                   let body = message.body as? [String: Any],
                   let requestId = body["requestId"] as? String,
                   let name = body["name"] as? String,
                   let tool = toolByName[name],
-                  let input = body["input"] as? [String: Any],
-                  let webView
+                  let input = body["input"] as? [String: Any]
             else { return }
 
             Task { @MainActor in
