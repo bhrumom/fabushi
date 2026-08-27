@@ -10,5 +10,13 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @dtc/backend build
 
+# Medusa's production build is a standalone application under .medusa/server.
+# Install that generated package's runtime dependencies and start from there;
+# starting `medusa start` from the TypeScript source directory makes the Admin
+# server look for its built index.html in the wrong place.
+RUN cd /app/apps/backend/.medusa/server \
+  && npm install --omit=dev --no-audit --no-fund
+WORKDIR /app/apps/backend/.medusa/server
+
 EXPOSE 9000
-CMD ["pnpm", "--filter", "@dtc/backend", "start"]
+CMD ["npm", "start"]
