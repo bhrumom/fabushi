@@ -3,6 +3,8 @@ from pathlib import Path
 
 host = Path('frontend/apps/web/src/app/host/host-client.tsx').read_text(encoding='utf-8')
 styles = Path('frontend/apps/web/src/app/host/host.module.css').read_text(encoding='utf-8')
+miniapp_projection = Path('desktop/src/miniapp-bot-projection.ts').read_text(encoding='utf-8')
+marketplace_catalog = Path('ai-backend/src/miniapp_marketplace_catalog.js').read_text(encoding='utf-8')
 
 required_host = [
     'data-testid="browser-login-start"',
@@ -32,6 +34,15 @@ for marker in required_host:
     if marker not in host:
         raise SystemExit(f'product UI gate: missing required user-facing path: {marker}')
 
+# Marketplace browse is the canonical Mini App identity/command source consumed by
+# Messenger. Keep the projection aligned with its top-level shape so account Bot
+# deduplication cannot silently drop the slash-command catalog.
+for marker in ['bot: manifest.bot', 'commands: release.commands']:
+    if marker not in marketplace_catalog:
+        raise SystemExit(f'product UI gate: marketplace no longer exposes canonical Mini App metadata: {marker}')
+for marker in ['recordValue(app.bot)', 'Array.isArray(app.commands)']:
+    if marker not in miniapp_projection:
+        raise SystemExit(f'product UI gate: Messenger drops canonical Mini App metadata: {marker}')
 
 host_ui_files = [
     Path('frontend/apps/web/src/app/host/host-client.tsx'),
@@ -96,4 +107,4 @@ for marker in required_styles:
     if marker not in styles:
         raise SystemExit(f'product UI gate: missing unified surface style: {marker}')
 
-print('Product UI contract gate passed: login, identity, onboarding, extensions, network, automation and runtime surfaces remain reachable.')
+print('Product UI contract gate passed: login, identity, onboarding, extensions, network, automation, Mini App Bot commands and runtime surfaces remain reachable.')
