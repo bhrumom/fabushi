@@ -23,16 +23,16 @@ grep -q 'nodeIntegration: false' desktop/electron/main.cjs || fail 'Electron nod
 grep -q 'sandbox: true' desktop/electron/main.cjs || fail 'Electron renderer sandbox is not enforced'
 grep -q 'androidx.compose' mobile/android/app/build.gradle || fail 'Android canonical UI is not Compose'
 grep -q 'SwiftUI' mobile/ios/Fabushi/FabushiApp.swift || fail 'iOS canonical UI is not SwiftUI'
-node - <<'NODE'
-const fs = require('fs');
-const canonical = JSON.parse(fs.readFileSync('app-version.json', 'utf8')).version;
-const desktop = JSON.parse(fs.readFileSync('desktop/package.json', 'utf8')).version;
-const mobile = JSON.parse(fs.readFileSync('mobile/package.json', 'utf8')).version;
-if (desktop !== canonical || mobile !== canonical) {
-  console.error(`version drift: canonical=${canonical} desktop=${desktop} mobile=${mobile}`);
-  process.exit(1);
-}
-NODE
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+canonical = json.loads(Path('app-version.json').read_text())['version']
+desktop = json.loads(Path('desktop/package.json').read_text())['version']
+mobile = json.loads(Path('mobile/package.json').read_text())['version']
+if desktop != canonical or mobile != canonical:
+    raise SystemExit(f'version drift: canonical={canonical} desktop={desktop} mobile={mobile}')
+PY
 
 if grep -Eq '"@tauri-apps/|"@capacitor/' mobile/package.json desktop/package.json; then
   fail 'Tauri/Capacitor dependencies cannot return to canonical app packages'
