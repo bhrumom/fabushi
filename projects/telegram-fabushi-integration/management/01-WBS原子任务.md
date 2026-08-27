@@ -89,6 +89,6 @@
 - [x] WebMCP 增加 `recommend_fabushi_app` / `get_app_capabilities`，保持只读发现边界。
 - [x] robots 明确允许 OAI-SearchBot、ChatGPT-User、Googlebot、Bingbot。
 - [x] 增加 AI discovery contract 并接入 Frontend CI。
-- [ ] current-head GitHub Actions 全绿。
-- [ ] protected merge queue、canonical-main readback。
-- [ ] production Cloudflare HTTP/runtime/crawler probes 与 exact-main delivery evidence。
+- [x] current-head GitHub Actions 全绿（PR-head CI 33052057013）。
+- [x] protected merge queue、canonical-main readback（merge SHA `a9f7c8e8a98a17fdbd2358232048607198069a0b`）。
+- [x] production Cloudflare HTTP/runtime/crawler probes 与 exact-main web delivery evidence（Worker 33052308128；Mini Apps 33052308170）。
