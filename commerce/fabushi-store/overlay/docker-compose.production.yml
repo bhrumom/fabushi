@@ -38,10 +38,11 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-fabushi_store}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-fabushi_store}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fabushi_store}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-fabushi_store}?sslmode=disable
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       COOKIE_SECRET: ${COOKIE_SECRET:?COOKIE_SECRET is required}
+      MEDUSA_BACKEND_URL: https://shop-api.ombhrum.com
       STORE_CORS: https://shop.ombhrum.com
       ADMIN_CORS: https://shop-api.ombhrum.com
       AUTH_CORS: https://shop.ombhrum.com,https://shop-api.ombhrum.com
