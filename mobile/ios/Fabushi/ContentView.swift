@@ -86,7 +86,7 @@ struct ContentView: View {
             .navigationTitle("法布施")
             .refreshable { await model.refresh() }
             .fullScreenCover(item: $openedMiniApp) { plugin in
-                MiniAppWebMcpSurface(plugin: plugin)
+                MiniAppWebMcpSurface(plugin: plugin, model: model)
             }
             .alert("插件权限", isPresented: Binding(
                 get: { model.permissionRequest != nil },
