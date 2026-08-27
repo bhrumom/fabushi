@@ -5,6 +5,8 @@
 - Branch: `feat/tfi-m8-aeo-ai-discovery`
 - Base: `main@ef985df53a625e4bc2fb685b74724f43f2065302`
 - Status: `IN_PROGRESS`
+- PR: [#2177](https://github.com/bhrumom/fabushi/pull/2177)
+- Auto-merge: enabled; protected checks/merge queue pending
 
 ## Planned evidence
 
