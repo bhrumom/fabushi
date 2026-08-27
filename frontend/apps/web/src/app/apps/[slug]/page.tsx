@@ -12,6 +12,7 @@ import {
 import { AppIcon } from "../../../components/marketplace/app-icon";
 import { AppInstallActions } from "../../../components/marketplace/app-install-actions";
 import styles from "../../../components/marketplace/marketplace.module.css";
+import { appEntityId, appMachineUrl } from "../../../lib/ai-discovery";
 import {
   MARKETPLACE_CATEGORY_LABELS,
   getMarketplaceApp,
@@ -88,12 +89,20 @@ export default async function AppDetailsPage({ params }: AppDetailsPageProps) {
     "@context": "https://schema.org",
     "@graph": [
       {
-        "@type": "SoftwareApplication",
-        "@id": `${url}#app`,
+        "@type": ["SoftwareApplication", "WebApplication"],
+        "@id": appEntityId(app),
+        identifier: app.id,
         name: app.name,
         alternateName: app.englishName,
         description: app.description,
         url,
+        mainEntityOfPage: url,
+        inLanguage: ["zh-CN", "en"],
+        applicationSuite: "Fabushi",
+        isAccessibleForFree: true,
+        installUrl: siteUrl(`/apps/${app.slug}`),
+        downloadUrl: siteUrl("/download"),
+        sameAs: [appMachineUrl(app)],
         applicationCategory: MARKETPLACE_CATEGORY_LABELS[app.category],
         applicationSubCategory: app.tags,
         operatingSystem: "Web, macOS, Windows, Linux, iOS, Android",
@@ -103,19 +112,53 @@ export default async function AppDetailsPage({ params }: AppDetailsPageProps) {
         permissions: app.permissions.join("；"),
         publisher: {
           "@type": "Organization",
+          "@id": siteUrl("/#organization"),
           name: app.developer,
           url: siteUrl("/"),
         },
+        provider: { "@id": siteUrl("/#organization") },
+        creator: { "@id": siteUrl("/#organization") },
         offers: {
           "@type": "Offer",
           price: "0",
           priceCurrency: "CNY",
           description: app.pricing.detail,
           availability: "https://schema.org/InStock",
+          url,
         },
+        additionalProperty: [
+          {
+            "@type": "PropertyValue",
+            name: "capabilities",
+            value: app.capabilities.join("；"),
+          },
+          {
+            "@type": "PropertyValue",
+            name: "permissions",
+            value: app.permissions.join("；"),
+          },
+          {
+            "@type": "PropertyValue",
+            name: "agentInterface",
+            value: "WebMCP",
+            url: siteUrl("/llms.txt"),
+          },
+          {
+            "@type": "PropertyValue",
+            name: "machineReadableRecord",
+            value: appMachineUrl(app),
+          },
+        ],
         potentialAction: {
           "@type": "UseAction",
-          target: siteUrl(`/miniapps/${app.id}`),
+          target: {
+            "@type": "EntryPoint",
+            urlTemplate: siteUrl(`/miniapps/${app.id}`),
+            actionPlatform: [
+              "https://schema.org/DesktopWebPlatform",
+              "https://schema.org/MobileWebPlatform",
+            ],
+          },
         },
       },
       {
