@@ -77,12 +77,10 @@ final class FabushiUITests: XCTestCase {
         let localConnected = app.staticTexts["本地 WebMCP 已连接"]
         let opened = app.staticTexts["WebMCP 页面已打开"]
         let ready = XCTNSPredicateExpectation(
-            predicate: NSPredicate(
-                format: "exists == true OR %@.exists == true OR %@.exists == true",
-                localConnected,
-                opened
-            ),
-            object: connected
+            predicate: NSPredicate { _, _ in
+                connected.exists || localConnected.exists || opened.exists
+            },
+            object: nil
         )
         XCTAssertEqual(
             XCTWaiter.wait(for: [ready], timeout: 15),
