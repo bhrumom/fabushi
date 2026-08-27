@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getAllArticles } from "../lib/content";
+import { marketplaceApps } from "../lib/marketplace";
 import { siteUrl } from "../lib/site-url";
 
 export const dynamic = "force-static";
@@ -53,7 +54,7 @@ const weeklyRoutes = new Set([
 ]);
 
 const routeLastModified: Partial<Record<(typeof staticRoutes)[number], string>> = {
-  "/": "2026-05-18",
+  "/": "2026-08-27",
   "/app": "2026-06-09",
   "/app/ai": "2026-06-09",
   "/download": "2026-05-18",
@@ -85,13 +86,29 @@ export default function sitemap(): MetadataRoute.Sitemap {
       route === "/"
         ? 1
         : weeklyRoutes.has(route)
-          ? 0.9
+          ? 0.85
           : route === "/apply"
-            ? 0.85
+            ? 0.8
             : route === "/privacy"
-              ? 0.8
-              : 0.75,
+              ? 0.6
+              : 0.7,
   }));
+
+  const appPages: MetadataRoute.Sitemap = marketplaceApps.map((app) => ({
+    url: siteUrl(`/apps/${app.slug}`),
+    lastModified: app.updatedAt,
+    changeFrequency: "weekly",
+    priority: app.featured ? 0.95 : 0.9,
+  }));
+
+  const appContentPages: MetadataRoute.Sitemap = marketplaceApps.flatMap((app) =>
+    app.content.map((item) => ({
+      url: siteUrl(`/apps/${app.slug}/content/${item.id}`),
+      lastModified: item.updatedAt,
+      changeFrequency: "monthly" as const,
+      priority: 0.8,
+    })),
+  );
 
   const articlePages: MetadataRoute.Sitemap = getAllArticles().map((article) => ({
     url: siteUrl(`/insights/${article.slug}`),
@@ -100,5 +117,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: article.featured ? 0.8 : 0.65,
   }));
 
-  return [...pages, ...articlePages];
+  return [...pages, ...appPages, ...appContentPages, ...articlePages];
 }
