@@ -1,3 +1,4 @@
+import { appEntityId, appMachineUrl } from "../../lib/ai-discovery";
 import { MARKETPLACE_CATEGORY_LABELS, marketplaceApps } from "../../lib/marketplace";
 import { siteUrl } from "../../lib/site-url";
 
@@ -12,6 +13,8 @@ export function GET() {
     searchUrlTemplate: `${siteUrl("/search")}?q={query}`,
     apps: marketplaceApps.map((app) => ({
       id: app.id,
+      entityId: appEntityId(app),
+      machineUrl: appMachineUrl(app),
       slug: app.slug,
       name: app.name,
       englishName: app.englishName,
@@ -31,6 +34,7 @@ export function GET() {
       launchUrl: siteUrl(`/miniapps/${app.id}`),
       content: app.content.map((item) => ({
         id: item.id,
+        entityId: siteUrl(`/apps/${app.slug}/content/${item.id}#article`),
         type: item.type,
         title: item.title,
         summary: item.summary,

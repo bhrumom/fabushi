@@ -12,6 +12,7 @@ import {
 import { AppIcon } from "../../../../../components/marketplace/app-icon";
 import { AppInstallActions } from "../../../../../components/marketplace/app-install-actions";
 import styles from "../../../../../components/marketplace/marketplace.module.css";
+import { appEntityId } from "../../../../../lib/ai-discovery";
 import {
   getMarketplaceContent,
   marketplaceContent,
@@ -127,7 +128,8 @@ export default async function ContentPage({ params }: ContentPageProps) {
           url: siteUrl("/"),
         },
         isPartOf: {
-          "@type": "SoftwareApplication",
+          "@type": ["SoftwareApplication", "WebApplication"],
+          "@id": appEntityId(app),
           name: app.name,
           url: siteUrl(`/apps/${app.slug}`),
         },
