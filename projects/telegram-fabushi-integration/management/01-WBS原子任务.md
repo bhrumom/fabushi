@@ -80,3 +80,15 @@
 - Marketplace/BotFather 新增 WebMCP admission policy；桌面 Tool inventory 与当前 MiniApp contract 取交集，移动端 Hosted 页面不得调用本地 Native bridge，写/破坏性调用保持宿主原生确认。
 - 目标版本统一为 `1.0.4`；实现 head `b965db5686521fc3dcc4592a293950aa35e542a7` 的 CI、Electron、Mahayana fast、Messaging、移动 catch-all、治理、安全等工作流均已通过。
 - 任务仍未完成：PR #2169 必须以最终治理 head 再次全绿并经 protected `main` 合并；随后 exact-main packaged Electron/Android/iOS E2E、视觉/trace evidence 与 GitHub Release 1.0.4 仍是硬门禁。
+
+## 2026-08-27 — M8-AEO-001 AEO / AI 应用发现
+
+- [x] 固化用户需求、task、ADR 与开源调研。
+- [x] 从 canonical Marketplace catalog 派生稳定 `#app` entity、aggregate/per-app/content/answer feeds。
+- [x] 实现 8 个 intent answer pages、`llms.txt` / `llms-full.txt` 与 sitemap。
+- [x] WebMCP 增加 `recommend_fabushi_app` / `get_app_capabilities`，保持只读发现边界。
+- [x] robots 明确允许 OAI-SearchBot、ChatGPT-User、Googlebot、Bingbot。
+- [x] 增加 AI discovery contract 并接入 Frontend CI。
+- [ ] current-head GitHub Actions 全绿。
+- [ ] protected merge queue、canonical-main readback。
+- [ ] production Cloudflare HTTP/runtime/crawler probes 与 exact-main delivery evidence。
