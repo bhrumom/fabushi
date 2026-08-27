@@ -8,7 +8,8 @@
 - **Updated**: 2026-08-27
 - **Branch**: `feat/tfi-m8-aeo-ai-discovery`
 - **Base**: `main@ef985df53a625e4bc2fb685b74724f43f2065302`
-- **PR / merge / release**: pending
+- **PR**: #2177 — https://github.com/bhrumom/fabushi/pull/2177
+- **Merge / release**: pending
 
 ## Objective
 
@@ -73,6 +74,10 @@ Reviewed `AnswerDotAI/llms-txt`, `schemaorg/schemaorg`, and `modelcontextprotoco
 - llms.txt adoption is auxiliary and cannot guarantee model inclusion.
 - Git transport on the current network is unstable; GitHub connector is the authoritative branch/file/PR path for this task.
 
+## Implementation summary
+
+Implemented catalog-derived stable entities, four JSON knowledge feed families, eight intent pages, llms auxiliary entry points, sitemap/search/robots integration, two read-only WebMCP discovery tools, and a Frontend CI contract. PR #2177 is open with auto-merge enabled. Current-head CI, merge-group, production and post-main evidence remain pending.
+
 ## Next action
 
-Implement the catalog-derived discovery layer and CI contract, then open the PR and drive all delivery gates.
+Resolve PR #2177 current-head checks, merge through the protected queue, re-read canonical main, then validate Cloudflare HTTP/crawler/WebMCP runtime and exact-main delivery evidence.
