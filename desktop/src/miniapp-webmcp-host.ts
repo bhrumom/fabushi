@@ -17,16 +17,6 @@ type ToolDescriptor = {
 
 type PluginUiDocument = { pluginId: string; html: string };
 
-type MahayanaBridge = {
-  invoke<T>(method: string, params?: Record<string, unknown>): Promise<T>;
-};
-
-declare global {
-  interface Window {
-    mahayana?: MahayanaBridge;
-  }
-}
-
 function safePluginId(value: unknown): string {
   const id = String(value ?? '').trim().toLowerCase();
   return /^[a-z0-9][a-z0-9-]{1,63}$/.test(id) ? id : '';
