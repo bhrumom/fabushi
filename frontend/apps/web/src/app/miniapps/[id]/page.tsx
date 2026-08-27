@@ -1,4 +1,5 @@
 import McpPluginApp from "./McpPluginApp";
+import WebMcpMiniAppAdapter from "./WebMcpMiniAppAdapter";
 import "./miniapps.css";
 
 type MiniAppPageProps = {
@@ -21,5 +22,10 @@ export async function generateStaticParams() {
 export default async function MiniAppPage({ params }: MiniAppPageProps) {
   const { id } = await params;
 
-  return <McpPluginApp pluginId={id} />;
+  return (
+    <>
+      <WebMcpMiniAppAdapter pluginId={id} />
+      <McpPluginApp pluginId={id} />
+    </>
+  );
 }
