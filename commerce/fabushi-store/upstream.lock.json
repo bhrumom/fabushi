@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "name": "Fabushi Store",
+  "upstream": {
+    "repository": "https://github.com/medusajs/dtc-starter.git",
+    "commit": "cb603dfda0a82e8bb5e81622f295e0ff90ac6913",
+    "license": "MIT",
+    "verifiedAt": "2026-08-27"
+  },
+  "deployment": {
+    "storefrontOrigin": "https://shop.ombhrum.com",
+    "backendOrigin": "https://shop-api.ombhrum.com"
+  }
+}

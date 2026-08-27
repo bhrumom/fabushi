@@ -1,0 +1,87 @@
+name: Standalone commerce site
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'commerce/fabushi-store/**'
+      - 'ai-backend/src/standalone_commerce_miniapp.js'
+      - 'ai-backend/src/miniapp_marketplace_bootstrap.js'
+      - 'ai-backend/test/standalone_commerce_miniapp.test.js'
+      - '.github/workflows/standalone-commerce-site.yml'
+  pull_request:
+    paths:
+      - 'commerce/fabushi-store/**'
+      - 'ai-backend/src/standalone_commerce_miniapp.js'
+      - 'ai-backend/src/miniapp_marketplace_bootstrap.js'
+      - 'ai-backend/test/standalone_commerce_miniapp.test.js'
+      - '.github/workflows/standalone-commerce-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: standalone-commerce-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Verify marketplace manifest contract
+        run: |
+          node --check ai-backend/src/standalone_commerce_miniapp.js
+          node --check ai-backend/src/miniapp_marketplace_bootstrap.js
+          node --test ai-backend/test/standalone_commerce_miniapp.test.js
+
+      - name: Verify pinned upstream metadata
+        run: |
+          node -e "const f=require('./commerce/fabushi-store/upstream.lock.json'); if(f.upstream.repository!=='https://github.com/medusajs/dtc-starter.git'||f.upstream.commit!=='cb603dfda0a82e8bb5e81622f295e0ff90ac6913'||f.upstream.license!=='MIT') process.exit(1)"
+          node -e "const f=require('./commerce/fabushi-store/overlay/apps/storefront/public/.well-known/fabushi.json'); if(f.id!=='fabushi-store'||f.website!=='https://shop.ombhrum.com'||f.agent?.endpoint!=='https://shop.ombhrum.com/api/fabushi/mcp') process.exit(1)"
+
+      - name: Materialize Medusa DTC Starter plus Fabushi overlay
+        run: bash commerce/fabushi-store/scripts/materialize.sh "$RUNNER_TEMP/fabushi-store"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.1
+
+      - name: Install pinned storefront dependencies
+        working-directory: ${{ runner.temp }}/fabushi-store
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile Medusa backend
+        working-directory: ${{ runner.temp }}/fabushi-store
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/fabushi_store_ci
+          REDIS_URL: redis://127.0.0.1:6379
+          JWT_SECRET: ci-only-not-production
+          COOKIE_SECRET: ci-only-not-production
+        run: pnpm --filter @dtc/backend build
+
+      - name: Typecheck storefront overlay
+        working-directory: ${{ runner.temp }}/fabushi-store
+        env:
+          NEXT_PUBLIC_MEDUSA_BACKEND_URL: http://127.0.0.1:9000
+          NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: pk_ci_contract_only
+          NEXT_PUBLIC_DEFAULT_REGION: gb
+          NEXT_PUBLIC_BASE_URL: https://shop.ombhrum.com
+        run: pnpm --filter @dtc/storefront exec tsc --noEmit
+
+      - name: Validate production compose
+        working-directory: ${{ runner.temp }}/fabushi-store
+        env:
+          POSTGRES_PASSWORD: ci-contract-password
+          JWT_SECRET: ci-contract-jwt
+          COOKIE_SECRET: ci-contract-cookie
+          MEDUSA_PUBLISHABLE_KEY: pk_ci_contract_only
+        run: docker compose -f docker-compose.production.yml config -q
