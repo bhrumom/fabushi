@@ -7,7 +7,8 @@ final class FabushiTests: XCTestCase {
             pluginId: "example.plugin",
             displayName: "示例插件",
             description: "描述",
-            latestVersion: "1.0.0"
+            latestVersion: "1.0.0",
+            tools: []
         )
         XCTAssertEqual(plugin.id, "example.plugin")
         XCTAssertEqual(plugin.latestVersion, "1.0.0")
