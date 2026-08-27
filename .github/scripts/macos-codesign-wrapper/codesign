@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+real_codesign="${FABUSHI_REAL_CODESIGN:-/usr/bin/codesign}"
+max_attempts="${FABUSHI_CODESIGN_MAX_ATTEMPTS:-4}"
+base_sleep_seconds="${FABUSHI_CODESIGN_RETRY_BASE_SECONDS:-3}"
+
+has_sign=0
+has_timestamp=0
+for arg in "$@"; do
+  case "$arg" in
+    --sign) has_sign=1 ;;
+    --timestamp|--timestamp=*) has_timestamp=1 ;;
+  esac
+done
+
+# Verification/display/ad-hoc calls must retain normal codesign behavior. Only
+# Developer-ID style signing requests that explicitly ask for a secure timestamp
+# need the bounded timestamp verification/retry loop below.
+if [ "$has_sign" -ne 1 ] || [ "$has_timestamp" -ne 1 ]; then
+  exec "$real_codesign" "$@"
+fi
+
+target="${!#}"
+attempt=1
+while [ "$attempt" -le "$max_attempts" ]; do
+  if "$real_codesign" "$@"; then
+    details="$($real_codesign --display --verbose=4 "$target" 2>&1 || true)"
+    if printf '%s\n' "$details" | grep -Eq '(^|[[:space:]])Timestamp='; then
+      printf 'codesign secure timestamp verified for %s on attempt %s/%s\n' "$target" "$attempt" "$max_attempts" >&2
+      exit 0
+    fi
+    printf 'codesign returned success but secure Timestamp= is missing for %s (attempt %s/%s)\n' "$target" "$attempt" "$max_attempts" >&2
+  else
+    printf 'codesign failed for %s (attempt %s/%s)\n' "$target" "$attempt" "$max_attempts" >&2
+  fi
+
+  if [ "$attempt" -lt "$max_attempts" ]; then
+    sleep_seconds=$((base_sleep_seconds * attempt))
+    printf 'retrying Developer ID timestamp signing in %ss\n' "$sleep_seconds" >&2
+    sleep "$sleep_seconds"
+  fi
+  attempt=$((attempt + 1))
+done
+
+printf 'Developer ID signing never produced a secure Timestamp= for %s after %s attempts\n' "$target" "$max_attempts" >&2
+exit 1
