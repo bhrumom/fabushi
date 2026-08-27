@@ -8,8 +8,11 @@ MiniApp-defined Bot voice/video call programs and the independent teleprompter r
 
 - Requirement source committed on feature branch.
 - Atomic task record created.
-- Open-source-first review completed; implementation and CI evidence are pending.
-- Status: `IN_PROGRESS`.
+- Open-source-first review completed.
+- Messenger one-shot integration script syntax was repaired in `8539575525e7240fa6e0dfff9a21a285857c69e3`.
+- The reviewed Messenger integration completed and wrote the product integration back to the branch in `48abcbbc1f1c1ab79b0fc0172f9c3ccbfd48a641`, removing the one-shot helper files afterward.
+- Current-head CI is being re-triggered from a human/app-authored project-record update because GitHub marked the workflow-authored integration commit runs `action_required` without starting jobs.
+- Status: `IN_PROGRESS` pending current-head required checks, protected merge-queue merge, and post-main packaged release evidence.
 
 ## Required evidence before closure
 
