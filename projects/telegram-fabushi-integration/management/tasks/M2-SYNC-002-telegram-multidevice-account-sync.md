@@ -105,6 +105,12 @@ The active repair:
 - preserves an explicit server-provided slash usage when present;
 - extends the fast product UI contract gate so Marketplace top-level Bot/command output and Messenger consumption cannot silently diverge again.
 
+## Fifth exact-main acceptance result
+
+Electron exact-main run `33027760877` against `fdb24deedc2973e817efb645e60f67a61b6d52a4` again stopped before Linux packaging at the single Mini App `/` command assertion. The fourth repair correctly taught `miniAppBotProjection()` how to consume canonical top-level Marketplace metadata, but the shipping Messenger identity catalog was still populated primarily from Feature Host `marketplaceBrowse()`. In real-Host test mode that discovery catalog intentionally contains only local installation summaries, while the authenticated account endpoint `/v1/marketplace/added` is the cross-device source of truth and already rejoins installed ids to full Marketplace manifests in production.
+
+The follow-up therefore makes installed Mini App identity metadata explicitly account-authoritative: `refreshMiniApps()` reads `getAccountMiniApps()` alongside discovery, converts its full manifests to Messenger summaries and lets account metadata override discovery metadata for the same plugin. The deterministic test account platform is aligned with production by returning command declarations in its installed-app snapshot. The product UI contract gate now requires this account-catalog consumption path. Artifact `9629100578` captures the fifth exact-main failure.
+
 ## Open-source-first decision
 
 - Learn/adapt the update-state and get-difference behavior from `tdlib/td` (`Boost-1.0`), especially gap detection, durable state, pagination and restart catch-up.
