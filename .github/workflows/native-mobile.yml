@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","target":"android","check_name":"Native mobile result"}]' || '[{"os":"ubuntu-latest","target":"android","check_name":"Native mobile result"},{"os":"macos-15","target":"ios","check_name":"Native iOS"}]') }}
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","target":"android","check_name":"Native Android"}]' || '[{"os":"ubuntu-latest","target":"android","check_name":"Native Android"},{"os":"macos-15","target":"ios","check_name":"Native iOS"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -433,3 +433,22 @@ jobs:
           path: ${{ runner.temp }}/FabushiTests.xcresult
           if-no-files-found: warn
           retention-days: 14
+
+  result:
+    name: Native mobile result
+    if: always()
+    needs: platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every native mobile matrix job
+        shell: bash
+        env:
+          PLATFORM_RESULT: ${{ needs.platform.result }}
+        run: |
+          set -euo pipefail
+          if [ "$PLATFORM_RESULT" != 'success' ]; then
+            echo "Native mobile platform matrix ended with: $PLATFORM_RESULT" >&2
+            exit 1
+          fi
+          echo 'All required native mobile platform checks passed.' >> "$GITHUB_STEP_SUMMARY"
