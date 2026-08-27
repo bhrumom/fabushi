@@ -3,7 +3,7 @@ import { siteUrl } from "../lib/site-url";
 
 export const dynamic = "force-static";
 
-const publicCrawlerRule = (userAgent: string): MetadataRoute.Robots["rules"][number] => ({
+const publicCrawlerRule = (userAgent: string) => ({
   userAgent,
   allow: "/",
   disallow: ["/api/"],
