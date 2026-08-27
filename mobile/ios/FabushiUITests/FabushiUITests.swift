@@ -69,8 +69,16 @@ final class FabushiUITests: XCTestCase {
         let surface = app.descendants(matching: .any)["miniapp-webmcp-surface"]
         XCTAssertTrue(surface.waitForExistence(timeout: 10))
 
-        let webView = app.webViews["miniapp-webmcp-webview"]
-        XCTAssertTrue(webView.waitForExistence(timeout: 10), "Expected the dedicated WebMCP WKWebView")
+        // SwiftUI propagates the outer surface identifier onto the represented
+        // WKWebView in the XCTest accessibility tree. Assert the element type and
+        // the remotely-rendered page content rather than depending on the UIView's
+        // private identifier surviving that SwiftUI accessibility projection.
+        let webView = app.webViews["miniapp-webmcp-surface"]
+        XCTAssertTrue(webView.waitForExistence(timeout: 15), "Expected the dedicated WebMCP WKWebView")
+        XCTAssertTrue(
+            app.staticTexts["api.ombhrum.com"].waitForExistence(timeout: 15),
+            "Expected hosted WebMCP content to render inside the dedicated WKWebView"
+        )
 
         let close = app.buttons["miniapp-webmcp-close"]
         XCTAssertTrue(close.exists)
