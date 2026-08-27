@@ -52,6 +52,9 @@ jobs:
         with:
           components: rustfmt
 
+      - name: Verify formatting before native package setup
+        run: cargo fmt --all -- --check
+
       - name: Install Linux native capture/input dependencies
         shell: bash
         working-directory: ${{ github.workspace }}
@@ -68,9 +71,6 @@ jobs:
           workspaces: third_party/mahayana/mahayana-rs -> target
           shared-key: mahayana-fast-v6
           cache-all-crates: true
-
-      - name: Verify formatting
-        run: cargo fmt --all -- --check
 
       - name: Test Mahayana-owned CLI compatibility surfaces
         run: >-
