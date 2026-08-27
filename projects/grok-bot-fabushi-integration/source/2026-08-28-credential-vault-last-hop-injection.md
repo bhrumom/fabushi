@@ -38,21 +38,23 @@ The implementation therefore extends existing Fabushi security boundaries rather
 
 Fabushi-owned implementation must satisfy all of the following:
 
-- The model, transcript, Renderer, logs and ordinary tool results never receive plaintext credentials.
-- Users work with an opaque `SecretRef`, for example `connector/github/default`.
+- Plaintext credentials are never placed in model context, transcript content, ordinary tool arguments, persisted renderer state, structured logs or ordinary tool results.
+- During explicit credential creation/rotation, plaintext exists transiently in the user's password input and the one native upsert invocation; after that invocation it is immediately cleared from React state and cannot be read back through the Renderer contract.
+- Users and tools work with an opaque `SecretRef`, for example `connector/github/default`.
 - `list` returns metadata only (`configured`, binding, timestamps); it never returns a value or a reversible preview.
 - Existing plaintext reveal capability is removed from the Renderer Native Edge.
 - A generic credential may not be used until it is explicitly bound to one or more exact HTTPS origins.
 - Caller-provided `Authorization`, cookie, or API-key headers cannot override gateway injection.
 - Credential-bearing redirects are not followed. A new target requires a separately authorized request.
-- Credential values are injected only inside the trusted desktop boundary at the final outbound request.
+- Credential values are decrypted and injected only inside the trusted desktop boundary at the final outbound request.
+- Remote response bodies, response headers, status text and network-error messages are scrubbed for the raw credential and common encoded forms before crossing back to Renderer/model-facing surfaces. This protects against diagnostic/echo APIs reflecting request authentication.
 - Rotation replaces ciphertext without changing the `SecretRef`; revocation removes the reference.
 - Auditable metadata may include `SecretRef`, target origin, injection type and timestamp, but never the credential value.
 - Existing Provider keys remain compatible but are not automatically promoted into generic Agent credentials.
 
 ## Product surface
 
-The desktop Credential Vault is intentionally non-revealable. It supports:
+The desktop Credential Vault is intentionally non-revealable after save. It supports:
 
 - create;
 - rotate;
@@ -61,6 +63,8 @@ The desktop Credential Vault is intentionally non-revealable. It supports:
 - Bearer, custom-header and HTTP Basic injection metadata;
 - last-used timestamp;
 - event-driven opening so a future Connector/Skill/Workflow missing-credential card can deep-link into a prefilled SecretRef request.
+
+The first Agent-facing production adapter in this slice is the desktop MiniApp/WebMCP host-owned `fabushi_credential_request` tool. It accepts only a scoped SecretRef plus request metadata and delegates final-hop credential use to the trusted Native gateway. Existing third-party MCP OAuth/native credential flows remain unchanged; this source record does not claim universal automatic SecretRef consumption by every MCP server.
 
 ## Acceptance boundary
 
