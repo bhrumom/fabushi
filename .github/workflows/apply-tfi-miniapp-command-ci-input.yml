@@ -1,0 +1,44 @@
+name: Apply TFI Mini App command CI input
+
+on:
+  push:
+    branches:
+      - fix/tfi-m2-sync-miniapp-command-projection
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/tfi-m2-sync-miniapp-command-projection
+          fetch-depth: 1
+      - name: Extend Electron Feature Host sparse checkout
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/ci.yml')
+          text = path.read_text()
+          marker = '            /desktop/src/messaging-shell-v2.tsx\n'
+          replacement = marker + '            /desktop/src/miniapp-bot-projection.ts\n            /ai-backend/src/miniapp_marketplace_catalog.js\n'
+          if text.count(marker) != 1:
+              raise SystemExit(f'expected one sparse-checkout insertion marker, got {text.count(marker)}')
+          if '/desktop/src/miniapp-bot-projection.ts\n' not in text:
+              text = text.replace(marker, replacement, 1)
+          path.write_text(text)
+          PY
+      - name: Remove one-shot workflow
+        run: rm .github/workflows/apply-tfi-miniapp-command-ci-input.yml
+      - name: Commit sparse CI repair
+        shell: bash
+        run: |
+          git config user.name "bhrum"
+          git config user.email "bhrumom@gmail.com"
+          git add .github/workflows/ci.yml .github/workflows/apply-tfi-miniapp-command-ci-input.yml
+          git commit -m "ci(tfi): include Mini App projection contract inputs"
+          git push origin HEAD:fix/tfi-m2-sync-miniapp-command-projection
