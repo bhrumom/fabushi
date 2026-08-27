@@ -133,6 +133,12 @@ function requireEncryption(safeStorage) {
   if (!safeStorage?.isEncryptionAvailable?.()) {
     throw new Error('OS-backed secret encryption is not available on this device.');
   }
+  const backend = typeof safeStorage.getSelectedStorageBackend === 'function'
+    ? safeStorage.getSelectedStorageBackend()
+    : null;
+  if (backend === 'basic_text') {
+    throw new Error('Secure OS credential storage is unavailable; refusing Electron basic_text fallback.');
+  }
 }
 
 function decryptSecret(safeStorage, item) {
