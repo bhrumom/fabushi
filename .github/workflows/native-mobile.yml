@@ -42,8 +42,8 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
         with:
-          submodules: recursive
-          fetch-depth: 0
+          submodules: ${{ github.event_name == 'pull_request' && 'false' || 'recursive' }}
+          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
           persist-credentials: false
 
       - name: Reject whitespace and conflict-marker regressions on PR
@@ -53,7 +53,8 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          git diff --check "$BASE_SHA"...HEAD
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git diff --check "$BASE_SHA" HEAD
           if git grep -n -E '^(<<<<<<<|=======|>>>>>>>)' -- mobile third_party/mahayana/mahayana-rs ':!**/target/**'; then
             echo 'Unresolved merge markers found in native inputs.' >&2
             exit 1
