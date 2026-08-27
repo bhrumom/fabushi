@@ -9,6 +9,7 @@ const packagedExecutable = process.env.FABUSHI_ELECTRON_EXECUTABLE?.trim() || nu
 const SECRET_REF = 'connector/credential-e2e/default';
 const FIRST_CANARY = 'fabushi-credential-e2e-canary-first';
 const ROTATED_CANARY = 'fabushi-credential-e2e-canary-rotated';
+const CANCELLED_CANARY = 'fabushi-credential-e2e-cancelled';
 
 async function launchDesktopApp(appDataDir: string) {
   return electron.launch({
@@ -55,6 +56,12 @@ test('installed Credential Vault keeps saved plaintext opaque while create, rota
     await expect(page.getByRole('dialog', { name: '凭据保险库' })).toBeVisible();
     await expect(page.getByText('保存后不可读回')).toBeVisible();
 
+    await page.getByTestId('credential-secret-value').fill(CANCELLED_CANARY);
+    await page.getByRole('button', { name: '关闭' }).click();
+    await expect(page.getByRole('dialog', { name: '凭据保险库' })).toBeHidden();
+    await page.getByTestId('credential-vault-button').click();
+    await expect(page.getByTestId('credential-secret-value')).toHaveValue('');
+
     await page.getByTestId('credential-secret-ref').fill(SECRET_REF);
     await page.getByPlaceholder('GitHub Production').fill('Credential E2E');
     await page.getByTestId('credential-secret-value').fill(FIRST_CANARY);
@@ -65,6 +72,7 @@ test('installed Credential Vault keeps saved plaintext opaque while create, rota
     await expect(savedRow).toBeVisible();
     await expect(savedRow).toContainText('https://api.example.com');
     await expect(page.locator('body')).not.toContainText(FIRST_CANARY);
+    await expect(page.locator('body')).not.toContainText(CANCELLED_CANARY);
     await expect(page.getByText(/显示.*密钥|查看.*密钥|Reveal Secret/i)).toHaveCount(0);
 
     const afterCreate = await listSecrets(page);
