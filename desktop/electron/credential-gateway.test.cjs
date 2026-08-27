@@ -173,6 +173,44 @@ test('scrubs a malicious endpoint that echoes credential material in response he
   }
 });
 
+test('scrubs credential material from remote status text and network failures', async () => {
+  const ctx = await fixture();
+  try {
+    await ctx.handlers.upsertSecrets({
+      name: 'connector/github/default',
+      value: CANARY,
+      binding: githubBinding(),
+    });
+    ctx.deps.net.fetch = async () => new Response('safe', {
+      status: 599,
+      statusText: `Remote ${CANARY}`,
+    });
+    const result = await ctx.handlers.egressFetch({
+      secretRef: 'connector/github/default',
+      url: 'https://api.github.com/status',
+    });
+    assert.equal(result.statusText.includes(CANARY), false);
+    assert.match(result.statusText, /\[redacted\]/u);
+
+    ctx.deps.net.fetch = async () => {
+      throw new Error(`socket failed while using ${CANARY}`);
+    };
+    await assert.rejects(
+      () => ctx.handlers.egressFetch({
+        secretRef: 'connector/github/default',
+        url: 'https://api.github.com/network-error',
+      }),
+      (error) => {
+        assert.equal(error.message.includes(CANARY), false);
+        assert.match(error.message, /\[redacted\]/u);
+        return true;
+      },
+    );
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
 test('refuses unbound, cross-origin, plaintext-auth-header, and non-HTTPS requests', async () => {
   const ctx = await fixture();
   try {
