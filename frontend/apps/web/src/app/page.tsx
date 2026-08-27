@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { brand } from "@fabushi/shared";
-import { MarketplaceShell } from "../components/marketplace/marketplace-shell";
-import { marketplaceApps, marketplaceContent } from "../lib/marketplace";
+import HostClientEntry from "./host/host-client-entry";
 import { siteUrl } from "../lib/site-url";
 
 const homeUrl = siteUrl("/");
-const homeTitle = "Fabushi 应用市场 | Mini App、AI 工具与内容工作流";
+const homeTitle = "Fabushi | Telegram 式全平台 AI Messenger 与 Mini Apps";
 const homeDescription =
-  "发现、安装并立即运行 Fabushi Mini App。像 Telegram Mini App 一样即开即用，像 Shopify App Store 一样可比较与分发，并为指南、模板和工作流提供内容级搜索入口。";
+  "Fabushi Web 与桌面端共享同一 Host / Messenger 体验，并内置 Mini Apps、WebMCP、应用发现与内容级搜索。";
 
 export const metadata: Metadata = {
   title: homeTitle,
@@ -15,16 +14,14 @@ export const metadata: Metadata = {
   alternates: { canonical: homeUrl },
   keywords: [
     "Fabushi",
-    "应用市场",
+    "Telegram 式 Messenger",
     "Mini App",
-    "Telegram Mini App",
-    "AI 应用",
+    "AI Agent",
     "MCP Apps",
     "WebMCP",
-    "应用商店",
+    "应用市场",
     "内容搜索",
-    "工作流",
-    "开发者平台",
+    "跨平台",
   ],
   openGraph: {
     title: homeTitle,
@@ -55,7 +52,7 @@ export default function HomePage() {
       {
         "@type": "WebSite",
         "@id": `${homeUrl}#website`,
-        name: "Fabushi 应用市场",
+        name: "Fabushi",
         url: homeUrl,
         publisher: { "@id": `${homeUrl}#organization` },
         potentialAction: {
@@ -68,38 +65,20 @@ export default function HomePage() {
         },
       },
       {
-        "@type": "CollectionPage",
-        "@id": `${homeUrl}#marketplace`,
-        name: homeTitle,
-        description: homeDescription,
+        "@type": "WebApplication",
+        name: "Fabushi Web",
+        applicationCategory: "CommunicationApplication",
+        operatingSystem: "Web",
         url: homeUrl,
-        isPartOf: { "@id": `${homeUrl}#website` },
-        mainEntity: {
-          "@type": "ItemList",
-          numberOfItems: marketplaceApps.length,
-          itemListElement: marketplaceApps.map((app, index) => ({
-            "@type": "ListItem",
-            position: index + 1,
-            url: siteUrl(`/apps/${app.slug}`),
-            name: app.name,
-          })),
-        },
-      },
-      {
-        "@type": "DataCatalog",
-        name: "Fabushi 内容级搜索索引",
-        description: `收录 ${marketplaceContent.length} 条指南、模板、内容集与工作流。`,
-        url: siteUrl("/search-index.json"),
-        dataset: marketplaceApps.map((app) => ({
-          "@type": "Dataset",
-          name: `${app.name} 内容目录`,
-          url: siteUrl(`/apps/${app.slug}`),
-          distribution: {
-            "@type": "DataDownload",
-            contentUrl: siteUrl("/search-index.json"),
-            encodingFormat: "application/json",
-          },
-        })),
+        description: homeDescription,
+        featureList: [
+          "Messenger",
+          "AI Agents",
+          "Mini Apps",
+          "WebMCP",
+          "Marketplace",
+          "Content Search",
+        ],
       },
     ],
   };
@@ -110,7 +89,7 @@ export default function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <MarketplaceShell />
+      <HostClientEntry />
     </>
   );
 }

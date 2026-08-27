@@ -7,6 +7,7 @@ export const dynamic = "force-static";
 
 const staticRoutes = [
   "/",
+  "/apps",
   "/app",
   "/app/ai",
   "/download",
@@ -33,6 +34,7 @@ const staticRoutes = [
 
 const weeklyRoutes = new Set([
   "/",
+  "/apps",
   "/app",
   "/app/ai",
   "/download",
@@ -55,6 +57,7 @@ const weeklyRoutes = new Set([
 
 const routeLastModified: Partial<Record<(typeof staticRoutes)[number], string>> = {
   "/": "2026-08-27",
+  "/apps": "2026-08-27",
   "/app": "2026-06-09",
   "/app/ai": "2026-06-09",
   "/download": "2026-05-18",
@@ -85,13 +88,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority:
       route === "/"
         ? 1
-        : weeklyRoutes.has(route)
-          ? 0.85
-          : route === "/apply"
-            ? 0.8
-            : route === "/privacy"
-              ? 0.6
-              : 0.7,
+        : route === "/apps"
+          ? 0.95
+          : weeklyRoutes.has(route)
+            ? 0.85
+            : route === "/apply"
+              ? 0.8
+              : route === "/privacy"
+                ? 0.6
+                : 0.7,
   }));
 
   const appPages: MetadataRoute.Sitemap = marketplaceApps.map((app) => ({

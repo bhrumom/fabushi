@@ -7,27 +7,27 @@ import { siteUrl } from "../lib/site-url";
 import "./globals.css";
 
 const homeUrl = siteUrl("/");
-const siteTitle = `${brand.name} | Mini App、AI 工具与内容工作流市场`;
+const siteTitle = `${brand.name} | 跨平台 Messenger、AI Agents 与 Mini Apps`;
 const siteDescription =
-  "Fabushi 是可发现、可安装、可立即运行的 Mini App 市场，提供独立应用详情、内容级搜索入口、开发者分发资料与 WebMCP 网站工具。";
+  "Fabushi 是跨平台 Messenger 与 AI Agent Host。Web、桌面与移动端保持一致的核心交互，并内置 Mini Apps、WebMCP、应用市场和内容级搜索。";
 
 export const metadata: Metadata = {
   title: siteTitle,
   description: siteDescription,
   keywords: [
     "Fabushi",
-    "应用市场",
+    "Messenger",
+    "AI Agent",
     "Mini App",
-    "AI 应用",
     "MCP Apps",
     "WebMCP",
+    "应用市场",
     "应用分发",
     "内容级搜索",
+    "跨平台",
     "工作流",
-    "开发者平台",
-    "法布施",
   ],
-  applicationName: `${brand.name} 应用市场`,
+  applicationName: brand.name,
   authors: [{ name: "Fabushi" }],
   creator: "Fabushi",
   publisher: "Fabushi",
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
     title: siteTitle,
     description: siteDescription,
     url: homeUrl,
-    siteName: "Fabushi 应用市场",
+    siteName: "Fabushi",
     locale: "zh_CN",
     type: "website",
   },
