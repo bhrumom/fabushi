@@ -7,7 +7,7 @@
   "desktopName": "com.ombhrum.fabushi",
   "private": true,
   "type": "module",
-  "main": "electron/main.cjs",
+  "main": "electron/bootstrap.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
     "prebuild:renderer": "node scripts/prepare-desktop-window-branding.mjs",
