@@ -62,3 +62,16 @@ Mini App SDK：
 
 
 ============================================================
+
+## AEO / AI 应用发现层（2026-08-27）
+
+Mini App 的 AI discovery 是 Marketplace 的公开投影，不是新 runtime 或第二个 catalog：
+
+- stable entity：每个 app 固定 `/apps/{slug}/#app`，页面、内容、JSON feed 和 WebMCP 引用同一 `@id`；
+- machine knowledge：`/ai/apps.json`、per-app JSON、content feed、answer feed；
+- answer intent：自然语言问题页直接回答并关联推荐 app；
+- auxiliary text：`llms.txt` 精简导航，`llms-full.txt` 完整 catalog-derived 信息；
+- agent interface：WebMCP 提供推荐与能力发现；安装/写入/本地调用仍经过既有 Host 权限；
+- crawlability：robots/sitemap/结构化数据与 Cloudflare production probe 共同构成可抓取证据。
+
+应用名称、版本、能力、权限、价格和内容必须继续只在 canonical Marketplace catalog 维护。
