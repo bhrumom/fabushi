@@ -176,7 +176,7 @@ jobs:
           shared-key: google-play-native-android-v1
 
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
+        run: command -v cargo-ndk >/dev/null 2>&1 || cargo install cargo-ndk --locked
 
       - name: Build native Mahayana Host JNI libraries
         working-directory: third_party/mahayana/mahayana-rs

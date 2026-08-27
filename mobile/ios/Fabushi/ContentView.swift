@@ -293,6 +293,11 @@ struct ContentView: View {
                 }
             }
             .refreshable { await model.refresh() }
+            .task {
+                if model.plugins.isEmpty {
+                    await model.refresh()
+                }
+            }
         }
     }
 }

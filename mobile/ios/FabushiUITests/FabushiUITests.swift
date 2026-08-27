@@ -31,7 +31,7 @@ final class FabushiUITests: XCTestCase {
         XCTAssertTrue(app.buttons["home-search-button"].exists)
         XCTAssertTrue(app.buttons["home-add-button"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["conversation-list"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["conversation-chief-of-staff"].exists)
+        XCTAssertTrue(app.staticTexts["Chief of Staff"].waitForExistence(timeout: 5))
 
         app.buttons["home-search-button"].tap()
         let homeSearch = app.textFields["home-search-field"]

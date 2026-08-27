@@ -379,7 +379,11 @@ interface ConfirmAction {
   action: () => void | Promise<void>;
 }
 
-export default function HostClient() {
+interface HostClientProps {
+  onAuthStateChange?: (state: AuthState) => void;
+}
+
+export default function HostClient({ onAuthStateChange }: HostClientProps = {}) {
   const screenshotMode = new URLSearchParams(window.location.search).get("screenshot");
   const screenshotHasMiniApp = screenshotMode === "miniapp";
   const screenshotComputerOpen = ["computer", "running", "miniapp"].includes(screenshotMode ?? "");
@@ -486,6 +490,9 @@ export default function HostClient() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [browserLoginAttempt, setBrowserLoginAttempt] = useState<BrowserLoginAttempt | null>(null);
   const [browserLoginWakeNonce, setBrowserLoginWakeNonce] = useState(0);
+  useEffect(() => {
+    if (authResolved && auth) onAuthStateChange?.(auth);
+  }, [auth, authResolved, onAuthStateChange]);
   const [onboardingStep, setOnboardingStep] = useState(() =>
     screenshotMode !== null || window.localStorage.getItem(ONBOARDING_COMPLETE_KEY) === "1"
       ? 3
