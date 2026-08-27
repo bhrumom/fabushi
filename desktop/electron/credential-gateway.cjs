@@ -186,12 +186,12 @@ function credentialRedactionTokens(injection, secret) {
   const tokens = new Set([
     secret,
     Buffer.from(secret, 'utf8').toString('base64'),
-    encodeURIComponent(secret),
   ]);
+  try { tokens.add(encodeURIComponent(secret)); } catch { /* malformed Unicode cannot become a URL token */ }
   try {
     const escaped = JSON.stringify(secret);
     if (escaped.length >= 2) tokens.add(escaped.slice(1, -1));
-  } catch { /* a JS string is always JSON-serializable */ }
+  } catch { /* a normal JS string is JSON-serializable */ }
   if (injection.type === 'basic') {
     tokens.add(Buffer.from(`${injection.username}:${secret}`, 'utf8').toString('base64'));
   }
@@ -256,14 +256,20 @@ async function credentialFetch(deps, params) {
   const redactionTokens = credentialRedactionTokens(binding.injection, secret);
   const headers = injectCredential(sanitizeCallerHeaders(params.headers), binding.injection, secret);
 
-  // Redirects are intentionally never followed with credentials. A 3xx is
-  // returned to the caller, which can request a separately bound origin.
-  const response = await net.fetch(url.toString(), {
-    method,
-    headers,
-    redirect: 'manual',
-    ...(body?.length ? { body } : {}),
-  });
+  let response;
+  try {
+    // Redirects are intentionally never followed with credentials. A 3xx is
+    // returned to the caller, which can request a separately bound origin.
+    response = await net.fetch(url.toString(), {
+      method,
+      headers,
+      redirect: 'manual',
+      ...(body?.length ? { body } : {}),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(redactText(message, redactionTokens));
+  }
   const rawResponseBytes = Buffer.from(await response.arrayBuffer());
   if (rawResponseBytes.byteLength > MAX_RESPONSE_BYTES) throw new Error('Credential response exceeds the safety limit.');
   // Do not trust the remote endpoint to keep credentials opaque: diagnostic
@@ -284,7 +290,7 @@ async function credentialFetch(deps, params) {
 
   return {
     status: response.status,
-    statusText: response.statusText,
+    statusText: redactText(response.statusText, redactionTokens),
     headers: responseHeaders,
     bodyBase64: responseBytes.toString('base64'),
     url: url.toString(),
