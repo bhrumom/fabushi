@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { registerWebMcpTool } from "@fabushi/mcp-app-sdk";
+import { recommendFabushiApps, serializeAppForAi } from "../../lib/ai-discovery";
 import {
   MARKETPLACE_CATEGORY_LABELS,
   getMarketplaceApp,
@@ -85,6 +86,68 @@ export function MarketplaceWebMcp() {
                     keywords: item.keywords,
                     url: siteUrl(`/apps/${app.slug}/content/${item.id}`),
                   })),
+          };
+        },
+      }),
+      registerWebMcpTool({
+        name: "recommend_fabushi_app",
+        title: "Recommend a Fabushi app",
+        description:
+          "Recommend Fabushi Mini Apps for a natural-language goal or problem. Returns ranked catalog-derived app entities, reasons, capabilities and stable citation/launch links.",
+        annotations: { readOnlyHint: true },
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "The user's problem, desired outcome or natural-language question.",
+            },
+            task: {
+              type: "string",
+              description: "Optional additional task context, constraints or expected output.",
+            },
+            limit: {
+              type: "number",
+              minimum: 1,
+              maximum: 8,
+              description: "Maximum recommendations. Defaults to 3.",
+            },
+          },
+          required: ["query"],
+        },
+        execute: (input) => {
+          const query = typeof input.query === "string" ? input.query : "";
+          const task = typeof input.task === "string" ? input.task : "";
+          const limit = asPositiveLimit(input.limit, 3);
+          return {
+            query,
+            task,
+            recommendations: recommendFabushiApps([query, task].filter(Boolean).join(" "), limit),
+            appsIndexUrl: siteUrl("/ai/apps.json"),
+            answersIndexUrl: siteUrl("/ai/answers.json"),
+          };
+        },
+      }),
+      registerWebMcpTool({
+        name: "get_app_capabilities",
+        title: "Get Fabushi app capabilities",
+        description:
+          "Resolve a Fabushi Mini App by slug or ID and return its stable entity, capabilities, permissions, version, public content, machine record and launch URL.",
+        annotations: { readOnlyHint: true },
+        inputSchema: {
+          type: "object",
+          properties: {
+            slug: { type: "string", description: "The app slug or stable Mini App ID." },
+          },
+          required: ["slug"],
+        },
+        execute: (input) => {
+          const slug = typeof input.slug === "string" ? input.slug : "";
+          const app = getMarketplaceApp(slug);
+          if (!app) return { found: false, slug, appsIndexUrl: siteUrl("/ai/apps.json") };
+          return {
+            found: true,
+            app: serializeAppForAi(app),
           };
         },
       }),
@@ -224,6 +287,8 @@ export function MarketplaceWebMcp() {
         detail: {
           tools: [
             "search_fabushi_marketplace",
+            "recommend_fabushi_app",
+            "get_app_capabilities",
             "get_fabushi_app",
             "get_fabushi_content",
             "install_fabushi_app",
