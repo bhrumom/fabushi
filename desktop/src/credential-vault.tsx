@@ -166,10 +166,10 @@ export default function CredentialVault() {
     {open ? <div className="credential-vault-backdrop" onMouseDown={() => { if (!busy) setOpen(false); }}>
       <section className="credential-vault-dialog" role="dialog" aria-modal="true" aria-labelledby="credential-vault-title" onMouseDown={(event) => event.stopPropagation()}>
         <header className="credential-vault-header">
-          <div className="credential-vault-brand"><span><LockKeyhole size={20} /></span><div><small>MAHAYANA CREDENTIAL VAULT</small><h2 id="credential-vault-title">凭据保险库</h2><p>模型和 Renderer 只看到 SecretRef。真实密钥只在受信任宿主向已绑定 HTTPS 目标发送请求的最后一跳注入。</p></div></div>
+          <div className="credential-vault-brand"><span><LockKeyhole size={20} /></span><div><small>MAHAYANA CREDENTIAL VAULT</small><h2 id="credential-vault-title">凭据保险库</h2><p>保存后，模型、聊天和工具只使用 SecretRef；真实密钥只在受信任宿主向已绑定 HTTPS 目标发送请求的最后一跳注入。</p></div></div>
           <button type="button" aria-label="关闭" onClick={() => setOpen(false)} disabled={busy}><X size={18} /></button>
         </header>
-        <div className="credential-vault-trust"><span><ShieldCheck size={15} /> OS 加密</span><span>明文不可读取</span><span>域名绑定</span><span>禁止凭据重定向</span></div>
+        <div className="credential-vault-trust"><span><ShieldCheck size={15} /> OS 加密</span><span>保存后不可读回</span><span>域名绑定</span><span>禁止凭据重定向</span></div>
         {error ? <p className="credential-vault-error" role="alert">{error}</p> : null}
         <div className="credential-vault-body">
           <section className="credential-vault-list">
@@ -186,7 +186,7 @@ export default function CredentialVault() {
             <header><div><strong>{editing ? '轮换 / 绑定凭据' : '新增凭据'}</strong><small>保存后无法再次查看明文</small></div>{editing ? <button type="button" onClick={clearDraft}><Plus size={14} /> 新建</button> : null}</header>
             <label><span>SecretRef</span><input data-testid="credential-secret-ref" value={name} onChange={(event) => setName(event.target.value)} disabled={Boolean(editing)} placeholder="connector/github/default" required /></label>
             <label><span>显示名称</span><input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="GitHub Production" maxLength={160} /></label>
-            <label><span>{editing ? '新密钥（轮换）' : '密钥'}</span><input data-testid="credential-secret-value" type="password" value={value} onChange={(event) => setValue(event.target.value)} autoComplete="new-password" required /><small>输入值不会出现在列表、日志或模型上下文。</small></label>
+            <label><span>{editing ? '新密钥（轮换）' : '密钥'}</span><input data-testid="credential-secret-value" type="password" value={value} onChange={(event) => setValue(event.target.value)} autoComplete="new-password" required /><small>输入值只在本次提交时短暂存在于界面；保存后不会出现在列表、日志、模型上下文或读取接口。</small></label>
             <label><span>允许的 HTTPS Origin</span><textarea value={origins} onChange={(event) => setOrigins(event.target.value)} rows={3} placeholder={'https://api.github.com\nhttps://uploads.github.com'} required /><small>精确匹配 scheme + host + port；路径和重定向不能扩大授权范围。</small></label>
             <label><span>注入方式</span><select value={mode} onChange={(event) => setMode(event.target.value as InjectionMode)}><option value="bearer">Authorization: Bearer</option><option value="header">自定义 Header</option><option value="basic">HTTP Basic</option></select></label>
             {mode === 'header' ? <div className="credential-vault-inline-fields"><label><span>Header</span><input value={headerName} onChange={(event) => setHeaderName(event.target.value)} required /></label><label><span>Prefix（可选）</span><input value={prefix} onChange={(event) => setPrefix(event.target.value)} /></label></div> : null}
