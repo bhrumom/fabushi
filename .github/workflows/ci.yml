@@ -412,6 +412,8 @@ jobs:
             /desktop/src/edge/**
             /desktop/src/main.tsx
             /desktop/src/messaging-shell-v2.tsx
+            /desktop/src/miniapp-bot-projection.ts
+            /ai-backend/src/miniapp_marketplace_catalog.js
             /frontend/apps/host/**
             /frontend/apps/web/src/app/host/**
             /frontend/apps/web/src/app/remote-computer/**
