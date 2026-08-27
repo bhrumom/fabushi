@@ -19,5 +19,14 @@ if [[ "${actual}" != "${UPSTREAM_COMMIT}" ]]; then
 fi
 
 cp -a "${ROOT_DIR}/overlay/." "${DESTINATION}/"
+
+# Keep the upstream implementation while presenting the reference storefront as
+# Fabushi Store. This intentionally changes only the starter's human-facing
+# brand phrase; package names, Medusa APIs, licenses, and source attribution
+# stay untouched.
+while IFS= read -r file; do
+  sed -i 's/Medusa Store/Fabushi Store/g' "${file}"
+done < <(grep -RIl --include='*.ts' --include='*.tsx' 'Medusa Store' "${DESTINATION}/apps/storefront/src" || true)
+
 printf '%s\n' "${UPSTREAM_COMMIT}" > "${DESTINATION}/.fabushi-upstream-commit"
 echo "Materialized Fabushi Store at ${DESTINATION} from ${UPSTREAM_REPO}@${UPSTREAM_COMMIT}"
