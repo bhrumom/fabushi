@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  callRegisteredWebMcpTool,
   exposeMcpToolsAsWebMcp,
   listRegisteredWebMcpTools,
   registerWebMcpTool,
@@ -31,18 +32,24 @@ test("fallback registry exposes registered tools and executes them", async () =>
   assert.equal(supportsNativeWebMcp(), false);
   assert.deepEqual(listRegisteredWebMcpTools().map((tool) => tool.name), ["status"]);
   assert.deepEqual(await (globalThis as any).window.__fabushiWebMcp.call("status", {}), { running: true });
+  assert.deepEqual(await callRegisteredWebMcpTool("status"), { running: true });
 
   dispose();
   assert.deepEqual(listRegisteredWebMcpTools(), []);
   clearGlobals();
 });
 
-test("native modelContext registration receives tool metadata and lifecycle signal", () => {
+test("native modelContext registration receives tool metadata and lifecycle signal", async () => {
   const registered: any[] = [];
   const unregistered: string[] = [];
+  const executed: Array<{ name: string; input: Record<string, unknown> }> = [];
   installGlobals({
     registerTool(tool: unknown) { registered.push(tool); },
     unregisterTool(name: string) { unregistered.push(name); },
+    executeTool(name: string, input: Record<string, unknown>) {
+      executed.push({ name, input });
+      return { native: true };
+    },
   });
 
   const dispose = registerWebMcpTool({
@@ -61,6 +68,8 @@ test("native modelContext registration receives tool metadata and lifecycle sign
   assert.equal(registered[0].name, "set_speed");
   assert.ok(registered[0].signal instanceof AbortSignal);
   assert.equal(registered[0].signal.aborted, false);
+  assert.deepEqual(await callRegisteredWebMcpTool("set_speed", { speed: 60 }), { native: true });
+  assert.deepEqual(executed, [{ name: "set_speed", input: { speed: 60 } }]);
 
   dispose();
   assert.equal(registered[0].signal.aborted, true);
