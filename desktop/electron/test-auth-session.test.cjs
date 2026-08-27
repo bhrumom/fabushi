@@ -72,6 +72,7 @@ test('production auth requests still use the real Host boundary', async () => {
   const host = new MahayanaHostProcess({
     app: fakeApp,
     env: {},
+    resourcesPath: '/tmp/fabushi-resources',
     fs: { readFileSync() { throw new Error('missing'); } },
     spawn: () => {
       spawnCount += 1;
