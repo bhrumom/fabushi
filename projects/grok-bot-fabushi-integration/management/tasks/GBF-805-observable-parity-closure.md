@@ -104,6 +104,25 @@ Use the pinned reconstructed baseline as an observable reference for Messenger t
 
 Provenance stays explicit: reimplement observable behavior and architecture in Fabushi-owned source. Do not wholesale vendor an unlicensed production renderer, brand assets or unknown-license resources.
 
+### 6. Efficient long-running Agent execution policy
+
+A later operating-guidance review added an efficiency requirement that maps directly onto existing Mahayana primitives without introducing another runtime.
+
+- Prefer event triggers over cron/polling whenever a reliable event source can wake the task.
+- Prefer connected Connector/MCP/API tools over browser/computer UI automation when they can perform the same action.
+- When the agent is stalled or cannot make further useful progress, surface the blocker immediately and request the exact human input/action needed instead of silently burning more turns.
+- Keep event filters narrow and preserve existing approvals for destructive/external/publish/send/delete/purchase/production-changing actions.
+- The rule is provider-neutral and injected through the existing `modeStatement` path for every Mahayana chat turn.
+
+Current implementation on `feat/gbf-efficient-agent-runs`:
+
+- `frontend/apps/web/src/lib/fabushi-runtime/agent-utils.ts` defines `EFFICIENT_AGENT_RUN_POLICY` and appends it to `buildModeTransitionNote`.
+- Existing `host-client.tsx` already sends `buildModeTransitionNote(...)` in every `chat.send`, so the policy reaches the canonical Mahayana runtime without a second tool router.
+- Existing event/schedule automation, connector discovery, MCP and approval contracts are retained rather than duplicated.
+- `frontend/apps/web/scripts/check-efficient-agent-policy.mjs` guards the four policy statements, mode-statement injection, event/schedule trigger availability and connector discovery.
+- Source analysis/provenance: `source/2026-08-27-efficient-agent-run-policy.md`.
+- PR/required CI/protected-main/post-main packaged evidence remains required before this slice is accepted as released.
+
 ## Manual changes in the active branch
 
 - Removed `.github/workflows/chatgpt-auto-confirm-task-dispatch.yml`.
