@@ -214,7 +214,7 @@ jobs:
       - name: Install cargo-ndk only when needed
         if: github.event_name != 'pull_request' && matrix.target == 'android' && steps.jni-cache.outputs.cache-hit != 'true' && steps.cargo-ndk-cache.outputs.cache-hit != 'true'
         shell: bash
-        run: cargo install cargo-ndk --locked
+        run: command -v cargo-ndk >/dev/null 2>&1 || cargo install cargo-ndk --locked
 
       - name: Save cargo-ndk immediately
         if: github.event_name != 'pull_request' && matrix.target == 'android' && steps.jni-cache.outputs.cache-hit != 'true' && steps.cargo-ndk-cache.outputs.cache-hit != 'true'
