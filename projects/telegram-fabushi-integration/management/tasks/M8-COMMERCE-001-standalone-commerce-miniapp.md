@@ -2,11 +2,12 @@
 
 - **Project**: FAB-P0001 / TFI
 - **Milestone**: M8 Mini Apps
-- **Status**: IN_PROGRESS / TESTING
+- **Status**: IN_PROGRESS / DEPLOYMENT_BLOCKED
 - **Source**: `../../source/2026-08-27-standalone-commerce-miniapp.md`
 - **Decision**: `../../decisions/ADR-0012-standalone-webapp-miniapp-commerce.md`
 - **Evidence**: `../../evidence/M8-COMMERCE-001/README.md`
-- **Branch**: `feat/tfi-m8-standalone-commerce`
+- **Implementation PR**: `#2184`
+- **Canonical main**: `4d5fac6787c62ee881d65cfe212b2b4f15a80584`
 
 ## 目标
 
@@ -61,14 +62,14 @@
 ### A6 — 质量与发布
 - [x] 增加 `standalone-commerce-site.yml` 上游 pin / manifest / compile / typecheck / compose 门禁。
 - [x] 增加 Fabushi marketplace contract test。
-- [ ] PR current-head required checks 全绿。
-- [ ] protected merge 到 `main`。
-- [ ] canonical-main readback。
+- [x] PR current-head required checks 全绿。
+- [x] protected merge 到 `main`。
+- [x] canonical-main readback。
 - [ ] exact-main 公网站点 + MCP + marketplace E2E evidence。
 
 ## 当前阻塞
 
-生产部署通道当前不可用：2026-08-27 本轮调用 Oracle VPS connector 连续返回 HTTP 502。没有可验证的生产主机执行证据，因此公网“已上线”仍保持未完成。真实支付 Provider 凭证也未在本任务中发现或注入。
+实现 PR `#2184` 已通过 PR-head CI、protected merge-group CI 并进入 canonical `main`。当前剩余阻塞全部在生产发布面：Oracle/grokbot VPS connector 持续返回 HTTP 502；`shop.ombhrum.com` 与 `shop-api.ombhrum.com` 当前 DNS 无法解析；真实支付 Provider secret 也没有在本任务中发现或注入。因此公网“已上线”和真实卡扣款都继续保持未完成。
 
 ## 完成定义
 
