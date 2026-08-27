@@ -4,7 +4,7 @@ legacy_project_ids:
   - FABUSHI-TELEGRAM-FUSION
 name: Fabushi Telegram 全量融合
 slug: telegram-fabushi-integration
-version: v1.3
+version: v1.4
 baseline_date: 2026-08-22
 status: IMPLEMENTATION_ACTIVE
 current_stage: M3
@@ -20,6 +20,8 @@ architecture:
   protocol_version: 2
   local_first: true
   ai_native: true
+  miniapp_foreground_agent_interface: WebMCP
+  miniapp_backend_runtime: Mahayana Rust Host
   telegram_api_dependency: false
 status_model:
   - NOT_STARTED
@@ -32,6 +34,9 @@ active_work:
   - task: M3-DESKTOP-001
     branch: feat/telegram-m3-desktop-ux
     state: IN_PROGRESS
+  - task: M8-WEBMCP-001
+    branch: feat/tfi-webmcp-miniapp-runtime
+    state: TESTING
   - task: TFI-GOV-002
     state: IN_PROGRESS
 completed_stage_evidence:

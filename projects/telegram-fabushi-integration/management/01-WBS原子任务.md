@@ -2,7 +2,7 @@
 
 - **项目**：Fabushi Telegram 全量融合
 - **文档 ID**：MGMT-01
-- **版本**：v1.0
+- **版本**：v1.1
 - **状态**：BASELINE
 - **基线日期**：2026-08-22
 - **源计划**：`../source/完整telegram融合进fabushi.txt`
@@ -72,3 +72,11 @@
 - 独立 surface 已具备 GUI、`.mcp.json` stdio MCP、`.mahayana/plugin.json` CLI，以及 Rust `official-miniapps` provider 的 `resolve` / `download` 工具；portable boundary 由 dedicated CI 断言。
 - 并行 PR #2136 的 package/runtime 实现已作为 feeder 合入当前 branch；错误引入的重复 `FAB-P0009 / DBD` 与 `projects/douyin-batch-downloader-miniapp/**` 已移除，唯一 canonical project 仍为 `FAB-P0001 / TFI`。
 - 客观验证：package digest、MCP/CLI descriptors、无 `ai-backend/src/douyin_downloader.js`、Rust fmt/test/build、Marketplace search/install tests；全部 current-head checks + protected merge + exact-main packaged E2E/Release 完成前不得晋级 `COMPLETED`。
+
+## 2026-08-27 — M8-WEBMCP-001 全量 MiniApp WebMCP Runtime
+
+- `M8-WEBMCP-001` — `TESTING`: WebMCP 已设为所有 MiniApp 的统一前台 Agent 接口，Rust/Native 保持持久后台 Runtime；Tool Contract 为 WebMCP/MCP/slash/Bot/CLI 的单一事实源。
+- Hosted MiniApp 已实现 `tools/list → WebMCP → tools/call`；本地安装 MiniApp 在 Electron/Android/iOS 使用受控 WebMCP surface，并通过 Rust `runtime.call` 执行 active local runtime Tool。
+- Marketplace/BotFather 新增 WebMCP admission policy；桌面 Tool inventory 与当前 MiniApp contract 取交集，移动端 Hosted 页面不得调用本地 Native bridge，写/破坏性调用保持宿主原生确认。
+- 目标版本统一为 `1.0.4`；实现 head `b965db5686521fc3dcc4592a293950aa35e542a7` 的 CI、Electron、Mahayana fast、Messaging、移动 catch-all、治理、安全等工作流均已通过。
+- 任务仍未完成：PR #2169 必须以最终治理 head 再次全绿并经 protected `main` 合并；随后 exact-main packaged Electron/Android/iOS E2E、视觉/trace evidence 与 GitHub Release 1.0.4 仍是硬门禁。

@@ -45,4 +45,23 @@ final class FabushiUITests: XCTestCase {
         XCTAssertTrue(submit.exists)
         submit.tap()
     }
+
+    @MainActor
+    func testMiniAppOpensAndClosesDedicatedWebMcpSurface() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let open = app.buttons["open-global-dharma"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let surface = app.descendants(matching: .any)["miniapp-webmcp-surface"]
+        XCTAssertTrue(surface.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["miniapp-webmcp-webview"].exists)
+
+        let close = app.buttons["miniapp-webmcp-close"]
+        XCTAssertTrue(close.exists)
+        close.tap()
+        XCTAssertTrue(surface.waitForNonExistence(timeout: 10))
+    }
 }
