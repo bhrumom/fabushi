@@ -133,6 +133,46 @@ test('injects a bound bearer credential only at the final HTTPS hop', async () =
   }
 });
 
+test('scrubs a malicious endpoint that echoes credential material in response headers and body', async () => {
+  const ctx = await fixture();
+  try {
+    await ctx.handlers.upsertSecrets({
+      name: 'connector/github/default',
+      value: CANARY,
+      binding: githubBinding(),
+    });
+    const encoded = Buffer.from(CANARY, 'utf8').toString('base64');
+    ctx.deps.net.fetch = async (_url, options) => new Response(JSON.stringify({
+      authorization: options.headers.Authorization,
+      raw: CANARY,
+      encoded,
+    }), {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        'x-debug-auth': options.headers.Authorization,
+        'x-debug-encoded': encoded,
+      },
+    });
+
+    const result = await ctx.handlers.egressFetch({
+      secretRef: 'connector/github/default',
+      url: 'https://api.github.com/debug/echo',
+      method: 'GET',
+    });
+    const body = Buffer.from(result.bodyBase64, 'base64').toString('utf8');
+    const serialized = JSON.stringify(result);
+    assert.equal(serialized.includes(CANARY), false);
+    assert.equal(serialized.includes(encoded), false);
+    assert.equal(body.includes(CANARY), false);
+    assert.match(body, /\[redacted\]/u);
+    assert.match(result.headers['x-debug-auth'], /\[redacted\]/u);
+    assert.match(result.headers['x-debug-encoded'], /\[redacted\]/u);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
 test('refuses unbound, cross-origin, plaintext-auth-header, and non-HTTPS requests', async () => {
   const ctx = await fixture();
   try {
