@@ -383,7 +383,7 @@ interface HostClientProps {
   onAuthStateChange?: (state: AuthState) => void;
 }
 
-export default function HostClient({ onAuthStateChange }: HostClientProps = {}) {
+export default function HostClient({ onAuthStateChange }: HostClientProps) {
   const screenshotMode = new URLSearchParams(window.location.search).get("screenshot");
   const screenshotHasMiniApp = screenshotMode === "miniapp";
   const screenshotComputerOpen = ["computer", "running", "miniapp"].includes(screenshotMode ?? "");
