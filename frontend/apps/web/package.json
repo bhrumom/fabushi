@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "echo 'Skipping typecheck due to React 19 migration' && exit 0",
-    "typecheck:host": "tsc -p tsconfig.host.json --noEmit"
+    "typecheck:host": "tsc -p tsconfig.host.json --noEmit",
+    "test:ai-discovery": "node scripts/check-ai-discovery.mjs"
   },
   "dependencies": {
     "@fabushi/api-client": "workspace:*",
