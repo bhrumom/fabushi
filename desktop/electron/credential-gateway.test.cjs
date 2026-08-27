@@ -17,6 +17,7 @@ const CANARY = 'fabushi-secret-canary-9f2e1a';
 async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fabushi-credential-gateway-'));
   const calls = [];
+  const approvalCalls = [];
   const safeStorage = {
     isEncryptionAvailable: () => true,
     encryptString: (value) => Buffer.from(`sealed:${Buffer.from(value, 'utf8').toString('base64')}`, 'utf8'),
@@ -38,11 +39,17 @@ async function fixture() {
       });
     },
   };
+  const dialog = {
+    showMessageBox: async (options) => {
+      approvalCalls.push(options);
+      return { response: 1 };
+    },
+  };
   const app = { getPath: (name) => {
     assert.equal(name, 'userData');
     return root;
   } };
-  const deps = { app, safeStorage, net };
+  const deps = { app, safeStorage, net, dialog };
   const originalCalls = [];
   const originalFactory = () => ({
     egressFetch: async (params) => {
@@ -56,6 +63,7 @@ async function fixture() {
     deps,
     handlers,
     calls,
+    approvalCalls,
     originalCalls,
     cleanup: () => fs.rm(root, { recursive: true, force: true }),
   };
@@ -121,6 +129,7 @@ test('injects a bound bearer credential only at the final HTTPS hop', async () =
       headers: { Accept: 'application/json' },
     });
     assert.equal(ctx.calls.length, 1);
+    assert.equal(ctx.approvalCalls.length, 0);
     assert.equal(ctx.calls[0].url, 'https://api.github.com/repos/bhrumom/fabushi');
     assert.equal(ctx.calls[0].options.redirect, 'manual');
     assert.equal(ctx.calls[0].options.headers.Authorization, `Bearer ${CANARY}`);
@@ -211,6 +220,37 @@ test('scrubs credential material from remote status text and network failures', 
   }
 });
 
+test('trusted main process approval is mandatory for credentialed writes', async () => {
+  const ctx = await fixture();
+  try {
+    await ctx.handlers.upsertSecrets({
+      name: 'connector/github/default',
+      value: CANARY,
+      binding: githubBinding(),
+    });
+    ctx.deps.dialog.showMessageBox = async (options) => {
+      ctx.approvalCalls.push(options);
+      return { response: 0 };
+    };
+    await assert.rejects(
+      () => ctx.handlers.egressFetch({
+        secretRef: 'connector/github/default',
+        url: 'https://api.github.com/repos/bhrumom/fabushi/issues',
+        method: 'POST',
+        body: '{}',
+        headers: { 'content-type': 'application/json' },
+      }),
+      /not approved/u,
+    );
+    assert.equal(ctx.approvalCalls.length, 1);
+    assert.equal(ctx.approvalCalls[0].message.includes(CANARY), false);
+    assert.equal(ctx.approvalCalls[0].detail.includes(CANARY), false);
+    assert.equal(ctx.calls.length, 0);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
 test('refuses unbound, cross-origin, plaintext-auth-header, and non-HTTPS requests', async () => {
   const ctx = await fixture();
   try {
@@ -256,7 +296,7 @@ test('legacy egress requests without secretRef still use the existing managed eg
   }
 });
 
-test('direct credentialFetch also requires a stored target binding', async () => {
+test('direct credentialFetch also requires a stored target binding and main-process approval', async () => {
   const ctx = await fixture();
   try {
     await ctx.handlers.upsertSecrets({
@@ -274,6 +314,7 @@ test('direct credentialFetch also requires a stored target binding', async () =>
       body: '{}',
       headers: { 'content-type': 'application/json' },
     });
+    assert.equal(ctx.approvalCalls.length, 1);
     assert.equal(ctx.calls[0].options.headers['X-API-Key'], CANARY);
   } finally {
     await ctx.cleanup();
