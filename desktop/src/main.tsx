@@ -4,6 +4,7 @@ import { installDesktopAccountSessionSync } from './account-session-sync';
 import { installBotIdentityAliases } from './agent-identity-aliases';
 import { installDurableAgentState, restoreDurableAgentState } from './durable-agent-state';
 import DesktopShellV2 from './messaging-shell-v2';
+import MahayanaAgentInlineReport from './mahayana-agent-inline-report';
 import MahayanaAgentWorkbench from './mahayana-agent-workbench';
 import { installMahayanaAgentTranscriptSemantics } from './mahayana-agent-transcript-semantics';
 import { installSelfHostedMahayanaInvocationBridge } from './selfhosted-mahayana-invocation-bridge';
@@ -29,6 +30,7 @@ async function bootstrapDesktop(rootElement: HTMLDivElement): Promise<void> {
     <StrictMode>
       <DesktopShellV2 />
       <MahayanaAgentWorkbench />
+      <MahayanaAgentInlineReport />
     </StrictMode>,
   );
 
