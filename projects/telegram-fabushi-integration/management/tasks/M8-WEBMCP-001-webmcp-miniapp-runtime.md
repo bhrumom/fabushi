@@ -2,7 +2,7 @@
 
 - **Project**: FAB-P0001 / TFI
 - **Stage**: M8 Mini Apps
-- **Status**: IN_PROGRESS
+- **Status**: TESTING / IN_PROGRESS
 - **Branch**: `feat/tfi-webmcp-miniapp-runtime`
 - **PR**: #2169
 - **Target version**: 1.0.4
@@ -34,36 +34,57 @@
 ## 已完成实现
 
 - `frontend/packages/mcp-app-sdk/src/webmcp.ts`: WebMCP standard adapter、native feature detection、fallback registry、native discovery/call。
-- `frontend/packages/mcp-app-sdk/test/webmcp.test.ts`: fallback/native lifecycle/native execute/MCP projection contract tests。
+- `frontend/packages/mcp-app-sdk/test/webmcp.test.ts`: fallback/native lifecycle/native execute/MCP projection contract tests；主 CI 的 `MCP plugin contracts` 实际执行这些测试。
 - Hosted MiniApp `WebMcpMiniAppAdapter`: `tools/list -> WebMCP -> tools/call` 自动投影，所有 `/miniapps/[id]` 页面统一挂载。
 - Marketplace/BotFather WebMCP admission policy + tests：新 MiniApp 必须有可调用 Tool Contract 才能进入完整发布链。
 - Desktop installed MiniApp host：本地 HTML 自动注入 WebMCP；随机 nonce；Tool inventory 与当前 MiniApp Contract 取交集；写操作审批；本地调用进入 Rust `runtime.call`。
 - Rust `mahayana-app-host`: 新增 `runtime.call`，要求 runtime Active、参数为 object、Tool 已注册，随后调用既有 `DeepSeekJsHost::call_tool_json`。
-- Android：Compose 主壳保留；MiniApp WebMCP surface 本地优先、Hosted 兜底；Tool Contract 驱动；Native approval；调用 Rust `runtime.call`。
-- iOS：SwiftUI 主壳保留；WKWebView MiniApp surface 本地优先、Hosted 兜底；Tool Contract 驱动；Native approval；调用 Rust `runtime.call`。
+- Android：Compose 主壳保留；MiniApp WebMCP surface 本地优先、Hosted 兜底；Tool Contract 驱动；Native approval；调用 Rust `runtime.call`；Hosted document 不能使用本地 Native bridge。
+- iOS：SwiftUI 主壳保留；WKWebView MiniApp surface 本地优先、Hosted 兜底；Tool Contract 驱动；Native approval；调用 Rust `runtime.call`；Hosted origin script message 被拒绝。
+- Desktop E2E 已直接断言 installed 全球法布施 WebMCP registry 可发现 `status/start/stop/send`，并在完整应用重启后继续恢复；Android instrumentation 与 iOS UI journey 已覆盖 WebMCP surface 打开/关闭控制。
 - 版本基线已提升到 1.0.4，build/version code 2；desktop/mobile/iOS metadata 已对齐。
-- 原始需求、ADR、证据索引已持久化。
+- 原始需求、ADR、WBS、验收、状态、变更日志、证据索引已持久化。
 
-## 当前进行中
+## 实现 head 验收绿点
 
-- 最新 PR head required CI / desktop / native mobile / Mahayana checks 正在重新验证。
-- 收紧 Hosted fallback 与 local Native bridge 的来源隔离。
-- 补充 MiniApp WebMCP E2E 与项目 WBS/acceptance/status/changelog。
-- required checks 全绿后转 Ready，进入 protected-main/merge-queue。
-- merge 后执行 exact-main packaged desktop/mobile E2E 与 1.0.4 Release。
+实现 head `b965db5686521fc3dcc4592a293950aa35e542a7` 的 observed GitHub Actions 全部 SUCCESS：
+
+- CI `33037215956`；
+- Electron desktop quality gate `33037215849`；
+- Mahayana fast checks `33037215841`；
+- Messaging Product Gate `33037215905`；
+- Native mobile catch-all `33037216132`；
+- Mahayana Vendor Isolation `33037215878`；
+- GBF security closure `33037215815`；
+- Developer Fiat Commerce `33037215869`；
+- Project portfolio governance `33037215819`；
+- Douyin Batch Downloader MiniApp `33037215821`；
+- Explicit automerge `33037215965`。
+
+该绿点验证了实现，但最终治理同步会生成新的 PR head，因此 required checks 必须针对最终 head 再通过一次才允许转 Ready/merge。
 
 ## 已发现并修复的预检问题
 
 - 版本漂移：架构门曾报告 `canonical=1.0.4 desktop=1.0.4 mobile=1.0.3`；已将 `mobile/package.json` 对齐 1.0.4。
 - Rust 格式：`cargo fmt --check` 要求 `PluginState` import 换行；已按 rustfmt 精确修复。
 - Rust Host 全文件更新过程中曾意外把 `MAHAYANA_DOCKER_BIN` 写成 `DOCKER_PATH`；通过精确 PR patch 审计发现并恢复，最终 Rust diff 仅保留 `runtime.call` 相关改动。
+- Electron TypeScript 曾因重复声明 `window.mahayana` 与 canonical `MahayanaElectronBridge` 冲突；已删除重复声明并复用仓库唯一桥类型，后续 Electron gate SUCCESS。
+
+## 当前进行中
+
+- 最终项目治理同步已完成到 WBS/acceptance/status/changelog/PROJECT/task/evidence；以最新 PR head 为准重新执行 required checks。
+- final head 全绿后把 PR #2169 从 Draft 转 Ready，并通过 protected `main` / merge queue，不绕过保护。
+- merge 后从 canonical `main` 回读代码、版本和项目记录。
+- 对 accepted exact-main SHA 执行 packaged Electron/Android/iOS simulated-user E2E；保留截图、全程视频、trace/report/xcresult/log 等规定证据。
+- 所有 required exact-main delivery gates 全绿后创建严格递增的 1.0.4 tag/Release，并验证桌面 updater metadata 与移动端产物来自同一 accepted main lineage。
 
 ## 完成定义
 
-只有以下全部成立才把本任务从 `IN_PROGRESS` 改为 `COMPLETED`：
+只有以下全部成立才把本任务从 `TESTING / IN_PROGRESS` 改为 `COMPLETED / RELEASED`：
 
-1. latest head required checks 全绿；
+1. latest final-governance head required checks 全绿；
 2. PR #2169 合入 protected `main`；
-3. 从 canonical `main` 回读实现与版本；
+3. 从 canonical `main` 回读实现、版本和项目记录；
 4. exact-main Electron/Android/iOS required packaged E2E 与证据 bundle 全绿；
-5. GitHub Release 1.0.4 指向验收后的 main SHA，包含 updater-compatible desktop assets 与移动端构建资产。
+5. GitHub Release 1.0.4 指向验收后的 main SHA，包含 updater-compatible desktop assets 与移动端构建资产；
+6. Release/packaged evidence 回写到项目记录，并由 docs-only follow-up protected PR 合入 `main` 后才最终关账。
