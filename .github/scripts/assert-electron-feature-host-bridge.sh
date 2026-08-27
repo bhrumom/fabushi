@@ -91,11 +91,11 @@ grep -Fq "ipcMain.handle('fabushi:open-system-settings'" "$main" || { echo "syst
 grep -Fq 'openSystemSettings(pane)' "$preload" || { echo "system settings preload bridge missing" >&2; exit 1; }
 grep -Fq 'windowFocused()' "$preload" || { echo "window focus preload bridge missing" >&2; exit 1; }
 
-if grep -Fq "import HostClient from '../../frontend/apps/web/src/app/host/host-client'" "$desktop_renderer" && grep -Fq '<HostClient />' "$desktop_renderer"; then
+if grep -Fq "import HostClient from '../../frontend/apps/web/src/app/host/host-client'" "$desktop_renderer" && grep -Eq '<HostClient([[:space:]][^>]*)? */>' "$desktop_renderer"; then
   :
 elif test -n "$desktop_shell" && test -f "$desktop_shell" \
   && grep -Fq "import HostClient from '../../frontend/apps/web/src/app/host/host-client'" "$desktop_shell" \
-  && grep -Fq '<HostClient />' "$desktop_shell"; then
+  && grep -Eq '<HostClient([[:space:]][^>]*)? */>' "$desktop_shell"; then
   :
 else
   echo "Canonical Electron renderer does not reuse and render the shared HostClient directly or through the approved Messenger shell" >&2
