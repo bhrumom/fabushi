@@ -60,7 +60,10 @@ final class FabushiUITests: XCTestCase {
         openMarketplace(in: app)
 
         let open = app.buttons["open-global-dharma"]
-        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        XCTAssertTrue(
+            scrollToElement(open, in: app),
+            "Expected global-dharma WebMCP open button after scrolling Marketplace"
+        )
         open.tap()
 
         let surface = app.descendants(matching: .any)["miniapp-webmcp-surface"]
@@ -81,5 +84,21 @@ final class FabushiUITests: XCTestCase {
         let marketplace = app.buttons["marketplace-entry"]
         XCTAssertTrue(marketplace.waitForExistence(timeout: 5))
         marketplace.tap()
+    }
+
+    @MainActor
+    private func scrollToElement(_ element: XCUIElement, in app: XCUIApplication, maxSwipes: Int = 8) -> Bool {
+        if element.exists {
+            return true
+        }
+
+        for _ in 0..<maxSwipes {
+            app.swipeUp()
+            if element.waitForExistence(timeout: 1) {
+                return true
+            }
+        }
+
+        return element.exists
     }
 }
