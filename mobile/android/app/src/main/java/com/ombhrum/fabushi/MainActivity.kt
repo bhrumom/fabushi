@@ -32,7 +32,12 @@ class MainActivity : ComponentActivity() {
                 }
                 val active = openedMiniApp
                 if (active != null) {
-                    MiniAppWebMcpSurface(plugin = active, onClose = { openedMiniApp = null })
+                    MiniAppWebMcpSurface(
+                        plugin = active,
+                        loadLocalHtml = model::loadLocalMiniAppHtml,
+                        callRuntimeToolJson = model::callRuntimeToolJson,
+                        onClose = { openedMiniApp = null },
+                    )
                 } else {
                     FabushiScreen(
                         state = state,
