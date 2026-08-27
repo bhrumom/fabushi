@@ -105,6 +105,7 @@ import {
   type BotMarkShape,
   type BotMarkState,
 } from "./bot-mark";
+import { marketplaceApps as marketplaceCatalog } from "../../lib/marketplace";
 import { GroupAvatarStack, GroupChatPanel, GroupEditor } from "./group-chat-panel";
 import { AgentWorkflowPanel } from "./agent-workflow-panel";
 
@@ -137,57 +138,12 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-const marketplaceApps = [
-  {
-    id: "global-dharma",
-    title: "全球法布施",
-    description: "管理法布施任务、日志与部署状态",
-    glyph: "法",
-    tone: "violet",
-  },
-  {
-    id: "faliu-flashcards",
-    title: "法流记忆卡",
-    description: "创建经文牌组并安排复习",
-    glyph: "记",
-    tone: "blue",
-  },
-  {
-    id: "platform-publish",
-    title: "平台发布",
-    description: "创建草稿并发布到内容平台",
-    glyph: "发",
-    tone: "orange",
-  },
-  {
-    id: "hermes-installer",
-    title: "Hermes 安装器",
-    description: "安装、启动并检查本地服务",
-    glyph: "H",
-    tone: "green",
-  },
-  {
-    id: "bot-father",
-    title: "Bot Father",
-    description: "创建和管理自动化机器人",
-    glyph: "B",
-    tone: "pink",
-  },
-  {
-    id: "mahayana-assistant",
-    title: "大乘助手",
-    description: "使用 Mahayana Runtime 完成复杂任务",
-    glyph: "乘",
-    tone: "cyan",
-  },
-  {
-    id: "chatgpt-auto-confirm",
-    title: "自动确认",
-    description: "管理长任务授权与执行队列",
-    glyph: "✓",
-    tone: "yellow",
-  },
-] as const;
+const marketplaceApps = marketplaceCatalog.map((app) => ({
+  ...app,
+  title: app.name,
+  description: app.subtitle,
+  glyph: app.icon,
+}));
 
 type FeatureStates = Record<
   MahayanaHostFeatureId,
@@ -4096,6 +4052,10 @@ export default function HostClient() {
                         {installed ? <span className={styles.connectedDot} /> : null}
                       </div>
                       <p>{app.description}</p>
+                      <div className={styles.marketMeta}>
+                        <span>{app.developer}</span>
+                        <a href={`/apps/${app.slug}`}>详情 / 内容</a>
+                      </div>
                     </div>
                     <button
                       data-testid={app.id === defaultMiniAppId ? "install-miniapp" : `install-${app.id}`}
