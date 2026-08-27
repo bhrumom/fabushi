@@ -10,6 +10,7 @@ const MAX_ORIGINS = 24;
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+const READ_LIKE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const FORBIDDEN_CALLER_HEADERS = new Set([
   'authorization',
   'proxy-authorization',
@@ -225,6 +226,26 @@ function redactBuffer(value, tokens) {
   return output;
 }
 
+async function requireCredentialWriteApproval(deps, { secretRef, method, origin }) {
+  if (READ_LIKE_METHODS.has(method)) return;
+  if (!deps.dialog?.showMessageBox) {
+    throw new Error('Credential write approval UI is unavailable.');
+  }
+  const result = await deps.dialog.showMessageBox({
+    type: 'warning',
+    title: '允许凭据请求？',
+    message: `允许使用 ${secretRef} 执行 ${method} 请求？`,
+    detail: `目标：${origin}\n\n密钥不会显示给模型或页面，但这个请求可能修改远端数据。`,
+    buttons: ['取消', '允许本次'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  if (result?.response !== 1) {
+    throw new Error('Credential write request was not approved by the user.');
+  }
+}
+
 async function credentialFetch(deps, params) {
   const { app, safeStorage, net } = deps;
   if (!net?.fetch) throw new Error('Electron network service is unavailable.');
@@ -252,6 +273,7 @@ async function credentialFetch(deps, params) {
   if (!ALLOWED_METHODS.has(method)) throw new Error('Credential request method is not allowed.');
   const body = encodedBody(params);
   if ((method === 'GET' || method === 'HEAD') && body?.length) throw new Error(`${method} credential requests cannot contain a body.`);
+  await requireCredentialWriteApproval(deps, { secretRef, method, origin: requestOrigin });
   const secret = decryptSecret(safeStorage, item);
   const redactionTokens = credentialRedactionTokens(binding.injection, secret);
   const headers = injectCredential(sanitizeCallerHeaders(params.headers), binding.injection, secret);
