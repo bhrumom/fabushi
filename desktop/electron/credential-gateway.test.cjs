@@ -1,0 +1,203 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const test = require('node:test');
+
+const {
+  credentialFetch,
+  normalizeBinding,
+  wrapNativeCapabilityHandlers,
+} = require('./credential-gateway.cjs');
+
+const CANARY = 'fabushi-secret-canary-9f2e1a';
+
+async function fixture() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fabushi-credential-gateway-'));
+  const calls = [];
+  const safeStorage = {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => Buffer.from(`sealed:${Buffer.from(value, 'utf8').toString('base64')}`, 'utf8'),
+    decryptString: (bytes) => {
+      const stored = Buffer.from(bytes).toString('utf8');
+      assert.match(stored, /^sealed:/);
+      return Buffer.from(stored.slice('sealed:'.length), 'base64').toString('utf8');
+    },
+  };
+  const net = {
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'set-cookie': 'should-not-cross-boundary=1',
+        },
+      });
+    },
+  };
+  const app = { getPath: (name) => {
+    assert.equal(name, 'userData');
+    return root;
+  } };
+  const deps = { app, safeStorage, net };
+  const originalCalls = [];
+  const originalFactory = () => ({
+    egressFetch: async (params) => {
+      originalCalls.push(params);
+      return { legacy: true };
+    },
+  });
+  const handlers = wrapNativeCapabilityHandlers(originalFactory)(deps);
+  return {
+    root,
+    deps,
+    handlers,
+    calls,
+    originalCalls,
+    cleanup: () => fs.rm(root, { recursive: true, force: true }),
+  };
+}
+
+function githubBinding() {
+  return {
+    label: 'GitHub production',
+    allowedOrigins: ['https://api.github.com'],
+    injection: { type: 'bearer' },
+  };
+}
+
+test('normalizes credential bindings to exact HTTPS origins', () => {
+  assert.deepEqual(normalizeBinding({
+    label: ' Example ',
+    origins: ['https://api.example.com/v1/path', 'https://api.example.com'],
+    injection: { type: 'header', headerName: 'X-API-Key', prefix: 'Key ' },
+  }), {
+    version: 1,
+    label: 'Example',
+    allowedOrigins: ['https://api.example.com'],
+    injection: { type: 'header', headerName: 'X-API-Key', prefix: 'Key ' },
+  });
+  assert.throws(() => normalizeBinding({ origin: 'http://api.example.com' }), /HTTPS/u);
+});
+
+test('stores ciphertext only and never exposes plaintext through list or reveal', async () => {
+  const ctx = await fixture();
+  try {
+    const listed = await ctx.handlers.upsertSecrets({
+      name: 'connector/github/default',
+      value: CANARY,
+      binding: githubBinding(),
+    });
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].name, 'connector/github/default');
+    assert.equal(listed[0].configured, true);
+    assert.equal(listed[0].revealable, false);
+    assert.equal(JSON.stringify(listed).includes(CANARY), false);
+
+    const vaultText = await fs.readFile(path.join(ctx.root, 'secure', 'secrets.json'), 'utf8');
+    assert.equal(vaultText.includes(CANARY), false);
+    assert.match(vaultText, /ciphertext/u);
+    await assert.rejects(() => ctx.handlers.revealSecret({ name: 'connector/github/default' }), /non-revealable/u);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test('injects a bound bearer credential only at the final HTTPS hop', async () => {
+  const ctx = await fixture();
+  try {
+    await ctx.handlers.upsertSecrets({
+      name: 'connector/github/default',
+      value: CANARY,
+      binding: githubBinding(),
+    });
+    const result = await ctx.handlers.egressFetch({
+      secretRef: 'connector/github/default',
+      url: 'https://api.github.com/repos/bhrumom/fabushi',
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    assert.equal(ctx.calls.length, 1);
+    assert.equal(ctx.calls[0].url, 'https://api.github.com/repos/bhrumom/fabushi');
+    assert.equal(ctx.calls[0].options.redirect, 'manual');
+    assert.equal(ctx.calls[0].options.headers.Authorization, `Bearer ${CANARY}`);
+    assert.equal(ctx.calls[0].options.headers.Accept, 'application/json');
+    assert.equal(JSON.stringify(result).includes(CANARY), false);
+    assert.equal(result.credential.secretRef, 'connector/github/default');
+    assert.equal(result.headers['set-cookie'], undefined);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test('refuses unbound, cross-origin, plaintext-auth-header, and non-HTTPS requests', async () => {
+  const ctx = await fixture();
+  try {
+    await ctx.handlers.upsertSecrets({
+      name: 'connector/github/default',
+      value: CANARY,
+      binding: githubBinding(),
+    });
+    await ctx.handlers.upsertSecrets({ name: 'legacy/unbound', value: CANARY });
+
+    await assert.rejects(() => ctx.handlers.egressFetch({
+      secretRef: 'connector/github/default',
+      url: 'https://example.com/',
+    }), /not authorized/u);
+    await assert.rejects(() => ctx.handlers.egressFetch({
+      secretRef: 'legacy/unbound',
+      url: 'https://api.github.com/',
+    }), /no target binding/u);
+    await assert.rejects(() => ctx.handlers.egressFetch({
+      secretRef: 'connector/github/default',
+      url: 'http://api.github.com/',
+    }), /require HTTPS/u);
+    await assert.rejects(() => ctx.handlers.egressFetch({
+      secretRef: 'connector/github/default',
+      url: 'https://api.github.com/',
+      headers: { Authorization: 'Bearer caller-controlled' },
+    }), /cannot provide Authorization/u);
+    assert.equal(ctx.calls.length, 0);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test('legacy egress requests without secretRef still use the existing managed egress path', async () => {
+  const ctx = await fixture();
+  try {
+    const result = await ctx.handlers.egressFetch({ url: 'https://example.com', method: 'GET' });
+    assert.deepEqual(result, { legacy: true });
+    assert.equal(ctx.originalCalls.length, 1);
+    assert.equal(ctx.calls.length, 0);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test('direct credentialFetch also requires a stored target binding', async () => {
+  const ctx = await fixture();
+  try {
+    await ctx.handlers.upsertSecrets({
+      name: 'connector/custom/header',
+      value: CANARY,
+      binding: {
+        allowedOrigins: ['https://api.example.com'],
+        injection: { type: 'header', headerName: 'X-API-Key' },
+      },
+    });
+    await credentialFetch(ctx.deps, {
+      secretRef: 'connector/custom/header',
+      url: 'https://api.example.com/v1/check',
+      method: 'POST',
+      body: '{}',
+      headers: { 'content-type': 'application/json' },
+    });
+    assert.equal(ctx.calls[0].options.headers['X-API-Key'], CANARY);
+  } finally {
+    await ctx.cleanup();
+  }
+});
