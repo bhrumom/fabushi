@@ -26,6 +26,10 @@ export type MarketplacePluginSummary = {
   releaseStatus?: string;
   releaseManifest?: Record<string, unknown>;
   source?: Record<string, unknown>;
+  bot?: Record<string, unknown>;
+  commands?: unknown[];
+  surfaces?: unknown[];
+  installMode?: string;
 };
 
 export type MarketplaceBrowseResult = {
