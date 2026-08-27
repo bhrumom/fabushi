@@ -44,12 +44,19 @@ private const val LOCAL_WEB_MCP_ORIGIN = "miniapp.local.fabushi.invalid"
 private class MiniAppNativeWebMcpBridge(
     private val plugin: MarketplacePlugin,
     private val context: android.content.Context,
+    private val localDocumentActive: () -> Boolean,
     private val callRuntimeToolJson: (pluginId: String, name: String, argumentsJson: String) -> String,
 ) {
     private val tools = plugin.tools.associateBy { it.name }
 
     @JavascriptInterface
     fun callTool(name: String, argumentsJson: String): String {
+        if (!localDocumentActive()) {
+            return JSONObject()
+                .put("ok", false)
+                .put("error", "Native WebMCP bridge is available only to the local MiniApp document")
+                .toString()
+        }
         val tool = tools[name]
             ?: return JSONObject().put("ok", false).put("error", "Tool is not in this MiniApp contract").toString()
         if (tool.approval != "none" && !requestNativeApproval(tool)) {
@@ -160,6 +167,7 @@ fun MiniAppWebMcpSurface(
     var status by remember(plugin.pluginId) { mutableStateOf("正在解析本地 WebMCP…") }
     var localHtml by remember(plugin.pluginId) { mutableStateOf<String?>(null) }
     var sourceResolved by remember(plugin.pluginId) { mutableStateOf(false) }
+    val localDocumentActive = remember(plugin.pluginId) { AtomicBoolean(false) }
     val encodedId = URLEncoder.encode(plugin.pluginId, StandardCharsets.UTF_8.toString())
     val hostedUrl = "https://fabushi.ombhrum.com/miniapps/$encodedId/"
 
@@ -191,7 +199,12 @@ fun MiniAppWebMcpSurface(
                 settings.javaScriptCanOpenWindowsAutomatically = false
                 settings.setSupportMultipleWindows(false)
                 addJavascriptInterface(
-                    MiniAppNativeWebMcpBridge(plugin, context, callRuntimeToolJson),
+                    MiniAppNativeWebMcpBridge(
+                        plugin = plugin,
+                        context = context,
+                        localDocumentActive = localDocumentActive::get,
+                        callRuntimeToolJson = callRuntimeToolJson,
+                    ),
                     "FabushiWebMcpNative",
                 )
                 webViewClient = object : WebViewClient() {
@@ -201,6 +214,7 @@ fun MiniAppWebMcpSurface(
                     }
 
                     override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                        localDocumentActive.set(url?.startsWith("https://$LOCAL_WEB_MCP_ORIGIN/") == true)
                         status = "正在加载 WebMCP…"
                     }
 
@@ -232,6 +246,7 @@ fun MiniAppWebMcpSurface(
                 if (view.tag == desiredTag) return@AndroidView
                 view.tag = desiredTag
                 if (local != null) {
+                    localDocumentActive.set(true)
                     val baseUrl = "https://$LOCAL_WEB_MCP_ORIGIN/miniapps/$encodedId/"
                     view.loadDataWithBaseURL(
                         baseUrl,
@@ -241,6 +256,7 @@ fun MiniAppWebMcpSurface(
                         null,
                     )
                 } else {
+                    localDocumentActive.set(false)
                     view.loadUrl(hostedUrl)
                 }
             },
@@ -249,6 +265,7 @@ fun MiniAppWebMcpSurface(
 
         DisposableEffect(webView) {
             onDispose {
+                localDocumentActive.set(false)
                 webView.stopLoading()
                 webView.removeJavascriptInterface("FabushiWebMcpNative")
                 webView.loadUrl("about:blank")
