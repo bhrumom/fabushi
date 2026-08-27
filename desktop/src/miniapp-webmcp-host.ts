@@ -5,6 +5,7 @@ import { readAccountMiniApps } from './account-sync-client';
 const protocol = 'fabushi.miniapp.webmcp.v1';
 const installMarker = Symbol.for('fabushi.desktop.miniapp-webmcp-host.v1');
 const pendingToolCalls = new Set<string>();
+const validBridgeNonces = new Map<string, string>();
 
 type ToolDescriptor = {
   name: string;
@@ -18,7 +19,6 @@ type PluginUiDocument = { pluginId: string; html: string };
 
 type MahayanaBridge = {
   invoke<T>(method: string, params?: Record<string, unknown>): Promise<T>;
-  subscribe?(listener: (event: any) => void): () => void;
 };
 
 declare global {
@@ -34,7 +34,7 @@ function safePluginId(value: unknown): string {
 
 function normalizeRuntimeTool(value: unknown): ToolDescriptor | null {
   if (typeof value === 'string' && value.trim()) {
-    return { name: value.trim(), inputSchema: { type: 'object', properties: {} } };
+    return { name: value.trim(), description: value.trim(), inputSchema: { type: 'object', properties: {} } };
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const row = value as Record<string, unknown>;
@@ -42,7 +42,7 @@ function normalizeRuntimeTool(value: unknown): ToolDescriptor | null {
   if (!name) return null;
   return {
     name,
-    description: typeof row.description === 'string' ? row.description : undefined,
+    description: typeof row.description === 'string' && row.description.trim() ? row.description : name,
     inputSchema: row.inputSchema && typeof row.inputSchema === 'object' && !Array.isArray(row.inputSchema)
       ? row.inputSchema as Record<string, unknown>
       : { type: 'object', properties: {} },
@@ -71,13 +71,17 @@ async function allowedTools(pluginId: string): Promise<ToolDescriptor[]> {
     if (tool) commandByTool.set(tool, command);
   }
 
-  if (runtimeRows.length > 0) {
-    return runtimeRows.map((tool) => {
+  // runtime.tools is a host-wide inventory. Never expose another MiniApp's tool
+  // through this document: intersect it with this MiniApp's signed/approved
+  // Tool Contract before projecting it into WebMCP.
+  const scopedRuntimeRows = runtimeRows.filter((tool) => commandByTool.has(tool.name));
+  if (scopedRuntimeRows.length > 0) {
+    return scopedRuntimeRows.map((tool) => {
       const command = commandByTool.get(tool.name);
       const approval = String(command?.approval ?? 'none');
       return {
         ...tool,
-        description: tool.description || (typeof command?.description === 'string' ? command.description : undefined),
+        description: tool.description || (typeof command?.description === 'string' ? command.description : tool.name),
         approval,
         annotations: tool.annotations ?? {
           readOnlyHint: approval === 'none',
@@ -92,7 +96,7 @@ async function allowedTools(pluginId: string): Promise<ToolDescriptor[]> {
     const approval = String(command.approval ?? 'none');
     return {
       name,
-      description: typeof command.description === 'string' ? command.description : undefined,
+      description: typeof command.description === 'string' && command.description.trim() ? command.description : name,
       inputSchema: { type: 'object', properties: {} },
       approval,
       annotations: {
@@ -104,75 +108,66 @@ async function allowedTools(pluginId: string): Promise<ToolDescriptor[]> {
   });
 }
 
-async function callHostMcpTool(pluginId: string, tool: ToolDescriptor, args: Record<string, unknown>): Promise<unknown> {
+async function callLocalRuntimeTool(
+  pluginId: string,
+  tool: ToolDescriptor,
+  args: Record<string, unknown>,
+): Promise<unknown> {
   const bridge = window.mahayana;
-  if (!bridge?.invoke || !bridge.subscribe) throw new Error('Mahayana Host event bridge is unavailable');
+  if (!bridge?.invoke) throw new Error('Mahayana Host bridge is unavailable');
   const key = `${pluginId}:${tool.name}`;
   if (pendingToolCalls.has(key)) throw new Error(`Tool ${tool.name} already has a pending call`);
   pendingToolCalls.add(key);
 
-  const approval = tool.approval ?? (tool.annotations?.readOnlyHint === true ? 'none' : 'required');
-  if (approval !== 'none') {
-    const warning = approval === 'destructive'
-      ? '该操作可能产生破坏性修改。'
-      : '该操作会修改小程序或后台状态。';
-    if (!window.confirm(`允许 ${pluginId} 调用 ${tool.name}？\n\n${warning}`)) {
-      pendingToolCalls.delete(key);
-      throw new Error('用户取消了 WebMCP Tool 调用');
+  try {
+    const approval = tool.approval ?? (tool.annotations?.readOnlyHint === true ? 'none' : 'required');
+    if (approval !== 'none') {
+      const warning = approval === 'destructive'
+        ? '该操作可能产生破坏性修改。'
+        : '该操作会修改小程序或后台状态。';
+      if (!window.confirm(`允许 ${pluginId} 调用 ${tool.name}？\n\n${warning}`)) {
+        throw new Error('用户取消了 WebMCP Tool 调用');
+      }
     }
+
+    return await bridge.invoke('runtime.call', {
+      pluginId,
+      name: tool.name,
+      arguments: args,
+    });
+  } finally {
+    pendingToolCalls.delete(key);
   }
-
-  return new Promise((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const cleanup = bridge.subscribe?.((event: any) => {
-      if (event?.type !== 'mcp.toolResult' || event?.server !== pluginId || event?.tool !== tool.name) return;
-      if (timer) clearTimeout(timer);
-      cleanup?.();
-      pendingToolCalls.delete(key);
-      resolve(event.result);
-    });
-    timer = setTimeout(() => {
-      cleanup?.();
-      pendingToolCalls.delete(key);
-      reject(new Error(`Timed out waiting for ${pluginId}:${tool.name}`));
-    }, 30_000);
-
-    void bridge.invoke('feature.execute', {
-      command: {
-        type: 'mcp.toolCall',
-        requestId: `webmcp-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        server: pluginId,
-        tool: tool.name,
-        arguments: args,
-      },
-    }).catch((error) => {
-      if (timer) clearTimeout(timer);
-      cleanup?.();
-      pendingToolCalls.delete(key);
-      reject(error);
-    });
-  });
 }
 
-function webMcpBootstrap(pluginId: string): string {
-  const encodedPluginId = JSON.stringify(pluginId);
+function webMcpBootstrap(pluginId: string, nonce: string): string {
   return `<script>(function(){
     const protocol=${JSON.stringify(protocol)};
-    const pluginId=${encodedPluginId};
-    const pending=new Map(); let sequence=0; const localTools=new Map();
-    function request(action,payload){return new Promise((resolve,reject)=>{const requestId='webmcp-'+Date.now()+'-'+(++sequence);pending.set(requestId,{resolve,reject});window.parent.postMessage({protocol,pluginId,requestId,action,...(payload||{})},'*');});}
+    const pluginId=${JSON.stringify(pluginId)};
+    const nonce=${JSON.stringify(nonce)};
+    const pending=new Map(); let sequence=0; const localTools=new Map(); const controllers=[];
+    function request(action,payload){return new Promise((resolve,reject)=>{const requestId='webmcp-'+Date.now()+'-'+(++sequence);pending.set(requestId,{resolve,reject});window.parent.postMessage({protocol,pluginId,nonce,requestId,action,...(payload||{})},'*');});}
     function publicTool(tool){const copy={...tool};delete copy.execute;return copy;}
-    function register(tool){localTools.set(tool.name,tool);if(document.modelContext&&typeof document.modelContext.registerTool==='function'){document.modelContext.registerTool(tool);}}
+    function register(item){
+      const tool={name:item.name,description:item.description||item.name,inputSchema:item.inputSchema||{type:'object',properties:{}},annotations:{readOnlyHint:item.annotations?.readOnlyHint===true},execute:(input)=>request('call',{tool:item.name,input:input||{}})};
+      localTools.set(tool.name,tool);
+      if(document.modelContext&&typeof document.modelContext.registerTool==='function'){
+        const controller=new AbortController(); controllers.push(controller);
+        Promise.resolve(document.modelContext.registerTool(tool,{signal:controller.signal})).catch(()=>{});
+      }
+    }
     Object.defineProperty(window,'__fabushiWebMcp',{configurable:true,value:{version:1,list:()=>Array.from(localTools.values()).map(publicTool),call:async(name,input={})=>{const tool=localTools.get(name);if(!tool)throw new Error('Unknown WebMCP tool: '+name);return tool.execute(input);}}});
-    window.addEventListener('message',(event)=>{const data=event.data||{};if(data.protocol!==protocol||data.pluginId!==pluginId||!data.requestId||!pending.has(data.requestId))return;const task=pending.get(data.requestId);pending.delete(data.requestId);if(data.ok)task.resolve(data.data);else task.reject(new Error(data.error||'WebMCP host request failed'));});
-    async function boot(){const tools=await request('list');for(const item of (tools||[])){register({name:item.name,description:item.description,inputSchema:item.inputSchema||{type:'object',properties:{}},annotations:item.annotations||{},execute:(input)=>request('call',{tool:item.name,input:input||{}})});}window.dispatchEvent(new CustomEvent('fabushi:webmcp-ready',{detail:{pluginId,tools:(tools||[]).map(t=>t.name)}}));}
-    if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>void boot());else void boot();
+    window.addEventListener('message',(event)=>{const data=event.data||{};if(data.protocol!==protocol||data.pluginId!==pluginId||data.nonce!==nonce||!data.requestId||!pending.has(data.requestId))return;const task=pending.get(data.requestId);pending.delete(data.requestId);if(data.ok)task.resolve(data.data);else task.reject(new Error(data.error||'WebMCP host request failed'));});
+    async function boot(){const tools=await request('list');for(const item of (tools||[]))register(item);window.dispatchEvent(new CustomEvent('fabushi:webmcp-ready',{detail:{pluginId,tools:(tools||[]).map(t=>t.name)}}));}
+    function dispose(){for(const controller of controllers)controller.abort();controllers.length=0;window.parent.postMessage({protocol,pluginId,nonce,requestId:'dispose-'+Date.now(),action:'dispose'},'*');}
+    window.addEventListener('pagehide',dispose,{once:true});
+    if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>void boot(),{once:true});else void boot();
   })();</script>`;
 }
 
-function injectWebMcp(html: string, pluginId: string): string {
+function injectWebMcp(html: string, pluginId: string, nonce: string): string {
   if (html.includes('fabushi.miniapp.webmcp.v1')) return html;
-  const bootstrap = webMcpBootstrap(pluginId);
+  const bootstrap = webMcpBootstrap(pluginId, nonce);
   return html.includes('</head>') ? html.replace('</head>', `${bootstrap}</head>`) : `${bootstrap}${html}`;
 }
 
@@ -187,21 +182,26 @@ export function installDesktopMiniAppWebMcpHost(): void {
   const originalPluginUiDocument = prototype.pluginUiDocument;
   prototype.pluginUiDocument = async function pluginUiDocumentWithWebMcp(pluginId: string) {
     const document = await originalPluginUiDocument.call(this, pluginId);
-    return { ...document, html: injectWebMcp(document.html, pluginId) };
+    const nonce = crypto.randomUUID();
+    validBridgeNonces.set(nonce, pluginId);
+    return { ...document, html: injectWebMcp(document.html, pluginId, nonce) };
   };
 
   window.addEventListener('message', (event) => {
     const data = event.data as Record<string, unknown> | null;
     if (!data || data.protocol !== protocol || !data.requestId) return;
     const pluginId = safePluginId(data.pluginId);
+    const nonce = String(data.nonce ?? '');
     const requestId = String(data.requestId);
     const source = event.source;
-    if (!pluginId || !source || typeof (source as WindowProxy).postMessage !== 'function') return;
+    if (!pluginId || !nonce || validBridgeNonces.get(nonce) !== pluginId) return;
+    if (!source || typeof (source as WindowProxy).postMessage !== 'function') return;
 
     const respond = (ok: boolean, payload: unknown) => {
       (source as WindowProxy).postMessage({
         protocol,
         pluginId,
+        nonce,
         requestId,
         ok,
         ...(ok ? { data: payload } : { error: payload instanceof Error ? payload.message : String(payload) }),
@@ -210,9 +210,16 @@ export function installDesktopMiniAppWebMcpHost(): void {
 
     void (async () => {
       try {
+        if (data.action === 'dispose') {
+          validBridgeNonces.delete(nonce);
+          return;
+        }
         const tools = await allowedTools(pluginId);
         if (data.action === 'list') {
-          respond(true, tools.map(({ approval: _approval, ...tool }) => tool));
+          respond(true, tools.map(({ approval: _approval, annotations, ...tool }) => ({
+            ...tool,
+            annotations: { readOnlyHint: annotations?.readOnlyHint === true },
+          })));
           return;
         }
         if (data.action === 'call') {
@@ -222,7 +229,7 @@ export function installDesktopMiniAppWebMcpHost(): void {
           const input = data.input && typeof data.input === 'object' && !Array.isArray(data.input)
             ? data.input as Record<string, unknown>
             : {};
-          respond(true, await callHostMcpTool(pluginId, tool, input));
+          respond(true, await callLocalRuntimeTool(pluginId, tool, input));
           return;
         }
         throw new Error(`Unsupported WebMCP action ${String(data.action)}`);
