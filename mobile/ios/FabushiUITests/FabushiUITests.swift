@@ -68,7 +68,9 @@ final class FabushiUITests: XCTestCase {
 
         let surface = app.descendants(matching: .any)["miniapp-webmcp-surface"]
         XCTAssertTrue(surface.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.descendants(matching: .any)["miniapp-webmcp-webview"].exists)
+
+        let webView = app.webViews["miniapp-webmcp-webview"]
+        XCTAssertTrue(webView.waitForExistence(timeout: 10), "Expected the dedicated WebMCP WKWebView")
 
         let close = app.buttons["miniapp-webmcp-close"]
         XCTAssertTrue(close.exists)

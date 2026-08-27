@@ -36,7 +36,6 @@ struct MiniAppWebMcpSurface: View {
                 sourceResolved: sourceResolved,
                 status: $status
             )
-            .accessibilityIdentifier("miniapp-webmcp-webview")
         }
         .accessibilityIdentifier("miniapp-webmcp-surface")
         .task(id: plugin.pluginId) {
@@ -65,6 +64,7 @@ private struct MiniAppWebView: UIViewRepresentable {
         configuration.userContentController.add(context.coordinator, name: webMcpMessageHandler)
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.accessibilityIdentifier = "miniapp-webmcp-webview"
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = false
         webView.isInspectable = false
