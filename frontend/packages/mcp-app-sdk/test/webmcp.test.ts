@@ -32,24 +32,16 @@ test("fallback registry exposes registered tools and executes them", async () =>
   assert.equal(supportsNativeWebMcp(), false);
   assert.deepEqual(listRegisteredWebMcpTools().map((tool) => tool.name), ["status"]);
   assert.deepEqual(await (globalThis as any).window.__fabushiWebMcp.call("status", {}), { running: true });
-  assert.deepEqual(await callRegisteredWebMcpTool("status"), { running: true });
 
   dispose();
   assert.deepEqual(listRegisteredWebMcpTools(), []);
   clearGlobals();
 });
 
-test("native modelContext registration receives tool metadata and lifecycle signal", async () => {
+test("native modelContext registration receives lifecycle signal as register options", async () => {
   const registered: any[] = [];
-  const unregistered: string[] = [];
-  const executed: Array<{ name: string; input: Record<string, unknown> }> = [];
   installGlobals({
-    registerTool(tool: unknown) { registered.push(tool); },
-    unregisterTool(name: string) { unregistered.push(name); },
-    executeTool(name: string, input: Record<string, unknown>) {
-      executed.push({ name, input });
-      return { native: true };
-    },
+    async registerTool(tool: unknown, options: unknown) { registered.push({ tool, options }); },
   });
 
   const dispose = registerWebMcpTool({
@@ -63,17 +55,38 @@ test("native modelContext registration receives tool metadata and lifecycle sign
     execute: () => ({ ok: true }),
   });
 
+  await Promise.resolve();
   assert.equal(supportsNativeWebMcp(), true);
   assert.equal(registered.length, 1);
-  assert.equal(registered[0].name, "set_speed");
-  assert.ok(registered[0].signal instanceof AbortSignal);
-  assert.equal(registered[0].signal.aborted, false);
-  assert.deepEqual(await callRegisteredWebMcpTool("set_speed", { speed: 60 }), { native: true });
-  assert.deepEqual(executed, [{ name: "set_speed", input: { speed: 60 } }]);
+  assert.equal(registered[0].tool.name, "set_speed");
+  assert.ok(registered[0].options.signal instanceof AbortSignal);
+  assert.equal(registered[0].options.signal.aborted, false);
 
   dispose();
-  assert.equal(registered[0].signal.aborted, true);
-  assert.deepEqual(unregistered, ["set_speed"]);
+  assert.equal(registered[0].options.signal.aborted, true);
+  clearGlobals();
+});
+
+test("native discovery executes a RegisteredTool and parses its stringified result", async () => {
+  const registeredTool = {
+    name: "status",
+    description: "Read status",
+    inputSchema: "{}",
+  };
+  installGlobals({
+    registerTool() {},
+    async getTools() { return [registeredTool]; },
+    async executeTool(tool: unknown, input: unknown) {
+      assert.equal(tool, registeredTool);
+      assert.deepEqual(input, { detail: true });
+      return JSON.stringify({ running: true });
+    },
+  });
+
+  assert.deepEqual(
+    await callRegisteredWebMcpTool("status", { detail: true }),
+    { running: true },
+  );
   clearGlobals();
 });
 
