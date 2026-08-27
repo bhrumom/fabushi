@@ -55,6 +55,13 @@ export default function CredentialVault() {
     setBasicUsername('');
   }, []);
 
+  const closeVault = useCallback(() => {
+    // A user may cancel before submitting. Clear the password state on every
+    // close path so typed plaintext does not linger invisibly in the React tree.
+    setValue('');
+    setOpen(false);
+  }, []);
+
   const editEntry = useCallback((entry: CredentialSummary) => {
     const injection = entry.binding?.injection;
     setEditing(entry.name);
@@ -72,6 +79,7 @@ export default function CredentialVault() {
     const handler = (event: Event) => {
       const detail = event instanceof CustomEvent ? event.detail as CredentialVaultOpenDetail | undefined : undefined;
       setOpen(true);
+      setValue('');
       setError(null);
       if (detail?.secretRef) {
         setEditing(detail.secretRef);
@@ -93,11 +101,11 @@ export default function CredentialVault() {
   useEffect(() => {
     if (!open) return;
     const handler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) setOpen(false);
+      if (event.key === 'Escape' && !busy) closeVault();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [busy, open]);
+  }, [busy, closeVault, open]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -160,14 +168,14 @@ export default function CredentialVault() {
   }
 
   return <>
-    <button className="credential-vault-launcher" type="button" data-testid="credential-vault-button" onClick={() => { setOpen(true); void refresh(); }}>
+    <button className="credential-vault-launcher" type="button" data-testid="credential-vault-button" onClick={() => { setOpen(true); setValue(''); void refresh(); }}>
       <KeyRound size={16} /><span>凭据</span>
     </button>
-    {open ? <div className="credential-vault-backdrop" onMouseDown={() => { if (!busy) setOpen(false); }}>
+    {open ? <div className="credential-vault-backdrop" onMouseDown={() => { if (!busy) closeVault(); }}>
       <section className="credential-vault-dialog" role="dialog" aria-modal="true" aria-labelledby="credential-vault-title" onMouseDown={(event) => event.stopPropagation()}>
         <header className="credential-vault-header">
           <div className="credential-vault-brand"><span><LockKeyhole size={20} /></span><div><small>MAHAYANA CREDENTIAL VAULT</small><h2 id="credential-vault-title">凭据保险库</h2><p>保存后，模型、聊天和工具只使用 SecretRef；真实密钥只在受信任宿主向已绑定 HTTPS 目标发送请求的最后一跳注入。</p></div></div>
-          <button type="button" aria-label="关闭" onClick={() => setOpen(false)} disabled={busy}><X size={18} /></button>
+          <button type="button" aria-label="关闭" onClick={closeVault} disabled={busy}><X size={18} /></button>
         </header>
         <div className="credential-vault-trust"><span><ShieldCheck size={15} /> OS 加密</span><span>保存后不可读回</span><span>域名绑定</span><span>禁止凭据重定向</span></div>
         {error ? <p className="credential-vault-error" role="alert">{error}</p> : null}
