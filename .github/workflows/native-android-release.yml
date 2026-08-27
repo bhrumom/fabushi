@@ -1,0 +1,254 @@
+name: Native Android GitHub release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+  checks: read
+
+concurrency:
+  group: native-android-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish signed Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Require manual dispatch from main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != 'refs/heads/main' ]; then
+            echo 'Android GitHub releases may only be dispatched from main.' >&2
+            exit 1
+          fi
+
+      - name: Checkout immutable main source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Verify canonical architecture
+        run: bash .github/scripts/assert-native-electron-canonical.sh
+
+      - id: source
+        name: Require all Android release gates on this main SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+          RELEASE_TARGET: android
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          bash .github/scripts/require-release-source-gates.sh
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - id: release
+        name: Resolve Android release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_name="$(jq -r '.version' app-version.json)"
+          if ! [[ "$version_name" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$ ]]; then
+            echo "Invalid app-version.json version: '$version_name'." >&2
+            exit 1
+          fi
+
+          # Keep Android versionCode monotonic without requiring a manual input.
+          # YYDDDHHMM remains below Android's 2.1B ceiling through 2099.
+          version_code="$(date -u +%y%j%H%M)"
+          if ! [[ "$version_code" =~ ^[1-9][0-9]*$ ]] || [ "$version_code" -gt 2100000000 ]; then
+            echo "Resolved Android versionCode is invalid: $version_code" >&2
+            exit 1
+          fi
+
+          release_tag="android-v${version_name}-${version_code}"
+          apk_name="fabushi-android-${version_name}-${version_code}.apk"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$apk_name" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Native Android GitHub release'
+            echo
+            echo "- Source: ${{ steps.source.outputs.short_sha }}"
+            echo "- Version: $version_name ($version_code)"
+            echo "- Tag: $release_tag"
+            echo '- Required gates: CI result + Native mobile result'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Refuse to replace an existing immutable release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='${{ steps.release.outputs.release_tag }}'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; refusing to mutate it." >&2
+            exit 1
+          fi
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '14742923'
+          packages: 'platform-tools'
+
+      - name: Install Android 17 SDK and NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          available_packages="$(sdkmanager --list --channel=3)"
+          platform_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/platforms;android-(37([.]0)?|CinnamonBun)/ && !found {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found=1}')"
+          build_tools_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/build-tools;37[.]/ && !found {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found=1}')"
+          test -n "$platform_package" && test -n "$build_tools_package"
+          sdkmanager --channel=3 "$platform_package" "$build_tools_package" 'ndk;28.2.13676358'
+          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            installed_platform="$(find "$ANDROID_HOME/platforms" -maxdepth 1 -type d \( -name 'android-37*' -o -name 'android-CinnamonBun*' \) -print -quit)"
+            test -n "$installed_platform"
+            ln -s "$installed_platform" "$ANDROID_HOME/platforms/android-37"
+          fi
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Restore Android release Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: github-release-android-v1
+
+      - id: cargo-ndk-cache
+        name: Restore cargo-ndk
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: github-release-cargo-ndk-${{ runner.os }}-${{ runner.arch }}-v1
+
+      - name: Install cargo-ndk on cache miss
+        if: steps.cargo-ndk-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-ndk --locked
+
+      - name: Save cargo-ndk on cache miss
+        if: steps.cargo-ndk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: github-release-cargo-ndk-${{ runner.os }}-${{ runner.arch }}-v1
+
+      - name: Build native Rust JNI libraries
+        working-directory: third_party/mahayana/mahayana-rs
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: cargo ndk -t arm64-v8a -t x86_64 -o ../../../mobile/android/app/src/main/jniLibs build --release -p mahayana-app-host-mobile
+
+      - name: Install Android signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "$name is required for a GitHub release APK." >&2
+              exit 1
+            fi
+          done
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fabushi-release.jks"
+
+      - name: Restore Gradle dependency and build cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build signed GitHub self-updating APK
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/fabushi-release.jks
+        run: >-
+          ./gradlew --no-daemon --build-cache assembleGithubRelease
+          -PversionName=${{ steps.release.outputs.version_name }}
+          -PversionCode=${{ steps.release.outputs.version_code }}
+
+      - id: package
+        name: Verify, checksum and stage Android update package
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='mobile/android/app/build/outputs/apk/githubRelease/app-githubRelease.apk'
+          test -s "$apk"
+
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tail -n 1)"
+          test -x "$build_tools/aapt"
+          test -x "$build_tools/apksigner"
+          badging="$($build_tools/aapt dump badging "$apk")"
+          printf '%s\n' "$badging" | grep -F "package: name='com.ombhrum.fabushi'" >/dev/null
+          printf '%s\n' "$badging" | grep -F "versionCode='${{ steps.release.outputs.version_code }}'" >/dev/null
+          printf '%s\n' "$badging" | grep -F "versionName='${{ steps.release.outputs.version_name }}'" >/dev/null
+          "$build_tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/apksigner.txt"
+
+          out="$RUNNER_TEMP/android-github-release"
+          mkdir -p "$out"
+          apk_name='${{ steps.release.outputs.apk_name }}'
+          cp "$apk" "$out/$apk_name"
+          apk_sha256="$(sha256sum "$out/$apk_name" | awk '{print $1}')"
+          apk_size="$(stat -c '%s' "$out/$apk_name")"
+
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg tag '${{ steps.release.outputs.release_tag }}' \
+            --arg version '${{ steps.release.outputs.version_name }}' \
+            --argjson versionCode '${{ steps.release.outputs.version_code }}' \
+            --arg sourceSha '${{ steps.source.outputs.sha }}' \
+            --arg apk "$apk_name" \
+            --arg sha256 "$apk_sha256" \
+            --argjson size "$apk_size" \
+            '{schemaVersion:1,repository:$repository,tag:$tag,version:$version,versionCode:$versionCode,sourceSha:$sourceSha,apk:$apk,sha256:$sha256,size:$size}' \
+            > "$out/fabushi-android-update.json"
+
+          (cd "$out" && sha256sum "$apk_name" fabushi-android-update.json > SHA256SUMS.txt)
+          echo "out=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Preserve signed Android package as workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-android-github-${{ steps.release.outputs.version_name }}-${{ steps.release.outputs.version_code }}
+          path: ${{ steps.package.outputs.out }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6
+
+      - name: Publish immutable Android GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='${{ steps.release.outputs.release_tag }}'
+          out='${{ steps.package.outputs.out }}'
+          mapfile -d '' assets < <(find "$out" -type f -print0 | sort -z)
+          gh release create "$tag" "${assets[@]}" \
+            --target '${{ steps.source.outputs.sha }}' \
+            --title 'Fabushi Android ${{ steps.release.outputs.version_name }} (${{ steps.release.outputs.version_code }})' \
+            --notes 'Manual GitHub Android release from main after CI result and Native mobile result passed for the exact source SHA. The APK includes the GitHub self-update channel.' \
+            --latest=false
