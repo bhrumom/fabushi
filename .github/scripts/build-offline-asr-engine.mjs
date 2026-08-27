@@ -6,6 +6,20 @@ import { fileURLToPath } from 'node:url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../..');
+
+function installMacosCodesignRetryWrapper() {
+  if (process.platform !== 'darwin' || process.env.GITHUB_ACTIONS !== 'true') return;
+  const githubPath = process.env.GITHUB_PATH?.trim();
+  if (!githubPath) throw new Error('GITHUB_PATH is required to install the macOS codesign retry wrapper');
+  const wrapperDir = path.join(scriptDir, 'macos-codesign-wrapper');
+  const wrapper = path.join(wrapperDir, 'codesign');
+  if (!fs.existsSync(wrapper)) throw new Error(`macOS codesign retry wrapper is missing: ${wrapper}`);
+  fs.appendFileSync(githubPath, `${wrapperDir}\n`, 'utf8');
+  console.log(`Installed macOS secure-timestamp codesign wrapper: ${wrapper}`);
+}
+
+installMacosCodesignRetryWrapper();
+
 const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'desktop/electron/offline-asr-engine.json'), 'utf8'));
 const source = manifest.whisperCpp;
 if (!source?.repository || !/^[0-9a-f]{40}$/i.test(source.commit ?? '')) {
