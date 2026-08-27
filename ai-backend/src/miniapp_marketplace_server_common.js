@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import process from 'node:process';
 
 import { MiniAppMarketplaceError, renderMiniAppHomeDocument } from './miniapp_marketplace.js';
+import { registerMiniAppSkills } from './miniapp_skills.js';
 const MINIAPP_BOT_PROTOCOL = 'fabushi.miniapp.bot.v2';
 
 const APP_MIME = 'text/html;profile=mcp-app';
@@ -154,6 +155,6 @@ export function registerMiniAppResource(server, manifest) {
       contents: [{ uri, mimeType: APP_MIME, text: renderMiniAppHomeDocument(manifest) }],
     }),
   );
+  registerMiniAppSkills(server, manifest);
   return uri;
 }
-
