@@ -40,7 +40,7 @@ for marker in required_host:
 for marker in ['bot: manifest.bot', 'commands: release.commands']:
     if marker not in marketplace_catalog:
         raise SystemExit(f'product UI gate: marketplace no longer exposes canonical Mini App metadata: {marker}')
-for marker in ['recordValue(app.bot)', 'Array.isArray(app.commands)']:
+for marker in ['recordValue(app.bot)', 'Array.isArray(app.commands)', 'readAccountMiniApps()', 'accountMiniAppsAsMarketplaceSummaries']:
     if marker not in miniapp_projection:
         raise SystemExit(f'product UI gate: Messenger drops canonical Mini App metadata: {marker}')
 
