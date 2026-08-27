@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","label":"Linux","target":"linux","check_name":"Electron desktop result"}]' || '[{"os":"macos-15","label":"macOS","target":"mac","check_name":"Electron macOS"},{"os":"windows-latest","label":"Windows","target":"win","check_name":"Electron Windows"},{"os":"ubuntu-latest","label":"Linux","target":"linux","check_name":"Electron desktop result"}]') }}
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","label":"Linux","target":"linux","check_name":"Electron Linux"}]' || '[{"os":"macos-15","label":"macOS","target":"mac","check_name":"Electron macOS"},{"os":"windows-latest","label":"Windows","target":"win","check_name":"Electron Windows"},{"os":"ubuntu-latest","label":"Linux","target":"linux","check_name":"Electron Linux"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
     steps:
@@ -86,7 +86,7 @@ jobs:
       - name: Run Electron main-process contract tests
         if: matrix.target == 'linux'
         shell: bash
-        run: node --test desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs
+        run: node --test desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/test-auth-session.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs
 
       - name: Verify renderer TypeScript
         if: matrix.target == 'linux'
@@ -359,3 +359,20 @@ jobs:
           path: desktop/release/**
           if-no-files-found: error
           retention-days: 90
+
+  result:
+    name: Electron desktop result
+    if: always()
+    needs: platform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every Electron desktop matrix job
+        shell: bash
+        env:
+          PLATFORM_RESULT: ${{ needs.platform.result }}
+        run: |
+          if [ "$PLATFORM_RESULT" != "success" ]; then
+            echo "Electron desktop matrix result=$PLATFORM_RESULT" >&2
+            exit 1
+          fi
+          echo 'Every Electron desktop matrix job succeeded.'
