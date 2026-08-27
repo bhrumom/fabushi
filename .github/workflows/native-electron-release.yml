@@ -290,7 +290,7 @@ jobs:
 
       - name: Install cargo-ndk on cache miss
         if: matrix.kind == 'android' && steps.release-cargo-ndk.outputs.cache-hit != 'true'
-        run: cargo install cargo-ndk --locked
+        run: command -v cargo-ndk >/dev/null 2>&1 || cargo install cargo-ndk --locked
 
       - name: Save cargo-ndk on cache miss
         if: matrix.kind == 'android' && steps.release-cargo-ndk.outputs.cache-hit != 'true'
