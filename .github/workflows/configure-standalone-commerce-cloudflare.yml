@@ -1,0 +1,103 @@
+name: Configure standalone commerce Cloudflare DNS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/configure-standalone-commerce-cloudflare.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: configure-standalone-commerce-cloudflare
+  cancel-in-progress: true
+
+jobs:
+  dns:
+    runs-on: ubuntu-latest
+    environment:
+      name: cloudflare-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+      CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID || secrets.CF_ZONE_ID || vars.CLOUDFLARE_ZONE_ID || vars.CF_ZONE_ID }}
+      COMMERCE_TUNNEL_ID: ${{ vars.COMMERCE_TUNNEL_ID || '49dfdcc7-c097-420a-90c4-83b56c2b59f1' }}
+    steps:
+      - name: Upsert shop tunnel DNS records
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "Cloudflare API token is not configured." >&2
+            exit 1
+          fi
+
+          api_base="https://api.cloudflare.com/client/v4"
+          root_domain="ombhrum.com"
+          zone_id="${CLOUDFLARE_ZONE_ID:-}"
+          tunnel_target="${COMMERCE_TUNNEL_ID}.cfargotunnel.com"
+
+          cf_request() {
+            local method="$1"
+            local url="$2"
+            local body="${3:-}"
+            if [ -n "${body}" ]; then
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "${body}"
+            else
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json"
+            fi
+          }
+
+          assert_success() {
+            local response="$1"
+            local context="$2"
+            if [ "$(jq -r '.success // false' <<< "${response}")" != "true" ]; then
+              echo "Cloudflare request failed: ${context}" >&2
+              jq '{success,errors,messages}' <<< "${response}" >&2
+              exit 1
+            fi
+          }
+
+          if [ -z "${zone_id}" ]; then
+            response="$(cf_request GET "${api_base}/zones?name=${root_domain}&status=active")"
+            assert_success "${response}" "resolve zone"
+            zone_id="$(jq -r '.result[0].id // empty' <<< "${response}")"
+          fi
+          test -n "${zone_id}"
+
+          for hostname in shop.ombhrum.com shop-api.ombhrum.com; do
+            lookup="$(cf_request GET "${api_base}/zones/${zone_id}/dns_records?name=${hostname}")"
+            assert_success "${lookup}" "lookup ${hostname}"
+            record_id="$(jq -r '.result[0].id // empty' <<< "${lookup}")"
+            body="$(jq -n \
+              --arg type CNAME \
+              --arg name "${hostname}" \
+              --arg content "${tunnel_target}" \
+              '{type:$type,name:$name,content:$content,ttl:1,proxied:true}')"
+
+            if [ -n "${record_id}" ]; then
+              changed="$(cf_request PUT "${api_base}/zones/${zone_id}/dns_records/${record_id}" "${body}")"
+              assert_success "${changed}" "update ${hostname}"
+            else
+              changed="$(cf_request POST "${api_base}/zones/${zone_id}/dns_records" "${body}")"
+              assert_success "${changed}" "create ${hostname}"
+            fi
+
+            verify="$(cf_request GET "${api_base}/zones/${zone_id}/dns_records?name=${hostname}")"
+            assert_success "${verify}" "verify ${hostname}"
+            actual_type="$(jq -r '.result[0].type // empty' <<< "${verify}")"
+            actual_content="$(jq -r '.result[0].content // empty' <<< "${verify}")"
+            if [ "${actual_type}" != "CNAME" ] || [ "${actual_content}" != "${tunnel_target}" ]; then
+              echo "DNS verification failed for ${hostname}." >&2
+              exit 1
+            fi
+            echo "Verified ${hostname} -> ${tunnel_target} (proxied)."
+          done
