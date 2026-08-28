@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 
 const DESIGN_SCHEMA = 'fabushi-design-system/v1';
 const ARTIFACT_SCHEMA = 'mahayana-artifact/v1';
+const MAX_PREVIEW_BYTES = 2 * 1024 * 1024;
 const ALLOWED_ARTIFACT_KINDS = new Set(['miniapp','web','dashboard','document','deck','image','video','audio','data']);
 const PREVIEW_BY_KIND = Object.freeze({
   miniapp: 'miniapp-host', web: 'sandboxed-html', dashboard: 'sandboxed-html', document: 'document',
@@ -81,6 +82,7 @@ function createArtifactManifest(input = {}) {
   const kind = clean(input.kind, 40).toLowerCase();
   if (!ALLOWED_ARTIFACT_KINDS.has(kind)) throw new Error('Unsupported artifact kind.');
   const entrypoint = safeRelative(input.entrypoint || (kind === 'miniapp' || kind === 'web' || kind === 'dashboard' ? 'index.html' : 'artifact.json'));
+  const workspaceId = input.workspaceId ? safeRelative(input.workspaceId) : undefined;
   const exportsRequested = Array.isArray(input.exports) ? input.exports.map((item) => clean(item, 24).toLowerCase()).filter(Boolean) : [];
   const allowed = EXPORTERS[kind] || [];
   for (const format of exportsRequested) if (!allowed.includes(format)) throw new Error(`Exporter ${format} is not available for ${kind}.`);
@@ -90,6 +92,7 @@ function createArtifactManifest(input = {}) {
     name: clean(input.name, 240) || kind,
     kind,
     entrypoint,
+    ...(workspaceId ? { workspaceId } : {}),
     preview: { renderer: PREVIEW_BY_KIND[kind], sandboxed: ['miniapp','web','dashboard'].includes(kind) },
     exports: exportsRequested.length ? exportsRequested : allowed,
     designSystemId: clean(input.designSystemId, 120) || 'fabushi',
@@ -109,12 +112,37 @@ function previewPolicy(manifest) {
   };
 }
 
+function injectPreviewCsp(html) {
+  const csp = "default-src 'none'; img-src data: blob:; media-src data: blob:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'";
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`;
+  if (/<head(?:\s[^>]*)?>/i.test(html)) return html.replace(/<head(?:\s[^>]*)?>/i, (match) => `${match}${meta}`);
+  return `<!doctype html><html><head>${meta}</head><body>${html}</body></html>`;
+}
+
+async function previewDocument({ managedWorkspaceRoot, manifest }) {
+  const policy = previewPolicy(manifest);
+  if (!['sandboxed-html'].includes(policy.renderer)) {
+    return { ...policy, available: false, reason: policy.renderer === 'miniapp-host' ? 'MiniApps preview through the existing MiniApp host.' : 'This artifact uses a native/file renderer.' };
+  }
+  if (!manifest.workspaceId) throw new Error('Artifact preview requires a managed workspaceId.');
+  const workspaceId = safeRelative(manifest.workspaceId);
+  const workspace = ensureInside(managedWorkspaceRoot, path.join(managedWorkspaceRoot, workspaceId));
+  const realWorkspace = await fs.realpath(workspace);
+  const target = ensureInside(realWorkspace, path.join(realWorkspace, policy.entrypoint));
+  const stat = await fs.lstat(target);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Artifact entrypoint must be a regular file.');
+  if (stat.size > MAX_PREVIEW_BYTES) throw new Error('Artifact preview exceeds the size limit.');
+  const html = await fs.readFile(target, 'utf8');
+  return { ...policy, available: true, html: injectPreviewCsp(html), bytes: stat.size };
+}
+
 function createMiniAppHandoff(manifest, options = {}) {
   if (manifest?.kind !== 'miniapp' || manifest?.schemaVersion !== ARTIFACT_SCHEMA) throw new Error('MiniApp artifact required.');
   return {
     type: 'fabushi-miniapp-publish-handoff/v1',
     artifactId: manifest.id,
     entrypoint: manifest.entrypoint,
+    workspaceId: manifest.workspaceId || null,
     designSystemId: manifest.designSystemId,
     requestedVisibility: clean(options.visibility, 24) || 'private',
     requiresExistingMarketplacePipeline: true,
@@ -128,6 +156,7 @@ function wrapNativeCapabilityHandlers(baseFactory) {
     const base = baseFactory(deps);
     const resourcesRoot = process.resourcesPath || path.resolve(__dirname, '..', '..');
     const repoRoot = path.resolve(__dirname, '..', '..');
+    const managedWorkspaceRoot = path.join(deps.app.getPath('userData'), 'workspaces');
     const resolveBundled = (relative) => process.defaultApp
       ? path.join(repoRoot, relative)
       : path.join(resourcesRoot, relative);
@@ -147,7 +176,6 @@ function wrapNativeCapabilityHandlers(baseFactory) {
         const skillId = clean(params.skillId, 120) || 'fabushi-design';
         if (!/^[a-z0-9][a-z0-9-]*$/.test(skillId)) throw new Error('Invalid skill id.');
         const sourceRoot = resolveBundled(path.join('.agent', 'skills', skillId));
-        const managedWorkspaceRoot = path.join(deps.app.getPath('userData'), 'workspaces');
         const workspaceId = safeRelative(params.workspaceId || params.agentId || 'mahayana-assistant');
         const workspaceRoot = ensureInside(managedWorkspaceRoot, path.join(managedWorkspaceRoot, workspaceId));
         await fs.mkdir(workspaceRoot, { recursive: true });
@@ -155,6 +183,7 @@ function wrapNativeCapabilityHandlers(baseFactory) {
       },
       async createArtifactManifest(params = {}) { return createArtifactManifest(params); },
       async getArtifactPreviewPolicy(params = {}) { return previewPolicy(params.manifest); },
+      async getArtifactPreviewDocument(params = {}) { return previewDocument({ managedWorkspaceRoot, manifest: params.manifest }); },
       async listArtifactExporters(params = {}) {
         const kind = clean(params.kind, 40).toLowerCase();
         if (!ALLOWED_ARTIFACT_KINDS.has(kind)) throw new Error('Unsupported artifact kind.');
@@ -167,6 +196,6 @@ function wrapNativeCapabilityHandlers(baseFactory) {
 
 module.exports = {
   DESIGN_SCHEMA, ARTIFACT_SCHEMA, RUNTIME_PROFILES, EXPORTERS,
-  safeRelative, readDesignPackage, stageBundle, createArtifactManifest, previewPolicy, createMiniAppHandoff,
-  wrapNativeCapabilityHandlers,
+  safeRelative, readDesignPackage, stageBundle, createArtifactManifest, previewPolicy, previewDocument, injectPreviewCsp,
+  createMiniAppHandoff, wrapNativeCapabilityHandlers,
 };
