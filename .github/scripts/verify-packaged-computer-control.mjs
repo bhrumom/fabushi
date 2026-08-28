@@ -280,6 +280,23 @@ async function inspectPackage({ releaseRoot, platform, expectedTeam, allowUnsign
   };
 }
 
+function requestChildTermination(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null || child.killed) return;
+  child.kill();
+}
+
+async function terminateChild(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise((resolve) => {
+    const timer = setTimeout(resolve, 5_000);
+    child.once("close", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    requestChildTermination(child);
+  });
+}
+
 async function verifyMcpHandshake(packageState) {
   const privateHome = await mkdtemp(join(tmpdir(), "fabushi-packaged-computer-control-"));
   let child;
@@ -305,7 +322,7 @@ async function verifyMcpHandshake(packageState) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (child && !child.killed) child.kill();
+      requestChildTermination(child);
       if (error) rejectPromise(error);
       else resolvePromise(value);
     };
@@ -368,7 +385,7 @@ async function verifyMcpHandshake(packageState) {
     });
     return result;
   } finally {
-    if (child && !child.killed) child.kill();
+    await terminateChild(child);
     await rm(privateHome, { recursive: true, force: true }).catch(() => {});
   }
 }
