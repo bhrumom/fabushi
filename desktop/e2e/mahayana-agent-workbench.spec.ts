@@ -22,24 +22,32 @@ async function launchDesktopApp(appDataDir: string): Promise<ElectronApplication
 }
 
 async function completeBrowserLogin(page: Page): Promise<void> {
-  await page.waitForLoadState('domcontentloaded');
-  await expect.poll(async () => {
-    const testIds = ['onboarding-gate', 'login-gate', 'host-status', 'open-messenger', 'messenger-workspace'];
-    for (const testId of testIds) {
-      if (await page.getByTestId(testId).isVisible().catch(() => false)) return true;
-    }
-    return false;
-  }, { timeout: 15_000 }).toBe(true);
-
-  while (await page.getByTestId('onboarding-gate').isVisible().catch(() => false)) {
-    await page.getByTestId('onboarding-next').click();
-  }
+  const onboardingGate = page.getByTestId('onboarding-gate');
   const loginGate = page.getByTestId('login-gate');
-  if (await loginGate.isVisible().catch(() => false)) {
-    await page.getByTestId('browser-login-start').click();
-    await expect(loginGate).toBeHidden();
+  const workspace = page.getByTestId('messenger-workspace');
+
+  // Electron can expose its first BrowserWindow before the renderer mounts the
+  // onboarding/auth surface. Drive the visible auth state machine instead of
+  // treating a one-time isVisible() miss as proof that onboarding was skipped.
+  for (let phase = 0; phase < 12; phase += 1) {
+    await expect.poll(async () => {
+      return (await workspace.isVisible().catch(() => false))
+        || (await onboardingGate.isVisible().catch(() => false))
+        || (await loginGate.isVisible().catch(() => false));
+    }, { timeout: 15_000 }).toBe(true);
+
+    if (await workspace.isVisible().catch(() => false)) break;
+    if (await onboardingGate.isVisible().catch(() => false)) {
+      await page.getByTestId('onboarding-next').click();
+      continue;
+    }
+    if (await loginGate.isVisible().catch(() => false)) {
+      await page.getByTestId('browser-login-start').click();
+      await expect(loginGate).toBeHidden();
+    }
   }
-  await expect(page.getByTestId('messenger-workspace')).toBeVisible({ timeout: 15_000 });
+
+  await expect(workspace).toBeVisible({ timeout: 15_000 });
 }
 
 async function openMahayanaConversation(page: Page): Promise<void> {
