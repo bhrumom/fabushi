@@ -211,32 +211,17 @@ jobs:
           package_sha="$(sha256sum "$source_archive" | awk '{print $1}')"
           package_size="$(stat -c '%s' "$source_archive")"
 
-          # Reuse one stable, read-only Worker backed by the existing R2 bucket.
-          # The legacy development web Worker now protects /r2 with account auth,
-          # which cannot be used as a marketplace artifact URL because installers
-          # must be able to fetch the approved HTTPS object directly. This gateway
-          # exposes only run-scoped immutable plugin archives and never permits
-          # listing, writes, arbitrary keys, or authenticated application routes.
-          artifact_key="e2e/marketplace/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/plugin.tar.gz"
+          # Reuse the already-deployed development Worker. The artifact key
+          # is under its explicitly public `public/` prefix, so this E2E flow
+          # needs no per-run Worker and remains within the account's quota.
+          artifact_key="public/e2e/marketplace/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/plugin.tar.gz"
           npx --yes wrangler@4 r2 object put "bushi-dev/$artifact_key" \
             --file "$source_archive" --remote \
             2>&1 | tee "$RUNNER_TEMP/artifact-r2-put.log"
-          gateway_config="$RUNNER_TEMP/marketplace-artifact-wrangler.toml"
-          cat > "$gateway_config" <<EOF
-          name = "mahayana-marketplace-e2e-artifacts"
-          main = "$GITHUB_WORKSPACE/examples/mahayana-cloud-marketplace/marketplace-e2e-artifact-worker.mjs"
-          compatibility_date = "2026-08-28"
-          workers_dev = true
-
-          [[r2_buckets]]
-          binding = "ARTIFACTS"
-          bucket_name = "bushi-dev"
-          EOF
-          npx --yes wrangler@4 deploy --config "$gateway_config" \
-            2>&1 | tee "$RUNNER_TEMP/artifact-gateway-deploy.log"
-          gateway_url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$RUNNER_TEMP/artifact-gateway-deploy.log" | tail -n 1 | sed 's/[),;]$//')"
-          [ -n "$gateway_url" ] || { echo "Wrangler did not report the artifact gateway URL." >&2; exit 1; }
-          artifact_url="$gateway_url/$artifact_key"
+          encoded_key="$(jq -rn --arg value "$artifact_key" '$value|@uri')"
+          artifact_gateway="https://fabushi-flutter-web-dev.bhrumom.workers.dev/r2"
+          artifact_url="${artifact_gateway}?file=${encoded_key}"
+          printf 'reused_artifact_gateway=%s\n' "$artifact_gateway" > "$RUNNER_TEMP/artifact-gateway-deploy.log"
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 \
             "$artifact_url" > "$RUNNER_TEMP/served-plugin.tar.gz"
           test "$(sha256sum "$RUNNER_TEMP/served-plugin.tar.gz" | awk '{print $1}')" = "$package_sha"
