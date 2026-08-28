@@ -964,14 +964,11 @@ impl NativeEngine {
                         .ok_or_else(|| KernelError::Backend("web_fetch urls are required".into()))?
                         .iter()
                         .map(|value| {
-                            value
-                                .as_str()
-                                .map(str::to_owned)
-                                .ok_or_else(|| {
-                                    KernelError::Backend(
-                                        "web_fetch urls must contain only strings".into(),
-                                    )
-                                })
+                            value.as_str().map(str::to_owned).ok_or_else(|| {
+                                KernelError::Backend(
+                                    "web_fetch urls must contain only strings".into(),
+                                )
+                            })
                         })
                         .collect::<Result<Vec<_>, _>>()?;
                     let format = call
@@ -2258,9 +2255,10 @@ mod tests {
         )
         .expect("create engine without web");
         assert!(!without_web.capabilities().contains(Capability::WebSearch));
-        assert!(!tool_definitions(false, false)
-            .iter()
-            .any(|tool| matches!(tool.get("name").and_then(Value::as_str), Some("web_search" | "web_fetch"))));
+        assert!(!tool_definitions(false, false).iter().any(|tool| matches!(
+            tool.get("name").and_then(Value::as_str),
+            Some("web_search" | "web_fetch")
+        )));
 
         let with_web = NativeEngine::new_with_web_config(
             model,
@@ -2464,6 +2462,72 @@ mod tests {
                 .any(|event| matches!(event, KernelEvent::CheckpointCreated { .. }))
         );
         std::fs::remove_dir_all(workspace).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn network_policy_blocks_web_search_before_provider_request() {
+        let call = json!({
+            "output": [{
+                "type":"function_call",
+                "call_id":"call-web-denied",
+                "name":"web_search",
+                "arguments":"{\"query\":\"current topic\"}"
+            }]
+        });
+        let done = json!({
+            "output": [{"type":"message", "content":[{"type":"output_text", "text":"network denied"}]}]
+        });
+        let model = Arc::new(FakeModel {
+            outputs: Mutex::new(VecDeque::from([call, done])),
+        });
+        let engine = NativeEngine::new_with_web_config(
+            model,
+            NativeEngineConfig::embedded("model"),
+            Some(WebResearchConfig::for_test(
+                "http://127.0.0.1:9/search",
+                "http://127.0.0.1:9/fetch",
+                "MAHAYANA_WEB_POLICY_TEST_KEY",
+            )),
+        )
+        .expect("create web engine");
+        let session = engine
+            .open_session(OpenSessionRequest {
+                profile: mahayana_kernel::RuntimeProfile::MobileEmbedded,
+                workspace_root: None,
+                model: None,
+                metadata: Value::Null,
+            })
+            .await
+            .expect("open session");
+        let events = Arc::new(Events::default());
+        let mut policy = ExecutionPolicy::mobile_default();
+        policy.allow_network = false;
+        engine
+            .run(
+                RunRequest {
+                    session_id: session,
+                    operation_id: OperationId::new(),
+                    input: "search the web".into(),
+                    policy,
+                    required_capabilities: CapabilitySet::new([Capability::WebSearch]),
+                    metadata: Value::Null,
+                },
+                events.clone(),
+            )
+            .await
+            .expect("model recovers from denied search");
+        assert!(
+            events
+                .0
+                .lock()
+                .expect("events")
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    KernelEvent::ToolCompleted { tool, output, success: false, .. }
+                        if tool == "web_search" && output.to_string().contains("denied")
+                ))
+        );
     }
 
     #[tokio::test]
