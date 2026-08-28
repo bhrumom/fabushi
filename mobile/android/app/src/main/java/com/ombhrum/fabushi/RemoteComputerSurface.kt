@@ -221,7 +221,6 @@ fun RemoteComputerSurface(onClose: () -> Unit) {
     DisposableEffect(webView) {
         onDispose {
             webView.stopLoading()
-            webView.webViewClient = null
             webView.removeAllViews()
             webView.destroy()
         }

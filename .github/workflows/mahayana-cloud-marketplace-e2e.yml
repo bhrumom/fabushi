@@ -74,6 +74,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Test public marketplace artifact gateway contract
+        run: node --test examples/mahayana-cloud-marketplace/marketplace-e2e-artifact-worker.test.mjs
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -208,16 +211,32 @@ jobs:
           package_sha="$(sha256sum "$source_archive" | awk '{print $1}')"
           package_size="$(stat -c '%s' "$source_archive")"
 
-          # Reuse the existing development R2 bucket and development Worker
-          # proxy instead of allocating a new Worker for every E2E artifact.
-          # This keeps the test genuinely external/HTTPS without consuming the
-          # account's finite Worker-script quota.
+          # Reuse one stable, read-only Worker backed by the existing R2 bucket.
+          # The legacy development web Worker now protects /r2 with account auth,
+          # which cannot be used as a marketplace artifact URL because installers
+          # must be able to fetch the approved HTTPS object directly. This gateway
+          # exposes only run-scoped immutable plugin archives and never permits
+          # listing, writes, arbitrary keys, or authenticated application routes.
           artifact_key="e2e/marketplace/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/plugin.tar.gz"
           npx --yes wrangler@4 r2 object put "bushi-dev/$artifact_key" \
             --file "$source_archive" --remote \
             2>&1 | tee "$RUNNER_TEMP/artifact-r2-put.log"
-          encoded_key="$(jq -rn --arg value "$artifact_key" '$value|@uri')"
-          artifact_url="https://fabushi-flutter-web-dev.bhrumom.workers.dev/r2?file=$encoded_key"
+          gateway_config="$RUNNER_TEMP/marketplace-artifact-wrangler.toml"
+          cat > "$gateway_config" <<EOF
+          name = "mahayana-marketplace-e2e-artifacts"
+          main = "$GITHUB_WORKSPACE/examples/mahayana-cloud-marketplace/marketplace-e2e-artifact-worker.mjs"
+          compatibility_date = "2026-08-28"
+          workers_dev = true
+
+          [[r2_buckets]]
+          binding = "ARTIFACTS"
+          bucket_name = "bushi-dev"
+          EOF
+          npx --yes wrangler@4 deploy --config "$gateway_config" \
+            2>&1 | tee "$RUNNER_TEMP/artifact-gateway-deploy.log"
+          gateway_url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$RUNNER_TEMP/artifact-gateway-deploy.log" | tail -n 1 | sed 's/[),;]$//')"
+          [ -n "$gateway_url" ] || { echo "Wrangler did not report the artifact gateway URL." >&2; exit 1; }
+          artifact_url="$gateway_url/$artifact_key"
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 \
             "$artifact_url" > "$RUNNER_TEMP/served-plugin.tar.gz"
           test "$(sha256sum "$RUNNER_TEMP/served-plugin.tar.gz" | awk '{print $1}')" = "$package_sha"
@@ -557,6 +576,7 @@ jobs:
             ${{ runner.temp }}/platform-deploy.log
             ${{ runner.temp }}/platform-health.json
             ${{ runner.temp }}/artifact-r2-put.log
+            ${{ runner.temp }}/artifact-gateway-deploy.log
             ${{ runner.temp }}/source-plugin.tar.gz
             ${{ runner.temp }}/served-plugin.tar.gz
             ${{ runner.temp }}/publish.log

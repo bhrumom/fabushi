@@ -97,10 +97,15 @@ jobs:
         working-directory: chatgpt-vps-control
         run: npm ci --ignore-scripts --prefer-offline
 
+      - name: Install Playwright video diagnostics runtime
+        if: github.event_name != 'pull_request'
+        working-directory: desktop
+        run: npx playwright install ffmpeg
+
       - name: Run Electron main-process contract tests
         if: matrix.target == 'linux'
         shell: bash
-        run: node --test desktop/scripts/prepare-desktop-window-branding.test.mjs desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/test-auth-session.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs
+        run: node --test desktop/scripts/prepare-desktop-window-branding.test.mjs desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/test-auth-session.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs desktop/electron/main-lifecycle.test.cjs
 
       - name: Verify renderer TypeScript
         if: matrix.target == 'linux'
@@ -192,6 +197,7 @@ jobs:
         working-directory: desktop
         env:
           FABUSHI_FEATURE_HOST_MODE: test
+          FABUSHI_E2E: '1'
           MAHAYANA_APP_HOST_BIN: ${{ github.workspace }}/desktop/resources/bin/mahayana-app-host
         run: xvfb-run -a npm run test:e2e
 
@@ -376,6 +382,7 @@ jobs:
         working-directory: desktop
         env:
           FABUSHI_FEATURE_HOST_MODE: test
+          FABUSHI_E2E: '1'
         run: xvfb-run -a npm run test:e2e
 
       - name: Simulate the complete user journey in packaged macOS or Windows Electron
@@ -383,6 +390,7 @@ jobs:
         working-directory: desktop
         env:
           FABUSHI_FEATURE_HOST_MODE: test
+          FABUSHI_E2E: '1'
         run: npm run test:e2e
 
       - name: Upload packaged Electron user-journey diagnostics
