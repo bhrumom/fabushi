@@ -10,6 +10,7 @@ import { installMahayanaAgentInlineCompatibility } from './mahayana-agent-inline
 import MahayanaAgentInlineReport from './mahayana-agent-inline-report';
 import MahayanaAgentWorkbench from './mahayana-agent-workbench';
 import { installMahayanaAgentTranscriptSemantics } from './mahayana-agent-transcript-semantics';
+import { installMahayanaDesignSkillRouting } from './mahayana-design-skill-routing';
 import { installDesktopMiniAppWebMcpHost } from './miniapp-webmcp-host';
 import { installSelfHostedMahayanaInvocationBridge } from './selfhosted-mahayana-invocation-bridge';
 import './messenger-layout-regressions.css';
@@ -31,6 +32,7 @@ async function bootstrapDesktop(rootElement: HTMLDivElement): Promise<void> {
   installBotIdentityAliases();
   installDurableAgentState();
   installDesktopMiniAppWebMcpHost();
+  installMahayanaDesignSkillRouting();
 
   createRoot(rootElement).render(
     <StrictMode>
