@@ -579,7 +579,12 @@ export default function DesktopShellV2() {
   }, [authTransport]);
 
   const handleHostAuthStateChange = useCallback((state: AuthState) => {
-    if (state.loggedIn) setAuthenticated(true);
+    if (state.loggedIn) {
+      // A fresh login must not remain behind the durable projection lookup.
+      // The projection is optional startup data and can hydrate in the background.
+      setProjectionLookupComplete(true);
+      setAuthenticated(true);
+    }
   }, []);
 
   useEffect(() => {
