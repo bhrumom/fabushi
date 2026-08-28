@@ -375,6 +375,11 @@ jobs:
           if [ "$FABUSHI_PACKAGE_TARGET" = mac ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
             args+=(--expected-mac-team "$APPLE_TEAM_ID")
           fi
+          if [ "$FABUSHI_PACKAGE_TARGET" = mac ] && [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            # Manual full-matrix validation packages an unsigned outer app;
+            # the embedded helper signatures are still verified strictly.
+            args+=(--allow-unsigned-mac)
+          fi
           node .github/scripts/verify-packaged-computer-control.mjs "${args[@]}"
 
       - name: Simulate the complete user journey in packaged Linux Electron
