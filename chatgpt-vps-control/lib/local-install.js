@@ -23,13 +23,14 @@ export const nativeDir = join(appHome, "native");
 export const macAppDir = resolve(
   process.env.CHATGPT_COMPUTER_MAC_APP_DIR
     || (process.env.CHATGPT_COMPUTER_HOME
-      ? join(appHome, "Applications", "ChatGPT Computer Control.app")
-      : join(homedir(), "Applications", "ChatGPT Computer Control.app")),
+      ? join(appHome, "Applications", "Fabushi Computer Control.app")
+      : join(homedir(), "Applications", "Fabushi Computer Control.app")),
 );
-export const macHelperExecutable = join(macAppDir, "Contents", "MacOS", "ChatGPTComputerControl");
-export const macRequestServiceDir = join(macAppDir, "Contents", "XPCServices", "com.bhrum.computer-control.request-service.xpc");
-export const macRequestServiceExecutable = join(macRequestServiceDir, "Contents", "MacOS", "ChatGPTComputerRequestService");
-const macBundleIdentifier = "com.bhrum.computer-control";
+export const macHelperExecutable = join(macAppDir, "Contents", "MacOS", "FabushiComputerControl");
+export const macRequestServiceDir = join(macAppDir, "Contents", "XPCServices", "com.ombhrum.fabushi.computer-control.request-service.xpc");
+export const macRequestServiceExecutable = join(macRequestServiceDir, "Contents", "MacOS", "FabushiComputerRequestService");
+const macBundleIdentifier = "com.ombhrum.fabushi.computer-control";
+const macRequestServiceIdentifier = `${macBundleIdentifier}.request-service`;
 
 export async function installLocalRuntime() {
   return installPrivateRuntime({ sourceRoot: packageRoot, appHome });
@@ -125,9 +126,9 @@ async function ensureMacHelper(codesignIdentity = "", teamIdentifier = "") {
   await copyFile(requestServicePlistSource, join(requestServiceContentsDir, "Info.plist"));
   await writeFile(buildStamp, `${buildId}\n`, { encoding: "utf8", mode: 0o600 });
   if (!commandExists("codesign")) throw new Error("macOS code signing tool is unavailable.");
-  const serviceSignArgs = ["--force", "--sign", identity, "--identifier", "com.bhrum.computer-control.request-service"];
+  const serviceSignArgs = ["--force", "--sign", identity, "--identifier", macRequestServiceIdentifier];
   if (identity !== "-" && teamIdentifier) {
-    serviceSignArgs.push("--requirements", `=designated => anchor apple generic and identifier \"com.bhrum.computer-control.request-service\" and certificate leaf[subject.OU] = \"${teamIdentifier}\"`);
+    serviceSignArgs.push("--requirements", `=designated => anchor apple generic and identifier \"${macRequestServiceIdentifier}\" and certificate leaf[subject.OU] = \"${teamIdentifier}\"`);
   }
   if (identity !== "-") serviceSignArgs.push("--options", "runtime", "--timestamp");
   serviceSignArgs.push(macRequestServiceDir);
@@ -143,7 +144,7 @@ async function ensureMacHelper(codesignIdentity = "", teamIdentifier = "") {
   const serviceSignature = spawnSync("codesign", ["--verify", "--strict", macRequestServiceDir], { encoding: "utf8" });
   const serviceDetailsResult = spawnSync("codesign", ["-d", "--verbose=4", macRequestServiceDir], { encoding: "utf8" });
   const serviceDetails = `${serviceDetailsResult.stdout || ""}\n${serviceDetailsResult.stderr || ""}`;
-  if (serviceSignature.status !== 0 || serviceDetailsResult.status !== 0 || !serviceDetails.includes("Identifier=com.bhrum.computer-control.request-service")) {
+  if (serviceSignature.status !== 0 || serviceDetailsResult.status !== 0 || !serviceDetails.includes(`Identifier=${macRequestServiceIdentifier}`)) {
     throw new Error("The embedded macOS XPC service signature or identifier is invalid.");
   }
   if (identity !== "-") {
@@ -173,6 +174,16 @@ async function ensureWindowsHelper() {
   const target = join(nativeDir, "computer-helper.ps1");
   await copyFile(source, target);
   return target;
+}
+
+export async function stageFabushiNativeHelper({ codesignIdentity = "", teamIdentifier = "" } = {}) {
+  if (platform() === "darwin") {
+    return { platform: "darwin", helper: await ensureMacHelper(codesignIdentity, teamIdentifier), app: macAppDir };
+  }
+  if (platform() === "win32") {
+    return { platform: "win32", helper: await ensureWindowsHelper() };
+  }
+  return { platform: platform(), helper: null };
 }
 
 export function parseEnv(text) {

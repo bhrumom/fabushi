@@ -11,6 +11,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'chatgpt-vps-control/**'
       - 'desktop/**'
       - 'frontend/apps/web/src/app/host/**'
       - 'frontend/apps/web/src/lib/fabushi-runtime/**'
@@ -91,6 +92,9 @@ jobs:
             asr_changed=true
           fi
           if printf '%s\n' "$changed" | grep -Eq '^(desktop/package\.json|desktop/package-lock\.json)$'; then
+            full_required=true
+          fi
+          if printf '%s\n' "$changed" | grep -Eq '^chatgpt-vps-control/'; then
             full_required=true
           fi
           if printf '%s\n' "$changed" | grep -E '^desktop/resources/' | grep -Ev '^desktop/resources/asr/' >/dev/null; then

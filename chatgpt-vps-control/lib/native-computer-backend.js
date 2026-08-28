@@ -16,9 +16,9 @@ function helperPath() {
   if (platform() === "darwin") {
     const appDir = process.env.CHATGPT_COMPUTER_MAC_APP_DIR
       || (process.env.CHATGPT_COMPUTER_HOME
-        ? join(base, "Applications", "ChatGPT Computer Control.app")
-        : join(homedir(), "Applications", "ChatGPT Computer Control.app"));
-    return join(appDir, "Contents", "MacOS", "ChatGPTComputerControl");
+        ? join(base, "Applications", "Fabushi Computer Control.app")
+        : join(homedir(), "Applications", "Fabushi Computer Control.app"));
+    return join(appDir, "Contents", "MacOS", "FabushiComputerControl");
   }
   if (platform() === "win32") return join(base, "native", "computer-helper.ps1");
   return "";
