@@ -144,9 +144,14 @@ function wrapNativeCapabilityHandlers(baseFactory) {
       },
       async getDesignRuntimeProfiles() { return RUNTIME_PROFILES.map((item) => ({ ...item, bins: [...item.bins], capabilities: [...item.capabilities] })); },
       async stageDesignSkill(params = {}) {
-        const sourceRoot = resolveBundled(path.join('.agent', 'skills', safeRelative(params.skillId || 'fabushi-design')));
-        const workspaceRoot = ensureInside(path.join(deps.app.getPath('userData'), 'workspaces'), clean(params.workspaceRoot, 2000));
-        return stageBundle({ sourceRoot, workspaceRoot, bundleId: clean(params.skillId, 120) || 'fabushi-design' });
+        const skillId = clean(params.skillId, 120) || 'fabushi-design';
+        if (!/^[a-z0-9][a-z0-9-]*$/.test(skillId)) throw new Error('Invalid skill id.');
+        const sourceRoot = resolveBundled(path.join('.agent', 'skills', skillId));
+        const managedWorkspaceRoot = path.join(deps.app.getPath('userData'), 'workspaces');
+        const workspaceId = safeRelative(params.workspaceId || params.agentId || 'mahayana-assistant');
+        const workspaceRoot = ensureInside(managedWorkspaceRoot, path.join(managedWorkspaceRoot, workspaceId));
+        await fs.mkdir(workspaceRoot, { recursive: true });
+        return stageBundle({ sourceRoot, workspaceRoot, bundleId: skillId });
       },
       async createArtifactManifest(params = {}) { return createArtifactManifest(params); },
       async getArtifactPreviewPolicy(params = {}) { return previewPolicy(params.manifest); },
