@@ -137,7 +137,9 @@ async function hashRuntimeEntry(hash, root, relativePath, counter) {
     return;
   }
   if (!metadata.isFile()) return;
-  // Permission bits are normalized by staging, packaging, and platform filesystems.\n  // Verify the runtime contents and layout, not transport-specific file modes.\n  hash.update(`F\0${relativePath}\0`);
+  // Permission bits are normalized by staging, packaging, and platform filesystems.
+  // Verify the runtime contents and layout, not transport-specific file modes.
+  hash.update(`F\0${relativePath}\0`);
   hash.update(await readFile(absolutePath));
   hash.update("\0");
 }
