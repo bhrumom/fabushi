@@ -407,11 +407,14 @@ jobs:
             /.github/scripts/assert-bot-mark-motion.py
             /.github/scripts/assert-product-ui-contracts.py
             /.github/scripts/build-offline-asr-engine.mjs
+            /.github/scripts/verify-packaged-computer-control.mjs
             /.github/workflows/apple-store-delivery.yml
             /.github/workflows/ci.yml
+            /.github/workflows/computer-control-security.yml
             /.github/workflows/electron-desktop.yml
             /.github/workflows/electron-macos-hot-package.yml
             /.github/workflows/native-electron-release.yml
+            /.github/workflows/platform-control-plane.yml
             /chatgpt-vps-control/**
             /desktop/electron/offline-asr-engine.json
             /desktop/electron/offline-asr.cjs
@@ -429,6 +432,8 @@ jobs:
             /frontend/apps/web/src/lib/fabushi-runtime/**
             /frontend/apps/web/src/lib/mahayana-host/**
             /frontend/apps/web/src/lib/remote-computer/**
+            /mobile/android/app/src/main/java/com/ombhrum/fabushi/RemoteComputerSurface.kt
+            /mobile/ios/Fabushi/RemoteComputerSurface.swift
             /third_party/mahayana/mahayana-rs/mahayana-app-host/Cargo.toml
             /third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs
             /third_party/mahayana/mahayana-rs/mahayana-agent-codex/Cargo.toml
@@ -440,6 +445,7 @@ jobs:
             /third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
             /third_party/mahayana/mahayana-rs/mahayana-runtime/src/lib.rs
             /third_party/mahayana/mahayana-rs/mahayana-kernel/src/resilience.rs
+            /third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0014_remote_computer_client_tokens.sql
             /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs
             /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/**
             /third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs

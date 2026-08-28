@@ -168,6 +168,14 @@ test("every full Electron packager installs and stages Computer Use before seali
   assert.match(ci, /\^chatgpt-vps-control/);
   assert.ok(ci.includes("/chatgpt-vps-control/**"));
   assert.ok(ci.includes("/third_party/mahayana/mahayana-rs/mahayana-agent-codex/src/**"));
+  for (const sparseInput of [
+    "/.github/scripts/verify-packaged-computer-control.mjs",
+    "/.github/workflows/computer-control-security.yml",
+    "/.github/workflows/platform-control-plane.yml",
+    "/mobile/android/app/src/main/java/com/ombhrum/fabushi/RemoteComputerSurface.kt",
+    "/mobile/ios/Fabushi/RemoteComputerSurface.swift",
+    "/third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0014_remote_computer_client_tokens.sql",
+  ]) assert.ok(ci.includes(sparseInput), `Electron Feature Host sparse checkout is missing ${sparseInput}`);
 
   const electron = source(".github/workflows/electron-desktop.yml");
   for (const trigger of [
