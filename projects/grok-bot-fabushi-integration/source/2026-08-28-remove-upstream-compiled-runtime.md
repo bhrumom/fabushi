@@ -12,6 +12,14 @@
 - CI 必须 fail closed：若 production avatar/runtime 重新引用 OpenMaus/CursorAvatar/Grok renderer bundle 等已退休路径，检查失败。
 - 历史来源材料属于 evidence/reference，不是生产运行输入。
 
+## Open-source-first gate
+
+本任务在改写前先审查当前 production 已引入的成熟参考实现 `milind-soni/OpenMausBot@667af71ae7e93640ba4b1a5f3b38a1ad342025da`（Apache-2.0）及现有 Grok observable-parity 研究材料。可复用的设计原则包括：state-driven mascot、SVG 矢量渲染、RAF 动画、pause/reduced-motion 和 gaze；但本轮明确**不继续复用其 production source/runtime**，原因是用户要求移除外来实现并建立 Fabushi 自有运行边界，同时 Fabushi 只需要轻量头像状态渲染，不需要引入第二套 mascot engine。
+
+此前讨论的 WebGPU/vgpu 方案也不作为基础头像依赖：对于联系人列表和常驻 BotMark，SVG/RAF 在兼容性、功耗、可维护性和 fallback 上更合适；未来若需要粒子/流体/高级大头像效果，可在 Fabushi-owned Avatar Runtime 上增加可选 GPU effect layer，而不是替换基础身份层。
+
+决策：学习成熟实现的行为和工程约束，重新设计 Fabushi-owned source；不复制 upstream silhouette/path/component，不保留 upstream runtime dependency。
+
 ## Acceptance
 
 1. 删除 production vendored avatar implementation。
