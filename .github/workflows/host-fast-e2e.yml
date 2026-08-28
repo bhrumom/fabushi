@@ -88,6 +88,10 @@ jobs:
           pnpm --filter @fabushi/host typecheck
           pnpm --filter @fabushi/web typecheck:host
 
+      - name: Build production Host bundle outside journey budget
+        working-directory: frontend
+        run: pnpm --filter @fabushi/host build
+
       - name: Install Playwright test package without browser download
         working-directory: fabushi/e2e
         env:
@@ -101,6 +105,8 @@ jobs:
         id: journey
         working-directory: fabushi/e2e
         shell: bash
+        env:
+          FABUSHI_HOST_PREBUILT: "1"
         run: |
           set -euo pipefail
           started_at="$(date +%s)"
