@@ -9,6 +9,7 @@ const MAHAYANA_EDGE = 'mahayana-host';
 const NATIVE_EDGE = 'native-desktop';
 const MAHAYANA_RUNTIME_EVENT = 'runtime-event';
 const EDGE_CONTRACT_VERSION = 1;
+const DESIGN_SKILL_MARKER = '[Fabushi Design Skill activated]';
 const NATIVE_EVENTS = new Set([
   'mcp-auth-completed',
   'focus-agent',
@@ -72,10 +73,79 @@ function subscribeEdge(edge, eventName, listener) {
   return () => ipcRenderer.off(channel, forward);
 }
 
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isFabushiDesignIntent(text) {
+  const normalized = String(text || '').trim().toLocaleLowerCase();
+  if (!normalized || normalized.includes(DESIGN_SKILL_MARKER.toLocaleLowerCase())) return false;
+  return /(?:设计|界面|ui\b|ux\b|小程序|mini\s*app|网页|网站|landing\s*page|dashboard|仪表盘|原型|prototype|artifact|pptx?|幻灯片|演示文稿|deck\b|海报|封面|视觉|design\s*system|design\b)/i.test(normalized);
+}
+
+function designWorkspaceId(command) {
+  const source = String(command.agentId || command.conversationId || 'mahayana-assistant');
+  const slug = source.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 96);
+  return slug || 'mahayana-assistant';
+}
+
+function renderDesignModeStatement(context, existing) {
+  const craft = Array.isArray(context.craft)
+    ? context.craft.map((entry) => `[Craft: ${entry.slug}]\n${entry.content}`).join('\n\n')
+    : '';
+  const previous = typeof existing === 'string' && existing.trim()
+    ? `[Existing mode statement]\n${existing.trim()}\n\n`
+    : '';
+  return `${previous}${DESIGN_SKILL_MARKER}
+This context augments the current turn inside the single Mahayana Runtime. It is not a second agent loop and must not override Mahayana permissions, sandboxing, approvals, MiniApp policy, or tool authority.
+
+[Portable Fabushi SKILL.md]
+${context.skill}
+
+${craft}
+
+[Canonical Fabushi DESIGN.md]
+${context.designSystem.design}
+
+[Canonical Fabushi tokens.css]
+${context.designSystem.tokens}
+
+[Artifact delivery]
+Create real project files in the active Mahayana workspace. When the output is a web page, dashboard, MiniApp, deck, document, image, video, audio, or data artifact, emit a `mahayana-artifact/v1` manifest in the run result with a safe relative entrypoint and `designSystemId: "fabushi"`. Only expose export formats confirmed by the trusted Host. MiniApps must use the existing Fabushi MiniApp/WebMCP/marketplace pipeline; never bypass capability review.`;
+}
+
+async function enrichMahayanaParams(method, params) {
+  if (method !== 'feature.execute' || !isRecord(params) || !isRecord(params.command)) return params;
+  const command = params.command;
+  if (command.type !== 'chat.send' || typeof command.text !== 'string' || !isFabushiDesignIntent(command.text)) return params;
+  try {
+    const context = await invokeEdge(NATIVE_EDGE, 'getDesignSkillContext', {
+      skillId: 'fabushi-design',
+      workspaceId: designWorkspaceId(command),
+    });
+    if (!isRecord(context) || context.schemaVersion !== 'fabushi-design-skill-context/v1') {
+      throw new Error('bridge/invoke-failed: Invalid design Skill context.');
+    }
+    return {
+      ...params,
+      command: {
+        ...command,
+        modeStatement: renderDesignModeStatement(context, command.modeStatement),
+      },
+    };
+  } catch (error) {
+    // Design enrichment is additive. If the trusted Host refuses it, preserve
+    // the ordinary Mahayana turn and never fall back to arbitrary filesystem
+    // reads or a renderer-owned permission path.
+    console.warn('Fabushi design Skill context unavailable', error);
+    return params;
+  }
+}
+
 const mahayana = Object.freeze({
   contractVersion: EDGE_CONTRACT_VERSION,
-  invoke(method, params = {}) {
-    return invokeEdge(MAHAYANA_EDGE, method, params);
+  async invoke(method, params = {}) {
+    return invokeEdge(MAHAYANA_EDGE, method, await enrichMahayanaParams(method, params));
   },
   subscribe(listener) {
     return subscribeEdge(MAHAYANA_EDGE, MAHAYANA_RUNTIME_EVENT, listener);
