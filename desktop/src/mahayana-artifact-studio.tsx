@@ -1,5 +1,5 @@
 import { ExternalLink, FileOutput, LayoutTemplate, PackageOpen, X } from 'lucide-react';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { invokeNativeDesktop } from '../../frontend/apps/web/src/lib/fabushi-runtime/native-desktop';
 import { MAHAYANA_RUNTIME_EVENT_NAME } from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
@@ -36,6 +36,7 @@ type PreviewDocument = {
 };
 
 type ExporterList = { kind: string; formats: string[]; executionOwner: string; failClosed: boolean };
+type ExportResult = { artifactId: string; format: string; path: string; bytes: number; generated: boolean; executionOwner: string };
 
 type MiniAppHandoff = {
   type: 'fabushi-miniapp-publish-handoff/v1';
@@ -101,10 +102,10 @@ export default function MahayanaArtifactStudio() {
   const [portal, setPortal] = useState<HTMLElement | null>(null);
   const [preview, setPreview] = useState<{ artifact: ArtifactManifest; document: PreviewDocument } | null>(null);
   const [exporters, setExporters] = useState<Record<string, ExporterList>>({});
+  const [exportResults, setExportResults] = useState<Record<string, ExportResult>>({});
+  const [exporting, setExporting] = useState<string | null>(null);
   const [handoff, setHandoff] = useState<MiniAppHandoff | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const recordsRef = useRef(artifacts);
-  recordsRef.current = artifacts;
 
   useEffect(() => {
     const onRuntime = (event: Event) => {
@@ -167,6 +168,21 @@ export default function MahayanaArtifactStudio() {
     }
   };
 
+  const executeExport = async (artifact: ArtifactManifest, format: string) => {
+    const key = `${artifact.id}:${format}`;
+    setError(null);
+    setExporting(key);
+    try {
+      const result = await invokeNativeDesktop<ExportResult>('exportArtifact', { manifest: artifact, format });
+      if (!result.generated) throw new Error('Host 未生成导出文件。');
+      setExportResults((current) => ({ ...current, [key]: result }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setExporting((current) => current === key ? null : current);
+    }
+  };
+
   const prepareMiniApp = async (artifact: ArtifactManifest) => {
     setError(null);
     setPreview(null);
@@ -187,6 +203,7 @@ export default function MahayanaArtifactStudio() {
       <header><LayoutTemplate size={16} /><strong>Artifact Studio</strong><span>真实文件 · Fabushi Design</span></header>
       {visible.map(({ manifest }) => {
         const available = exporters[manifest.id];
+        const results = Object.values(exportResults).filter((result) => result.artifactId === manifest.id);
         return (
           <article className={styles.card} data-testid="mahayana-artifact-card" data-kind={manifest.kind} key={manifest.id}>
             <div className={styles.identity}>
@@ -200,9 +217,17 @@ export default function MahayanaArtifactStudio() {
               {manifest.kind === 'miniapp' ? (
                 <button type="button" onClick={() => void prepareMiniApp(manifest)}><PackageOpen size={13} />进入 MiniApp 管线</button>
               ) : null}
-              <button type="button" onClick={() => void inspectExports(manifest)}><FileOutput size={13} />导出</button>
+              <button type="button" disabled={!manifest.workspaceId} onClick={() => void inspectExports(manifest)}><FileOutput size={13} />导出</button>
             </div>
-            {available ? <small className={styles.formats}>可用格式：{available.formats.join(' · ')}</small> : null}
+            {available ? (
+              <div className={styles.actions} data-testid="artifact-export-formats">
+                {available.formats.map((format) => {
+                  const key = `${manifest.id}:${format}`;
+                  return <button type="button" key={format} disabled={exporting === key} onClick={() => void executeExport(manifest, format)}>{exporting === key ? '生成中…' : format.toUpperCase()}</button>;
+                })}
+              </div>
+            ) : null}
+            {results.map((result) => <small className={styles.formats} key={`${result.artifactId}:${result.format}`}>{result.format.toUpperCase()} 已生成：{result.path}</small>)}
           </article>
         );
       })}
