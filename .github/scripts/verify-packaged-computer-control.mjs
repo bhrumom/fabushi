@@ -219,7 +219,7 @@ function verifyMacSignatures({ appRoot, helperApp, helper, requestService, expec
   }
 }
 
-async function inspectPackage({ releaseRoot, platform, expectedTeam }) {
+async function inspectPackage({ releaseRoot, platform, expectedTeam, allowUnsignedMac = false }) {
   const pointerMatches = (await findFiles(releaseRoot, "active-runtime.json"))
     .filter((path) => basename(dirname(path)) === "computer-control");
   if (pointerMatches.length !== 1) {
