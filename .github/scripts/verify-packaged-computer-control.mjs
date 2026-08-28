@@ -64,12 +64,13 @@ function fail(message) {
 }
 
 function parseArguments(argv) {
-  const options = { releaseRoot: "", platform: "", skipHandshake: false, expectedTeam: "" };
+  const options = { releaseRoot: "", platform: "", skipHandshake: false, expectedTeam: "", allowUnsignedMac: false };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--release-root") options.releaseRoot = argv[++index] || "";
     else if (argument === "--platform") options.platform = argv[++index] || "";
     else if (argument === "--expected-mac-team") options.expectedTeam = argv[++index] || "";
+    else if (argument === "--allow-unsigned-mac") options.allowUnsignedMac = true;
     else if (argument === "--skip-handshake") options.skipHandshake = true;
     else fail(`Unknown argument: ${argument}`);
   }
@@ -189,19 +190,27 @@ function codeSignatureDetails(path) {
   return { team, identifier };
 }
 
-function verifyMacSignatures({ appRoot, helperApp, helper, requestService, expectedTeam }) {
-  for (const path of [appRoot, helperApp, requestService]) {
+function verifyMacSignatures({ appRoot, helperApp, helper, requestService, expectedTeam, allowUnsignedMac = false }) {
+  const paths = allowUnsignedMac ? [helperApp, requestService] : [appRoot, helperApp, requestService];
+  for (const path of paths) {
     const result = spawnSync("codesign", ["--verify", "--deep", "--strict", "--verbose=2", path], { encoding: "utf8" });
     if (result.status !== 0) fail(`Invalid packaged macOS signature for ${path}: ${result.stderr || result.stdout}`);
   }
-  const app = codeSignatureDetails(appRoot);
+  const app = allowUnsignedMac ? null : codeSignatureDetails(appRoot);
   const helperDetails = codeSignatureDetails(helper);
   const requestDetails = codeSignatureDetails(requestService);
-  if (!app.team || app.team === "not set") fail("Outer macOS app has no stable TeamIdentifier");
-  if (helperDetails.team !== app.team || requestDetails.team !== app.team) {
-    fail(`Computer Use helper TeamIdentifier does not match outer app (${app.team})`);
+  if (allowUnsignedMac) {
+    if (expectedTeam) fail("Unsigned macOS validation cannot require an Apple TeamIdentifier");
+    if (helperDetails.team !== requestDetails.team) {
+      fail(`Computer Use helper TeamIdentifier does not match request service (${helperDetails.team})`);
+    }
+  } else {
+    if (!app?.team || app.team === "not set") fail("Outer macOS app has no stable TeamIdentifier");
+    if (helperDetails.team !== app.team || requestDetails.team !== app.team) {
+      fail(`Computer Use helper TeamIdentifier does not match outer app (${app.team})`);
+    }
+    if (expectedTeam && app.team !== expectedTeam) fail(`Outer app TeamIdentifier ${app.team} does not match ${expectedTeam}`);
   }
-  if (expectedTeam && app.team !== expectedTeam) fail(`Outer app TeamIdentifier ${app.team} does not match ${expectedTeam}`);
   if (helperDetails.identifier !== "com.ombhrum.fabushi.computer-control") {
     fail(`Unexpected Computer Use helper identifier: ${helperDetails.identifier}`);
   }
@@ -248,7 +257,7 @@ async function inspectPackage({ releaseRoot, platform, expectedTeam }) {
       "Contents/XPCServices/com.ombhrum.fabushi.computer-control.request-service.xpc/Contents/MacOS/FabushiComputerRequestService",
     );
     const appRoot = dirname(dirname(resourcesRoot));
-    verifyMacSignatures({ appRoot, helperApp, helper, requestService, expectedTeam });
+    verifyMacSignatures({ appRoot, helperApp, helper, requestService, expectedTeam, allowUnsignedMac });
     nativeHelper = helper;
   } else if (platform === "win") {
     nativeHelper = await requireRegularFile(bundleHome, "native/computer-helper.ps1");
