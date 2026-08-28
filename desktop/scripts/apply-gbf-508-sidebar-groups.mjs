@@ -48,3 +48,4 @@ replaceOnce(
 
 fs.writeFileSync(path, source);
 console.log('GBF-508 sidebar contact grouping patch applied');
+// This script is intentionally deterministic and fails closed if the canonical renderer anchors move.
