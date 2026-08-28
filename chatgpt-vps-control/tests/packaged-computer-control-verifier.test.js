@@ -59,7 +59,7 @@ async function hashEntry(hash, root, relativePath) {
     }
     return;
   }
-  hash.update(`F\0${relativePath}\0${metadata.mode & 0o777}\0`);
+  hash.update(`F\0${relativePath}\0`);
   hash.update(await readFile(path));
   hash.update("\0");
 }
