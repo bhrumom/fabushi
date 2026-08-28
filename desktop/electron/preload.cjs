@@ -111,7 +111,7 @@ ${context.designSystem.design}
 ${context.designSystem.tokens}
 
 [Artifact delivery]
-Create real project files in the active Mahayana workspace. When the output is a web page, dashboard, MiniApp, deck, document, image, video, audio, or data artifact, emit a `mahayana-artifact/v1` manifest in the run result with a safe relative entrypoint and `designSystemId: "fabushi"`. Only expose export formats confirmed by the trusted Host. MiniApps must use the existing Fabushi MiniApp/WebMCP/marketplace pipeline; never bypass capability review.`;
+Create real project files in the active Mahayana workspace. When the output is a web page, dashboard, MiniApp, deck, document, image, video, audio, or data artifact, emit a 'mahayana-artifact/v1' manifest in the run result with a safe relative entrypoint and designSystemId 'fabushi'. Only expose export formats confirmed by the trusted Host. MiniApps must use the existing Fabushi MiniApp/WebMCP/marketplace pipeline; never bypass capability review.`;
 }
 
 async function enrichMahayanaParams(method, params) {
