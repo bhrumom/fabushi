@@ -5,107 +5,16 @@
   "project_id_regex": "^FAB-P[0-9]{4}$",
   "allocation_policy": "monotonic-no-reuse",
   "ordering_basis": "first-formal-project-folder-commit-on-canonical-main",
-  "next_sequence": 9,
+  "next_sequence": 10,
   "projects": [
-    {
-      "project_id": "FAB-P0001",
-      "project_key": "TFI",
-      "slug": "telegram-fabushi-integration",
-      "name": "Fabushi Telegram 全量融合",
-      "authoritative_path": "projects/telegram-fabushi-integration",
-      "status": "active",
-      "registered_at": "2026-08-22",
-      "first_canonical_main_commit": "99cd4b227a34b49fc04c3265c1dfdee585344160",
-      "legacy_project_ids": [
-        "FABUSHI-TELEGRAM-FUSION"
-      ]
-    },
-    {
-      "project_id": "FAB-P0002",
-      "project_key": "FPG",
-      "slug": "fabushi-project-governance",
-      "name": "Fabushi Project Governance",
-      "authoritative_path": "projects/fabushi-project-governance",
-      "status": "active",
-      "registered_at": "2026-08-22",
-      "first_canonical_main_commit": "eaf273dafc140619b06b46a4d7d234997acde05d",
-      "legacy_project_ids": [
-        "FPG"
-      ]
-    },
-    {
-      "project_id": "FAB-P0003",
-      "project_key": "FCM",
-      "slug": "fabushi-cicd-merge-governance",
-      "name": "Fabushi CI/CD & Merge Governance",
-      "authoritative_path": "projects/fabushi-cicd-merge-governance",
-      "status": "active",
-      "registered_at": "2026-08-22",
-      "first_canonical_main_commit": "ac94b40d4a05a0211146c2bb5904aa936a7bc928",
-      "legacy_project_ids": [
-        "FCM"
-      ]
-    },
-    {
-      "project_id": "FAB-P0004",
-      "project_key": "GBF",
-      "slug": "grok-bot-fabushi-integration",
-      "name": "Grok Bot -> Fabushi 全量能力与源码融合",
-      "authoritative_path": "projects/grok-bot-fabushi-integration",
-      "status": "active",
-      "registered_at": "2026-08-22",
-      "first_canonical_main_commit": "6d1e9cd7a475e8058d5d8512f5c3a0c21da8ed9c",
-      "legacy_project_ids": [
-        "FABUSHI-GROK-BOT-FUSION"
-      ]
-    },
-    {
-      "project_id": "FAB-P0005",
-      "project_key": "MSR",
-      "slug": "mahayana-sovereign-runtime",
-      "name": "Mahayana Sovereign Runtime",
-      "authoritative_path": "projects/mahayana-sovereign-runtime",
-      "status": "active",
-      "registered_at": "2026-08-22",
-      "first_canonical_main_commit": "88db63c328c3cba39971f3942509cb0b582502bc",
-      "legacy_project_ids": [
-        "MSR"
-      ]
-    },
-    {
-      "project_id": "FAB-P0006",
-      "project_key": "FAM",
-      "slug": "fabushi-always-on-marketing",
-      "name": "Fabushi Always-on Marketing",
-      "authoritative_path": "projects/fabushi-always-on-marketing",
-      "status": "active",
-      "registered_at": "2026-08-23",
-      "first_canonical_main_commit": "173e7f793987b6d0a9303b55e2060e2584552da9",
-      "legacy_project_ids": []
-    },
-    {
-      "project_id": "FAB-P0007",
-      "project_key": "DHRF",
-      "slug": "deepseek-harness-rust-fusion",
-      "name": "DeepSeek Harness Rust Fusion",
-      "authoritative_path": "projects/deepseek-harness-rust-fusion",
-      "status": "active",
-      "registered_at": "2026-08-23",
-      "first_canonical_main_commit": "11fd9d32d5b7edf09882ff5308be55b566e1a6d4",
-      "legacy_project_ids": [
-        "DHRF"
-      ]
-    },
-    {
-      "project_id": "FAB-P0008",
-      "project_key": "AAC",
-      "slug": "fabushi-account-access-control",
-      "name": "Fabushi Account Access Control",
-      "authoritative_path": "projects/fabushi-account-access-control",
-      "status": "active",
-      "registered_at": "2026-08-25",
-      "first_canonical_main_commit": "52b7c10889e585660b7d2a22a40781c22f31b7a1",
-      "legacy_project_ids": []
-    }
+    {"project_id":"FAB-P0001","project_key":"TFI","slug":"telegram-fabushi-integration","name":"Fabushi Telegram 全量融合","authoritative_path":"projects/telegram-fabushi-integration","status":"active","registered_at":"2026-08-22","first_canonical_main_commit":"99cd4b227a34b49fc04c3265c1dfdee585344160","legacy_project_ids":["FABUSHI-TELEGRAM-FUSION"]},
+    {"project_id":"FAB-P0002","project_key":"FPG","slug":"fabushi-project-governance","name":"Fabushi Project Governance","authoritative_path":"projects/fabushi-project-governance","status":"active","registered_at":"2026-08-22","first_canonical_main_commit":"eaf273dafc140619b06b46a4d7d234997acde05d","legacy_project_ids":["FPG"]},
+    {"project_id":"FAB-P0003","project_key":"FCM","slug":"fabushi-cicd-merge-governance","name":"Fabushi CI/CD & Merge Governance","authoritative_path":"projects/fabushi-cicd-merge-governance","status":"active","registered_at":"2026-08-22","first_canonical_main_commit":"ac94b40d4a05a0211146c2bb5904aa936a7bc928","legacy_project_ids":["FCM"]},
+    {"project_id":"FAB-P0004","project_key":"GBF","slug":"grok-bot-fabushi-integration","name":"Grok Bot -> Fabushi 全量能力与源码融合","authoritative_path":"projects/grok-bot-fabushi-integration","status":"active","registered_at":"2026-08-22","first_canonical_main_commit":"6d1e9cd7a475e8058d5d8512f5c3a0c21da8ed9c","legacy_project_ids":["FABUSHI-GROK-BOT-FUSION"]},
+    {"project_id":"FAB-P0005","project_key":"MSR","slug":"mahayana-sovereign-runtime","name":"Mahayana Sovereign Runtime","authoritative_path":"projects/mahayana-sovereign-runtime","status":"active","registered_at":"2026-08-22","first_canonical_main_commit":"88db63c328c3cba39971f3942509cb0b582502bc","legacy_project_ids":["MSR"]},
+    {"project_id":"FAB-P0006","project_key":"FAM","slug":"fabushi-always-on-marketing","name":"Fabushi Always-on Marketing","authoritative_path":"projects/fabushi-always-on-marketing","status":"active","registered_at":"2026-08-23","first_canonical_main_commit":"173e7f793987b6d0a9303b55e2060e2584552da9","legacy_project_ids":[]},
+    {"project_id":"FAB-P0007","project_key":"DHRF","slug":"deepseek-harness-rust-fusion","name":"DeepSeek Harness Rust Fusion","authoritative_path":"projects/deepseek-harness-rust-fusion","status":"active","registered_at":"2026-08-23","first_canonical_main_commit":"11fd9d32d5b7edf09882ff5308be55b566e1a6d4","legacy_project_ids":["DHRF"]},
+    {"project_id":"FAB-P0008","project_key":"AAC","slug":"fabushi-account-access-control","name":"Fabushi Account Access Control","authoritative_path":"projects/fabushi-account-access-control","status":"active","registered_at":"2026-08-25","first_canonical_main_commit":"52b7c10889e585660b7d2a22a40781c22f31b7a1","legacy_project_ids":[]},
+    {"project_id":"FAB-P0009","project_key":"MDA","slug":"mahayana-design-artifact-engine","name":"Mahayana Design & Artifact Engine","authoritative_path":"projects/mahayana-design-artifact-engine","status":"active","registered_at":"2026-08-28","first_canonical_main_commit":null,"legacy_project_ids":[]}
   ]
 }
