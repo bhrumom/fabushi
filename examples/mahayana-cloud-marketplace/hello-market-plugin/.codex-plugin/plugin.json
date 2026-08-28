@@ -15,5 +15,13 @@
     "capabilities": ["Read"],
     "defaultPrompt": "运行 hello 工具并返回云端市场问候。"
   },
-  "mcpServers": "./.mcp.json"
+  "mcpServers": "./.mcp.json",
+  "runtimeVariants": [
+    {
+      "id": "standalone-local",
+      "server": "cloud-market-hello-local",
+      "platforms": ["cli", "desktop"],
+      "priority": 300
+    }
+  ]
 }
