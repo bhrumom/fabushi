@@ -70,11 +70,12 @@ export function assignPeersToSidebarContactGroup(
   groupId: string,
   peerKeys: readonly string[],
 ): SidebarContactGroup[] {
-  const moved = new Set(peerKeys);
+  const uniquePeerKeys = peerKeys.filter((key, index) => Boolean(key) && peerKeys.indexOf(key) === index);
+  const moved = new Set(uniquePeerKeys);
   return groups.map((group) => ({
     ...group,
     peerKeys: group.id === groupId
-      ? [...group.peerKeys.filter((key) => !moved.has(key)), ...peerKeys.filter((key, index) => peerKeys.indexOf(key) === index)]
+      ? uniquePeerKeys
       : group.peerKeys.filter((key) => !moved.has(key)),
   }));
 }
@@ -130,6 +131,11 @@ function readLocalGroups(): SidebarContactGroup[] {
   }
 }
 
+function hasLocalGroupSnapshot(): boolean {
+  if (typeof window === 'undefined') return false;
+  try { return window.localStorage.getItem(SIDEBAR_CONTACT_GROUPS_KEY) !== null; } catch { return false; }
+}
+
 function persistGroups(groups: readonly SidebarContactGroup[]): void {
   if (typeof window === 'undefined') return;
   const value: StoredSidebarContactGroups = { version: 1, groups: copyGroups(groups) };
@@ -139,10 +145,15 @@ function persistGroups(groups: readonly SidebarContactGroup[]): void {
 
 export function useSidebarContactGroups() {
   const [groups, setGroups] = useState<SidebarContactGroup[]>(() => readLocalGroups());
+  const [persistenceHydrated, setPersistenceHydrated] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
 
   useEffect(() => {
-    if (groups.length || typeof window === 'undefined') return;
+    if (typeof window === 'undefined') return;
+    if (hasLocalGroupSnapshot()) {
+      setPersistenceHydrated(true);
+      return;
+    }
     let disposed = false;
     void invokeNativeDesktop<unknown>('readClientPersistence', { key: SIDEBAR_CONTACT_GROUPS_KEY })
       .then((value) => {
@@ -150,13 +161,14 @@ export function useSidebarContactGroups() {
         const restored = normalizeSidebarContactGroups(value);
         if (restored.length) setGroups(restored);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!disposed) setPersistenceHydrated(true); });
     return () => { disposed = true; };
   }, []);
 
   useEffect(() => {
-    persistGroups(groups);
-  }, [groups]);
+    if (persistenceHydrated) persistGroups(groups);
+  }, [groups, persistenceHydrated]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
