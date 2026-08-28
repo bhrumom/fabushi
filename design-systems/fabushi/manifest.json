@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "fabushi-design-system/v1",
+  "id": "fabushi",
+  "name": "Fabushi",
+  "category": "Agent Platform",
+  "description": "Canonical Fabushi visual and interaction contract for desktop, web, mobile and MiniApps.",
+  "source": {"type":"bundled","origin":"Fabushi product design"},
+  "files": {"design":"DESIGN.md","tokens":"tokens.css","usage":"USAGE.md"}
+}
