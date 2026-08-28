@@ -577,10 +577,7 @@ fn safe_plugin_join(root: &Path, relative: &Path) -> Result<PathBuf, McpError> {
 }
 
 fn is_bare_executable(command: &str) -> bool {
-    !command.is_empty()
-        && command != "."
-        && command != ".."
-        && !command.contains(['/', '\\'])
+    !command.is_empty() && command != "." && command != ".." && !command.contains(['/', '\\'])
 }
 
 fn expand_secret(value: &str, session_token: Option<&str>) -> String {
@@ -656,7 +653,8 @@ mod tests {
 
     #[test]
     fn preserves_bare_stdio_commands_for_path_lookup() {
-        let root = std::env::temp_dir().join(format!("mahayana-mcp-command-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("mahayana-mcp-command-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).expect("create root");
         let resolved = parse_transport(
             &root,
