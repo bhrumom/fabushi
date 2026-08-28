@@ -421,6 +421,8 @@ jobs:
             /.github/scripts/assert-native-desktop-edge-parity.py
             /desktop/electron/**
             /desktop/package.json
+            /desktop/scripts/prepare-desktop-window-branding.mjs
+            /desktop/scripts/prepare-desktop-window-branding.test.mjs
             /desktop/src/edge/**
             /desktop/src/main.tsx
             /desktop/src/messaging-shell-v2.tsx
@@ -468,7 +470,7 @@ jobs:
       - name: Reject native capability stubs
         run: python3 .github/scripts/assert-native-capability-semantics.py
       - name: Verify Electron edge, host lifecycle, and offline ASR contracts
-        run: node --test desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs chatgpt-vps-control/tests/fabushi-embedded-runtime-source.test.js chatgpt-vps-control/tests/fabushi-computer-policy.test.js
+        run: node --test desktop/scripts/prepare-desktop-window-branding.test.mjs desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs chatgpt-vps-control/tests/fabushi-embedded-runtime-source.test.js chatgpt-vps-control/tests/fabushi-computer-policy.test.js
       - name: Enforce Electron edge performance budget
         run: node desktop/electron/edge-ipc.bench.cjs
       - name: Verify Electron to Rust Feature Host bridge
