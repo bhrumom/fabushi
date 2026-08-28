@@ -48,10 +48,16 @@ The user explicitly corrected that `.agent/skills/bb-browser` is an unused exter
 
 ## Branch / commit / PR
 Branch: `feat/msr-203-native-web-research`
-Commit: in progress
-PR: pending
+Commit: `24d3d55` + documentation follow-up
+PR: pending creation
 
 ## Current evidence
+- Rust 1.98.0 local verification: `cargo fmt --all -- --check` passed.
+- `cargo check -p mahayana-native-engine` passed.
+- `cargo test -p mahayana-native-engine` passed: 12 unit tests + 2 capability-boundary integration tests, 0 failures.
+- Mock Search verifies TinyFish-style query and `X-API-Key` header mapping without exposing the key in results.
+- Mock Fetch verifies POST payload mapping and bounded extracted content.
+- Network-denial coverage verifies `allow_network=false` fails the WebSearch capability before provider access.
 - Canonical `main` at task start: `c247786ab98c94c414d976e08e13626db352b07f`.
 - `mahayana-kernel::Capability` already contains `WebSearch`, but `mahayana-native-engine` does not advertise it or define/execute web tools.
 - The current native tool list contains workspace, memory, workflow, subagent, process and git tools only.

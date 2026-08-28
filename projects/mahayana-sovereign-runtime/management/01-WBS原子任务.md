@@ -9,6 +9,7 @@
 | MSR-104 | Define runtime observability/SLO metrics | MSR-102 | measurable SLI/SLO and instrumentation plan | spec review + telemetry tests | planned | inventory runtime paths |
 | MSR-201 | Native session/recovery ownership | MSR-102 | provider-neutral lifecycle/recovery parity | conformance tests | planned | implement explicit unfinished-operation suspend/reclaim |
 | MSR-202 | Native tool/policy/approval bus | MSR-102 | fail-closed parity + unified tool semantics | security/conformance tests | planned | bind supervisor policy to production tool bus |
+| MSR-203 | Native live web research capability | MSR-202 | autonomous search + source fetch through Mahayana tool/policy plane | rustfmt + native engine check/tests + PR CI + canonical-main delivery | in-progress | merge verified TinyFish-backed `web_search`/`web_fetch`; provision runtime secret |
 | MSR-301 | Workspace/worktree/checkpoint/rewind parity | MSR-102 | objective workspace parity | workspace tests | planned | make rewind exact and worktrees Git-aware |
 | MSR-302 | Queue/goal/oracle/attempt/workflow/subagent parity | MSR-102 | long-running workflow parity | supervisor/orchestrator tests | planned | persist and bind primitives to production turns |
 | MSR-401 | Normalize MCP/skills/plugins/connectors/MiniApps/model stack | MSR-202 | Mahayana-owned extension/model contracts | integration tests | planned | add MCP runtime-status contract first |
