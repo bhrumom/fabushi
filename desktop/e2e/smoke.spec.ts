@@ -61,6 +61,7 @@ async function completeBrowserLogin(page: Page): Promise<void> {
     if (await loginGate.isVisible().catch(() => false)) {
       await page.getByTestId('browser-login-start').click();
       await expect(loginGate).toBeHidden();
+      break;
     }
   }
 
