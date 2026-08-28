@@ -67,9 +67,24 @@ jobs:
           git rev-parse -q --verify "refs/tags/$RELEASE_TAG"
           bash .github/scripts/assert-native-electron-canonical.sh
           tagged_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          test "$(git rev-parse HEAD)" = "$tagged_sha"
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor "$tagged_sha" refs/remotes/origin/main; then
+            echo "Release tag $RELEASE_TAG does not point to a commit on protected main." >&2
+            exit 1
+          fi
           checks_json="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$tagged_sha/check-runs?per_page=100")"
-          for required in 'CI result' 'Electron desktop result' 'Electron macOS' 'Electron Windows' 'Native mobile result' 'Native iOS'; do
-            conclusion="$(printf '%s' "$checks_json" | jq -r --arg required "$required" '[.[].check_runs[] | select(.name == $required)] | last | .conclusion // "missing"')"
+          for required in \
+            'CI result' \
+            'Electron desktop result' \
+            'Electron macOS' \
+            'Electron Windows' \
+            'Native mobile result' \
+            'Native iOS' \
+            'Computer control security result' \
+            'Platform architecture' \
+            'Deploy production control plane'; do
+            conclusion="$(printf '%s' "$checks_json" | jq -r --arg required "$required" '[.[].check_runs[] | select(.name == $required)] | sort_by(.started_at // .created_at // "") | last | .conclusion // "missing"')"
             if [ "$conclusion" != success ]; then
               echo "Required release gate '$required' is $conclusion for $tagged_sha." >&2
               exit 1
@@ -82,10 +97,13 @@ jobs:
         run: |
           set -euo pipefail
           version="$(jq -r '.version' app-version.json)"
+          desktop_version="$(jq -r '.version' desktop/package.json)"
           test -n "$version"
           test "$version" != null
+          test "$desktop_version" = "$version"
+          test "$RELEASE_TAG" = "v$version"
           echo "FABUSHI_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
-          echo "Release version: $version" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release version: $version from exact main tag $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Node.js for Electron
         if: matrix.kind == 'electron'
@@ -93,7 +111,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: |
+            desktop/package-lock.json
+            chatgpt-vps-control/package-lock.json
 
       - name: Set up Rust for Electron
         if: matrix.kind == 'electron'
@@ -122,6 +142,11 @@ jobs:
         if: matrix.kind == 'electron'
         working-directory: desktop
         run: npm ci --prefer-offline
+
+      - name: Install embedded Computer Use dependencies
+        if: matrix.kind == 'electron'
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts --prefer-offline
 
       - name: Build and stage release Mahayana Host
         if: matrix.kind == 'electron'
@@ -192,6 +217,18 @@ jobs:
           done < <(find desktop/resources/asr -type f -name whisper-cli -print)
           codesign --verify --strict --verbose=2 "$host"
 
+      - name: Stage bundled cross-platform Computer Use runtime
+        if: matrix.kind == 'electron'
+        shell: bash
+        env:
+          CHATGPT_COMPUTER_HOME: ${{ github.workspace }}/desktop/resources/computer-control
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || vars.MACOS_APP_STORE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          export CHATGPT_COMPUTER_CODESIGN_IDENTITY="${MACOS_CODESIGN_IDENTITY:-}"
+          export CHATGPT_COMPUTER_TEAM_ID="${APPLE_TEAM_ID:-}"
+          node chatgpt-vps-control/bin/prepare-fabushi-bundle.js
+
       - name: Package canonical Electron application
         if: matrix.kind == 'electron'
         working-directory: desktop
@@ -227,6 +264,23 @@ jobs:
           bash .github/scripts/notarize-macos-dmg.sh "$dmg"
           chmod +x .github/scripts/verify-electron-macos-package.sh
           bash .github/scripts/verify-electron-macos-package.sh "$app" "$dmg"
+
+      - name: Verify packaged Computer Use runtime, helper, and private MCP
+        if: matrix.kind == 'electron'
+        shell: bash
+        env:
+          FABUSHI_PACKAGE_TARGET: ${{ matrix.target }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || vars.MACOS_APP_STORE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          args=(
+            --release-root desktop/release
+            --platform "$FABUSHI_PACKAGE_TARGET"
+          )
+          if [ "$FABUSHI_PACKAGE_TARGET" = mac ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+            args+=(--expected-mac-team "$APPLE_TEAM_ID")
+          fi
+          node .github/scripts/verify-packaged-computer-control.mjs "${args[@]}"
 
       - name: Upload Electron package
         if: matrix.kind == 'electron'
@@ -469,28 +523,81 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: release
-          merge-multiple: true
+          merge-multiple: false
 
-      - name: Verify complete cross-platform asset set
+      - name: Collect and verify the public cross-platform asset set
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$(find release -type f -name '*.dmg' -print -quit)"
-          test -n "$(find release -type f -name 'fabushi-*-macos-*.zip' -print -quit)"
-          test -n "$(find release -type f -name 'latest-mac.yml' -print -quit)"
-          test -n "$(find release -type f -name '*.zip.blockmap' -print -quit)"
-          test -n "$(find release -type f -name '*.exe' -print -quit)"
-          test -n "$(find release -type f -name '*.AppImage' -print -quit)"
-          test -n "$(find release -type f -name '*.apk' -print -quit)"
-          test -n "$(find release -type f -name '*.aab' -print -quit)"
-          test -n "$(find release -type f -name '*.ipa' -print -quit)"
-          echo 'Verified complete desktop + Android + iOS release asset set.' >> "$GITHUB_STEP_SUMMARY"
+          rm -rf release-assets
+          mkdir -p release-assets
+          while IFS= read -r -d '' asset; do
+            name="$(basename "$asset")"
+            case "$name" in
+              fabushi-*-macos-*.dmg|fabushi-*-macos-*.dmg.blockmap|\
+              fabushi-*-macos-*.zip|fabushi-*-macos-*.zip.blockmap|\
+              fabushi-*-setup.exe|fabushi-*-setup.exe.blockmap|\
+              fabushi-*.AppImage|fabushi-*.AppImage.blockmap|fabushi-*.AppImage.zsync|\
+              fabushi-*.deb|latest-mac.yml|latest.yml|latest-linux.yml|\
+              *.apk|*.aab|*.ipa)
+                destination="release-assets/$name"
+                if [ -e "$destination" ]; then
+                  if ! cmp -s "$asset" "$destination"; then
+                    echo "Conflicting public release asset name: $name" >&2
+                    exit 1
+                  fi
+                else
+                  cp "$asset" "$destination"
+                fi
+                ;;
+            esac
+          done < <(find release -type f -print0)
+
+          require_asset() {
+            local pattern="$1"
+            if [ -z "$(find release-assets -maxdepth 1 -type f -name "$pattern" -print -quit)" ]; then
+              echo "Missing required release asset: $pattern" >&2
+              exit 1
+            fi
+          }
+          require_asset 'fabushi-*-macos-*.dmg'
+          require_asset 'fabushi-*-macos-*.zip'
+          require_asset 'fabushi-*-macos-*.zip.blockmap'
+          require_asset 'latest-mac.yml'
+          require_asset 'fabushi-*-setup.exe'
+          require_asset 'fabushi-*-setup.exe.blockmap'
+          require_asset 'latest.yml'
+          require_asset 'fabushi-*.AppImage'
+          require_asset 'fabushi-*.AppImage.blockmap'
+          require_asset 'fabushi-*.deb'
+          require_asset 'latest-linux.yml'
+          require_asset '*.apk'
+          require_asset '*.aab'
+          require_asset '*.ipa'
+
+          tagged_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          version="$(jq -r '.version' app-version.json)"
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg version "$version" \
+            --arg sha "$tagged_sha" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            '{tag:$tag,version:$version,sha:$sha,workflowRunId:$runId,workflowRunAttempt:$runAttempt}' \
+            > release-assets/fabushi-release-manifest.json
+          echo "Verified $(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ') public desktop + Android + iOS release assets." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Generate release checksums
         shell: bash
         run: |
           set -euo pipefail
-          find release -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS.txt
+          (
+            cd release-assets
+            find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              | sed 's#  \./#  #'
+          ) > release-assets/SHA256SUMS.txt
 
       - name: Publish immutable release assets
         env:
@@ -502,5 +609,5 @@ jobs:
             echo "Release $RELEASE_TAG already exists; refusing to mutate an existing release." >&2
             exit 1
           fi
-          mapfile -d '' assets < <(find release -type f -print0)
+          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f -print0 | sort -z)
           gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --generate-notes --latest=false

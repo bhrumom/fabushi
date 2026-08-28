@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { installPrivateRuntime, privateRuntimeEntries } from "../lib/runtime-install.js";
@@ -17,9 +17,15 @@ async function createRuntimeSource(root) {
     else await writeFixture(join(root, entry), entry === "package.json" ? '{"name":"fixture","version":"1.0.0"}\n' : `${entry}\n`);
   }
   await writeFixture(join(root, "bin", "chatgpt-computer-control.js"), "#!/usr/bin/env node\n");
+  await writeFixture(join(root, "bin", "fabushi-computer-mcp.js"), "#!/usr/bin/env node\n");
+  await writeFixture(join(root, "lib", "fabushi-computer-policy.js"), "export const policy = true;\n");
   await writeFixture(join(root, "scripts", "browser-extension-host.mjs"), "export {};\n");
   await writeFixture(join(root, "lib", "entry.js"), "export const fixture = true;\n");
-  await writeFixture(join(root, "native", "helper.txt"));
+  await writeFixture(join(root, "native", "linux", "accessibility-helper.py"), "#!/usr/bin/env python3\n");
+  await writeFixture(join(root, "native", "macos", "ComputerHelper.swift"), "import Foundation\n");
+  await writeFixture(join(root, "native", "macos", "Info.plist"), "<plist/>\n");
+  await writeFixture(join(root, "native", "macos", "RequestService-Info.plist"), "<plist/>\n");
+  await writeFixture(join(root, "native", "windows", "computer-helper.ps1"), "Write-Output '{}';\n");
   await writeFixture(join(root, "extension", "manifest.json"), "{}\n");
   await writeFixture(join(root, "skills", "unified-device-control", "SKILL.md"), "---\nname: unified-device-control\n---\n");
   await writeFixture(join(root, "node_modules", ".package-lock.json"), "{}\n");
@@ -39,10 +45,15 @@ test("private runtime is content-addressed, reusable, and outside the source che
     assert.ok(first.root.startsWith(join(appHome, "runtime")));
     assert.ok(!first.cliPath.startsWith(sourceRoot));
     assert.equal(await readFile(first.cliPath, "utf8"), "#!/usr/bin/env node\n");
+    const mcpEntry = join(first.root, "bin", "fabushi-computer-mcp.js");
+    assert.equal(await readFile(mcpEntry, "utf8"), "#!/usr/bin/env node\n");
+    if (process.platform !== "win32") assert.equal((await stat(mcpEntry)).mode & 0o777, 0o700);
 
     const manifest = JSON.parse(await readFile(join(first.root, "runtime-manifest.json"), "utf8"));
     assert.equal(manifest.runtimeId, first.runtimeId);
+    assert.match(first.runtimeId, /^v1-[a-f0-9]{20}$/);
     assert.match(manifest.sourceHash, /^[a-f0-9]{64}$/);
+    assert.equal(first.runtimeId, `v1-${manifest.sourceHash.slice(0, 20)}`);
 
     const second = await installPrivateRuntime({ sourceRoot, appHome });
     assert.equal(second.root, first.root);
@@ -53,11 +64,17 @@ test("private runtime is content-addressed, reusable, and outside the source che
     assert.notEqual(third.root, first.root);
     assert.equal(await readFile(join(third.root, "server.js"), "utf8"), "changed\n");
 
-    await rm(join(third.root, "node_modules", "zod", "package.json"));
+    await rm(join(third.root, "bin", "fabushi-computer-mcp.js"));
     const repaired = await installPrivateRuntime({ sourceRoot, appHome });
     assert.equal(repaired.root, third.root);
     assert.equal(repaired.reused, false);
-    assert.equal(JSON.parse(await readFile(join(repaired.root, "node_modules", "zod", "package.json"), "utf8")).name, "zod");
+    assert.equal(await readFile(join(repaired.root, "bin", "fabushi-computer-mcp.js"), "utf8"), "#!/usr/bin/env node\n");
+
+    await rm(join(repaired.root, "node_modules", "zod", "package.json"));
+    const dependenciesRepaired = await installPrivateRuntime({ sourceRoot, appHome });
+    assert.equal(dependenciesRepaired.root, repaired.root);
+    assert.equal(dependenciesRepaired.reused, false);
+    assert.equal(JSON.parse(await readFile(join(dependenciesRepaired.root, "node_modules", "zod", "package.json"), "utf8")).name, "zod");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

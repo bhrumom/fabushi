@@ -4,11 +4,10 @@ import { applyLocalConfig, doctorLocalComputer, readLocalConfig, setupLocalCompu
 import { installService, removeService } from "../lib/service-manager.js";
 import { ensureLinuxDesktop } from "../lib/linux-desktop.js";
 import { browserExtensionStatus, installBrowserExtension } from "../lib/browser-extension-install.js";
-import { startMacPresenceAgent } from "../lib/macos-presence-agent.js";
 import { installUnifiedDeviceSkill } from "../lib/skill-install.js";
 
 function printUsage() {
-  console.log(`ChatGPT Computer Control\n\nUsage:\n  chatgpt-computer-control setup [--no-deps] [--host 127.0.0.1] [--port 8787]\n  chatgpt-computer-control doctor\n  chatgpt-computer-control serve\n  chatgpt-computer-control presence\n  chatgpt-computer-control service install\n  chatgpt-computer-control service remove\n  chatgpt-computer-control browser-extension install\n  chatgpt-computer-control browser-extension status\n  chatgpt-computer-control skill install\n  chatgpt-computer-control url\n\nThe MCP server binds to loopback by default. Expose it only through an authenticated HTTPS tunnel or another trusted transport.`);
+  console.log(`Fabushi Computer Control\n\nUsage:\n  chatgpt-computer-control setup [--no-deps] [--host 127.0.0.1] [--port 8787]\n  chatgpt-computer-control doctor\n  chatgpt-computer-control serve\n  chatgpt-computer-control presence\n  chatgpt-computer-control service install\n  chatgpt-computer-control service remove\n  chatgpt-computer-control browser-extension install\n  chatgpt-computer-control browser-extension status\n  chatgpt-computer-control skill install\n  chatgpt-computer-control url\n\nThe MCP server binds to loopback by default. Expose it only through an authenticated HTTPS tunnel or another trusted transport.`);
 }
 
 function valueAfter(args, flag, fallback) {
@@ -23,12 +22,12 @@ async function setup(args) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("--port must be between 1 and 65535.");
   const result = await setupLocalComputer({ installDependencies: !args.includes("--no-deps"), host, port });
   const skill = await installUnifiedDeviceSkill();
-  console.log(`Configured ChatGPT Computer Control for ${result.platform}.`);
+  console.log(`Configured Fabushi Computer Control for ${result.platform}.`);
   console.log(`Home: ${result.home}`);
   console.log(`MCP URL (local): ${result.mcpUrl}`);
   console.log(`Codex Skill: ${skill.destination}`);
   if (platform() === "darwin") {
-    console.log("macOS requires Accessibility and Screen Recording permission for the installed ChatGPT Computer Control app. Run doctor, then grant that named app in System Settings.");
+    console.log("macOS requires Accessibility and Screen Recording permission for the installed Fabushi Computer Control app. Run doctor, then grant that named app in System Settings.");
   }
   if (platform() === "win32") {
     console.log("Windows control runs in the signed-in interactive desktop. UAC secure desktop and locked sessions are intentionally outside normal automation.");
@@ -61,6 +60,7 @@ async function serve() {
 
 async function presence() {
   await applyLocalConfig();
+  const { startMacPresenceAgent } = await import("../lib/macos-presence-agent.js");
   const agent = startMacPresenceAgent();
   const stop = () => {
     agent.stop();

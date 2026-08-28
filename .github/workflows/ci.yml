@@ -54,7 +54,7 @@ jobs:
               ],
               worker: [
                 /^fabushi\/web\//,
-                /^third_party\/mahayana\/mahayana-rs\/mahayana-platform-worker\/migrations\//,
+                /^third_party\/mahayana\/mahayana-rs\/mahayana-platform-worker\//,
               ],
               mcp: [
                 /^\.agents\/plugins\//,
@@ -67,6 +67,7 @@ jobs:
               ],
               electron: [
                 /^\.github\/scripts\/(assert-electron-feature-host-bridge\.sh|assert-feature-command-router-coverage\.py|assert-fabushi-desktop-architecture\.py|assert-gbf-runtime-convergence\.py|assert-gbf-canonical-data-model\.py)$/,
+                /^chatgpt-vps-control\//,
                 /^desktop\/electron\//,
                 /^desktop\/src\//,
                 /^frontend\/apps\/host\//,
@@ -406,6 +407,12 @@ jobs:
             /.github/scripts/assert-bot-mark-motion.py
             /.github/scripts/assert-product-ui-contracts.py
             /.github/scripts/build-offline-asr-engine.mjs
+            /.github/workflows/apple-store-delivery.yml
+            /.github/workflows/ci.yml
+            /.github/workflows/electron-desktop.yml
+            /.github/workflows/electron-macos-hot-package.yml
+            /.github/workflows/native-electron-release.yml
+            /chatgpt-vps-control/**
             /desktop/electron/offline-asr-engine.json
             /desktop/electron/offline-asr.cjs
             /.github/scripts/assert-native-desktop-edge-parity.py
@@ -424,6 +431,8 @@ jobs:
             /frontend/apps/web/src/lib/remote-computer/**
             /third_party/mahayana/mahayana-rs/mahayana-app-host/Cargo.toml
             /third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs
+            /third_party/mahayana/mahayana-rs/mahayana-agent-codex/Cargo.toml
+            /third_party/mahayana/mahayana-rs/mahayana-agent-codex/src/**
             /third_party/mahayana/mahayana-rs/mahayana-computer/Cargo.toml
             /third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
             /third_party/mahayana/mahayana-rs/mahayana-feature-host/Cargo.toml
@@ -453,7 +462,7 @@ jobs:
       - name: Reject native capability stubs
         run: python3 .github/scripts/assert-native-capability-semantics.py
       - name: Verify Electron edge, host lifecycle, and offline ASR contracts
-        run: node --test desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs
+        run: node --test desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs chatgpt-vps-control/tests/fabushi-embedded-runtime-source.test.js chatgpt-vps-control/tests/fabushi-computer-policy.test.js
       - name: Enforce Electron edge performance budget
         run: node desktop/electron/edge-ipc.bench.cjs
       - name: Verify Electron to Rust Feature Host bridge

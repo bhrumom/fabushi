@@ -842,7 +842,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
       !hostSettingsHydrated ||
       hostStatus !== "ready" ||
       !auth?.loggedIn ||
-      !preferences.remoteControlEnabled
+      !(auth.user?.id ?? auth.user?.username ?? auth.user?.email)
     ) {
       remoteDesktopControllerRef.current = null;
       if (existing) void existing.stop();
@@ -854,6 +854,12 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
     const controller = new RemoteComputerDesktopController({
       transport,
       label: `${auth.user?.nickname || auth.user?.username || "Fabushi"} 的 Mac`,
+      identityScope: String(auth.user?.id ?? auth.user?.username ?? auth.user?.email),
+      controlEnabled: preferences.remoteControlEnabled,
+      resolveAgentId: (requestedAgentId) => requestedAgentId === "mahayana-assistant"
+        || botsRef.current.some((bot) => bot.id === requestedAgentId)
+        ? requestedAgentId
+        : null,
       onState: (state) => {
         if (!cancelled) setRemoteDesktopState(state);
       },
@@ -867,7 +873,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
       securityKeys: preferences.securityKeys,
       webauthnProxyEnabled: preferences.webauthnProxyEnabled,
       localToolPermission: preferences.localToolPermission,
-      remoteControlEnabled: true,
+      remoteControlEnabled: preferences.remoteControlEnabled,
       aiComputerControlEnabled: preferences.aiComputerControlEnabled,
       autoReviewRules: preferences.autoReviewRules,
       ...hostRouterSettingsRef.current,
@@ -891,8 +897,10 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
     };
   }, [
     auth?.loggedIn,
+    auth?.user?.id,
     auth?.user?.nickname,
     auth?.user?.username,
+    auth?.user?.email,
     hostSettingsHydrated,
     hostStatus,
     preferences.remoteControlEnabled,

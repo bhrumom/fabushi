@@ -3,6 +3,7 @@ import SwiftUI
 private enum MobileDestination {
     case home
     case marketplace
+    case remoteComputer
 }
 
 private struct ConversationSummary: Identifiable {
@@ -36,6 +37,8 @@ struct ContentView: View {
                 homeView
             case .marketplace:
                 marketplaceView
+            case .remoteComputer:
+                RemoteComputerSurface { destination = .home }
             }
         }
         .fullScreenCover(item: $openedMiniApp) { plugin in
@@ -69,6 +72,8 @@ struct ContentView: View {
                         }
                         Menu {
                             Button("新建对话") { addConversation() }
+                            Button("我的电脑") { destination = .remoteComputer }
+                                .accessibilityIdentifier("remote-computer-entry")
                             Button("插件市场") { destination = .marketplace }
                                 .accessibilityIdentifier("marketplace-entry")
                         } label: {

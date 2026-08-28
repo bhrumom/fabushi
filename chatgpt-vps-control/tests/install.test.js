@@ -12,10 +12,10 @@ test("macOS helper has a stable named app-bundle identity", async () => {
     readFile(resolve("native/macos/Info.plist"), "utf8"),
     readFile(resolve("native/macos/RequestService-Info.plist"), "utf8"),
   ]);
-  assert.match(plist, /<key>CFBundleDisplayName<\/key><string>ChatGPT Computer Control<\/string>/);
-  assert.match(plist, /<key>CFBundleIdentifier<\/key><string>com\.bhrum\.computer-control<\/string>/);
-  assert.match(plist, /<key>CFBundleExecutable<\/key><string>ChatGPTComputerControl<\/string>/);
-  assert.match(servicePlist, /com\.bhrum\.computer-control\.request-service/);
+  assert.match(plist, /<key>CFBundleDisplayName<\/key><string>Fabushi Computer Control<\/string>/);
+  assert.match(plist, /<key>CFBundleIdentifier<\/key><string>com\.ombhrum\.fabushi\.computer-control<\/string>/);
+  assert.match(plist, /<key>CFBundleExecutable<\/key><string>FabushiComputerControl<\/string>/);
+  assert.match(servicePlist, /com\.ombhrum\.fabushi\.computer-control\.request-service/);
   assert.match(servicePlist, /<key>CFBundlePackageType<\/key>\s*<string>XPC!<\/string>/);
   assert.match(servicePlist, /<key>ServiceType<\/key>\s*<string>Application<\/string>/);
 });
@@ -53,10 +53,10 @@ test("setup creates a private reusable local configuration without installing de
     const mode = (await stat(join(home, ".env"))).mode & 0o777;
     if (process.platform !== "win32") assert.equal(mode, 0o600);
     if (process.platform === "darwin") {
-      const serviceRoot = join(home, "Applications", "ChatGPT Computer Control.app", "Contents", "XPCServices", "com.bhrum.computer-control.request-service.xpc", "Contents");
-      assert.ok((await stat(join(serviceRoot, "MacOS", "ChatGPTComputerRequestService"))).isFile());
+      const serviceRoot = join(home, "Applications", "Fabushi Computer Control.app", "Contents", "XPCServices", "com.ombhrum.fabushi.computer-control.request-service.xpc", "Contents");
+      assert.ok((await stat(join(serviceRoot, "MacOS", "FabushiComputerRequestService"))).isFile());
       const servicePlist = await readFile(join(serviceRoot, "Info.plist"), "utf8");
-      assert.match(servicePlist, /com\.bhrum\.computer-control\.request-service/);
+      assert.match(servicePlist, /com\.ombhrum\.fabushi\.computer-control\.request-service/);
     }
 
     const second = spawnSync(process.execPath, [cli, "setup", "--no-deps", "--port", "18991"], {

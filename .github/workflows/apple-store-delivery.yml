@@ -176,11 +176,36 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: |
+            desktop/package-lock.json
+            chatgpt-vps-control/package-lock.json
 
       - name: Install Electron dependencies
         working-directory: desktop
         run: npm ci --prefer-offline
+
+      - name: Install embedded Computer Use dependencies
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts --prefer-offline
+
+      - name: Install Mac App Store identity for the embedded Computer Use helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          cert="$RUNNER_TEMP/fabushi-mas-application.p12"
+          keychain="$RUNNER_TEMP/fabushi-mas-computer-helper.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$MACOS_APP_STORE_CERTIFICATE_P12_BASE64" | base64 --decode > "$cert"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert" -k "$keychain" -P "$MACOS_APP_STORE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Apple Distribution:|3rd Party Mac Developer Application:|Mac App Distribution:/ {print $2; exit}')"
+          test -n "$identity"
+          echo "MACOS_APP_STORE_APP_IDENTITY=$identity" >> "$GITHUB_ENV"
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -242,6 +267,16 @@ jobs:
         working-directory: desktop
         run: npm run build:renderer
 
+      - name: Stage bundled Computer Use runtime for the Mac application
+        shell: bash
+        env:
+          CHATGPT_COMPUTER_HOME: ${{ github.workspace }}/desktop/resources/computer-control
+        run: |
+          set -euo pipefail
+          export CHATGPT_COMPUTER_CODESIGN_IDENTITY="${MACOS_APP_STORE_APP_IDENTITY:-}"
+          export CHATGPT_COMPUTER_TEAM_ID="${MACOS_APP_STORE_TEAM_ID:-}"
+          node chatgpt-vps-control/bin/prepare-fabushi-bundle.js
+
       - name: Build signed Mac App Store package
         working-directory: desktop
         env:
@@ -251,6 +286,15 @@ jobs:
           --mac mas
           --arm64
           --config.buildVersion="$RELEASE_BUILD_NUMBER"
+
+      - name: Verify packaged Computer Use runtime, helper, and private MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/scripts/verify-packaged-computer-control.mjs \
+            --release-root desktop/release \
+            --platform mac \
+            --expected-mac-team "$MACOS_APP_STORE_TEAM_ID"
 
       - id: mac-package
         name: Verify Mac App Store package
