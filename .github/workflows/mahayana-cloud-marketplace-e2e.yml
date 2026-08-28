@@ -132,14 +132,14 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          cargo test --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client 2>&1 \
+          cargo test --features mahayana-cli/codex-compat --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client 2>&1 \
             | tee artifacts/marketplace-validation/cargo-test.log
 
       - name: Build Mahayana CLI E2E binary
         shell: bash
         run: |
           set -o pipefail
-          cargo build --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli 2>&1 \
+          cargo build --features mahayana-cli/codex-compat --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli 2>&1 \
             | tee artifacts/marketplace-validation/mahayana-cli-build.log
 
       - name: Upload marketplace validation diagnostics
