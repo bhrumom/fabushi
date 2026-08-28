@@ -1,0 +1,75 @@
+name: Mahayana Design Artifact Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'desktop/electron/design-artifact-runtime.cjs'
+      - 'desktop/electron/design-artifact-runtime.test.cjs'
+      - 'desktop/electron/bootstrap.cjs'
+      - 'desktop/src/mahayana-artifact-studio.tsx'
+      - 'desktop/src/mahayana-artifact-studio.module.css'
+      - 'desktop/src/main.tsx'
+      - 'design-systems/**'
+      - 'craft/**'
+      - '.agent/skills/fabushi-design/**'
+      - '.github/workflows/mahayana-design-artifact-contract.yml'
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/electron/design-artifact-runtime.cjs'
+      - 'desktop/electron/design-artifact-runtime.test.cjs'
+      - 'desktop/electron/bootstrap.cjs'
+      - 'desktop/src/mahayana-artifact-studio.tsx'
+      - 'desktop/src/mahayana-artifact-studio.module.css'
+      - 'desktop/src/main.tsx'
+      - 'design-systems/**'
+      - 'craft/**'
+      - '.agent/skills/fabushi-design/**'
+      - '.github/workflows/mahayana-design-artifact-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mda-contract-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Design/Artifact contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /desktop/electron/design-artifact-runtime.cjs
+            /desktop/electron/design-artifact-runtime.test.cjs
+            /design-systems/fabushi/**
+            /craft/**
+            /.agent/skills/fabushi-design/**
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Verify design package, staging, preview and adapter contracts
+        run: node --test desktop/electron/design-artifact-runtime.test.cjs
+      - name: Verify bundled design resources are complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s design-systems/fabushi/manifest.json
+          test -s design-systems/fabushi/DESIGN.md
+          test -s design-systems/fabushi/tokens.css
+          test -s design-systems/fabushi/USAGE.md
+          test -s .agent/skills/fabushi-design/SKILL.md
+          test "$(find craft -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')" -ge 5
+          grep -q 'critique:' .agent/skills/fabushi-design/SKILL.md
+          grep -q -- '--fabushi-accent' design-systems/fabushi/tokens.css
