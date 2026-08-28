@@ -17,6 +17,7 @@
     "build": "npm run build:host && npm run build:renderer",
     "package": "npm run build:host && npm run build:renderer && electron-builder",
     "test:credential-gateway": "node --test electron/credential-gateway.test.cjs",
+    "test:design-artifact": "node --test electron/design-artifact-runtime.test.cjs",
     "test:e2e": "playwright test",
     "start": "electron ."
   },
@@ -58,6 +59,27 @@
       {
         "from": "resources/asr",
         "to": "asr",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../design-systems",
+        "to": "design-systems",
+        "filter": [
+          "fabushi/**"
+        ]
+      },
+      {
+        "from": "../craft",
+        "to": "craft",
+        "filter": [
+          "**/*.md"
+        ]
+      },
+      {
+        "from": "../.agent/skills/fabushi-design",
+        "to": ".agent/skills/fabushi-design",
         "filter": [
           "**/*"
         ]
