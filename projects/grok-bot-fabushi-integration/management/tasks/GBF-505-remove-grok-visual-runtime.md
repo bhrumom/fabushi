@@ -9,7 +9,7 @@
 - Dependencies: GBF-501..504.
 - Status: IN_PROGRESS
 - Branch: `gbf/505-fabushi-owned-avatar-runtime`
-- PR: pending
+- PR: #2202
 - Started: 2026-08-22 17:58+08
 - Reopened/Updated: 2026-08-28 18:48+08
 
@@ -38,4 +38,4 @@
 
 ## Current result
 
-本轮已将最后一条明确的 production vendored avatar 实现替换为 Fabushi-owned source；历史 Grok/OpenMaus 资料只允许留在 project evidence/reference，不允许成为 production runtime input。任务在 CI、protected-main merge、post-main package/E2E/Release 完成前保持 `IN_PROGRESS`。
+本轮已将最后一条明确的 production vendored avatar 实现替换为 Fabushi-owned source；历史 Grok/OpenMaus 资料只允许留在 project evidence/reference，不允许成为 production runtime input。PR #2202 已打开；首轮 Host fast E2E 暴露 SVG JSX `transformOrigin` 类型问题后已修复。任务在 CI、protected-main merge、post-main package/E2E/Release 完成前保持 `IN_PROGRESS`。
