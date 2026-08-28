@@ -276,7 +276,7 @@ export const FabushiAvatarRuntime = forwardRef<FabushiAvatarRuntimeHandle, Fabus
         <g ref={faceRef}>
           <path d={personaPath(shape)} fill={`url(#${gradientId}-body)`} />
           <path d={personaPath(shape)} fill={`url(#${gradientId}-shine)`} opacity="0.9" />
-          <g ref={eyesRef} fill={eyeColor} transformOrigin={`${C}px ${C}px`}>
+          <g ref={eyesRef} fill={eyeColor}>
             <ellipse cx={C - 29} cy={C - 8} rx="10" ry="7" />
             <ellipse cx={C + 29} cy={C - 8} rx="10" ry="7" />
           </g>
