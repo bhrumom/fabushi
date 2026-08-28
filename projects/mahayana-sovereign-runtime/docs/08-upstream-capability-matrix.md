@@ -1,10 +1,10 @@
 # 08 上游能力、来源与缺口矩阵
 
-Updated: 2026-08-22
+Updated: 2026-08-28
 
 ## Audited revisions
 
-- OpenAI Codex: `343074d4207d572809bd8cea15f4be1d09d98e0b`
+- OpenAI Codex: `41d3dc56a0e1de47e30a9585c1b49253c082f8f7` (re-audited 2026-08-28; web-search architecture checked against current main)
 - xAI Grok Build: `19d42e35c07a9c9244f03f6df0c4c353f970d4f9`
 - Fabushi convergence baseline: PR #1971 / merge `5dcfaee4b8fb12896f9ac92c6dbc51317d10b942`
 
@@ -22,6 +22,7 @@ This matrix records capabilities, not product identity. `native` means the canon
 | Skills/plugins/connectors | Codex skills/connectors/plugin machinery | Mahayana plugin/skill/connector Host surfaces | native/partial | unified extension conformance and cross-surface E2E |
 | Model providers | Codex provider machinery | `mahayana-model`, `mahayana-native-engine`, Responses adapter | native/partial | provider feature/capability negotiation parity |
 | Local coding loop/tool execution | Codex core/tools | Mahayana native engine + tool host | native/partial | broad tool semantic and failure-mode conformance |
+| Live web search / page research | Codex first-class web-search tool in the Agent runtime | `mahayana-kernel::Capability::WebSearch` + `mahayana-native-engine::{web_search,web_fetch}`; TinyFish Search/Fetch provider | native/in-progress MSR-203 | protected PR CI + canonical-main product delivery; production `TINYFISH_API_KEY` provisioning |
 | Authentication/JWT session support | Codex login | `mahayana-auth` | native in MSR-103 | CI compile/test + canonical main verification |
 | Encrypted product secrets | Codex secrets | `mahayana-secrets` | native in MSR-103 | migration/keyring/platform CI + canonical main verification |
 | Legacy Codex agent behavior | Codex app-server/core | `mahayana-agent-codex` | adapter | removable after native parity gates pass |
