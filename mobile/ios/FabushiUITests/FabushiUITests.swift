@@ -43,9 +43,7 @@ final class FabushiUITests: XCTestCase {
         openRemoteComputer(in: app)
         let remoteComputer = app.descendants(matching: .any)["remote-computer-surface"]
         XCTAssertTrue(remoteComputer.waitForExistence(timeout: 10))
-        let remoteComputerClose = app.descendants(matching: .any)["remote-computer-close"]
-        XCTAssertTrue(remoteComputerClose.waitForExistence(timeout: 5))
-        remoteComputerClose.tap()
+        tapSurfaceClose(identifier: "remote-computer-close", in: app)
         XCTAssertTrue(remoteComputer.waitForNonExistence(timeout: 10))
 
         openMarketplace(in: app)
@@ -96,10 +94,26 @@ final class FabushiUITests: XCTestCase {
             "Expected the native WebMCP readiness status after WKNavigationDelegate.didFinish"
         )
 
-        let close = app.descendants(matching: .any)["miniapp-webmcp-close"]
-        XCTAssertTrue(close.waitForExistence(timeout: 5))
-        close.tap()
+        tapSurfaceClose(identifier: "miniapp-webmcp-close", in: app)
         XCTAssertTrue(surface.waitForNonExistence(timeout: 10))
+    }
+
+    @MainActor
+    private func tapSurfaceClose(identifier: String, in app: XCUIApplication) {
+        let byIdentifier = app.descendants(matching: .any)[identifier]
+        if byIdentifier.waitForExistence(timeout: 5) && byIdentifier.isHittable {
+            byIdentifier.tap()
+            return
+        }
+
+        // SwiftUI can omit a Button's identifier from the simulator accessibility
+        // projection while preserving its visible label and tap action.
+        let byLabel = app.buttons["返回"]
+        XCTAssertTrue(
+            byLabel.waitForExistence(timeout: 5),
+            "Expected close button \(identifier) or the SwiftUI 返回 label"
+        )
+        byLabel.tap()
     }
 
     @MainActor
