@@ -5,6 +5,7 @@ import { installBotIdentityAliases } from './agent-identity-aliases';
 import CredentialVault from './credential-vault';
 import { installDurableAgentState, restoreDurableAgentState } from './durable-agent-state';
 import DesktopShellV2 from './messaging-shell-v2';
+import MahayanaArtifactStudio from './mahayana-artifact-studio';
 import { installMahayanaAgentInlineCompatibility } from './mahayana-agent-inline-compat';
 import MahayanaAgentInlineReport from './mahayana-agent-inline-report';
 import MahayanaAgentWorkbench from './mahayana-agent-workbench';
@@ -35,6 +36,7 @@ async function bootstrapDesktop(rootElement: HTMLDivElement): Promise<void> {
     <StrictMode>
       <DesktopShellV2 />
       <MahayanaAgentWorkbench />
+      <MahayanaArtifactStudio />
       <MahayanaAgentInlineReport />
       <CredentialVault />
     </StrictMode>,
