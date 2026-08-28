@@ -1735,6 +1735,12 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
         } finally {
           setAuthResolved(true);
         }
+        // This HostClient is the signed-out login surface. Account hydration
+        // shares the single Rust Host request queue with browser auth, so doing
+        // it while signed out can delay browserStart/browserPoll long enough to
+        // strand the full-screen login gate. MessengerWorkspace owns the
+        // authenticated hydration after a successful login.
+        if (!authRef.current?.loggedIn) return;
         await transport.execute({
           type: "conversation.list",
           requestId: "conversation-list-initial",
