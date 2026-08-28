@@ -9,6 +9,7 @@ on:
       - 'desktop/electron/bootstrap.cjs'
       - 'desktop/src/mahayana-artifact-studio.tsx'
       - 'desktop/src/mahayana-artifact-studio.module.css'
+      - 'desktop/src/mahayana-design-skill-routing.ts'
       - 'desktop/src/main.tsx'
       - 'design-systems/**'
       - 'craft/**'
@@ -25,6 +26,7 @@ on:
       - 'desktop/electron/bootstrap.cjs'
       - 'desktop/src/mahayana-artifact-studio.tsx'
       - 'desktop/src/mahayana-artifact-studio.module.css'
+      - 'desktop/src/mahayana-design-skill-routing.ts'
       - 'desktop/src/main.tsx'
       - 'design-systems/**'
       - 'craft/**'
@@ -52,6 +54,7 @@ jobs:
           sparse-checkout: |
             /desktop/electron/design-artifact-runtime.cjs
             /desktop/electron/design-artifact-runtime.test.cjs
+            /desktop/src/mahayana-design-skill-routing.ts
             /design-systems/fabushi/**
             /craft/**
             /.agent/skills/fabushi-design/**
@@ -59,9 +62,9 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
-      - name: Verify design package, staging, preview and adapter contracts
+      - name: Verify design package, staging, preview and export contracts
         run: node --test desktop/electron/design-artifact-runtime.test.cjs
-      - name: Verify bundled design resources are complete
+      - name: Verify bundled design resources and routing contract are complete
         shell: bash
         run: |
           set -euo pipefail
@@ -70,6 +73,10 @@ jobs:
           test -s design-systems/fabushi/tokens.css
           test -s design-systems/fabushi/USAGE.md
           test -s .agent/skills/fabushi-design/SKILL.md
+          test -s desktop/src/mahayana-design-skill-routing.ts
           test "$(find craft -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')" -ge 5
           grep -q 'critique:' .agent/skills/fabushi-design/SKILL.md
           grep -q -- '--fabushi-accent' design-systems/fabushi/tokens.css
+          grep -q 'stageDesignSkill' desktop/src/mahayana-design-skill-routing.ts
+          grep -q 'getDesignSystem' desktop/src/mahayana-design-skill-routing.ts
+          grep -q 'exportArtifact' desktop/electron/design-artifact-runtime.cjs
