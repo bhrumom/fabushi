@@ -1,3 +1,4 @@
+import { connectorMetadataForPlugin } from './connector_marketplace_catalog.js';
 import { MiniAppMarketplace, MiniAppMarketplaceError, officialMiniAppManifests } from './miniapp_marketplace.js';
 import { requireManifest } from './miniapp_marketplace_server_common.js';
 
@@ -6,7 +7,6 @@ export const MINIAPP_BOT_PROTOCOL = 'fabushi.miniapp.bot.v2';
 
 const RAW_PACKAGE_ROOT = `https://raw.githubusercontent.com/bhrumom/fabushi/${MINIAPP_PACKAGE_COMMIT}/marketplace/packages`;
 export const ALL_PLATFORMS = ['desktop', 'mobile', 'web', 'cli', 'ios', 'android'];
-
 
 // Compatibility guard for the original v2 domain ranker: popularity is a
 // ranking signal, never a search match. Keep discovery filtering at the
@@ -28,6 +28,12 @@ function discoveryDocument(plugin) {
     plugin.displayName,
     plugin.description,
     plugin.latestVersion,
+    plugin.kind,
+    plugin.connector?.id,
+    plugin.connector?.displayName,
+    plugin.connector?.transport,
+    plugin.connector?.admission,
+    plugin.connector?.auth?.type,
     plugin.source?.publisher?.id,
     plugin.source?.publisher?.displayName,
     plugin.source?.repository,
@@ -83,8 +89,11 @@ if (!MiniAppMarketplace.prototype[SEARCH_GUARD]) {
       ...payload,
       plugins: payload.plugins.filter((plugin) => {
         const manifest = this.get(plugin.pluginId);
+        const connector = connectorMetadataForPlugin(plugin.pluginId);
         return matchesDiscovery({
           ...plugin,
+          kind: connector ? 'connector' : 'miniapp',
+          connector,
           categories: manifest?.categories ?? [],
           tags: manifest?.tags ?? [],
         }, query);
@@ -192,15 +201,21 @@ export function marketplaceReleaseResponse(manifest, platform = 'desktop') {
   if (manifest.distribution.installMode === 'package' && artifacts.length === 0) {
     throw new MiniAppMarketplaceError('NO_COMPATIBLE_ARTIFACT', `no ${platform} artifact is available`);
   }
+  const connector = connectorMetadataForPlugin(manifest.id);
+  const kind = connector ? 'connector' : 'miniapp';
   return {
     pluginId: manifest.id,
     version: manifest.version,
     releaseStatus: manifest.review.state,
+    kind,
+    connector,
     releaseManifest: {
       schemaVersion: 1,
       protocol: 'mahayana.external-release.v1',
       pluginId: manifest.id,
       version: manifest.version,
+      kind,
+      ...(connector ? { connector } : {}),
       permissions: manifest.permissions,
       artifacts,
     },
@@ -232,6 +247,8 @@ export function browseMarketplace(store, options = {}, baseUrl = '') {
       const release = marketplaceReleaseResponse(manifest, options.platform || 'desktop');
       return {
         ...plugin,
+        kind: release.kind,
+        connector: release.connector,
         categories: manifest.categories,
         tags: manifest.tags,
         releaseManifest: release.releaseManifest,
@@ -247,4 +264,3 @@ export function browseMarketplace(store, options = {}, baseUrl = '') {
     }),
   };
 }
-
