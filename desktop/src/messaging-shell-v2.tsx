@@ -564,14 +564,19 @@ export default function DesktopShellV2() {
   const [startupProjection, setStartupProjection] = useState<MessengerProjection | null>(localProjection);
   const [projectionLookupComplete, setProjectionLookupComplete] = useState(Boolean(localProjection));
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const authTransitionEpoch = useRef(0);
 
   const resetToLogin = useCallback(async (revokeSession = true) => {
+    // Invalidate any authStatus request that started before this explicit transition.
+    const transitionEpoch = ++authTransitionEpoch.current;
     try {
       if (revokeSession) await authTransport.logout();
     } catch {
       // Product logout is best effort remotely; local account state is cleared below.
     } finally {
       await clearAccountScopedDesktopCaches();
+      // A newer login may complete while logout/cache cleanup is in flight.
+      if (transitionEpoch !== authTransitionEpoch.current) return;
       setStartupProjection(null);
       setProjectionLookupComplete(true);
       setAuthenticated(false);
@@ -580,6 +585,9 @@ export default function DesktopShellV2() {
 
   const handleHostAuthStateChange = useCallback((state: AuthState) => {
     if (state.loggedIn) {
+      // Invalidate a signed-out authStatus snapshot that may still be clearing
+      // account caches before it gets a chance to overwrite this fresh login.
+      authTransitionEpoch.current += 1;
       // A fresh login must not remain behind the durable projection lookup.
       // The projection is optional startup data and can hydrate in the background.
       setProjectionLookupComplete(true);
@@ -602,12 +610,15 @@ export default function DesktopShellV2() {
     let closed = false;
     let retryTimer: number | undefined;
     const checkAuth = async () => {
+      const requestEpoch = authTransitionEpoch.current;
       try {
         const state = await authTransport.authStatus();
-        if (closed) return;
+        if (closed || requestEpoch !== authTransitionEpoch.current) return;
         if (!state.loggedIn) {
           await clearAccountScopedDesktopCaches();
-          if (closed) return;
+          // Browser login can finish while the signed-out cache cleanup awaits.
+          // Never let that older false snapshot replace the authenticated shell.
+          if (closed || requestEpoch !== authTransitionEpoch.current) return;
           setStartupProjection(null);
         }
         setAuthenticated(state.loggedIn);
