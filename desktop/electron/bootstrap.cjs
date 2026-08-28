@@ -5,9 +5,12 @@
 const nativeCapabilities = require('./native-capability-handlers.cjs');
 const { wrapNativeCapabilityHandlers } = require('./credential-gateway.cjs');
 const { wrapNativeCapabilityHandlers: wrapDesignArtifactHandlers } = require('./design-artifact-runtime.cjs');
+const { wrapDesignSkillContextHandlers } = require('./design-skill-context.cjs');
 
-nativeCapabilities.createNativeCapabilityHandlers = wrapDesignArtifactHandlers(
-  wrapNativeCapabilityHandlers(nativeCapabilities.createNativeCapabilityHandlers),
+nativeCapabilities.createNativeCapabilityHandlers = wrapDesignSkillContextHandlers(
+  wrapDesignArtifactHandlers(
+    wrapNativeCapabilityHandlers(nativeCapabilities.createNativeCapabilityHandlers),
+  ),
 );
 
 require('./main.cjs');
