@@ -43,8 +43,9 @@ final class FabushiUITests: XCTestCase {
         openRemoteComputer(in: app)
         let remoteComputer = app.descendants(matching: .any)["remote-computer-surface"]
         XCTAssertTrue(remoteComputer.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["remote-computer-close"].exists)
-        app.buttons["remote-computer-close"].tap()
+        let remoteComputerClose = app.descendants(matching: .any)["remote-computer-close"]
+        XCTAssertTrue(remoteComputerClose.waitForExistence(timeout: 5))
+        remoteComputerClose.tap()
         XCTAssertTrue(remoteComputer.waitForNonExistence(timeout: 10))
 
         openMarketplace(in: app)
@@ -95,8 +96,8 @@ final class FabushiUITests: XCTestCase {
             "Expected the native WebMCP readiness status after WKNavigationDelegate.didFinish"
         )
 
-        let close = app.buttons["miniapp-webmcp-close"]
-        XCTAssertTrue(close.exists)
+        let close = app.descendants(matching: .any)["miniapp-webmcp-close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
         close.tap()
         XCTAssertTrue(surface.waitForNonExistence(timeout: 10))
     }
