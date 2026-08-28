@@ -85,6 +85,7 @@ let automaticDesktopUpdateCheckPromise = null;
 let mainWindow = null;
 let backgroundTray = null;
 let quitting = false;
+const backgroundPersistenceEnabled = process.env.FABUSHI_E2E !== '1';
 
 function normalizeMessagingAccessParams(params) {
   const deviceId = String(params?.deviceId || 'desktop:electron').trim();
@@ -900,7 +901,7 @@ function createWindow() {
     win.on(eventName, publishWindowState);
   }
   win.on('close', (event) => {
-    if (quitting) return;
+    if (quitting || !backgroundPersistenceEnabled) return;
     event.preventDefault();
     win.hide();
     publishWindowState();
@@ -931,7 +932,7 @@ function createWindow() {
 }
 
 function installBackgroundTray() {
-  if (backgroundTray) return;
+  if (!backgroundPersistenceEnabled || backgroundTray) return;
   const iconPath = path.resolve(__dirname, '..', 'resources', 'icon.png');
   let image = nativeImage.createFromPath(iconPath);
   if (image.isEmpty()) {
@@ -1210,9 +1211,10 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   deepLinkRouter.markNotReady();
-  // The Host and remote-computer presence belong to the installed application,
-  // not to the visibility of its main window. The tray is the explicit way to
-  // restore or quit on Windows, Linux, and macOS.
+  // Production keeps the Host and account-bound computer presence alive after
+  // the window is hidden. Automated user journeys opt into a deterministic
+  // shutdown seam so Playwright can close each isolated application cleanly.
+  if (!backgroundPersistenceEnabled) app.quit();
 });
 app.on('before-quit', () => {
   quitting = true;
