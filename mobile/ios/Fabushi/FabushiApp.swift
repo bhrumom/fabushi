@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct FabushiApp: App {
     @State private var model: MarketplaceModel
+    @State private var appAgentSurface: FabushiAppAgentSurface
 
     init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -16,6 +17,7 @@ struct FabushiApp: App {
             _model = State(initialValue: MarketplaceModel(
                 host: try MahayanaHost(appDataDirectory: base, featureHostTest: featureHostTest)
             ))
+            _appAgentSurface = State(initialValue: FabushiAppAgentSurface())
         } catch {
             fatalError("Failed to initialize Mahayana Host: \(error)")
         }
@@ -23,7 +25,7 @@ struct FabushiApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(model: model)
+            ContentView(model: model, appAgentSurface: appAgentSurface)
                 .task {
                     await model.runFeatureHostSmokeIfRequested()
                     await model.refresh()

@@ -16,6 +16,7 @@ private struct ConversationSummary: Identifiable {
 
 struct ContentView: View {
     @Bindable var model: MarketplaceModel
+    let appAgentSurface: FabushiAppAgentSurface
     @State private var openedMiniApp: MarketplacePlugin?
     @State private var destination: MobileDestination = .home
     @State private var isSearching = false
@@ -57,6 +58,176 @@ struct ContentView: View {
                 Text("\(request.pluginId) 请求以下权限：\n\(request.permissions.joined(separator: "\n"))")
             }
         }
+        .task(id: appAgentSurfaceFingerprint) {
+            publishAppAgentSurface()
+        }
+        .onDisappear {
+            appAgentSurface.clear()
+        }
+    }
+
+    private var appAgentSurfaceFingerprint: String {
+        let pluginRevision = model.plugins.map { "\($0.pluginId):\($0.latestVersion ?? "")" }.joined(separator: ",")
+        let destinationRevision: String = switch destination {
+        case .home: "home"
+        case .marketplace: "marketplace"
+        case .remoteComputer: "remote-computer"
+        }
+        return [
+            destinationRevision,
+            String(isSearching),
+            homeQuery,
+            model.query,
+            model.message,
+            String(model.loading),
+            model.installingPluginId ?? "",
+            model.permissionRequest?.pluginId ?? "",
+            openedMiniApp?.pluginId ?? "",
+            pluginRevision,
+        ].joined(separator: "|")
+    }
+
+    @MainActor
+    private func publishAppAgentSurface() {
+        var elements: [FabushiAppAgentSurface.Element] = []
+        var actions: [String: FabushiAppAgentSurface.Action] = [:]
+        func semanticId(_ value: String) -> String {
+            String(value.map { character in
+                character.isASCII && (character.isLetter || character.isNumber || "._:/@-".contains(character))
+                    ? character
+                    : "-"
+            }.prefix(200))
+        }
+        func add(
+            _ id: String,
+            role: String,
+            name: String,
+            enabled: Bool = true,
+            visible: Bool = true,
+            action: FabushiAppAgentSurface.Action? = nil
+        ) {
+            let normalizedId = semanticId(id)
+            elements.append(.init(
+                agentId: normalizedId,
+                role: String(role.prefix(80)),
+                name: String(name.prefix(240)),
+                visible: visible,
+                enabled: enabled
+            ))
+            if let action { actions[normalizedId] = action }
+        }
+
+        let screen: String
+        if let openedMiniApp {
+            screen = "miniapp"
+            add("miniapp-\(openedMiniApp.pluginId)", role: "application", name: openedMiniApp.displayName)
+            add(
+                "miniapp-close",
+                role: "button",
+                name: "关闭 MiniApp",
+                action: .init(allowed: ["invoke"]) { _ in self.openedMiniApp = nil }
+            )
+        } else {
+            switch destination {
+            case .home:
+                screen = "home"
+                add("app-shell", role: "application", name: "Fabushi")
+                add(
+                    "home-search-button",
+                    role: "button",
+                    name: "搜索对话",
+                    action: .init(allowed: ["invoke"]) { _ in isSearching.toggle() }
+                )
+                if isSearching {
+                    add(
+                        "home-search-field",
+                        role: "textbox",
+                        name: "搜索消息",
+                        action: .init(allowed: ["setValue"]) { value in homeQuery = value ?? "" }
+                    )
+                }
+                add("home-add-button", role: "button", name: "添加")
+                add(
+                    "marketplace-entry",
+                    role: "menuitem",
+                    name: "插件市场",
+                    action: .init(allowed: ["invoke"]) { _ in destination = .marketplace }
+                )
+                add(
+                    "remote-computer-entry",
+                    role: "menuitem",
+                    name: "我的电脑",
+                    action: .init(allowed: ["invoke"]) { _ in destination = .remoteComputer }
+                )
+                add("conversation-chief-of-staff", role: "button", name: "Chief of Staff")
+            case .marketplace:
+                screen = "marketplace"
+                add(
+                    "marketplace-back",
+                    role: "button",
+                    name: "消息",
+                    action: .init(allowed: ["invoke"]) { _ in destination = .home }
+                )
+                add(
+                    "marketplace-search",
+                    role: "textbox",
+                    name: "搜索插件",
+                    action: .init(allowed: ["setValue"]) { value in model.query = value ?? "" }
+                )
+                add(
+                    "marketplace-search-submit",
+                    role: "button",
+                    name: "搜索",
+                    enabled: !model.loading,
+                    action: .init(allowed: ["invoke"]) { _ in Task { await model.refresh() } }
+                )
+                add("host-status", role: "status", name: model.message)
+                for plugin in model.plugins.prefix(100) {
+                    add("plugin-\(plugin.pluginId)", role: "group", name: plugin.displayName)
+                    add(
+                        "open-\(plugin.pluginId)",
+                        role: "button",
+                        name: "打开 \(plugin.displayName)",
+                        action: .init(allowed: ["invoke"]) { _ in openedMiniApp = plugin }
+                    )
+                    add(
+                        "install-\(plugin.pluginId)",
+                        role: "button",
+                        name: "安装 \(plugin.displayName)",
+                        enabled: plugin.latestVersion != nil && model.installingPluginId == nil,
+                        action: .init(allowed: ["invoke"]) { _ in Task { await model.install(plugin) } }
+                    )
+                }
+            case .remoteComputer:
+                screen = "remote-computer"
+                add("remote-computer-surface", role: "application", name: "远程控制我的电脑")
+                add(
+                    "remote-computer-close",
+                    role: "button",
+                    name: "关闭远程控制",
+                    action: .init(allowed: ["invoke"]) { _ in destination = .home }
+                )
+            }
+        }
+        if model.permissionRequest != nil {
+            add(
+                "permission-approve",
+                role: "button",
+                name: "授权插件权限",
+                action: .init(allowed: ["invoke"]) { _ in Task { await model.approvePermissions() } }
+            )
+            add(
+                "permission-deny",
+                role: "button",
+                name: "拒绝插件权限",
+                action: .init(allowed: ["invoke"]) { _ in model.denyPermissions() }
+            )
+        }
+        try? appAgentSurface.publish(
+            screen: model.permissionRequest == nil ? screen : "permission-dialog",
+            elements: elements,
+            actions: actions
+        )
     }
 
     private var homeView: some View {

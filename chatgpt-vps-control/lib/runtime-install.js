@@ -22,8 +22,19 @@ const RUNTIME_LAYOUT_VERSION = 1;
 const REQUIRED_RUNTIME_PATHS = [
   "bin/chatgpt-computer-control.js",
   "bin/fabushi-computer-mcp.js",
+  "bin/fabushi-remote-mcp.js",
+  "lib/fabushi-remote-mcp-server.js",
+  "lib/fabushi-account-auth.js",
+  "bin/fabushi-device-agent.js",
+  "bin/fabushi-ci-account-login.js",
   "extension/manifest.json",
   "lib/fabushi-computer-policy.js",
+  "lib/device-agent.js",
+  "lib/fabushi-account-session.js",
+  "lib/ci-session-tools.js",
+  "lib/app-agent-surface-client.js",
+  "lib/app-agent-surface-client.d.ts",
+  "lib/app-agent-tools.js",
   "native/linux/accessibility-helper.py",
   "native/macos/ComputerHelper.swift",
   "native/macos/Info.plist",
@@ -155,6 +166,9 @@ export async function installPrivateRuntime({ sourceRoot, appHome }) {
     }
     await chmod(join(staging, "bin", "chatgpt-computer-control.js"), 0o700).catch(() => {});
     await chmod(join(staging, "bin", "fabushi-computer-mcp.js"), 0o700).catch(() => {});
+    await chmod(join(staging, "bin", "fabushi-remote-mcp.js"), 0o700).catch(() => {});
+    await chmod(join(staging, "bin", "fabushi-device-agent.js"), 0o700).catch(() => {});
+    await chmod(join(staging, "bin", "fabushi-ci-account-login.js"), 0o700).catch(() => {});
     await chmod(join(staging, "scripts", "browser-extension-host.mjs"), 0o700).catch(() => {});
     await writeFile(join(staging, "runtime-manifest.json"), `${JSON.stringify({
       layoutVersion: RUNTIME_LAYOUT_VERSION,
