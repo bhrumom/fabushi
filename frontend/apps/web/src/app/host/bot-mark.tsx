@@ -54,13 +54,6 @@ export type BotMarkState =
   | "bouncing"
   | "powering-down";
 
-/**
- * Shape overrides remain in the public type for persisted/backward-compatible
- * appearance data, but normal identity rendering now uses one base silhouette.
- * OpenMausBot proved that color/expression/motion are sufficient identity
- * dimensions and that a bot-id -> unrelated body-shape lottery makes dense
- * lists look visually broken.
- */
 export type BotMarkShape =
   | "blob"
   | "pebble"
@@ -104,7 +97,6 @@ type BotMarkProps = {
   emphasis?: boolean;
   spinSignal?: number;
   badgeColor?: string;
-  /** Explicit low-power/static rendering, aligned with OpenMausBot. */
   animated?: boolean;
   paused?: boolean;
   shape?: BotMarkShape;
@@ -124,11 +116,6 @@ const botIdentityAliases = new Map<string, string>();
 const botIdentityListeners = new Set<() => void>();
 let botIdentityVersion = 0;
 
-/**
- * Resolve a UI-specific BotMark id to the stable Bot identity used by the
- * animation engine. Surface prefixes are deliberately ignored so the same Bot
- * cannot change color merely because it moved between product surfaces.
- */
 export function canonicalBotIdentity(botId: string): string {
   let current = botId.trim() || "mahayana-assistant";
   const seen = new Set<string>();
@@ -213,9 +200,8 @@ function identityRandom(seed: number): () => number {
 }
 
 /**
- * Normal product identity uses one body silhouette, matching OpenMausBot's
- * unified mascot model. The function is retained because persisted callers and
- * tests import it, but identity no longer hashes into eight unrelated bodies.
+ * The default body remains visually stable for dense lists. Persisted shape
+ * overrides still support richer persona silhouettes in profile/hero surfaces.
  */
 export function botMarkShape(_botId: string): BotMarkShape {
   return "blob";
@@ -237,11 +223,6 @@ export function botMarkColor(botId: string): string {
   return `light-dark(${value.light}, ${value.dark})`;
 }
 
-/**
- * OpenMausBot's page-visible strategy adapted for Electron: hidden or unfocused
- * windows do not keep dozens of mascots repainting. The engine still paints a
- * resting frame when paused, so identities never disappear.
- */
 function useAvatarMotionAllowed(): boolean {
   const read = () => {
     if (typeof document === "undefined" || typeof window === "undefined") return true;
@@ -307,8 +288,8 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
       data-shape={shape}
       data-color={color}
       data-motion-tier={botMarkMotionTier(state, emphasis, followPointer)}
-      data-engine="fabushi-motion-v2"
-      data-renderer="openmaus-unified-mark"
+      data-engine="fabushi-motion-v3"
+      data-renderer="fabushi-owned-svg-runtime"
       style={style}
       aria-label={label}
       aria-hidden={label ? undefined : true}
