@@ -1089,7 +1089,8 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     // Remote presence shares the Host request path with Messenger bootstrap.
     // Keep background registration off that path until all core legacy lists
     // have produced their first authoritative projection.
-    if (!hostReady || !remoteAccountScope || !initialLegacyHydrated) return;
+    if (!hostReady || !remoteAccountScope) return;
+    if (!initialLegacyHydrated) return;
     let disposed = false;
     const controller = new RemoteComputerDesktopController({
       transport,
