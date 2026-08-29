@@ -28,8 +28,6 @@ function loadPreload() {
     Set,
     Map,
     Array,
-    setTimeout,
-    clearTimeout,
   }, { filename: 'preload.cjs' });
   return {
     exposed,
@@ -76,6 +74,23 @@ test('Mahayana preload bridges one active-subscriber handoff without retaining s
   const third = [];
   bridge.exposed.mahayana.subscribe((event) => third.push(event.type));
   assert.deepEqual(third, []);
+});
+
+test('Mahayana preload clears replay at authentication account boundaries', async () => {
+  const bridge = loadPreload();
+  const channel = 'fabushi-edge:mahayana-host:event:runtime-event';
+  bridge.emit(channel, { type: 'conversation.listed', conversations: [{ id: 'old-account' }] });
+  await bridge.exposed.mahayana.invoke('feature.auth.browserStart');
+
+  const afterLoginStart = [];
+  bridge.exposed.mahayana.subscribe((event) => afterLoginStart.push(event));
+  assert.deepEqual(afterLoginStart, []);
+
+  bridge.emit(channel, { type: 'conversation.listed', conversations: [{ id: 'new-account' }] });
+  await bridge.exposed.mahayana.invoke('feature.auth.logout');
+  const afterLogout = [];
+  bridge.exposed.mahayana.subscribe((event) => afterLogout.push(event));
+  assert.deepEqual(afterLogout, []);
 });
 
 test('Mahayana preload keeps only the newest replayable projection per type', () => {
