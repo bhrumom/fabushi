@@ -225,7 +225,7 @@ async function runFullTestSuite() {
   );
   
   if (messageInput) {
-    const testMessage = "【自动测试】这是一条通过 ChatGPT Computer Control 写入的测试指令";
+    const testMessage = "【自动测试】这是一条通过 Fabushi Computer Control 写入的测试指令";
     console.log(`  -> 步骤 4.1: 找到消息输入框 (Role: ${messageInput.role}, Name: "${messageInput.name}")`);
     console.log(`  -> 步骤 4.2: 写入测试内容: "${testMessage}"`);
     

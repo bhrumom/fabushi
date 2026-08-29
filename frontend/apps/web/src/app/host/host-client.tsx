@@ -4,6 +4,7 @@ import {
   type MahayanaHostFeatureState,
 } from "@fabushi/shared";
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -484,6 +485,11 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
   const [marketplaceSearch, setMarketplaceSearch] = useState("");
   const [busyMiniApp, setBusyMiniApp] = useState<string | null>(null);
   const [auth, setAuth] = useState<AuthState | null>(null);
+  const authRef = useRef<AuthState | null>(null);
+  const commitAuth = useCallback((next: AuthState) => {
+    authRef.current = next;
+    setAuth(next);
+  }, []);
   const [authResolved, setAuthResolved] = useState(false);
   const [accountAvatarUrl, setAccountAvatarUrl] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
@@ -842,7 +848,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
       !hostSettingsHydrated ||
       hostStatus !== "ready" ||
       !auth?.loggedIn ||
-      !preferences.remoteControlEnabled
+      !(auth.user?.id ?? auth.user?.username ?? auth.user?.email)
     ) {
       remoteDesktopControllerRef.current = null;
       if (existing) void existing.stop();
@@ -854,6 +860,12 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
     const controller = new RemoteComputerDesktopController({
       transport,
       label: `${auth.user?.nickname || auth.user?.username || "Fabushi"} 的 Mac`,
+      identityScope: String(auth.user?.id ?? auth.user?.username ?? auth.user?.email),
+      controlEnabled: preferences.remoteControlEnabled,
+      resolveAgentId: (requestedAgentId) => requestedAgentId === "mahayana-assistant"
+        || botsRef.current.some((bot) => bot.id === requestedAgentId)
+        ? requestedAgentId
+        : null,
       onState: (state) => {
         if (!cancelled) setRemoteDesktopState(state);
       },
@@ -867,7 +879,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
       securityKeys: preferences.securityKeys,
       webauthnProxyEnabled: preferences.webauthnProxyEnabled,
       localToolPermission: preferences.localToolPermission,
-      remoteControlEnabled: true,
+      remoteControlEnabled: preferences.remoteControlEnabled,
       aiComputerControlEnabled: preferences.aiComputerControlEnabled,
       autoReviewRules: preferences.autoReviewRules,
       ...hostRouterSettingsRef.current,
@@ -891,8 +903,10 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
     };
   }, [
     auth?.loggedIn,
+    auth?.user?.id,
     auth?.user?.nickname,
     auth?.user?.username,
+    auth?.user?.email,
     hostSettingsHydrated,
     hostStatus,
     preferences.remoteControlEnabled,
@@ -1669,7 +1683,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
         }
         case "session.cleared":
           setSessionState("cleared");
-          setAuth({ loggedIn: false });
+          commitAuth({ loggedIn: false });
           pass("session.clear");
           break;
         case "host.closed":
@@ -1689,11 +1703,13 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           ? "production"
           : "test";
 
+    let disposed = false;
     void transport
       .initialize({ profileId: "default", mode })
       .then(async () => {
         // Resolve authentication first. Conversation/tool/workspace hydration is background
         // work and must never hold a full-screen returning-user gate.
+        let restoredLoggedIn = false;
         try {
           const authState = await Promise.race([
             transport.authStatus(),
@@ -1704,18 +1720,31 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
               ),
             ),
           ]);
-          setAuth(authState);
-          if (authState.loggedIn) {
+          if (disposed) return;
+          restoredLoggedIn = authState.loggedIn;
+          // Browser login can complete while the initial authStatus request is
+          // still in flight. Never let that older signed-out snapshot overwrite
+          // the newer authenticated session.
+          if (!authRef.current?.loggedIn) commitAuth(authState);
+          if (authState.loggedIn || authRef.current?.loggedIn) {
             setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
           }
         } catch (cause: unknown) {
-          setAuth({ loggedIn: false });
-          setLoginError(
-            `无法恢复账号会话：${cause instanceof Error ? cause.message : String(cause)}`,
-          );
+          if (disposed) return;
+          if (!authRef.current?.loggedIn) {
+            commitAuth({ loggedIn: false });
+            setLoginError(
+              `无法恢复账号会话：${cause instanceof Error ? cause.message : String(cause)}`,
+            );
+          }
         } finally {
-          setAuthResolved(true);
+          if (!disposed) setAuthResolved(true);
         }
+        // Only a session restored by this initialization owns HostClient hydration.
+        // If browser login won the race, the parent immediately switches to
+        // MessengerWorkspace; letting this stale signed-out surface hydrate after
+        // unmount would monopolize the single Rust Host queue and delay Messenger.
+        if (disposed || !restoredLoggedIn) return;
         await transport.execute({
           type: "conversation.list",
           requestId: "conversation-list-initial",
@@ -1771,6 +1800,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
       });
 
     return () => {
+      disposed = true;
       unsubscribe();
       void transport.close();
     };
@@ -1993,7 +2023,12 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
         const result = await transport.browserLoginPoll(attempt.attemptId);
         if (cancelled) return;
         if (result.status === "completed" && result.auth) {
-          setAuth({ ...result.auth, loggedIn: true });
+          const completedAuth = { ...result.auth, loggedIn: true };
+          // Resolve the parent shell immediately; do not wait for the initial
+          // auth restoration request or leave the authenticated Host surface
+          // mounted in place of Messenger.
+          setAuthResolved(true);
+          commitAuth(completedAuth);
           setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
           setBrowserLoginAttempt(null);
           setLoginBusy(false);
@@ -2030,7 +2065,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
   const logout = async () => {
     await run(async () => {
       const state = await transport.logout();
-      setAuth({ ...state, loggedIn: false });
+      commitAuth({ ...state, loggedIn: false });
       setAccountOpen(false);
       setBrowserLoginAttempt(null);
       setLoginBusy(false);

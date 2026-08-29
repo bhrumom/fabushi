@@ -68,7 +68,7 @@ final class ComputerRequestXPCService: NSObject, ComputerRequestXPCProtocol {
         Task {
             do {
                 let appContents = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
-                let helper = appContents.appendingPathComponent("MacOS/ChatGPTComputerControl")
+                let helper = appContents.appendingPathComponent("MacOS/FabushiComputerControl")
                 reply(try await performIsolatedRequest(request, executableURL: helper), nil)
             } catch { reply(nil, error.localizedDescription) }
         }
@@ -89,7 +89,7 @@ func runComputerRequestXPCService() -> Never {
     let delegate = ComputerRequestXPCDelegate()
     let listener = NSXPCListener.service()
     listener.delegate = delegate
-    listener.setConnectionCodeSigningRequirement("identifier \"com.bhrum.computer-control\"")
+    listener.setConnectionCodeSigningRequirement("identifier \"com.ombhrum.fabushi.computer-control\"")
     listener.resume()
     RunLoop.current.run()
     exit(0)
@@ -99,9 +99,9 @@ var sharedRequestXPCConnection: NSXPCConnection? = nil
 
 func requestXPCConnection() -> NSXPCConnection {
     if let connection = sharedRequestXPCConnection { return connection }
-    let connection = NSXPCConnection(serviceName: "com.bhrum.computer-control.request-service")
+    let connection = NSXPCConnection(serviceName: "com.ombhrum.fabushi.computer-control.request-service")
     connection.remoteObjectInterface = NSXPCInterface(with: ComputerRequestXPCProtocol.self)
-    connection.setCodeSigningRequirement("identifier \"com.bhrum.computer-control.request-service\"")
+    connection.setCodeSigningRequirement("identifier \"com.ombhrum.fabushi.computer-control.request-service\"")
     connection.resume()
     sharedRequestXPCConnection = connection
     return connection

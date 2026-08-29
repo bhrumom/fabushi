@@ -204,6 +204,22 @@
 .modeBar button[data-active="true"] { border-color: #6e63e9; background: rgb(110 99 233 / 14%); color: #c3bdff; }
 
 .keyboardCard { display: grid; gap: 8px; padding: 9px; }
+.aiRow {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgb(110 99 233 / 24%);
+  border-radius: 11px;
+  background: linear-gradient(135deg, rgb(110 99 233 / 12%), rgb(75 63 185 / 5%));
+}
+.aiRow > div:first-child,
+.manualLabel { display: grid; gap: 2px; }
+.aiRow strong,
+.manualLabel strong { font-size: 11px; }
+.aiRow small,
+.manualLabel small { color: #838792; font-size: 9px; line-height: 1.45; }
+.aiStatus { color: #9c94ff !important; }
+.manualLabel { padding: 2px 2px 0; }
 .textRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
 .textRow input { padding: 9px 11px; }
 .textRow button { min-width: 62px; color: #d6d2ff; }
