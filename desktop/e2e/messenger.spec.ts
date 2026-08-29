@@ -131,7 +131,7 @@ test('desktop Messenger unifies Telegram-class navigation with Fabushi agent ide
     await openMessenger(page);
 
     const profileNavigation = page.getByTestId('profile-navigation-trigger');
-    const profileMark = profileNavigation.locator('[data-engine="fabushi-motion-v2"]').first();
+    const profileMark = profileNavigation.locator('[data-engine="fabushi-motion-v3"]').first();
     await expect(profileMark).toBeVisible();
     await expect(profileMark).toHaveAttribute('data-motion-tier', 'ambient');
     await profileNavigation.click();
@@ -178,7 +178,7 @@ test('desktop Messenger unifies Telegram-class navigation with Fabushi agent ide
 
     const assistant = page.getByTestId('peer-legacy:conversation:codex:agent:assistant');
     await expect(assistant).toBeVisible();
-    await expect(assistant.locator('[data-engine="fabushi-motion-v2"]').first()).toBeVisible();
+    await expect(assistant.locator('[data-engine="fabushi-motion-v3"]').first()).toBeVisible();
     await assistant.click();
     await expect(page.getByTestId('messenger-input')).toBeVisible();
 
