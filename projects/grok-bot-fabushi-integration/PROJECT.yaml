@@ -12,7 +12,7 @@ owner: Fabushi/Mahayana maintainers
 reviewers:
   - Fabushi maintainers
   - Security reviewer for high-risk capabilities
-current_stage: M4-interactive-runner-mcp
+current_stage: M4-interactive-runner-mcp-and-agent-surface
 created_at: 2026-08-22
 updated_at: 2026-08-29
 source_requirement: source/grok-bot融合优化.txt

@@ -51,6 +51,7 @@ jobs:
       FABUSHI_CI_SESSION_DIR: ${{ runner.temp }}/fabushi-interactive
       FABUSHI_COMPUTER_POLICY_FILE: ${{ runner.temp }}/fabushi-interactive/computer-policy.json
       FABUSHI_DEVICE_CALL_TRACE_FILE: ${{ runner.temp }}/fabushi-interactive/device-calls.jsonl
+      FABUSHI_APP_AGENT_DISCOVERY_FILE: ${{ runner.temp }}/fabushi-interactive/app-agent-bridge.json
       DISPLAY: ':99'
       GDK_BACKEND: x11
       NO_AT_BRIDGE: '0'

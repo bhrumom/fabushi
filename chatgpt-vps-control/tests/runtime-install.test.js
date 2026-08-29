@@ -27,6 +27,8 @@ async function createRuntimeSource(root) {
   await writeFixture(join(root, "lib", "device-agent.js"), "export {};\n");
   await writeFixture(join(root, "lib", "fabushi-account-session.js"), "export {};\n");
   await writeFixture(join(root, "lib", "ci-session-tools.js"), "export {};\n");
+  await writeFixture(join(root, "lib", "app-agent-surface-client.js"), "export {};\n");
+  await writeFixture(join(root, "lib", "app-agent-tools.js"), "export {};\n");
   await writeFixture(join(root, "scripts", "browser-extension-host.mjs"), "export {};\n");
   await writeFixture(join(root, "lib", "entry.js"), "export const fixture = true;\n");
   await writeFixture(join(root, "native", "linux", "accessibility-helper.py"), "#!/usr/bin/env python3\n");

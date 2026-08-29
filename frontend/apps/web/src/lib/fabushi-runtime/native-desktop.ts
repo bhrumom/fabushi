@@ -1,4 +1,5 @@
 export type NativeDesktopEvent =
+  | "app-agent-surface-request"
   | "mcp-auth-completed"
   | "focus-agent"
   | "cloud-agent-open"
