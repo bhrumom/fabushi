@@ -49,6 +49,14 @@ function parseReleaseVersion(value) {
     };
   }
 
+  const desktopMatch = normalizedValue.match(/^desktop-(\d+\.\d+\.(\d+))$/i);
+  if (desktopMatch) {
+    return {
+      version: desktopMatch[1],
+      buildNumber: Number.parseInt(desktopMatch[2], 10),
+    };
+  }
+
   const titleMatch = normalizedValue.match(/(\d+\.\d+\.\d+)\+(\d+)/);
   if (titleMatch) {
     return {
@@ -244,6 +252,9 @@ async function main() {
       process.env.APP_VERSION_DOWNLOAD_URL_WEB ||
       process.env.FRONTEND_URL ||
       '',
+    macos: process.env.APP_DOWNLOAD_URL_MACOS || process.env.APP_VERSION_DOWNLOAD_URL_MACOS || '',
+    windows: process.env.APP_DOWNLOAD_URL_WINDOWS || process.env.APP_VERSION_DOWNLOAD_URL_WINDOWS || '',
+    linux: process.env.APP_DOWNLOAD_URL_LINUX || process.env.APP_VERSION_DOWNLOAD_URL_LINUX || '',
   };
 
   for (const channel of channels) {
