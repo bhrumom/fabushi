@@ -1703,11 +1703,13 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           ? "production"
           : "test";
 
+    let disposed = false;
     void transport
       .initialize({ profileId: "default", mode })
       .then(async () => {
         // Resolve authentication first. Conversation/tool/workspace hydration is background
         // work and must never hold a full-screen returning-user gate.
+        let restoredLoggedIn = false;
         try {
           const authState = await Promise.race([
             transport.authStatus(),
@@ -1718,6 +1720,8 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
               ),
             ),
           ]);
+          if (disposed) return;
+          restoredLoggedIn = authState.loggedIn;
           // Browser login can complete while the initial authStatus request is
           // still in flight. Never let that older signed-out snapshot overwrite
           // the newer authenticated session.
@@ -1726,6 +1730,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
             setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
           }
         } catch (cause: unknown) {
+          if (disposed) return;
           if (!authRef.current?.loggedIn) {
             commitAuth({ loggedIn: false });
             setLoginError(
@@ -1733,14 +1738,13 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
             );
           }
         } finally {
-          setAuthResolved(true);
+          if (!disposed) setAuthResolved(true);
         }
-        // This HostClient is the signed-out login surface. Account hydration
-        // shares the single Rust Host request queue with browser auth, so doing
-        // it while signed out can delay browserStart/browserPoll long enough to
-        // strand the full-screen login gate. MessengerWorkspace owns the
-        // authenticated hydration after a successful login.
-        if (!authRef.current?.loggedIn) return;
+        // Only a session restored by this initialization owns HostClient hydration.
+        // If browser login won the race, the parent immediately switches to
+        // MessengerWorkspace; letting this stale signed-out surface hydrate after
+        // unmount would monopolize the single Rust Host queue and delay Messenger.
+        if (disposed || !restoredLoggedIn) return;
         await transport.execute({
           type: "conversation.list",
           requestId: "conversation-list-initial",
@@ -1796,6 +1800,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
       });
 
     return () => {
+      disposed = true;
       unsubscribe();
       void transport.close();
     };

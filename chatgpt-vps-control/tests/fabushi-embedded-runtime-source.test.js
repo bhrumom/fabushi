@@ -410,6 +410,16 @@ test("the exact-main platform deployment is recoverable and smokes remote-contro
 });
 
 
+test("browser login cannot leave stale HostClient hydration competing with Messenger", () => {
+  const hostClient = source("frontend/apps/web/src/app/host/host-client.tsx");
+
+  assert.match(hostClient, /let disposed = false;[\s\S]*let restoredLoggedIn = false;/);
+  assert.match(hostClient, /if \(disposed\) return;[\s\S]*restoredLoggedIn = authState\.loggedIn/);
+  assert.match(hostClient, /if \(disposed \|\| !restoredLoggedIn\) return/);
+  assert.match(hostClient, /return \(\) => \{\s*disposed = true;\s*unsubscribe\(\);/);
+});
+
+
 test("logged-in desktops stay discoverable while remote control is disabled", () => {
   const hostClient = source("frontend/apps/web/src/app/host/host-client.tsx");
   const shell = source("desktop/src/messaging-shell-v2.tsx");
