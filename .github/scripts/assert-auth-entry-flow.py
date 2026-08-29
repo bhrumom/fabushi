@@ -84,6 +84,7 @@ required = {
     'electron auth deep link': (main, "route: 'auth'"),
     'renderer browser start': (host, 'transport.browserLoginStart()'),
     'renderer browser poll': (host, 'transport.browserLoginPoll(attempt.attemptId)'),
+    'desktop login uses authoritative Electron Host': (host, 'if (isElectronMahayanaHostAvailable()) return new ElectronMahayanaHostTransport();'),
     'renderer single browser CTA': (host, 'data-testid="browser-login-start"'),
     'feature browser credential-boundary regression': (feature, 'deterministic_browser_login_keeps_credentials_out_of_the_presentation_boundary'),
     'desktop packaged Product API uses production origin': (host_process, "PRODUCTION_PRODUCT_API_BASE_URL = 'https://api.ombhrum.com'"),
