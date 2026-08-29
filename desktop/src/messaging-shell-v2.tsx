@@ -700,6 +700,8 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
   const selfHosted = useMemo(() => new SelfHostedMessagingClientV2(transport, { actorId: startupProjection?.actorId }), [transport, startupProjection]);
   const [hostReady, setHostReady] = useState(false);
   const [remoteAccountScope, setRemoteAccountScope] = useState<string | null>(null);
+  const [initialLegacyHydrationMask, setInitialLegacyHydrationMask] = useState(0);
+  const initialLegacyHydrated = initialLegacyHydrationMask === 0b111;
   const [section, setSection] = useState<MessengerSection>('chats');
   const [conversations, setConversations] = useState<ConversationSummary[]>(startupProjection?.legacyConversations ?? []);
   const [bots, setBots] = useState<BotSummary[]>(startupProjection?.legacyBots ?? []);
@@ -1084,7 +1086,10 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
   }, [transport, selfHosted, startupProjection]);
 
   useEffect(() => {
-    if (!hostReady || !remoteAccountScope) return;
+    // Remote presence shares the Host request path with Messenger bootstrap.
+    // Keep background registration off that path until all core legacy lists
+    // have produced their first authoritative projection.
+    if (!hostReady || !remoteAccountScope || !initialLegacyHydrated) return;
     let disposed = false;
     const controller = new RemoteComputerDesktopController({
       transport,
@@ -1109,7 +1114,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
       if (remoteComputerControllerRef.current === controller) remoteComputerControllerRef.current = null;
       void controller.stop();
     };
-  }, [hostReady, remoteAccountScope, transport]);
+  }, [hostReady, initialLegacyHydrated, remoteAccountScope, transport]);
 
   useEffect(() => {
     if (!hostReady) return;
@@ -1437,6 +1442,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         setHostReady(true);
         break;
       case 'conversation.listed':
+        setInitialLegacyHydrationMask((current) => current | 0b001);
         setConversations(event.conversations);
         if (!activePeerKeyRef.current && event.conversations[0]) {
           const conversation = event.conversations[0];
@@ -1456,6 +1462,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         }
         break;
       case 'bot.listed':
+        setInitialLegacyHydrationMask((current) => current | 0b010);
         setBots(event.bots);
         break;
       case 'bot.changed':
@@ -1464,6 +1471,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           : upsertById(current, event.bot));
         break;
       case 'group.listed':
+        setInitialLegacyHydrationMask((current) => current | 0b100);
         setGroups(event.groups);
         break;
       case 'group.changed':
@@ -2647,6 +2655,7 @@ async function saveInvoiceDialog() {
     <main
       className={`${styles.messenger} ${styles.fabushiUnified}`}
       data-testid="messenger-workspace"
+      data-initial-host-hydrated={initialLegacyHydrated ? 'true' : undefined}
       data-sidebar-collapsed={sidebarWidth <= 112 || undefined}
       data-reduce-motion={desktopPreferences.reducedMotion || undefined}
       data-testid-ready-projection={startupProjection ? 'true' : undefined}
