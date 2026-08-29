@@ -33,6 +33,7 @@ const REQUIRED_RUNTIME_PATHS = [
   "lib/fabushi-account-session.js",
   "lib/ci-session-tools.js",
   "lib/app-agent-surface-client.js",
+  "lib/app-agent-surface-client.d.ts",
   "lib/app-agent-tools.js",
   "native/linux/accessibility-helper.py",
   "native/macos/ComputerHelper.swift",

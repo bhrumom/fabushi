@@ -28,6 +28,7 @@ async function createRuntimeSource(root) {
   await writeFixture(join(root, "lib", "fabushi-account-session.js"), "export {};\n");
   await writeFixture(join(root, "lib", "ci-session-tools.js"), "export {};\n");
   await writeFixture(join(root, "lib", "app-agent-surface-client.js"), "export {};\n");
+  await writeFixture(join(root, "lib", "app-agent-surface-client.d.ts"), "export declare function createAppAgentSurfaceClient(): unknown;\n");
   await writeFixture(join(root, "lib", "app-agent-tools.js"), "export {};\n");
   await writeFixture(join(root, "scripts", "browser-extension-host.mjs"), "export {};\n");
   await writeFixture(join(root, "lib", "entry.js"), "export const fixture = true;\n");
