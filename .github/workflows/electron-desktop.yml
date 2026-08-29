@@ -191,6 +191,15 @@ jobs:
         working-directory: desktop
         run: npm run build:renderer
 
+      - name: Diagnose real Linux desktop bootstrap before the full user journey
+        if: matrix.target == 'linux'
+        working-directory: desktop
+        env:
+          FABUSHI_FEATURE_HOST_MODE: test
+          FABUSHI_E2E: '1'
+          MAHAYANA_APP_HOST_BIN: ${{ github.workspace }}/desktop/resources/bin/mahayana-app-host
+        run: xvfb-run -a node scripts/diagnose-desktop-bootstrap.mjs
+
       - name: Simulate a user against the real Linux Rust Host before packaging
         if: matrix.target == 'linux'
         working-directory: desktop
