@@ -23,33 +23,46 @@ async function completeBrowserLogin(page: Page): Promise<void> {
   const onboardingGate = page.getByTestId('onboarding-gate');
   const loginGate = page.getByTestId('login-gate');
   const workspace = page.getByTestId('messenger-workspace');
+  type LoginPhase = 'onboarding' | 'login' | 'ready' | 'waiting';
 
-  // Electron can expose its first BrowserWindow before the renderer mounts the
-  // onboarding/auth surface. Drive the visible auth state machine instead of
-  // treating a one-time isVisible() miss as proof that onboarding was skipped.
+  // Read the auth surface in one renderer evaluation. During the HostClient ->
+  // Messenger transition individual locator probes can straddle a destroyed
+  // execution context and wait on navigation even though auth already finished.
+  const readPhase = async (): Promise<LoginPhase> => {
+    try {
+      return await page.evaluate(() => {
+        if (document.querySelector('[data-testid="onboarding-gate"]')) return 'onboarding';
+        if (document.querySelector('[data-testid="login-gate"]')) return 'login';
+        const messenger = document.querySelector('[data-testid="messenger-workspace"]');
+        if (messenger?.getAttribute('data-initial-host-hydrated') === 'true') return 'ready';
+        return 'waiting';
+      }) as LoginPhase;
+    } catch {
+      return 'waiting';
+    }
+  };
+
   for (let phase = 0; phase < 12; phase += 1) {
+    let currentPhase: LoginPhase = 'waiting';
     await expect.poll(async () => {
-      return (await workspace.isVisible().catch(() => false))
-        || (await onboardingGate.isVisible().catch(() => false))
-        || (await loginGate.isVisible().catch(() => false));
-    }, { timeout: 15_000 }).toBe(true);
+      currentPhase = await readPhase();
+      return currentPhase;
+    }, { timeout: 15_000 }).not.toBe('waiting');
 
-    // The fast local-first shell can render Messenger beneath a blocking auth
-    // modal. Drive onboarding/login first; workspace visibility alone is not
-    // proof that the account session is ready for an authenticated journey.
-    if (await onboardingGate.isVisible().catch(() => false)) {
+    if (currentPhase === 'onboarding') {
       await page.getByTestId('onboarding-next').click();
       continue;
     }
-    if (await loginGate.isVisible().catch(() => false)) {
+    if (currentPhase === 'login') {
       await page.getByTestId('browser-login-start').click();
       await expect(loginGate).toBeHidden();
       continue;
     }
-    if (await workspace.isVisible().catch(() => false)) break;
+    if (currentPhase === 'ready') break;
   }
 
-  await expect(workspace).toBeVisible({ timeout: 15_000 });
+  await expect(workspace).toHaveAttribute('data-initial-host-hydrated', 'true', { timeout: 15_000 });
+  await expect(workspace).toBeVisible();
 }
 
 async function attachScreenshot(page: Page, name: string): Promise<void> {
