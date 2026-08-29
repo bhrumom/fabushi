@@ -9,12 +9,20 @@ const MAX_CALL_TIMEOUT_SECONDS = 600;
 const MAX_ARGUMENTS_JSON_CHARS = 20 * 1024 * 1024;
 const MAX_RESULT_BYTES = 32 * 1024 * 1024;
 const STALE_AFTER_MS = 70_000;
+const DEFAULT_DEVICE_LEASE_SECONDS = 2 * 60 * 60;
+const MIN_DEVICE_LEASE_SECONDS = 30;
+const MAX_DEVICE_LEASE_SECONDS = 4 * 60 * 60;
 const MAX_TOOL_DESCRIPTOR_BYTES = 64 * 1024;
 const MAX_TOOL_CATALOG_BYTES = 512 * 1024;
+const MAX_METADATA_BYTES = 8 * 1024;
+const MAX_DEVICES_PER_ACCOUNT = 50;
+const MAX_TOTAL_DEVICES = 500;
+const MAX_PENDING_CALLS_PER_DEVICE = 16;
+const MAX_PENDING_CALLS_TOTAL = 256;
 
 const devices = new Map();
 const pendingCalls = new Map();
-let gatewayAttached = false;
+const attachedServers = new WeakSet();
 
 function safeEqual(left, right) {
   const a = Buffer.from(String(left));
@@ -25,6 +33,10 @@ function safeEqual(left, right) {
 function bearerToken(req) {
   const header = String(req.headers.authorization ?? "");
   return header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+}
+
+function registryKey(accountId, deviceId) {
+  return `${accountId}\0${deviceId}`;
 }
 
 function publicToolDescriptor(tool) {
@@ -60,6 +72,30 @@ function toolCatalogVersion(tools) {
   return tools.length ? createHash("sha256").update(JSON.stringify(tools)).digest("hex") : "";
 }
 
+function safeSecureInputPublicKey(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const key = {
+    kty: String(value.kty || ""),
+    crv: String(value.crv || ""),
+    x: String(value.x || ""),
+    y: String(value.y || ""),
+  };
+  if (key.kty !== "EC" || key.crv !== "P-256") return null;
+  if (![key.x, key.y].every((part) => /^[A-Za-z0-9_-]{40,128}$/u.test(part))) return null;
+  return key;
+}
+
+function safeMetadata(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const allowed = ["kind", "repository", "workflow", "job", "runId", "runAttempt", "sha", "runnerName", "runnerOs", "runnerArch"];
+  const output = {};
+  for (const key of allowed) {
+    const text = String(value[key] ?? "").trim();
+    if (text) output[key] = text.slice(0, 300);
+  }
+  return Buffer.byteLength(JSON.stringify(output)) <= MAX_METADATA_BYTES ? output : {};
+}
+
 function publicDevice(device) {
   return {
     id: device.id,
@@ -67,19 +103,32 @@ function publicDevice(device) {
     platform: device.platform,
     status: device.status,
     lastSeen: new Date(device.lastSeen).toISOString(),
+    expiresAt: device.central ? null : new Date(device.expiresAt).toISOString(),
     capabilities: device.capabilities,
     toolSchemaCount: Array.isArray(device.tools) ? device.tools.length : 0,
     toolSchemaVersion: device.toolSchemaVersion || "",
+    metadata: device.metadata,
+    secureInputPublicKey: device.secureInputPublicKey,
   };
 }
 
-function markDisconnected(socket) {
-  for (const device of devices.values()) {
-    if (device.socket !== socket) continue;
-    device.status = "offline";
-    device.socket = null;
-    device.lastSeen = Date.now();
+function rejectPendingForSocket(socket, reason) {
+  for (const [requestId, pending] of pendingCalls) {
+    if (pending.socket !== socket) continue;
+    pendingCalls.delete(requestId);
+    clearTimeout(pending.timer);
+    pending.reject(new Error(reason));
   }
+}
+
+function markDisconnected(socket) {
+  rejectPendingForSocket(socket, `Device ${socket.deviceId || "unknown"} disconnected before the call completed.`);
+  if (!socket.registryKey) return;
+  const device = devices.get(socket.registryKey);
+  if (!device || device.socket !== socket) return;
+  device.status = "offline";
+  device.socket = null;
+  device.lastSeen = Date.now();
 }
 
 function rejectSocket(socket, code, reason) {
@@ -90,7 +139,23 @@ function rejectSocket(socket, code, reason) {
   }
 }
 
-function handleAgentMessage(socket, raw) {
+function rejectUpgrade(socket, status = 401, reason = "Unauthorized") {
+  try {
+    socket.write(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+  } finally {
+    socket.destroy();
+  }
+}
+
+function audit(options, record) {
+  try {
+    options.audit?.({ at: new Date().toISOString(), ...record });
+  } catch {
+    // Auditing must never break the control channel.
+  }
+}
+
+function handleAgentMessage(socket, raw, options) {
   let message;
   try {
     message = JSON.parse(raw.toString("utf8"));
@@ -102,80 +167,112 @@ function handleAgentMessage(socket, raw) {
   if (message.type === "register") {
     const id = String(message.deviceId ?? "").trim();
     const name = String(message.name ?? id).trim();
-    const platform = String(message.platform ?? "unknown").trim();
+    const platform = String(message.platform ?? "unknown").trim().slice(0, 80);
     const capabilities = Array.isArray(message.capabilities)
       ? [...new Set(message.capabilities.map(String))].slice(0, 100)
       : [];
-    if (!/^[a-zA-Z0-9._-]{1,128}$/.test(id) || !name || name.length > 200) {
+    if (!/^[a-zA-Z0-9._:-]{1,128}$/u.test(id) || !name || name.length > 200 || !socket.accountId) {
       rejectSocket(socket, 1008, "invalid device registration");
       return;
     }
 
     const tools = normalizeToolCatalog(message.tools, capabilities);
     const toolSchemaVersion = toolCatalogVersion(tools);
-    const previous = devices.get(id);
+    const leaseSeconds = Math.min(
+      Math.max(Number(message.leaseSeconds) || Number(options.defaultLeaseSeconds) || DEFAULT_DEVICE_LEASE_SECONDS, MIN_DEVICE_LEASE_SECONDS),
+      Number(options.maxLeaseSeconds) || MAX_DEVICE_LEASE_SECONDS,
+    );
+    const now = Date.now();
+    const expiresAt = now + leaseSeconds * 1000;
+    const key = registryKey(socket.accountId, id);
+    const previous = devices.get(key);
+    if (!previous) {
+      const accountDeviceCount = [...devices.values()].filter((device) => device.accountId === socket.accountId).length;
+      if (accountDeviceCount >= MAX_DEVICES_PER_ACCOUNT || devices.size >= MAX_TOTAL_DEVICES) {
+        rejectSocket(socket, 1013, "device registry capacity reached");
+        return;
+      }
+    }
     if (previous?.socket && previous.socket !== socket) {
+      rejectPendingForSocket(previous.socket, `Device ${id} reconnected before the call completed.`);
       rejectSocket(previous.socket, 4001, "device reconnected");
     }
-    devices.set(id, {
+    const metadata = safeMetadata(message.metadata);
+    const secureInputPublicKey = safeSecureInputPublicKey(message.secureInputPublicKey);
+    devices.set(key, {
+      accountId: socket.accountId,
       id,
       name,
       platform,
       capabilities,
       tools,
       toolSchemaVersion,
+      metadata,
+      secureInputPublicKey,
       status: "online",
-      lastSeen: Date.now(),
+      lastSeen: now,
+      expiresAt,
       socket,
     });
     socket.deviceId = id;
-    socket.send(JSON.stringify({ type: "registered", deviceId: id }));
+    socket.registryKey = key;
+    socket.send(JSON.stringify({ type: "registered", deviceId: id, expiresAt: new Date(expiresAt).toISOString() }));
+    audit(options, { type: "device.registered", accountId: socket.accountId, deviceId: id, metadata });
     return;
   }
 
   if (message.type === "heartbeat") {
-    const device = devices.get(socket.deviceId);
-    if (device) {
+    const device = devices.get(socket.registryKey);
+    if (device && device.socket === socket) {
       device.lastSeen = Date.now();
-      device.status = "online";
+      device.status = device.expiresAt > Date.now() ? "online" : "offline";
+      if (device.status === "offline") rejectSocket(socket, 4003, "device lease expired");
     }
     return;
   }
 
   if (message.type === "result") {
-    const pending = pendingCalls.get(String(message.requestId ?? ""));
-    if (!pending || pending.deviceId !== socket.deviceId) return;
-    pendingCalls.delete(message.requestId);
+    const requestId = String(message.requestId ?? "");
+    const pending = pendingCalls.get(requestId);
+    if (!pending || pending.registryKey !== socket.registryKey || pending.socket !== socket) return;
+    pendingCalls.delete(requestId);
     clearTimeout(pending.timer);
     pending.resolve(message);
   }
 }
 
 export function attachDeviceGateway(httpServer, options = {}) {
-  if (gatewayAttached) return;
-  const token = String(options.token ?? process.env.DEVICE_GATEWAY_TOKEN ?? "");
-  if (token.length < 32) return;
-  gatewayAttached = true;
-
+  if (attachedServers.has(httpServer)) return null;
   const path = options.path ?? process.env.DEVICE_GATEWAY_PATH ?? DEFAULT_AGENT_PATH;
+  const resolveAccount = options.resolveAccount;
+  const legacyToken = String(options.token ?? process.env.DEVICE_GATEWAY_TOKEN ?? "");
+  const legacyAccountId = String(options.legacyAccountId ?? process.env.DEVICE_GATEWAY_LEGACY_ACCOUNT_ID ?? "legacy");
+  if (typeof resolveAccount !== "function" && legacyToken.length < 32) return null;
+  attachedServers.add(httpServer);
+
   const centralId = options.centralId ?? process.env.DEVICE_CENTRAL_ID ?? hostname();
-  const centralName = options.centralName ?? process.env.DEVICE_CENTRAL_NAME ?? centralId;
-  const centralTools = normalizeToolCatalog(options.centralTools, options.centralCapabilities);
-  devices.set(centralId, {
-    id: centralId,
-    name: centralName,
-    platform: process.platform,
-    capabilities: options.centralCapabilities ?? ["vps_status", "run_shell_command", "write_text_file", "recent_commands"],
-    tools: centralTools,
-    toolSchemaVersion: toolCatalogVersion(centralTools),
-    status: "online",
-    lastSeen: Date.now(),
-    socket: null,
-    central: true,
-  });
+  if (options.centralAccountId && Array.isArray(options.centralCapabilities)) {
+    const centralTools = normalizeToolCatalog(options.centralTools, options.centralCapabilities);
+    devices.set(registryKey(options.centralAccountId, centralId), {
+      accountId: options.centralAccountId,
+      id: centralId,
+      name: options.centralName ?? process.env.DEVICE_CENTRAL_NAME ?? centralId,
+      platform: process.platform,
+      capabilities: options.centralCapabilities,
+      tools: centralTools,
+      toolSchemaVersion: toolCatalogVersion(centralTools),
+      metadata: { kind: "central" },
+      secureInputPublicKey: null,
+      status: "online",
+      lastSeen: Date.now(),
+      expiresAt: Number.MAX_SAFE_INTEGER,
+      socket: null,
+      central: true,
+    });
+  }
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_RESULT_BYTES });
-  httpServer.on("upgrade", (req, socket, head) => {
+  const onUpgrade = async (req, socket, head) => {
     let pathname = "";
     try {
       pathname = new URL(req.url ?? "", "http://localhost").pathname;
@@ -184,23 +281,33 @@ export function attachDeviceGateway(httpServer, options = {}) {
       return;
     }
     if (pathname !== path) return;
-    if (!safeEqual(bearerToken(req), token)) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
-      socket.destroy();
-      return;
+    const token = bearerToken(req);
+    try {
+      let account;
+      if (typeof resolveAccount === "function") account = await resolveAccount(token, req);
+      else if (legacyToken.length >= 32 && safeEqual(token, legacyToken)) account = { userId: legacyAccountId };
+      if (!account?.userId) return rejectUpgrade(socket);
+      req.fabushiAccount = account;
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+    } catch {
+      rejectUpgrade(socket);
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
-  });
+  };
+  httpServer.on("upgrade", onUpgrade);
 
-  wss.on("connection", (socket) => {
+  wss.on("connection", (socket, req) => {
+    socket.accountId = String(req.fabushiAccount?.userId || "");
     socket.isAlive = true;
     socket.on("pong", () => {
       socket.isAlive = true;
-      const device = devices.get(socket.deviceId);
-      if (device) device.lastSeen = Date.now();
+      const device = devices.get(socket.registryKey);
+      if (device && device.socket === socket) device.lastSeen = Date.now();
     });
-    socket.on("message", (raw) => handleAgentMessage(socket, raw));
-    socket.on("close", () => markDisconnected(socket));
+    socket.on("message", (raw) => handleAgentMessage(socket, raw, options));
+    socket.on("close", () => {
+      audit(options, { type: "device.disconnected", accountId: socket.accountId, deviceId: socket.deviceId || "" });
+      markDisconnected(socket);
+    });
     socket.on("error", () => markDisconnected(socket));
   });
 
@@ -215,20 +322,42 @@ export function attachDeviceGateway(httpServer, options = {}) {
       socket.ping();
     }
     for (const device of devices.values()) {
-      if (!device.central && now - device.lastSeen > STALE_AFTER_MS) device.status = "offline";
+      if (device.central) continue;
+      if (now - device.lastSeen > STALE_AFTER_MS || device.expiresAt <= now) {
+        device.status = "offline";
+        if (device.socket && device.expiresAt <= now) rejectSocket(device.socket, 4003, "device lease expired");
+      }
+      if (!device.socket && device.expiresAt + 5 * 60_000 <= now) devices.delete(registryKey(device.accountId, device.id));
     }
   }, 25_000);
   heartbeatTimer.unref();
+
+  return {
+    path,
+    close: async () => {
+      clearInterval(heartbeatTimer);
+      httpServer.off("upgrade", onUpgrade);
+      for (const socket of wss.clients) socket.close(1001, "gateway closing");
+      await new Promise((resolve) => wss.close(resolve));
+    },
+  };
 }
 
-export function listRegisteredDevices() {
+export function listRegisteredDevices(accountId) {
+  const normalizedAccountId = String(accountId || "").trim();
+  if (!normalizedAccountId) return [];
+  const now = Date.now();
   return [...devices.values()]
-    .map(publicDevice)
+    .filter((device) => device.accountId === normalizedAccountId)
+    .map((device) => {
+      if (!device.central && (device.expiresAt <= now || now - device.lastSeen > STALE_AFTER_MS)) device.status = "offline";
+      return publicDevice(device);
+    })
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
-export function describeRegisteredDeviceTool(deviceId, toolName) {
-  const device = devices.get(deviceId);
+export function describeRegisteredDeviceTool(accountId, deviceId, toolName) {
+  const device = devices.get(registryKey(accountId, deviceId));
   if (!device) throw new Error(`Unknown device: ${deviceId}. Call list_devices first.`);
   const tool = Array.isArray(device.tools) ? device.tools.find((entry) => entry.name === toolName) ?? null : null;
   return {
@@ -243,17 +372,19 @@ export function describeRegisteredDeviceTool(deviceId, toolName) {
   };
 }
 
-export async function callRegisteredDevice(deviceId, toolName, args, timeoutSeconds = DEFAULT_CALL_TIMEOUT_SECONDS) {
-  const device = devices.get(deviceId);
+export async function callRegisteredDevice(accountId, deviceId, toolName, args, timeoutSeconds = DEFAULT_CALL_TIMEOUT_SECONDS) {
+  const key = registryKey(accountId, deviceId);
+  const device = devices.get(key);
   if (!device) throw new Error(`Unknown device: ${deviceId}. Call list_devices first.`);
   if (device.central) throw new Error(`Device ${deviceId} is the central server; use its existing MCP tools directly.`);
-  if (device.status !== "online" || !device.socket || device.socket.readyState !== 1) {
-    throw new Error(`Device ${deviceId} is offline.`);
-  }
-  if (!device.capabilities.includes(toolName)) {
-    throw new Error(`Device ${deviceId} does not expose tool ${toolName}.`);
-  }
+  if (device.expiresAt <= Date.now()) throw new Error(`Device ${deviceId} lease has expired.`);
+  if (device.status !== "online" || !device.socket || device.socket.readyState !== 1) throw new Error(`Device ${deviceId} is offline.`);
+  if (!device.capabilities.includes(toolName)) throw new Error(`Device ${deviceId} does not expose tool ${toolName}.`);
 
+  const pendingForDevice = [...pendingCalls.values()].filter((pending) => pending.registryKey === key).length;
+  if (pendingCalls.size >= MAX_PENDING_CALLS_TOTAL || pendingForDevice >= MAX_PENDING_CALLS_PER_DEVICE) {
+    throw new Error(`Device ${deviceId} already has too many pending calls.`);
+  }
   const requestId = randomBytes(16).toString("hex");
   const timeoutMs = Math.min(Math.max(Number(timeoutSeconds) || DEFAULT_CALL_TIMEOUT_SECONDS, 1), MAX_CALL_TIMEOUT_SECONDS) * 1000;
   return new Promise((resolve, reject) => {
@@ -261,7 +392,7 @@ export async function callRegisteredDevice(deviceId, toolName, args, timeoutSeco
       pendingCalls.delete(requestId);
       reject(new Error(`Device call timed out after ${timeoutMs / 1000} seconds.`));
     }, timeoutMs);
-    pendingCalls.set(requestId, { deviceId, resolve, reject, timer });
+    pendingCalls.set(requestId, { registryKey: key, socket: device.socket, resolve, reject, timer });
     device.socket.send(JSON.stringify({ type: "call", requestId, toolName, arguments: args }), (error) => {
       if (!error) return;
       pendingCalls.delete(requestId);
@@ -271,12 +402,21 @@ export async function callRegisteredDevice(deviceId, toolName, args, timeoutSeco
   });
 }
 
+export function resetDeviceGatewayStateForTests() {
+  for (const pending of pendingCalls.values()) clearTimeout(pending.timer);
+  pendingCalls.clear();
+  devices.clear();
+}
+
 const deviceShape = z.object({
   id: z.string(),
   name: z.string(),
   platform: z.string(),
   status: z.enum(["online", "offline"]),
   lastSeen: z.string(),
+  expiresAt: z.string().nullable(),
+  metadata: z.record(z.string(), z.string()),
+  secureInputPublicKey: z.object({ kty: z.literal("EC"), crv: z.literal("P-256"), x: z.string(), y: z.string() }).nullable(),
   capabilities: z.array(z.string()),
   toolSchemaCount: z.number().int().nonnegative(),
   toolSchemaVersion: z.string(),
@@ -314,12 +454,14 @@ export function registerDeviceTools(server, options = {}) {
   const writeAuthError = options.writeAuthError ?? (() => ({ isError: true, content: [{ type: "text", text: "Write authorization required." }] }));
   const readSecuritySchemes = options.readSecuritySchemes ?? [{ type: "noauth" }];
   const writeSecuritySchemes = options.writeSecuritySchemes ?? [{ type: "oauth2", scopes: ["vps.write"] }];
+  const accountId = options.accountId ?? (() => "");
+  const requiredAccountId = () => String(typeof accountId === "function" ? accountId() : accountId || "").trim();
 
   server.registerTool(
     "list_devices",
     {
       title: "List controllable devices",
-      description: "Return the live registry of central and dynamically connected computers. Call this before selecting a device.",
+      description: "Return only the live computers registered to the authenticated Fabushi account. Call this before selecting a device.",
       inputSchema: {},
       outputSchema: { devices: z.array(deviceShape) },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true, idempotentHint: true },
@@ -327,7 +469,9 @@ export function registerDeviceTools(server, options = {}) {
     },
     async () => {
       if (!canRead()) return readAuthError();
-      const result = { devices: listRegisteredDevices() };
+      const accountId = requiredAccountId();
+      if (!accountId) return readAuthError();
+      const result = { devices: listRegisteredDevices(accountId) };
       return { structuredContent: result, content: [{ type: "text", text: JSON.stringify(result) }] };
     }
   );
@@ -344,7 +488,9 @@ export function registerDeviceTools(server, options = {}) {
     },
     async ({ deviceId, toolName }) => {
       if (!canRead()) return readAuthError();
-      const result = describeRegisteredDeviceTool(deviceId, toolName);
+      const accountId = requiredAccountId();
+      if (!accountId) return readAuthError();
+      const result = describeRegisteredDeviceTool(accountId, deviceId, toolName);
       return { structuredContent: result, content: [{ type: "text", text: result.message }] };
     }
   );
@@ -376,7 +522,9 @@ export function registerDeviceTools(server, options = {}) {
       }
 
       try {
-        const response = await callRegisteredDevice(deviceId, toolName, args, timeoutSeconds);
+        const accountId = requiredAccountId();
+        if (!accountId) return writeAuthError();
+        const response = await callRegisteredDevice(accountId, deviceId, toolName, args, timeoutSeconds);
         const result = {
           deviceId,
           toolName,
@@ -400,7 +548,7 @@ export function buildDeviceToolDescriptors(options = {}) {
     {
       name: "list_devices",
       title: "List controllable devices",
-      description: "Return the live registry of central and dynamically connected computers. Call this before selecting a device.",
+      description: "Return only the live computers registered to the authenticated Fabushi account. Call this before selecting a device.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       outputSchema: {
         type: "object",
@@ -412,10 +560,12 @@ export function buildDeviceToolDescriptors(options = {}) {
               properties: {
                 id: { type: "string" }, name: { type: "string" }, platform: { type: "string" },
                 status: { type: "string", enum: ["online", "offline"] }, lastSeen: { type: "string" },
+                expiresAt: { type: ["string", "null"] }, metadata: { type: "object", additionalProperties: { type: "string" } },
+                secureInputPublicKey: { anyOf: [{ type: "object", required: ["kty", "crv", "x", "y"], properties: { kty: { const: "EC" }, crv: { const: "P-256" }, x: { type: "string" }, y: { type: "string" } }, additionalProperties: false }, { type: "null" }] },
                 capabilities: { type: "array", items: { type: "string" } },
                 toolSchemaCount: { type: "integer", minimum: 0 }, toolSchemaVersion: { type: "string" },
               },
-              required: ["id", "name", "platform", "status", "lastSeen", "capabilities", "toolSchemaCount", "toolSchemaVersion"],
+              required: ["id", "name", "platform", "status", "lastSeen", "expiresAt", "metadata", "secureInputPublicKey", "capabilities", "toolSchemaCount", "toolSchemaVersion"],
               additionalProperties: false,
             },
           },
