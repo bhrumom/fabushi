@@ -53,7 +53,9 @@ async function completeBrowserLogin(page: Page): Promise<void> {
         || (await loginGate.isVisible().catch(() => false));
     }, { timeout: 15_000 }).toBe(true);
 
-    if (await workspace.isVisible().catch(() => false)) break;
+    // The fast local-first shell can render Messenger beneath a blocking auth
+    // modal. Drive onboarding/login first; workspace visibility alone is not
+    // proof that the account session is ready for an authenticated journey.
     if (await onboardingGate.isVisible().catch(() => false)) {
       await page.getByTestId('onboarding-next').click();
       continue;
@@ -61,8 +63,9 @@ async function completeBrowserLogin(page: Page): Promise<void> {
     if (await loginGate.isVisible().catch(() => false)) {
       await page.getByTestId('browser-login-start').click();
       await expect(loginGate).toBeHidden();
-      break;
+      continue;
     }
+    if (await workspace.isVisible().catch(() => false)) break;
   }
 
   await expect(workspace).toBeVisible({ timeout: 15_000 });
