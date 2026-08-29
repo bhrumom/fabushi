@@ -76,8 +76,72 @@ try {
       : { status: 'bridge-missing' };
   });
 
-  const finalTestids = output.snapshots.at(-1)?.testids || [];
-  output.resolvedSurface = finalTestids.some((id) => id === 'onboarding-gate' || id === 'login-gate' || id === 'messenger-workspace');
+  const phase = async () => page.evaluate(() => {
+    if (document.querySelector('[data-testid="onboarding-gate"]')) return 'onboarding';
+    if (document.querySelector('[data-testid="browser-login-start"]')) return 'login';
+    const workspace = document.querySelector('[data-testid="messenger-workspace"]');
+    if (workspace?.getAttribute('data-initial-host-hydrated') === 'true') return 'ready';
+    if (workspace) return 'workspace-waiting';
+    if (document.querySelector('[data-testid="login-gate"]')) return 'auth-resolving';
+    return 'waiting';
+  });
+
+  output.loginPhases = [];
+  for (let step = 0; step < 16; step += 1) {
+    const current = await phase();
+    output.loginPhases.push({ step, phase: current });
+    if (current === 'onboarding') {
+      await page.getByTestId('onboarding-next').click();
+      await page.waitForTimeout(100);
+      continue;
+    }
+    if (current === 'auth-resolving' || current === 'waiting') {
+      await page.waitForTimeout(250);
+      continue;
+    }
+    if (current === 'login') {
+      await page.getByTestId('browser-login-start').click();
+      await page.waitForTimeout(250);
+      continue;
+    }
+    if (current === 'ready') break;
+    if (current === 'workspace-waiting') {
+      await page.waitForTimeout(250);
+      continue;
+    }
+  }
+
+  output.finalPhase = await phase();
+  output.authStatusAfterLogin = await page.evaluate(async () => {
+    const settle = (promise, timeoutMs = 2500) => Promise.race([
+      Promise.resolve(promise).then((value) => ({ status: 'resolved', value })).catch((error) => ({ status: 'rejected', error: String(error?.stack || error).slice(0, 1500) })),
+      new Promise((resolve) => setTimeout(() => resolve({ status: 'timeout' }), timeoutMs)),
+    ]);
+    return settle(window.mahayana.invoke('feature.auth.status', {}));
+  });
+
+  if (output.finalPhase !== 'ready') {
+    output.runtimeProbe = await page.evaluate(async () => {
+      const events = [];
+      const unsubscribe = window.mahayana.subscribe?.((event) => events.push(event?.type || 'unknown')) || (() => {});
+      const commands = ['conversation.list', 'bot.list', 'group.list'];
+      const results = [];
+      for (const type of commands) {
+        try {
+          results.push({ type, value: await window.mahayana.invoke('feature.execute', { command: { type, requestId: `bootstrap-diag-${type}-${Date.now()}` } }) });
+        } catch (error) {
+          results.push({ type, error: String(error?.stack || error).slice(0, 1000) });
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      unsubscribe();
+      return { results, events };
+    });
+    await page.waitForTimeout(250);
+    output.phaseAfterRuntimeProbe = await phase();
+  }
+
+  output.resolvedSurface = output.finalPhase === 'ready' || output.phaseAfterRuntimeProbe === 'ready';
   console.log(`FABUSHI_BOOTSTRAP_DIAGNOSTIC=${JSON.stringify(output)}`);
   if (!output.resolvedSurface) process.exitCode = 1;
 } catch (error) {
