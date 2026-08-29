@@ -97,7 +97,7 @@ function readSnapshot(): AgentWorkbenchSnapshot {
 
 function directBotMark(parent: HTMLElement): HTMLElement | null {
   return Array.from(parent.children).find((child) =>
-    child instanceof HTMLElement && child.dataset.engine === 'fabushi-motion-v2',
+    child instanceof HTMLElement && child.dataset.engine === 'fabushi-motion-v3',
   ) as HTMLElement | null;
 }
 
