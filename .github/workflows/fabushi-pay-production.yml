@@ -126,26 +126,32 @@ jobs:
             /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs
             /third_party/mahayana/mahayana-rs/mahayana-pay-worker/**
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
       - name: Require production payment configuration
         shell: bash
         run: |
           set -euo pipefail
           missing=()
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ACCESS_TOKEN_PUBLIC_KEY_PEM APPLE_ISSUER_ID APPLE_KEY_ID GOOGLE_PLAY_SERVICE_ACCOUNT_JSON; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID APPLE_ISSUER_ID APPLE_KEY_ID GOOGLE_PLAY_SERVICE_ACCOUNT_JSON; do
             if [ -z "${!name:-}" ]; then missing+=("$name"); fi
           done
           if [ -z "${APPLE_PRIVATE_KEY:-}" ] && [ -z "${APP_STORE_CONNECT_API_KEY_BASE64:-}" ]; then
             missing+=("APPLE_PRIVATE_KEY or APP_STORE_CONNECT_API_KEY_BASE64")
           fi
+          if [ -z "${ACCESS_TOKEN_PUBLIC_KEY_PEM:-}" ]; then
+            existing_secret_names="$(npx --yes wrangler@latest secret list --env production --config wrangler.toml --format json | jq -r '.[].name' | sort -u)"
+            if ! grep -Fxq ACCESS_TOKEN_PUBLIC_KEY_PEM <<<"$existing_secret_names"; then
+              missing+=("ACCESS_TOKEN_PUBLIC_KEY_PEM (GitHub or existing production Worker secret)")
+            fi
+          fi
           if [ "${#missing[@]}" -ne 0 ]; then
             printf 'Missing Fabushi Pay production configuration: %s\n' "${missing[*]}" >&2
             exit 2
           fi
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
 
       - name: Set up Rust and wasm32
         uses: dtolnay/rust-toolchain@stable
