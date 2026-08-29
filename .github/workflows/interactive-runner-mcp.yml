@@ -31,6 +31,7 @@ on:
 permissions:
   contents: read
   actions: read
+  id-token: write
 
 concurrency:
   group: fabushi-interactive-runner-${{ github.ref }}
@@ -49,6 +50,8 @@ jobs:
       FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
       MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
       FABUSHI_CI_SESSION_DIR: ${{ runner.temp }}/fabushi-interactive
+      FABUSHI_ACCOUNT_SESSION_FILE: ${{ runner.temp }}/fabushi-interactive/agent-account-session.json
+      FABUSHI_CI_ACCOUNT_SESSION_FILE: ${{ runner.temp }}/fabushi-interactive/app-account-session.json
       FABUSHI_COMPUTER_POLICY_FILE: ${{ runner.temp }}/fabushi-interactive/computer-policy.json
       FABUSHI_DEVICE_CALL_TRACE_FILE: ${{ runner.temp }}/fabushi-interactive/device-calls.jsonl
       FABUSHI_APP_AGENT_DISCOVERY_FILE: ${{ runner.temp }}/fabushi-interactive/app-agent-bridge.json
@@ -77,25 +80,78 @@ jobs:
 
       - name: Validate same-account control inputs
         shell: bash
-        env:
-          MAHAYANA_TEST_ACCOUNT_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
         run: |
           set -euo pipefail
-          test "${#MAHAYANA_TEST_ACCOUNT_TOKEN}" -ge 32 || {
-            echo 'TEST_ACCOUNT_TOKEN or MAHAYANA_TEST_ACCOUNT_TOKEN must be configured.' >&2
-            exit 1
-          }
-          echo "::add-mask::$MAHAYANA_TEST_ACCOUNT_TOKEN"
           case "$DEVICE_GATEWAY_URL" in
             wss://*/agent) ;;
             *) echo 'FABUSHI_REMOTE_MCP_DEVICE_GATEWAY_URL or gateway_url must be wss://.../agent.' >&2; exit 1 ;;
           esac
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || { echo 'GitHub Actions OIDC request URL is unavailable.' >&2; exit 1; }
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" || { echo 'GitHub Actions OIDC request token is unavailable.' >&2; exit 1; }
           umask 077
           mkdir -p "$FABUSHI_CI_SESSION_DIR"
           cat > "$FABUSHI_COMPUTER_POLICY_FILE" <<'JSON'
           {"localExecution":true,"aiComputerControlEnabled":true,"localToolPermission":"always"}
           JSON
-          node .github/scripts/update-interactive-runner-status.mjs provisioning 'Preparing the temporary GitHub Actions desktop and same-account MCP agent.'
+          node .github/scripts/update-interactive-runner-status.mjs provisioning 'Preparing the temporary GitHub Actions desktop and GitHub-linked Fabushi account agent.'
+
+      - name: Bind the Runner to the workflow actor's Fabushi account
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          oidc_json="$FABUSHI_CI_SESSION_DIR/github-oidc.json"
+          response_json="$FABUSHI_CI_SESSION_DIR/ci-runner-session-response.json"
+          request_json="$FABUSHI_CI_SESSION_DIR/ci-runner-session-request.json"
+          oidc_url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=fabushi-ci-runner"
+          curl --fail --silent --show-error             --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$oidc_url" > "$oidc_json"
+          oidc_token="$(jq -er '.value | select(type == "string" and length > 100)' "$oidc_json")"
+          echo "::add-mask::$oidc_token"
+          jq -n --arg deviceId "$DEVICE_ID" --arg sourceSha "$GITHUB_SHA"             '{deviceId: $deviceId, sourceSha: $sourceSha}' > "$request_json"
+          status="$(curl --silent --show-error             --output "$response_json"             --write-out '%{http_code}'             --request POST             --header 'Accept: application/json'             --header 'Content-Type: application/json'             --header "Authorization: Bearer $oidc_token"             --data-binary "@$request_json"             "$FABUSHI_API_BASE_URL/v1/ci/runner-session")"
+          if [ "$status" != '200' ]; then
+            jq -r '.error.message // .message // .error // "Fabushi CI Runner account binding failed"' "$response_json" >&2 || true
+            exit 1
+          fi
+          jq -e             --arg deviceId "$DEVICE_ID"             --arg runId "$GITHUB_RUN_ID"             --arg runAttempt "$GITHUB_RUN_ATTEMPT" '
+              .ciRunner == true and
+              .provider == "github-actions" and
+              .tokenType == "Bearer" and
+              .deviceId == $deviceId and
+              .runId == $runId and
+              .runAttempt == $runAttempt and
+              (.sessionId == ("ci-runner:" + $runId + ":" + $runAttempt)) and
+              (.accessToken | type == "string" and length >= 32) and
+              (.accessTokenExpiresAt | type == "number") and
+              (.userId != null) and
+              (.user.id != null) and
+              ((.userId | tostring) == (.user.id | tostring)) and
+              (.refreshToken | not)
+            ' "$response_json" >/dev/null
+          access_token="$(jq -r '.accessToken' "$response_json")"
+          echo "::add-mask::$access_token"
+          jq '{
+            accessToken,
+            tokenType,
+            accessTokenExpiresAt,
+            sessionId,
+            deviceId,
+            username,
+            userId,
+            user,
+            provider,
+            ciRunner
+          }' "$response_json" > "$FABUSHI_ACCOUNT_SESSION_FILE.tmp"
+          chmod 600 "$FABUSHI_ACCOUNT_SESSION_FILE.tmp"
+          mv "$FABUSHI_ACCOUNT_SESSION_FILE.tmp" "$FABUSHI_ACCOUNT_SESSION_FILE"
+          install -m 600 "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
+          account_ref="$(jq -r '.userId' "$FABUSHI_ACCOUNT_SESSION_FILE" | sha256sum | cut -c1-16)"
+          rm -f "$oidc_json" "$response_json" "$request_json"
+          {
+            echo '- Runner account: Fabushi account linked to the GitHub workflow actor (identity redacted)'
+            echo "- Account reference: \`$account_ref\`"
+            echo '- Connect ChatGPT to the Fabushi MCP and sign in with the same GitHub-linked Fabushi account.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Linux desktop and native Host dependencies
         shell: bash
@@ -135,8 +191,6 @@ jobs:
 
       - name: Bring the Runner online before the build
         shell: bash
-        env:
-          FABUSHI_ACCOUNT_ACCESS_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
         run: |
           set -euo pipefail
           export RUNNER_TRACKING_ID=
@@ -161,7 +215,7 @@ jobs:
             echo "- MCP URL: \`$mcp_url\`"
             echo "- Device ID: \`$DEVICE_ID\`"
             echo "- Runner URL: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            echo '- Connect ChatGPT with the same Fabushi test account, call `list_devices`, then select this device.'
+            echo '- Connect ChatGPT with the same GitHub-linked Fabushi account, call `list_devices`, then select this device.'
             echo '- Call `ci_session_status` while the package is building; after `appReady=true`, run live UI tests and finish with `ci_session_finish`.'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -218,8 +272,6 @@ jobs:
       - name: Verify the packaged application and switch to its MCP runtime
         id: packaged
         shell: bash
-        env:
-          FABUSHI_ACCOUNT_ACCESS_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
         run: |
           set -euo pipefail
           node .github/scripts/update-interactive-runner-status.mjs package-verification 'Verifying the packaged Computer Use runtime and switching the device agent.'
@@ -258,8 +310,6 @@ jobs:
       - name: Launch packaged Fabushi and begin evidence recording
         shell: bash
         env:
-          MAHAYANA_TEST_ACCOUNT_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
-          FABUSHI_CI_TEST_ACCOUNT_AUTOLOGIN: '1'
           FABUSHI_E2E: '0'
         run: |
           set -euo pipefail
@@ -349,6 +399,7 @@ jobs:
             fi
           done
           if test -n "${DBUS_SESSION_BUS_PID:-}"; then kill -TERM "$DBUS_SESSION_BUS_PID" 2>/dev/null || true; fi
+          rm -f "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_ACCOUNT_SESSION_FILE.tmp"             "$FABUSHI_CI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE.tmp"
 
       - name: Upload interactive Runner evidence
         if: always()

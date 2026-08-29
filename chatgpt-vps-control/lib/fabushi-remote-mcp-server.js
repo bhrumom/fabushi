@@ -171,7 +171,7 @@ function oauthChallenge(origin, mcpPath, scope = "devices.read devices.control")
   return `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource${mcpPath}", scope="${scope}"`;
 }
 
-function authorizationPage({ requestId, loginUrl, accountLabel = "Fabushi 测试账号" }) {
+function authorizationPage({ requestId, loginUrl, accountLabel = "Fabushi 账号" }) {
   const safeRequestId = htmlEscape(requestId);
   const safeLoginUrl = htmlEscape(loginUrl);
   const safeAccountLabel = htmlEscape(accountLabel);

@@ -27,6 +27,7 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/ci_runner.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/lib.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/schema_tests.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0014_remote_computer_client_tokens.sql'
@@ -35,6 +36,7 @@ on:
       - '.github/workflows/apple-store-delivery.yml'
       - '.github/workflows/ci.yml'
       - '.github/workflows/computer-control-security.yml'
+      - '.github/workflows/interactive-runner-mcp.yml'
       - '.github/scripts/verify-packaged-computer-control.mjs'
       - '.github/scripts/verify-app-agent-surface-contract.mjs'
       - 'chatgpt-vps-control/tests/packaged-computer-control-verifier.test.js'
@@ -68,6 +70,7 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/ci_runner.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/lib.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/schema_tests.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0014_remote_computer_client_tokens.sql'
@@ -76,6 +79,7 @@ on:
       - '.github/workflows/apple-store-delivery.yml'
       - '.github/workflows/ci.yml'
       - '.github/workflows/computer-control-security.yml'
+      - '.github/workflows/interactive-runner-mcp.yml'
       - '.github/scripts/verify-packaged-computer-control.mjs'
       - '.github/scripts/verify-app-agent-surface-contract.mjs'
       - 'chatgpt-vps-control/tests/packaged-computer-control-verifier.test.js'
@@ -111,7 +115,7 @@ jobs:
           cache-dependency-path: chatgpt-vps-control/package-lock.json
       - name: Verify dependency-free embedded runtime source contract
         if: runner.os == 'Linux'
-        run: node --test tests/fabushi-embedded-runtime-source.test.js tests/fabushi-computer-policy.test.js
+        run: node --test tests/fabushi-embedded-runtime-source.test.js tests/fabushi-computer-policy.test.js tests/interactive-runner-account-binding.test.js
       - run: npm ci --ignore-scripts
       - name: Check JavaScript syntax
         run: >-
