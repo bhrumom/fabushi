@@ -67,6 +67,13 @@ Use these tools in order:
 
 The workflow uploads only an explicit evidence allowlist: status, notes, redacted device-call trace, generated regression candidate, video, screenshot and process logs. Account sessions and tokens are never included.
 
+
+### GitHub-linked Runner identity
+
+The interactive Runner does not use the global platform `TEST_ACCOUNT_TOKEN`, a stored Fabushi password, or an account id supplied by the workflow. A job on protected `main` requests a GitHub Actions OIDC assertion for the `fabushi-ci-runner` audience. The Platform Worker verifies the exact repository and owner ids, workflow ref and source SHA, protected ref, event, GitHub-hosted environment, assertion age and derived device id, then resolves the workflow actor's GitHub identity to its existing Fabushi account. It returns a non-refreshable access session valid for at most four hours. The device agent and packaged app read separate owner-only copies of that session.
+
+To see the Runner in ChatGPT, add `https://fabushi-mcp.ombhrum.com/mcp` and sign in to Fabushi with the same GitHub account that dispatched the workflow. `list_devices` then returns only devices in that Fabushi account namespace, including the live `gha-<run>-<attempt>-interactive` Runner.
+
 ## Server installation
 
 Install the checked-out `chatgpt-vps-control` package under `/opt/fabushi-remote-mcp/current`, run `npm ci --omit=dev --ignore-scripts`, create the system user `fabushi-mcp`, copy the example environment to `/etc/fabushi-remote-mcp.env`, install `systemd/fabushi-remote-mcp.service`, and add the Cloudflare Tunnel ingress mapping:

@@ -34,3 +34,9 @@
 - AI 能读取应用状态、执行 UI 操作、写测试备注，并通过 `ci_session_finish` 结束 live window。
 - 工作流生成脱敏 trace、视频/截图、状态、备注和 generated-regression；超时、应用退出或未远程完成时明确失败。
 - Node 单元/集成测试、Rust 双重 opt-in 测试、打包清单、workflow syntax/security gate 和真实 GitHub Actions live journey 全部通过。
+
+## 2026-08-29 安全澄清：Runner 账号绑定
+
+原始需求中的“同一测试账号”保留为同账号语义，但不再由全局 `TEST_ACCOUNT_TOKEN` 模拟。最终实现使用 GitHub Actions OIDC：只有受保护 `main` 上的 `interactive-runner-mcp.yml`、官方 GitHub-hosted Runner、精确仓库/组织 ID、精确 source SHA 和短时 OIDC assertion 才能换取最多四小时且不可刷新的 Fabushi Runner 会话。平台以 workflow actor 的 GitHub `actor_id` 查询已绑定的 Fabushi GitHub identity；ChatGPT 必须用同一个 GitHub/Fabushi 账号完成 MCP OAuth，才能发现该 Runner。未绑定 GitHub 身份、fork、非 main、非受保护 ref、过期 assertion 或 device/run 不一致全部 fail closed。
+
+该澄清取代上文关于 `FABUSHI_CI_TEST_ACCOUNT_AUTOLOGIN` 与共享测试令牌的具体实现描述；不改变“同一账号才能发现设备”的原始目标。

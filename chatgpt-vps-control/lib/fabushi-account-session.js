@@ -5,24 +5,54 @@ import { normalizeFabushiApiBaseUrl, FabushiAccountAuthError } from "./fabushi-a
 const REFRESH_EARLY_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 
+function validCredential(value) {
+  return value.length >= 24 && value.length <= 16 * 1024 && !/\s/u.test(value);
+}
+
 function cleanSession(payload) {
   const accessToken = String(payload?.accessToken || "").trim();
   const refreshToken = String(payload?.refreshToken || "").trim();
+  const tokenType = String(payload?.tokenType || "Bearer");
+  const provider = String(payload?.provider || "official");
+  const ciRunner = payload?.ciRunner === true && provider === "github-actions";
+  const accessTokenExpiresAt = Number(payload?.accessTokenExpiresAt || 0);
+  const refreshTokenExpiresAt = Number(payload?.refreshTokenExpiresAt || 0);
+  const sessionId = String(payload?.sessionId || "").trim();
   const deviceId = String(payload?.deviceId || "").trim();
-  if (accessToken.length < 24 || refreshToken.length < 24 || !deviceId) {
-    throw new FabushiAccountAuthError("invalid_account_session", "Fabushi account session is incomplete.");
+  const username = String(payload?.username || payload?.user?.username || "").trim();
+  const userId = String(payload?.userId || payload?.user?.id || "").trim();
+  const nestedUserId = String(payload?.user?.id || "").trim();
+  const ciIdentityValid = !ciRunner || (
+    tokenType === "Bearer"
+    && /^ci-runner:[0-9]+:[0-9]+$/u.test(sessionId)
+    && /^gha-[0-9]+-[0-9]+-interactive$/u.test(deviceId)
+    && !refreshToken
+    && accessTokenExpiresAt > 0
+    && nestedUserId === userId
+  );
+  const refreshValid = ciRunner || validCredential(refreshToken);
+  if (!validCredential(accessToken)
+      || !refreshValid
+      || !deviceId
+      || !sessionId
+      || !username
+      || !userId
+      || !ciIdentityValid) {
+    throw new FabushiAccountAuthError("invalid_account_session", "Fabushi account session is incomplete or invalid.");
   }
   return {
     accessToken,
-    refreshToken,
-    tokenType: String(payload?.tokenType || "Bearer"),
-    accessTokenExpiresAt: Number(payload?.accessTokenExpiresAt || 0),
-    refreshTokenExpiresAt: Number(payload?.refreshTokenExpiresAt || 0),
-    sessionId: String(payload?.sessionId || ""),
+    ...(ciRunner ? {} : { refreshToken }),
+    tokenType,
+    accessTokenExpiresAt,
+    ...(ciRunner ? {} : { refreshTokenExpiresAt }),
+    sessionId,
     deviceId,
-    username: String(payload?.username || payload?.user?.username || ""),
-    userId: String(payload?.userId || payload?.user?.id || ""),
+    username,
+    userId,
     user: payload?.user && typeof payload.user === "object" ? payload.user : null,
+    provider,
+    ciRunner,
   };
 }
 
@@ -99,6 +129,13 @@ export function createFabushiAccountSessionStore(options = {}) {
 
   async function refresh(session) {
     const current = cleanSession(session);
+    if (current.ciRunner || !current.refreshToken) {
+      throw new FabushiAccountAuthError(
+        "ci_runner_session_expired",
+        "The GitHub Actions Runner session is short-lived and cannot be refreshed.",
+        401,
+      );
+    }
     if (current.refreshTokenExpiresAt && current.refreshTokenExpiresAt * 1000 <= now()) {
       throw new FabushiAccountAuthError("account_refresh_expired", "Fabushi account refresh session has expired.", 401);
     }
@@ -112,7 +149,16 @@ export function createFabushiAccountSessionStore(options = {}) {
   async function accessToken() {
     let session = await read();
     const expiresAtMs = session.accessTokenExpiresAt ? session.accessTokenExpiresAt * 1000 : 0;
-    if (!expiresAtMs || expiresAtMs <= now() + REFRESH_EARLY_MS) session = await refresh(session);
+    if (!expiresAtMs || expiresAtMs <= now() + REFRESH_EARLY_MS) {
+      if (session.ciRunner) {
+        throw new FabushiAccountAuthError(
+          "ci_runner_session_expired",
+          "The GitHub Actions Runner session expired; start a new workflow run.",
+          401,
+        );
+      }
+      session = await refresh(session);
+    }
     return session.accessToken;
   }
 

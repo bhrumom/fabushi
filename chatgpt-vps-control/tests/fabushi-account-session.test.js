@@ -51,3 +51,68 @@ test("Fabushi CI account session logs in, stores credentials privately, and refr
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Fabushi account store accepts a short-lived GitHub-linked Runner session without refresh", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fabushi-github-runner-session-"));
+  const sessionPath = join(root, "session.json");
+  let timestamp = 1_000_000;
+  let networkCalls = 0;
+  const store = createFabushiAccountSessionStore({
+    sessionPath,
+    baseUrl: "https://api.example.test",
+    now: () => timestamp,
+    fetchImpl: async () => {
+      networkCalls += 1;
+      throw new Error("short-lived Runner session must not refresh");
+    },
+  });
+  try {
+    const saved = await store.save({
+      accessToken: "c".repeat(64),
+      tokenType: "Bearer",
+      accessTokenExpiresAt: Math.floor(timestamp / 1000) + 14_400,
+      sessionId: "ci-runner:12345:2",
+      deviceId: "gha-12345-2-interactive",
+      username: "linked-user",
+      userId: "42",
+      user: { id: "42", username: "linked-user" },
+      provider: "github-actions",
+      ciRunner: true,
+    });
+    assert.equal(saved.ciRunner, true);
+    assert.equal("refreshToken" in saved, false);
+    assert.equal((await stat(sessionPath)).mode & 0o777, 0o600);
+    assert.equal(await store.accessToken(), "c".repeat(64));
+    assert.equal(networkCalls, 0);
+    timestamp += 14_350_000;
+    await assert.rejects(() => store.accessToken(), (error) => error?.code === "ci_runner_session_expired");
+    assert.equal(networkCalls, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Fabushi account store rejects a malformed Runner identity or refresh credential", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fabushi-github-runner-deny-"));
+  const store = createFabushiAccountSessionStore({
+    sessionPath: join(root, "session.json"),
+    baseUrl: "https://api.example.test",
+  });
+  try {
+    await assert.rejects(() => store.save({
+      accessToken: "d".repeat(64),
+      refreshToken: "must-not-exist-on-ci-runner",
+      tokenType: "Bearer",
+      accessTokenExpiresAt: 9_999_999,
+      sessionId: "ci-runner:12345:2",
+      deviceId: "desktop-user-device",
+      username: "linked-user",
+      userId: "42",
+      user: { id: "43" },
+      provider: "github-actions",
+      ciRunner: true,
+    }), (error) => error?.code === "invalid_account_session");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

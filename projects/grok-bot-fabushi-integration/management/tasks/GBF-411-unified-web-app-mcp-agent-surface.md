@@ -83,14 +83,17 @@
 
 ## Evidence
 
-- PR: `#2205` (branch update pending commit/push).
+- PR: `#2205`; Web/App MCP implementation is on the branch, account-binding hardening is pending commit/push and CI.
 - Baseline head before GBF-411: `532faaeaae671351a00547b143e51006d14758f9`.
+- Runner account binding: exact protected-main GitHub Actions OIDC → linked Fabushi GitHub identity → non-refreshable private CI session; shared test token removed.
 - Lightweight local evidence (no application/native build):
   - `chatgpt-vps-control` Node suite: 79/79 passed.
   - Electron private bridge tests: 3/3 passed.
   - shared MCP App SDK tests: 9/9 passed.
   - additive cross-platform contract validator: passed.
   - JS/CJS syntax and `git diff --check`: passed for completed rounds.
+  - `interactive-runner-account-binding.test.js`: OIDC/no-shared-token/source contracts passed.
+  - `fabushi-account-session.test.js`: short-lived GitHub-linked session acceptance and malformed-session rejection passed.
 - GitHub CI/E2E/deployment/release/live ChatGPT Runner: pending.
 
 ## Risks / blockers
