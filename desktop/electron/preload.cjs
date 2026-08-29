@@ -85,34 +85,39 @@ const MAHAYANA_REPLAYABLE_EVENTS = new Set([
 ]);
 const mahayanaRuntimeListeners = new Set();
 const mahayanaReplay = new Map();
-const mahayanaReplayTimers = new Map();
-const MAHAYANA_REPLAY_TTL_MS = 5000;
+const MAHAYANA_REPLAY_RESET_METHODS = new Set([
+  'feature.auth.browserStart',
+  'feature.auth.passwordLogin',
+  'feature.auth.oauthStart',
+  'feature.auth.logout',
+]);
+
+function clearMahayanaReplay() {
+  mahayanaReplay.clear();
+}
 const mahayanaRuntimeChannel = eventChannel(MAHAYANA_EDGE, MAHAYANA_RUNTIME_EVENT);
 ipcRenderer.on(mahayanaRuntimeChannel, (_event, payload) => {
   if (MAHAYANA_REPLAYABLE_EVENTS.has(payload?.type)) {
-    const type = payload.type;
-    clearTimeout(mahayanaReplayTimers.get(type));
-    mahayanaReplay.set(type, payload);
-    mahayanaReplayTimers.set(type, setTimeout(() => {
-      mahayanaReplay.delete(type);
-      mahayanaReplayTimers.delete(type);
-    }, MAHAYANA_REPLAY_TTL_MS));
+    mahayanaReplay.set(payload.type, payload);
   }
   for (const listener of mahayanaRuntimeListeners) listener(payload);
 });
 
 const mahayana = Object.freeze({
   contractVersion: EDGE_CONTRACT_VERSION,
-  invoke(method, params = {}) {
-    return invokeEdge(MAHAYANA_EDGE, method, params);
+  async invoke(method, params = {}) {
+    if (MAHAYANA_REPLAY_RESET_METHODS.has(method)) clearMahayanaReplay();
+    try {
+      return await invokeEdge(MAHAYANA_EDGE, method, params);
+    } finally {
+      if (method === 'feature.auth.logout') clearMahayanaReplay();
+    }
   },
   subscribe(listener) {
     if (typeof listener !== 'function') return () => {};
     mahayanaRuntimeListeners.add(listener);
     const replay = Array.from(mahayanaReplay.values());
-    for (const timer of mahayanaReplayTimers.values()) clearTimeout(timer);
-    mahayanaReplay.clear();
-    mahayanaReplayTimers.clear();
+    clearMahayanaReplay();
     for (const payload of replay) listener(payload);
     return () => mahayanaRuntimeListeners.delete(listener);
   },
