@@ -14,6 +14,19 @@ export const FABUSHI_APP_TOOL_NAMES = Object.freeze({
 export type FabushiAppToolName =
   (typeof FABUSHI_APP_TOOL_NAMES)[keyof typeof FABUSHI_APP_TOOL_NAMES];
 
+export interface FabushiAppSurfaceToolDescriptor {
+  name: FabushiAppToolName;
+  title: string;
+  description: string;
+  inputSchema: JsonSchema;
+  annotations: { readOnlyHint: boolean };
+}
+
+type InternalAppSurfaceToolDefinition = Omit<FabushiAppSurfaceToolDescriptor, "annotations"> & {
+  operation: AppSurfaceOperation;
+  readOnly: boolean;
+};
+
 export type AppSurfaceOperation = "status" | "snapshot" | "find" | "action" | "wait" | "assert";
 
 export interface AppSurfaceInvocationOptions {
@@ -33,19 +46,13 @@ export interface AppSurface {
 export interface FabushiAppSurfaceRegistry {
   readonly version: typeof FABUSHI_APP_SURFACE_VERSION;
   readonly appId: string;
-  list(): Array<{
-    name: FabushiAppToolName;
-    title: string;
-    description: string;
-    inputSchema: JsonSchema;
-    annotations: { readOnlyHint: boolean };
-  }>;
+  list(): FabushiAppSurfaceToolDescriptor[];
   call(name: FabushiAppToolName, input?: Record<string, unknown>): Promise<unknown>;
 }
 
 const emptyObjectSchema: JsonSchema = { type: "object", properties: {} };
 
-const toolDefinitions = Object.freeze([
+const toolDefinitions: readonly InternalAppSurfaceToolDefinition[] = Object.freeze([
   {
     operation: "status" as const,
     name: FABUSHI_APP_TOOL_NAMES.status,
@@ -154,7 +161,7 @@ const toolDefinitions = Object.freeze([
   },
 ]);
 
-export function appSurfaceToolDefinitions() {
+export function appSurfaceToolDefinitions(): FabushiAppSurfaceToolDescriptor[] {
   return toolDefinitions.map(({ operation: _operation, readOnly, ...tool }) => ({
     ...tool,
     annotations: { readOnlyHint: readOnly },

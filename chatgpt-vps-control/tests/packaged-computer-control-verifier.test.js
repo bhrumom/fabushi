@@ -23,6 +23,7 @@ const required = [
   "lib/fabushi-account-session.js",
   "lib/ci-session-tools.js",
   "lib/app-agent-surface-client.js",
+  "lib/app-agent-surface-client.d.ts",
   "lib/app-agent-tools.js",
   "extension/manifest.json",
   "lib/fabushi-computer-policy.js",
