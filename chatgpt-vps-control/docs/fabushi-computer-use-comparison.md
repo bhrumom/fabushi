@@ -23,7 +23,7 @@ The remote mode is instead a compatible independent implementation behind the ex
 
 ## Why macOS repeatedly asked Node to read protected folders
 
-The installed LaunchAgent and Chrome Native Messaging launcher both pointed at JavaScript under the repository in `Documents`. The long-running executable was Homebrew Node, so macOS attributed each protected-folder read to `node`, not to the signed **ChatGPT Computer Control** helper. Replacing/upgrading Node or moving the checkout can make those decisions appear new again.
+The installed LaunchAgent and Chrome Native Messaging launcher both pointed at JavaScript under the repository in `Documents`. The long-running executable was Homebrew Node, so macOS attributed each protected-folder read to `node`, not to the signed **Fabushi Computer Control** helper. Replacing/upgrading Node or moving the checkout can make those decisions appear new again.
 
 `service install` and `browser-extension install` now stage the executable package and dependencies into a content-addressed directory under `~/.chatgpt-computer-control/runtime/` and register only those private paths. Accessibility and Screen Recording remain owned by the signed helper app; routine background Node processes no longer need the repository under Documents.
 

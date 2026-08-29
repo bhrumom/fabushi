@@ -40,6 +40,12 @@ final class FabushiUITests: XCTestCase {
         homeSearch.typeText("Chief")
         XCTAssertTrue(app.staticTexts["Chief of Staff"].exists)
 
+        openRemoteComputer(in: app)
+        let remoteComputer = app.descendants(matching: .any)["remote-computer-surface"]
+        XCTAssertTrue(remoteComputer.waitForExistence(timeout: 10))
+        tapSurfaceClose(identifier: "remote-computer-close", in: app)
+        XCTAssertTrue(remoteComputer.waitForNonExistence(timeout: 10))
+
         openMarketplace(in: app)
         XCTAssertTrue(app.descendants(matching: .any)["runtime-badge"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["host-status"].exists)
@@ -88,10 +94,26 @@ final class FabushiUITests: XCTestCase {
             "Expected the native WebMCP readiness status after WKNavigationDelegate.didFinish"
         )
 
-        let close = app.buttons["miniapp-webmcp-close"]
-        XCTAssertTrue(close.exists)
-        close.tap()
+        tapSurfaceClose(identifier: "miniapp-webmcp-close", in: app)
         XCTAssertTrue(surface.waitForNonExistence(timeout: 10))
+    }
+
+    @MainActor
+    private func tapSurfaceClose(identifier: String, in app: XCUIApplication) {
+        let byIdentifier = app.descendants(matching: .any)[identifier]
+        if byIdentifier.waitForExistence(timeout: 5) && byIdentifier.isHittable {
+            byIdentifier.tap()
+            return
+        }
+
+        // SwiftUI can omit a Button's identifier from the simulator accessibility
+        // projection while preserving its visible label and tap action.
+        let byLabel = app.buttons["返回"]
+        XCTAssertTrue(
+            byLabel.waitForExistence(timeout: 5),
+            "Expected close button \(identifier) or the SwiftUI 返回 label"
+        )
+        byLabel.tap()
     }
 
     @MainActor
@@ -102,6 +124,16 @@ final class FabushiUITests: XCTestCase {
         let marketplace = app.buttons["marketplace-entry"]
         XCTAssertTrue(marketplace.waitForExistence(timeout: 5))
         marketplace.tap()
+    }
+
+    @MainActor
+    private func openRemoteComputer(in app: XCUIApplication) {
+        let add = app.buttons["home-add-button"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        add.tap()
+        let remoteComputer = app.buttons["remote-computer-entry"]
+        XCTAssertTrue(remoteComputer.waitForExistence(timeout: 5))
+        remoteComputer.tap()
     }
 
     @MainActor

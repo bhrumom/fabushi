@@ -21,6 +21,14 @@ const HASH_ENTRIES = RUNTIME_ENTRIES.filter((entry) => entry !== "node_modules")
 const RUNTIME_LAYOUT_VERSION = 1;
 const REQUIRED_RUNTIME_PATHS = [
   "bin/chatgpt-computer-control.js",
+  "bin/fabushi-computer-mcp.js",
+  "extension/manifest.json",
+  "lib/fabushi-computer-policy.js",
+  "native/linux/accessibility-helper.py",
+  "native/macos/ComputerHelper.swift",
+  "native/macos/Info.plist",
+  "native/macos/RequestService-Info.plist",
+  "native/windows/computer-helper.ps1",
   "scripts/browser-extension-host.mjs",
   "node_modules/@modelcontextprotocol/sdk/package.json",
   "node_modules/ws/package.json",
@@ -58,7 +66,9 @@ async function hashEntry(hash, sourceRoot, relativePath) {
     return;
   }
   if (!metadata.isFile()) return;
-  hash.update(`F\0${relativePath}\0${metadata.mode & 0o777}\0`);
+  // Permission bits are normalized by staging, packaging, and platform filesystems.
+  // Hash the runtime contents and layout, not transport-specific file modes.
+  hash.update(`F\0${relativePath}\0`);
   hash.update(await readFile(absolutePath));
   hash.update("\0");
 }
@@ -144,6 +154,7 @@ export async function installPrivateRuntime({ sourceRoot, appHome }) {
       throw new Error("Cannot install private runtime: source files changed while they were being staged; retry the install.");
     }
     await chmod(join(staging, "bin", "chatgpt-computer-control.js"), 0o700).catch(() => {});
+    await chmod(join(staging, "bin", "fabushi-computer-mcp.js"), 0o700).catch(() => {});
     await chmod(join(staging, "scripts", "browser-extension-host.mjs"), 0o700).catch(() => {});
     await writeFile(join(staging, "runtime-manifest.json"), `${JSON.stringify({
       layoutVersion: RUNTIME_LAYOUT_VERSION,

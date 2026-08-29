@@ -4,15 +4,20 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'chatgpt-vps-control/**'
       - 'desktop/**'
+      - 'frontend/apps/host/**'
       - 'frontend/apps/web/src/app/host/**'
+      - 'frontend/apps/web/src/app/remote-computer/**'
       - 'frontend/apps/web/src/lib/fabushi-runtime/**'
       - 'frontend/apps/web/src/lib/mahayana-host/**'
+      - 'frontend/apps/web/src/lib/remote-computer/**'
       - 'frontend/packages/shared/**'
       - 'contracts/automation/cross-platform-journeys.json'
       - 'third_party/mahayana/codex-rs/**'
       - 'third_party/mahayana/mahayana-rs/Cargo.toml'
       - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host-desktop/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
@@ -24,6 +29,7 @@ on:
       - '.github/scripts/assert-fabushi-desktop-architecture.py'
       - '.github/scripts/assert-native-desktop-edge-parity.py'
       - '.github/workflows/electron-desktop.yml'
+      - '.github/scripts/verify-packaged-computer-control.mjs'
   push:
     branches: [main]
   workflow_dispatch:
@@ -71,22 +77,35 @@ jobs:
           python3 .github/scripts/assert-bot-mark-motion.py
           python3 .github/scripts/assert-product-ui-contracts.py
           python3 .github/scripts/assert-native-capability-semantics.py
+          node --test chatgpt-vps-control/tests/fabushi-embedded-runtime-source.test.js
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: |
+            desktop/package-lock.json
+            chatgpt-vps-control/package-lock.json
 
       - name: Install Electron dependencies
         working-directory: desktop
         run: npm ci --prefer-offline
 
+      - name: Install embedded Computer Use dependencies
+        if: github.event_name != 'pull_request'
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts --prefer-offline
+
+      - name: Install Playwright video diagnostics runtime
+        if: github.event_name != 'pull_request'
+        working-directory: desktop
+        run: npx playwright install ffmpeg
+
       - name: Run Electron main-process contract tests
         if: matrix.target == 'linux'
         shell: bash
-        run: node --test desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/test-auth-session.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs
+        run: node --test desktop/scripts/prepare-desktop-window-branding.test.mjs desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/test-auth-session.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs desktop/electron/main-lifecycle.test.cjs
 
       - name: Verify renderer TypeScript
         if: matrix.target == 'linux'
@@ -178,6 +197,7 @@ jobs:
         working-directory: desktop
         env:
           FABUSHI_FEATURE_HOST_MODE: test
+          FABUSHI_E2E: '1'
           MAHAYANA_APP_HOST_BIN: ${{ github.workspace }}/desktop/resources/bin/mahayana-app-host
         run: xvfb-run -a npm run test:e2e
 
@@ -248,6 +268,20 @@ jobs:
             codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.whisper-cli --sign "$MACOS_CODESIGN_IDENTITY" "$binary"
           done < <(find desktop/resources/asr -type f -name whisper-cli -print)
           codesign --verify --strict --verbose=2 "$host"
+
+      - name: Stage bundled cross-platform Computer Use runtime
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          CHATGPT_COMPUTER_HOME: ${{ github.workspace }}/desktop/resources/computer-control
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          # MACOS_CODESIGN_IDENTITY is discovered at runtime and written through
+          # GITHUB_ENV; read it in the shell rather than expression evaluation.
+          export CHATGPT_COMPUTER_CODESIGN_IDENTITY="${MACOS_CODESIGN_IDENTITY:-}"
+          export CHATGPT_COMPUTER_TEAM_ID="${APPLE_TEAM_ID:-}"
+          node chatgpt-vps-control/bin/prepare-fabushi-bundle.js
 
       - name: Package canonical Electron application from staged inputs
         if: github.event_name != 'pull_request'
@@ -326,11 +360,34 @@ jobs:
           "FABUSHI_ELECTRON_EXECUTABLE=$($candidate.FullName)" >> $env:GITHUB_ENV
           "Packaged executable: $($candidate.FullName)" >> $env:GITHUB_STEP_SUMMARY
 
+      - name: Verify packaged Computer Use runtime, helper, and private MCP
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          FABUSHI_PACKAGE_TARGET: ${{ matrix.target }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          args=(
+            --release-root desktop/release
+            --platform "$FABUSHI_PACKAGE_TARGET"
+          )
+          if [ "$FABUSHI_PACKAGE_TARGET" = mac ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+            args+=(--expected-mac-team "$APPLE_TEAM_ID")
+          fi
+          if [ "$FABUSHI_PACKAGE_TARGET" = mac ] && [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            # Manual full-matrix validation packages an unsigned outer app;
+            # the embedded helper signatures are still verified strictly.
+            args+=(--allow-unsigned-mac)
+          fi
+          node .github/scripts/verify-packaged-computer-control.mjs "${args[@]}"
+
       - name: Simulate the complete user journey in packaged Linux Electron
         if: github.event_name != 'pull_request' && matrix.target == 'linux'
         working-directory: desktop
         env:
           FABUSHI_FEATURE_HOST_MODE: test
+          FABUSHI_E2E: '1'
         run: xvfb-run -a npm run test:e2e
 
       - name: Simulate the complete user journey in packaged macOS or Windows Electron
@@ -338,6 +395,7 @@ jobs:
         working-directory: desktop
         env:
           FABUSHI_FEATURE_HOST_MODE: test
+          FABUSHI_E2E: '1'
         run: npm run test:e2e
 
       - name: Upload packaged Electron user-journey diagnostics

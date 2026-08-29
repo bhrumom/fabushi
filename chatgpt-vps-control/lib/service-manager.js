@@ -63,7 +63,7 @@ async function installLinuxUserService(cliPath) {
   const target = join(homedir(), ".config", "systemd", "user", "chatgpt-computer-control.service");
   await mkdir(dirname(target), { recursive: true });
   const node = process.execPath;
-  const content = `[Unit]\nDescription=ChatGPT Computer Control MCP\nAfter=graphical-session.target network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nEnvironmentFile=${envPath}\nExecStart=${node} ${cliPath} serve\nRestart=on-failure\nRestartSec=2\nWorkingDirectory=${appHome}\n\n[Install]\nWantedBy=default.target\n`;
+  const content = `[Unit]\nDescription=Fabushi Computer Control MCP\nAfter=graphical-session.target network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nEnvironmentFile=${envPath}\nExecStart=${node} ${cliPath} serve\nRestart=on-failure\nRestartSec=2\nWorkingDirectory=${appHome}\n\n[Install]\nWantedBy=default.target\n`;
   await writeFile(target, content, { encoding: "utf8", mode: 0o600 });
   await run("systemctl", ["--user", "daemon-reload"]);
   await run("systemctl", ["--user", "enable", "--now", "chatgpt-computer-control.service"]);
@@ -99,12 +99,12 @@ async function installMacLaunchAgent(cliPath) {
 }
 
 async function installWindowsTask(cliPath) {
-  const taskName = "ChatGPTComputerControl";
+  const taskName = "FabushiComputerControl";
   const node = process.execPath.replace(/'/g, "''");
   const cli = cliPath.replace(/'/g, "''");
   const command = `& '${node}' '${cli}' serve`;
   const escaped = command.replace(/"/g, '\\"');
-  const ps = `$action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -WindowStyle Hidden -Command \"${escaped}\"'; $trigger=New-ScheduledTaskTrigger -AtLogOn; Register-ScheduledTask -TaskName '${taskName}' -Action $action -Trigger $trigger -Description 'ChatGPT Computer Control MCP' -Force | Out-Null; Start-ScheduledTask -TaskName '${taskName}'`;
+  const ps = `$action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -WindowStyle Hidden -Command \"${escaped}\"'; $trigger=New-ScheduledTaskTrigger -AtLogOn; Register-ScheduledTask -TaskName '${taskName}' -Action $action -Trigger $trigger -Description 'Fabushi Computer Control MCP' -Force | Out-Null; Start-ScheduledTask -TaskName '${taskName}'`;
   await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps]);
   return { manager: "scheduled-task", name: taskName };
 }
@@ -135,7 +135,7 @@ export async function removeService() {
     return;
   }
   if (platform() === "win32") {
-    await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "Unregister-ScheduledTask -TaskName 'ChatGPTComputerControl' -Confirm:$false -ErrorAction SilentlyContinue"], { capture: true }).catch(() => {});
+    await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "Unregister-ScheduledTask -TaskName 'FabushiComputerControl' -Confirm:$false -ErrorAction SilentlyContinue"], { capture: true }).catch(() => {});
     return;
   }
 }

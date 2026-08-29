@@ -3,7 +3,7 @@
     "cloud-market-hello-local": {
       "type": "stdio",
       "command": "node",
-      "args": ["./server/index.mjs"],
+      "args": ["--experimental-strip-types", "./server/index.mjs"],
       "cwd": "."
     }
   }

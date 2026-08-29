@@ -23,7 +23,7 @@ on:
   workflow_call:
 
 concurrency:
-  group: native-mobile-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
+  group: native-mobile-${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
   cancel-in-progress: true
 
 permissions:
