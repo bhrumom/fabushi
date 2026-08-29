@@ -1107,7 +1107,7 @@ function ensurePortalRoot(id: string, parent: HTMLElement | null, before?: Eleme
   }
   const root = existing || document.createElement('div');
   root.id = id;
-  root.className = styles.portalRoot;
+  if (root.className !== styles.portalRoot) root.className = styles.portalRoot;
   if (before instanceof HTMLElement) {
     root.dataset.sourceBotId = before.dataset.botId || '';
     root.dataset.sourceLabel = before.getAttribute('aria-label') || '';
