@@ -37,7 +37,7 @@ function loadPreload() {
   };
 }
 
-test('Mahayana preload replays bootstrap projections across renderer subscriber handoff', () => {
+test('Mahayana preload replays bootstrap projections to every renderer subscriber in the account session', () => {
   const bridge = loadPreload();
   const channel = 'fabushi-edge:mahayana-host:event:runtime-event';
   bridge.emit(channel, { type: 'conversation.listed', conversations: [{ id: 'c1' }] });
@@ -54,11 +54,11 @@ test('Mahayana preload replays bootstrap projections across renderer subscriber 
 
   const next = [];
   bridge.exposed.mahayana.subscribe((event) => next.push(event.type));
-  assert.deepEqual(next, []);
+  assert.deepEqual(next, ['conversation.listed', 'bot.listed', 'group.listed']);
   assert.equal(next.includes('chat.delta'), false);
 });
 
-test('Mahayana preload bridges one active-subscriber handoff without retaining stale projections', () => {
+test('Mahayana preload preserves the newest bootstrap projection across multiple active-subscriber handoffs', () => {
   const bridge = loadPreload();
   const channel = 'fabushi-edge:mahayana-host:event:runtime-event';
   const first = [];
@@ -73,7 +73,7 @@ test('Mahayana preload bridges one active-subscriber handoff without retaining s
 
   const third = [];
   bridge.exposed.mahayana.subscribe((event) => third.push(event.type));
-  assert.deepEqual(third, []);
+  assert.deepEqual(third, ['conversation.listed']);
 });
 
 test('Mahayana preload clears replay at authentication account boundaries', async () => {

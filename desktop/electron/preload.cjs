@@ -73,9 +73,10 @@ function subscribeEdge(edge, eventName, listener) {
 }
 
 // Runtime bootstrap events are one-shot projections emitted by the Rust Host.
-// Keep one permanent preload listener so a React surface transition cannot drop
-// them between the old HostClient unsubscribe and the new Messenger subscribe.
-// Only replay idempotent state/projection events; transient deltas remain live-only.
+// Keep one permanent preload listener so React surface transitions cannot drop
+// them across any number of HostClient/Messenger transport subscriptions. Retain
+// only the newest idempotent projection for the current authenticated account;
+// transient deltas remain live-only and account boundaries clear the snapshots.
 const MAHAYANA_REPLAYABLE_EVENTS = new Set([
   'host.ready',
   'conversation.listed',
@@ -117,7 +118,6 @@ const mahayana = Object.freeze({
     if (typeof listener !== 'function') return () => {};
     mahayanaRuntimeListeners.add(listener);
     const replay = Array.from(mahayanaReplay.values());
-    clearMahayanaReplay();
     for (const payload of replay) listener(payload);
     return () => mahayanaRuntimeListeners.delete(listener);
   },

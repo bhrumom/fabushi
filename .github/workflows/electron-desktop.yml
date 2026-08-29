@@ -98,7 +98,6 @@ jobs:
         run: npm ci --ignore-scripts --prefer-offline
 
       - name: Install Playwright video diagnostics runtime
-        if: github.event_name != 'pull_request'
         working-directory: desktop
         run: npx playwright install ffmpeg
 
