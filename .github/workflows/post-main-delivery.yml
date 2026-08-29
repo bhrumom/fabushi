@@ -349,6 +349,31 @@ jobs:
             echo "- macOS Release E2E will start from the release-published event."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Sync tested desktop Release into official-site version policy
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+          VERSION_POLICY_ENDPOINT: ${{ vars.VERSION_POLICY_ENDPOINT }}
+          VERSION_POLICY_AUTOMATION_TOKEN: ${{ secrets.VERSION_POLICY_AUTOMATION_TOKEN }}
+          VERSION_POLICY_CHANNELS: stable
+          VERSION_POLICY_PLATFORMS: macos,windows,linux
+          VERSION_SYNC_SOURCE: github-actions-desktop-release
+        run: |
+          set -euo pipefail
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          asset_url() {
+            local pattern="$1"
+            jq -r --arg pattern "$pattern" '.assets[] | select(.name | test($pattern; "i")) | .browser_download_url' <<<"$release_json" | head -1
+          }
+          export APP_DOWNLOAD_URL_MACOS="$(asset_url '[.]dmg$')"
+          export APP_DOWNLOAD_URL_WINDOWS="$(asset_url 'setup[.]exe$')"
+          export APP_DOWNLOAD_URL_LINUX="$(asset_url '[.]deb$')"
+          test -n "$APP_DOWNLOAD_URL_MACOS"
+          test -n "$APP_DOWNLOAD_URL_WINDOWS"
+          test -n "$APP_DOWNLOAD_URL_LINUX"
+          node .github/scripts/sync-app-version-policy.mjs --releaseTag "$RELEASE_TAG"
+
       - name: Preserve post-main delivery ledger
         uses: actions/upload-artifact@v7
         with:
