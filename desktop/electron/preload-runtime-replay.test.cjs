@@ -27,6 +27,9 @@ function loadPreload() {
     Object,
     Set,
     Map,
+    Array,
+    setTimeout,
+    clearTimeout,
   }, { filename: 'preload.cjs' });
   return {
     exposed,
@@ -53,8 +56,26 @@ test('Mahayana preload replays bootstrap projections across renderer subscriber 
 
   const next = [];
   bridge.exposed.mahayana.subscribe((event) => next.push(event.type));
-  assert.deepEqual(next, ['conversation.listed', 'bot.listed', 'group.listed']);
+  assert.deepEqual(next, []);
   assert.equal(next.includes('chat.delta'), false);
+});
+
+test('Mahayana preload bridges one active-subscriber handoff without retaining stale projections', () => {
+  const bridge = loadPreload();
+  const channel = 'fabushi-edge:mahayana-host:event:runtime-event';
+  const first = [];
+  const unsubscribeFirst = bridge.exposed.mahayana.subscribe((event) => first.push(event.type));
+  bridge.emit(channel, { type: 'conversation.listed', conversations: [{ id: 'c1' }] });
+  assert.deepEqual(first, ['conversation.listed']);
+
+  const second = [];
+  bridge.exposed.mahayana.subscribe((event) => second.push(event.type));
+  assert.deepEqual(second, ['conversation.listed']);
+  unsubscribeFirst();
+
+  const third = [];
+  bridge.exposed.mahayana.subscribe((event) => third.push(event.type));
+  assert.deepEqual(third, []);
 });
 
 test('Mahayana preload keeps only the newest replayable projection per type', () => {

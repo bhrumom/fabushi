@@ -74,7 +74,8 @@ grep -Fq 'ipcRenderer.on(mahayanaRuntimeChannel' "$preload" || { echo "Electron 
 grep -Fq "'conversation.listed'" "$preload" || { echo "Electron preload conversation bootstrap replay is missing" >&2; exit 1; }
 grep -Fq "'bot.listed'" "$preload" || { echo "Electron preload bot bootstrap replay is missing" >&2; exit 1; }
 grep -Fq "'group.listed'" "$preload" || { echo "Electron preload group bootstrap replay is missing" >&2; exit 1; }
-grep -Fq 'for (const payload of mahayanaReplay.values()) listener(payload);' "$preload" || { echo "Electron preload bootstrap replay handoff is missing" >&2; exit 1; }
+grep -Fq 'const replay = Array.from(mahayanaReplay.values());' "$preload" || { echo "Electron preload bootstrap replay snapshot is missing" >&2; exit 1; }
+grep -Fq 'for (const payload of replay) listener(payload);' "$preload" || { echo "Electron preload bootstrap replay handoff is missing" >&2; exit 1; }
 grep -Fq "contextBridge.exposeInMainWorld('fabushiNative'" "$preload" || { echo "Electron preload native desktop bridge is missing" >&2; exit 1; }
 
 grep -Fq 'new ElectronMahayanaHostTransport()' "$mock_transport" || {
