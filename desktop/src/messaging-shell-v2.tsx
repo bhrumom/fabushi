@@ -701,6 +701,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
   const [hostReady, setHostReady] = useState(false);
   const [remoteAccountScope, setRemoteAccountScope] = useState<string | null>(null);
   const [initialLegacyHydrationMask, setInitialLegacyHydrationMask] = useState(0);
+  const initialLegacyHydrationMaskRef = useRef(0);
   const initialLegacyHydrated = initialLegacyHydrationMask === 0b111;
   const [section, setSection] = useState<MessengerSection>('chats');
   const [conversations, setConversations] = useState<ConversationSummary[]>(startupProjection?.legacyConversations ?? []);
@@ -1086,6 +1087,19 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
   }, [transport, selfHosted, startupProjection]);
 
   useEffect(() => {
+    if (!hostReady || initialLegacyHydrated) return;
+    let attempts = 0;
+    const retryMissing = () => {
+      if (initialLegacyHydrationMaskRef.current === 0b111 || attempts >= 8) return;
+      attempts += 1;
+      refreshLegacy(initialLegacyHydrationMaskRef.current);
+    };
+    const timer = window.setInterval(retryMissing, 650);
+    retryMissing();
+    return () => window.clearInterval(timer);
+  }, [hostReady, initialLegacyHydrated]);
+
+  useEffect(() => {
     // Remote presence shares the Host request path with Messenger bootstrap.
     // Keep background registration off that path until all core legacy lists
     // have produced their first authoritative projection.
@@ -1219,12 +1233,12 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     });
   }
 
-  function refreshLegacy() {
-    void Promise.all([
-      execute({ type: 'conversation.list', requestId: nextRequestId('conversation-list') }),
-      execute({ type: 'bot.list', requestId: nextRequestId('bot-list') }),
-      execute({ type: 'group.list', requestId: nextRequestId('group-list') }),
-    ]).catch(() => {});
+  function refreshLegacy(mask = 0) {
+    const requests: Array<Promise<unknown>> = [];
+    if ((mask & 0b001) === 0) requests.push(execute({ type: 'conversation.list', requestId: nextRequestId('conversation-list') }));
+    if ((mask & 0b010) === 0) requests.push(execute({ type: 'bot.list', requestId: nextRequestId('bot-list') }));
+    if ((mask & 0b100) === 0) requests.push(execute({ type: 'group.list', requestId: nextRequestId('group-list') }));
+    void Promise.all(requests).catch(() => {});
   }
 
   function displaySelfMessage(message: MessagingMessage): DisplayMessage {
@@ -1443,7 +1457,8 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         setHostReady(true);
         break;
       case 'conversation.listed':
-        setInitialLegacyHydrationMask((current) => current | 0b001);
+        initialLegacyHydrationMaskRef.current |= 0b001;
+        setInitialLegacyHydrationMask(initialLegacyHydrationMaskRef.current);
         setConversations(event.conversations);
         if (!activePeerKeyRef.current && event.conversations[0]) {
           const conversation = event.conversations[0];
@@ -1463,7 +1478,8 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         }
         break;
       case 'bot.listed':
-        setInitialLegacyHydrationMask((current) => current | 0b010);
+        initialLegacyHydrationMaskRef.current |= 0b010;
+        setInitialLegacyHydrationMask(initialLegacyHydrationMaskRef.current);
         setBots(event.bots);
         break;
       case 'bot.changed':
@@ -1472,7 +1488,8 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           : upsertById(current, event.bot));
         break;
       case 'group.listed':
-        setInitialLegacyHydrationMask((current) => current | 0b100);
+        initialLegacyHydrationMaskRef.current |= 0b100;
+        setInitialLegacyHydrationMask(initialLegacyHydrationMaskRef.current);
         setGroups(event.groups);
         break;
       case 'group.changed':
