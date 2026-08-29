@@ -52,7 +52,7 @@ export interface FabushiAppSurfaceRegistry {
 
 const emptyObjectSchema: JsonSchema = { type: "object", properties: {} };
 
-const toolDefinitions: readonly InternalAppSurfaceToolDefinition[] = Object.freeze([
+const toolDefinitions: readonly InternalAppSurfaceToolDefinition[] = [
   {
     operation: "status" as const,
     name: FABUSHI_APP_TOOL_NAMES.status,
@@ -159,7 +159,8 @@ const toolDefinitions: readonly InternalAppSurfaceToolDefinition[] = Object.free
     },
     readOnly: true,
   },
-]);
+];
+Object.freeze(toolDefinitions);
 
 export function appSurfaceToolDefinitions(): FabushiAppSurfaceToolDescriptor[] {
   return toolDefinitions.map(({ operation: _operation, readOnly, ...tool }) => ({
