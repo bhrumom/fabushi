@@ -44,11 +44,8 @@ async function completeBrowserLogin(page: Page): Promise<void> {
   };
 
   for (let phase = 0; phase < 12; phase += 1) {
-    let currentPhase: LoginPhase = 'waiting';
-    await expect.poll(async () => {
-      currentPhase = await readPhase();
-      return currentPhase;
-    }, { timeout: 15_000 }).not.toBe('waiting');
+    await expect.poll(readPhase, { timeout: 15_000 }).not.toBe('waiting');
+    const currentPhase = await readPhase();
 
     if (currentPhase === 'onboarding') {
       await page.getByTestId('onboarding-next').click();
