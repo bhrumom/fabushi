@@ -24,6 +24,34 @@ The Node service binds only to `127.0.0.1:8792`; the existing authenticated Clou
 
 The service applies bounded client, authorization, code, token, device and pending-call registries, short authorization/code lifetimes, device leases, heartbeat expiry, exact socket-generation binding and audit events with hashed account references.
 
+
+## App MCP tools after device discovery
+
+The connector URL and account flow do not change. After `list_devices`, inspect
+the selected device's live catalogue with `describe_device_tool`. New desktop
+and Runner builds publish these additive tools:
+
+- `fabushi.app.status`
+- `fabushi.app.snapshot`
+- `fabushi.app.find`
+- `fabushi.app.action`
+- `fabushi.app.wait`
+- `fabushi.app.assert`
+- `computer_control_route`
+
+Use `fabushi.app.*` to test Fabushi through stable semantic IDs and exact UI
+generations. Continue using the existing browser and native `computer_*` tools
+for every other application; an application is not required to implement App
+MCP. `computer_control_route` returns the preferred App MCP -> browser semantic
+-> native semantic -> coordinate fallback order without hiding or removing any
+underlying tool.
+
+The packaged app exposes its semantic surface through a loopback-only bridge
+with a per-process bearer and a private discovery file. No arbitrary
+JavaScript, shell, reflection, or internal-function tool is added. Typed values
+are excluded from the remote device trace, and sensitive fields require the
+existing encrypted secure-input flow.
+
 ## GitHub Actions Runner flow
 
 `.github/workflows/interactive-runner-mcp.yml` starts the device agent before compiling the desktop app. ChatGPT can therefore discover the Runner and query `ci_session_status` while the build is running. After packaging, the same device id reconnects through the package's embedded Computer Use stdio MCP; the workflow then starts the packaged Fabushi app in Xvfb and records the live session.

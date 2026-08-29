@@ -14,3 +14,4 @@
 | GBR-010 | 发布后可回滚 | 每个高风险能力有 feature flag 或明确 rollback 路径 |
 | GBR-016 | 安装后的桌面设备可由同账号全平台发现，并经明确配对/开关授权由人或 Bot 远控；桌面包内置完整语义 Computer Use | 设备在线与控制授权分离；全平台 package/E2E/security/Release 证据通过 |
 | GBR-017 | ChatGPT 可通过标准远程 MCP 发现并实时控制同账号 GitHub Actions Runner，使用包内 Computer Use 测试正式 Fabushi | OAuth/账号隔离/短租约/WSS/凭据不下传；构建前上线、包内 runtime 接管、live finish 与证据回归闭环通过 |
+| GBR-018 | Web/Electron/iOS/Android 共享结构化 Web MCP / App MCP Agent Surface；无 App MCP 的第三方应用仍可通过浏览器/原生语义 Computer Use 控制 | 同一 `fabushi.app.*` 合同、generation/stale/sensitive 安全通过；远程工具动态发现；原 `computer_*`/MiniApp WebMCP/secure input 零回归；截图仅作最后兜底 |

@@ -118,7 +118,7 @@ function safeChildEnvironment(env, electronNode) {
     "SystemRoot", "COMSPEC", "PATHEXT", "APPDATA", "LOCALAPPDATA", "USERPROFILE",
     "GITHUB_ACTIONS", "RUNNER_TEMP", "FABUSHI_CI_SESSION_DIR",
   ]);
-  const prefixes = ["FABUSHI_COMPUTER_", "CHATGPT_COMPUTER_", "COMPUTER_", "MAHAYANA_COMPUTER_MCP_"];
+  const prefixes = ["FABUSHI_COMPUTER_", "FABUSHI_APP_AGENT_", "CHATGPT_COMPUTER_", "COMPUTER_", "MAHAYANA_COMPUTER_MCP_"];
   const child = {};
   for (const [key, value] of Object.entries(env)) {
     if (typeof value !== "string") continue;
@@ -141,6 +141,57 @@ function redactTrace(value, key = "", depth = 0) {
     return output;
   }
   return String(value);
+}
+
+const INPUT_BEARING_TOOLS = new Set([
+  "fabushi.app.action",
+  "computer_app_state",
+  "computer_browser_locator",
+  "computer_browser_utility",
+  "computer_browser_cua",
+  "computer_element_action",
+  "computer_use",
+  "computer_use_bridge",
+]);
+
+function redactInteractiveFields(value, key = "", depth = 0) {
+  if (depth > 8) return "<depth-limit>";
+  if (/^(value|text|prompt|content|keys|keypress|clipboard|data)$/iu.test(key)) return "<redacted-input>";
+  if (Array.isArray(value)) return value.slice(0, 100).map((item) => redactInteractiveFields(item, key, depth + 1));
+  if (value && typeof value === "object") {
+    const output = {};
+    for (const [childKey, childValue] of Object.entries(value).slice(0, 200)) {
+      output[childKey] = redactInteractiveFields(childValue, childKey, depth + 1);
+    }
+    return output;
+  }
+  return value;
+}
+
+export function redactDeviceCallArguments(toolName, args) {
+  if (toolName === "secure_input_submit") return "<secure-input-redacted>";
+  const redacted = redactTrace(args ?? {});
+  return INPUT_BEARING_TOOLS.has(String(toolName)) ? redactInteractiveFields(redacted) : redacted;
+}
+
+function redactAppSurfaceEvidence(value, key = "", depth = 0) {
+  if (depth > 8) return "<depth-limit>";
+  if (/^(text|name|description|placeholder|title|value|content|data)$/iu.test(key)) return "<redacted-ui-text>";
+  if (Array.isArray(value)) return value.slice(0, 100).map((item) => redactAppSurfaceEvidence(item, key, depth + 1));
+  if (value && typeof value === "object") {
+    const output = {};
+    for (const [childKey, childValue] of Object.entries(value).slice(0, 200)) {
+      output[childKey] = redactAppSurfaceEvidence(childValue, childKey, depth + 1);
+    }
+    return output;
+  }
+  return value;
+}
+
+export function redactDeviceCallResult(toolName, result) {
+  const redacted = redactTrace(result ?? null);
+  if (String(toolName).startsWith("fabushi.app.")) return redactAppSurfaceEvidence(redacted);
+  return INPUT_BEARING_TOOLS.has(String(toolName)) ? redactInteractiveFields(redacted) : redacted;
 }
 
 async function appendDeviceTrace(path, record) {
@@ -354,7 +405,7 @@ export function startDeviceAgent(options = {}) {
           requestId: String(message.requestId).slice(0, 128),
           deviceId: config.deviceId,
           toolName: String(message.toolName).slice(0, 128),
-          arguments: message.toolName === "secure_input_submit" ? "<secure-input-redacted>" : redactTrace(message.arguments ?? {}),
+          arguments: redactDeviceCallArguments(message.toolName, message.arguments ?? {}),
         };
         await appendDeviceTrace(config.tracePath, { ...traceBase, phase: "requested" }).catch(() => {});
         try {
@@ -365,7 +416,7 @@ export function startDeviceAgent(options = {}) {
             ...traceBase,
             phase: "completed",
             ok: !result.isError,
-            structuredContent: redactTrace(result.structuredContent ?? null),
+            structuredContent: redactDeviceCallResult(message.toolName, result.structuredContent ?? null),
           }).catch(() => {});
           socket.send(JSON.stringify({ type: "result", requestId: message.requestId, ok: !result.isError, result }));
         } catch (error) {

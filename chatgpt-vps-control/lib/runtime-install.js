@@ -32,6 +32,8 @@ const REQUIRED_RUNTIME_PATHS = [
   "lib/device-agent.js",
   "lib/fabushi-account-session.js",
   "lib/ci-session-tools.js",
+  "lib/app-agent-surface-client.js",
+  "lib/app-agent-tools.js",
   "native/linux/accessibility-helper.py",
   "native/macos/ComputerHelper.swift",
   "native/macos/Info.plist",
