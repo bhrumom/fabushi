@@ -85,9 +85,19 @@ const MAHAYANA_REPLAYABLE_EVENTS = new Set([
 ]);
 const mahayanaRuntimeListeners = new Set();
 const mahayanaReplay = new Map();
+const mahayanaReplayTimers = new Map();
+const MAHAYANA_REPLAY_TTL_MS = 5000;
 const mahayanaRuntimeChannel = eventChannel(MAHAYANA_EDGE, MAHAYANA_RUNTIME_EVENT);
 ipcRenderer.on(mahayanaRuntimeChannel, (_event, payload) => {
-  if (MAHAYANA_REPLAYABLE_EVENTS.has(payload?.type)) mahayanaReplay.set(payload.type, payload);
+  if (MAHAYANA_REPLAYABLE_EVENTS.has(payload?.type)) {
+    const type = payload.type;
+    clearTimeout(mahayanaReplayTimers.get(type));
+    mahayanaReplay.set(type, payload);
+    mahayanaReplayTimers.set(type, setTimeout(() => {
+      mahayanaReplay.delete(type);
+      mahayanaReplayTimers.delete(type);
+    }, MAHAYANA_REPLAY_TTL_MS));
+  }
   for (const listener of mahayanaRuntimeListeners) listener(payload);
 });
 
@@ -99,7 +109,11 @@ const mahayana = Object.freeze({
   subscribe(listener) {
     if (typeof listener !== 'function') return () => {};
     mahayanaRuntimeListeners.add(listener);
-    for (const payload of mahayanaReplay.values()) listener(payload);
+    const replay = Array.from(mahayanaReplay.values());
+    for (const timer of mahayanaReplayTimers.values()) clearTimeout(timer);
+    mahayanaReplay.clear();
+    mahayanaReplayTimers.clear();
+    for (const payload of replay) listener(payload);
     return () => mahayanaRuntimeListeners.delete(listener);
   },
 });
