@@ -20,7 +20,7 @@ def read_repo_text(path: str) -> str:
 
 component = read_repo_text('frontend/apps/web/src/app/host/bot-mark.tsx')
 engine = read_repo_text('frontend/apps/web/src/app/host/fabushi-bot-mark-engine.tsx')
-openmaus = read_repo_text('frontend/apps/web/src/app/host/openmaus-cursor-avatar.tsx')
+runtime = read_repo_text('frontend/apps/web/src/app/host/fabushi-avatar-runtime.tsx')
 styles = read_repo_text('frontend/apps/web/src/app/host/host.module.css')
 host = read_repo_text('frontend/apps/web/src/app/host/host-client.tsx')
 identity_aliases = read_repo_text('desktop/src/agent-identity-aliases.ts')
@@ -29,8 +29,8 @@ desktop_main = read_repo_text('desktop/src/main.tsx')
 
 required_component = [
     'FabushiBotMarkEngine',
-    'data-engine="fabushi-motion-v2"',
-    'data-renderer="openmaus-unified-mark"',
+    'data-engine="fabushi-motion-v3"',
+    'data-renderer="fabushi-owned-svg-runtime"',
     'data-motion-tier={botMarkMotionTier(state, emphasis, followPointer)}',
     'AMBIENT_MOTION_STATES',
     'canonicalBotIdentity',
@@ -43,16 +43,63 @@ required_component = [
     'document.visibilityState === "visible"',
     'document.hasFocus()',
     'const effectivePaused = paused || !animated || !motionAllowed',
-    'return "blob";',
 ]
 for marker in required_component:
     if marker not in component:
-        raise SystemExit(f'BotMark motion gate: missing OpenMaus/Fabushi identity integration: {marker}')
+        raise SystemExit(f'BotMark motion gate: missing Fabushi identity/runtime integration: {marker}')
 
-# The normal identity path must never hash Bot IDs into unrelated body shapes.
-for forbidden in ['IDENTITY_SHAPES[', 'shapeHash(canonicalBotIdentity', 'shapeHash(value']:
-    if forbidden in component:
-        raise SystemExit(f'BotMark motion gate: irregular identity-shape lottery returned: {forbidden}')
+required_engine = [
+    'FabushiAvatarRuntime',
+    'FabushiAvatarRuntimeHandle',
+    'identity={botId}',
+    'state={state}',
+    'shape={shape}',
+    'color={color}',
+    'gaze={normalizedGaze(gazeTarget)}',
+    'paused={paused}',
+]
+for marker in required_engine:
+    if marker not in engine:
+        raise SystemExit(f'BotMark motion gate: missing Fabushi avatar adapter behavior: {marker}')
+
+required_runtime = [
+    'data-fabushi-avatar-runtime="v1"',
+    'requestAnimationFrame(tick)',
+    'cancelAnimationFrame(frame)',
+    'prefers-reduced-motion: reduce',
+    'personaPath(shape)',
+    'linearGradient',
+    'radialGradient',
+    'MOTION: Partial<Record<BotMarkState, MotionProfile>>',
+    'actionRef',
+    'pointermove',
+    'FabushiAvatarRuntimeHandle',
+]
+for marker in required_runtime:
+    if marker not in runtime:
+        raise SystemExit(f'BotMark motion gate: Fabushi-owned runtime is incomplete: {marker}')
+
+# These terms identify the retired vendored/runtime paths. They are prohibited
+# from the production avatar implementation; documentation/evidence may still
+# mention them historically.
+forbidden_runtime_terms = [
+    'openmaus-cursor-avatar',
+    'CursorAvatar',
+    'DEFAULT_SILHOUETTE',
+    'milind-soni/OpenMausBot',
+    'GrokBotMarkEngine',
+    'grok-bot-mark-engine',
+    'index-UbX-y3il.js',
+    'checksum-pinned-artifact-runtime',
+    'shipped renderer',
+]
+for term in forbidden_runtime_terms:
+    if term in component or term in engine or term in runtime:
+        raise SystemExit(f'BotMark motion gate: retired upstream runtime dependency returned: {term}')
+
+retired_path = Path('frontend/apps/web/src/app/host/openmaus-cursor-avatar.tsx')
+if retired_path.exists():
+    raise SystemExit('BotMark motion gate: vendored OpenMaus avatar source must not exist')
 
 # Identity and activity are separate concerns: list/header/profile/workbench marks
 # must use a canonical Bot seed, while state still follows the active Agent run.
@@ -96,50 +143,11 @@ for bootstrap_marker in [
     'installDurableAgentState()',
 ]:
     if bootstrap_marker not in desktop_main:
-        raise SystemExit(f'BotMark motion gate: desktop bootstrap skipped GBF-805 identity/durability stage: {bootstrap_marker}')
-
-required_engine = [
-    'CursorAvatar',
-    'DEFAULT_SILHOUETTE',
-    'OPENMAUS_SILHOUETTE',
-    'gradientFor(color)',
-    'openMausState(state)',
-    '"tool-running": "working"',
-    'speaking: "listening"',
-    'result: "happy"',
-    'error: "alerting"',
-    'paused={paused}',
-    'effects={!paused}',
-    'autoBlink={!paused}',
-    'autoExpression={!paused}',
-    'milind-soni/OpenMausBot@667af71ae7e93640ba4b1a5f3b38a1ad342025da',
-]
-for marker in required_engine:
-    if marker not in engine:
-        raise SystemExit(f'BotMark motion gate: missing OpenMaus wrapper behavior: {marker}')
-
-required_upstream = [
-    'SPDX-License-Identifier: Apache-2.0',
-    'Vendored from milind-soni/OpenMausBot@667af71ae7e93640ba4b1a5f3b38a1ad342025da',
-    'export type CursorState',
-    'export const CursorAvatar',
-    'prefers-reduced-motion: reduce',
-    'if (p.paused)',
-    'e.pausedPaint',
-    'setTimeout(() =>',
-    'requestAnimationFrame(step)',
-]
-for marker in required_upstream:
-    if marker not in openmaus:
-        raise SystemExit(f'BotMark motion gate: pinned OpenMaus source/provenance is incomplete: {marker}')
+        raise SystemExit(f'BotMark motion gate: desktop bootstrap skipped identity/durability stage: {bootstrap_marker}')
 
 for semantic_state in ['tool-running', 'speaking', 'result', 'error']:
     if f'"{semantic_state}"' not in component:
         raise SystemExit(f'BotMark motion gate: missing Fabushi Agent lifecycle state: {semantic_state}')
-
-for forbidden in ['setInterval(() =>', 'surfaceGradientRef', 'radarSweepRef', 'botMarkParticles']:
-    if forbidden in component or forbidden in engine:
-        raise SystemExit(f'BotMark motion gate: retired custom visual effect returned: {forbidden}')
 
 required_styles = [
     '.botMark > svg',
@@ -159,4 +167,4 @@ if 'className={styles.sidebarBotMark}' in host:
     if 'followPointer' in sidebar_region:
         raise SystemExit('BotMark motion gate: sidebar list marks must not attach pointer-follow listeners')
 
-print('BotMark motion gate passed: pinned OpenMaus mascot source, unified body geometry, canonical identity, visibility/static pause controls, semantic activity mapping, native durability, and reduced-motion support.')
+print('BotMark motion gate passed: Fabushi-owned procedural SVG runtime, semantic Agent states, canonical identity, visibility pause, reduced-motion, and no upstream avatar/renderer dependency.')
