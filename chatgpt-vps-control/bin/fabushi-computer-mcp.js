@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerComputerUseTools } from "../computer-use.js";
 import { computerControlPolicyDecision } from "../lib/fabushi-computer-policy.js";
+import { registerCiSessionTools } from "../lib/ci-session-tools.js";
 
 const server = new McpServer({
   name: "fabushi-computer",
@@ -39,6 +40,10 @@ registerComputerUseTools(server, {
   audit: async (record) => {
     process.stderr.write(`${JSON.stringify({ type: "fabushi.computer.audit", ...record })}\n`);
   },
+});
+
+registerCiSessionTools(server, {
+  allowed: () => computerControlPolicyDecision().allowed,
 });
 
 await server.connect(new StdioServerTransport());

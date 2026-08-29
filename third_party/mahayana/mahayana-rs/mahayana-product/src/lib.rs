@@ -53,6 +53,8 @@ const DEFAULT_API_BASE_URL: &str = "https://api.ombhrum.com";
 const MAHAYANA_ACCOUNT_SESSION_SECRET: &str = "MAHAYANA_ACCOUNT_SESSION";
 const MAHAYANA_TEST_ACCOUNT_TOKEN_ENV: &str = "MAHAYANA_TEST_ACCOUNT_TOKEN";
 const MAHAYANA_TEST_ACCOUNT_MARKER: &str = "test-account-login.sha256";
+const FABUSHI_CI_TEST_ACCOUNT_AUTOLOGIN_ENV: &str = "FABUSHI_CI_TEST_ACCOUNT_AUTOLOGIN";
+const GITHUB_ACTIONS_ENV: &str = "GITHUB_ACTIONS";
 const ACCESS_TOKEN_REFRESH_SKEW_SECONDS: i64 = 60;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -670,6 +672,27 @@ impl MahayanaProductClient {
                 directory.display()
             ))),
         }
+    }
+
+    /// Bootstraps the repository's dedicated test account into the normal,
+    /// encrypted desktop session store for an explicitly requested GitHub
+    /// Actions interactive-runner job. The double opt-in prevents a developer
+    /// shell or an ordinary packaged application launch from consuming a CI
+    /// credential merely because one happens to exist in its environment.
+    pub fn bootstrap_ci_test_account_session(&self) -> Result<bool, ProductError> {
+        let github_actions = env::var(GITHUB_ACTIONS_ENV).ok();
+        let enabled = env::var(FABUSHI_CI_TEST_ACCOUNT_AUTOLOGIN_ENV).ok();
+        let token = env::var(MAHAYANA_TEST_ACCOUNT_TOKEN_ENV).ok();
+        let token = ci_test_account_bootstrap_token(
+            github_actions.as_deref(),
+            enabled.as_deref(),
+            token.as_deref(),
+        )?;
+        let Some(token) = token else {
+            return Ok(false);
+        };
+        self.store_test_account_session(&token)?;
+        Ok(true)
     }
 
     /// Stores the environment-provisioned smoke-test credential in the same
@@ -2703,6 +2726,20 @@ fn write_private_file(path: &Path, contents: &str) -> Result<(), ProductError> {
         .map_err(|error| ProductError::Session(error.to_string()))
 }
 
+fn ci_test_account_bootstrap_token(
+    github_actions: Option<&str>,
+    enabled: Option<&str>,
+    token: Option<&str>,
+) -> Result<Option<String>, ProductError> {
+    if github_actions != Some("true") || enabled != Some("1") {
+        return Ok(None);
+    }
+    let token = token
+        .filter(|value| !value.trim().is_empty())
+        .ok_or(ProductError::InvalidParameter("testAccountToken"))?;
+    safe_test_account_token(token).map(|value| Some(value.to_string()))
+}
+
 fn safe_test_account_token(value: &str) -> Result<&str, ProductError> {
     let value = value.trim();
     if (32..=512).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_graphic()) {
@@ -3322,6 +3359,27 @@ mod tests {
         assert_eq!(
             safe_marketplace_platforms(&["desktop".into(), "desktop".into(), "cli".into()]),
             Ok(vec!["desktop", "cli"])
+        );
+    }
+
+    #[test]
+    fn ci_test_account_bootstrap_requires_github_actions_and_explicit_opt_in() {
+        let token = "a".repeat(64);
+        assert_eq!(
+            ci_test_account_bootstrap_token(None, Some("1"), Some(&token)),
+            Ok(None)
+        );
+        assert_eq!(
+            ci_test_account_bootstrap_token(Some("true"), None, Some(&token)),
+            Ok(None)
+        );
+        assert_eq!(
+            ci_test_account_bootstrap_token(Some("true"), Some("1"), Some(&token)),
+            Ok(Some(token.clone()))
+        );
+        assert_eq!(
+            ci_test_account_bootstrap_token(Some("true"), Some("1"), Some("short")),
+            Err(ProductError::InvalidParameter("testAccountToken"))
         );
     }
 
