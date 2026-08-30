@@ -62,7 +62,6 @@ jobs:
           const encodedSalt = escapeSql(encode(salt));
           const encodedHash = escapeSql(encode(hash));
           const sql = `
-          BEGIN TRANSACTION;
           INSERT INTO users
             (id, user_no, username, email, password_hash, salt, iterations, algo,
              email_verified, membership_type, created_at)
@@ -80,7 +79,6 @@ jobs:
            WHERE user_id = (SELECT CAST(id AS TEXT) FROM users WHERE username = '${username}');
           INSERT OR REPLACE INTO email_username_mapping (email, username, user_id)
           SELECT '${email}', '${username}', id FROM users WHERE username = '${username}';
-          COMMIT;
           `;
           fs.writeFileSync(process.env.RUNNER_TEMP + '/provision-mcp-ci-account.sql', sql, { mode: 0o600 });
           NODE
