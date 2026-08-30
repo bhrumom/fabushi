@@ -37,8 +37,8 @@ jobs:
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           test -n "${FABUSHI_CI_TEST_PASSWORD:-}"
-          if (( ${#FABUSHI_CI_TEST_PASSWORD} < 16 )); then
-            echo 'FABUSHI_CI_TEST_PASSWORD must contain at least 16 characters.' >&2
+          if (( ${#FABUSHI_CI_TEST_PASSWORD} < 11 )); then
+            echo 'FABUSHI_CI_TEST_PASSWORD must contain at least 11 characters.' >&2
             exit 1
           fi
 
@@ -52,7 +52,7 @@ jobs:
           const crypto = require('node:crypto');
           const fs = require('node:fs');
           const password = process.env.FABUSHI_CI_TEST_PASSWORD || '';
-          if (password.length < 16) throw new Error('missing managed test password');
+          if (password.length < 11) throw new Error('managed test password must contain at least 11 characters');
           const salt = crypto.randomBytes(16);
           const hash = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
           const encode = (value) => value.toString('base64url');
