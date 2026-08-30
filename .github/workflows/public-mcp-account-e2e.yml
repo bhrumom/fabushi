@@ -1,0 +1,53 @@
+name: Public Fabushi MCP account E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_device_id:
+        description: Live same-account Fabushi device id to discover and control
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  production-e2e:
+    name: OAuth, discover, and control live same-account device
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    env:
+      FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+      FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+      EXPECTED_DEVICE_ID: ${{ inputs.expected_device_id }}
+      FABUSHI_MCP_ORIGIN: https://fabushi-mcp.ombhrum.com
+
+    steps:
+      - name: Checkout protected source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Require protected main and managed credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF:-}" = refs/heads/main
+          test -n "${FABUSHI_CI_TEST_USERNAME:-}"
+          test -n "${FABUSHI_CI_TEST_PASSWORD:-}"
+          [[ "$EXPECTED_DEVICE_ID" =~ ^gha-[0-9]+-[0-9]+-interactive$ ]]
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install MCP client dependencies
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts
+
+      - name: Run production public MCP account E2E
+        working-directory: chatgpt-vps-control
+        run: node scripts/public-mcp-account-e2e.mjs
