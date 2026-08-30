@@ -126,10 +126,15 @@ jobs:
           direct='https://mahayana-platform.bhrumom.workers.dev'
           public='https://api.ombhrum.com'
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5             "$direct/health" | tee "$RUNNER_TEMP/platform-health.json" | jq -e '.ok == true' >/dev/null
-          for endpoint in             "$direct/v1/computers"             "$public/v1/computers"             "$direct/v1/ci/runner-session"             "$public/v1/ci/runner-session"; do
+          for endpoint in             "$direct/v1/computers"             "$public/v1/computers"; do
             name="$(printf '%s' "$endpoint" | tr -cs 'A-Za-z0-9' '_')"
             status="$(curl --silent --show-error --retry 8 --retry-all-errors --retry-delay 3               --output "$RUNNER_TEMP/${name}.json" --write-out '%{http_code}' "$endpoint")"
             [ "$status" = 401 ] || { echo "Unauthenticated remote-control route failed closed: $endpoint -> $status" >&2; cat "$RUNNER_TEMP/${name}.json" >&2; exit 1; }
+          done
+          for endpoint in             "$direct/v1/ci/runner-session"             "$public/v1/ci/runner-session"; do
+            name="$(printf '%s' "$endpoint" | tr -cs 'A-Za-z0-9' '_')"
+            status="$(curl --silent --show-error --retry 8 --retry-all-errors --retry-delay 3               --request POST --header 'Content-Type: application/json'               --data '{"deviceId":"gha-smoke-1-interactive","sourceSha":"0000000000000000000000000000000000000000"}'               --output "$RUNNER_TEMP/${name}.json" --write-out '%{http_code}' "$endpoint")"
+            [ "$status" = 401 ] || { echo "Unauthenticated CI Runner route failed closed: $endpoint -> $status" >&2; cat "$RUNNER_TEMP/${name}.json" >&2; exit 1; }
           done
           {
             echo "source_sha=${GITHUB_SHA}"
