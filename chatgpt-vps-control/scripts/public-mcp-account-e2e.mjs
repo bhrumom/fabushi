@@ -108,9 +108,24 @@ function safeRelaySummary(result) {
   const structured = result?.structuredContent && typeof result.structuredContent === "object"
     ? result.structuredContent
     : {};
+  let detail = "";
+  if (typeof structured.resultJson === "string" && structured.resultJson.length <= 2_000_000) {
+    try {
+      const parsed = JSON.parse(structured.resultJson);
+      if (typeof parsed?.error === "string") detail = parsed.error;
+      else if (Array.isArray(parsed?.content)) {
+        detail = parsed.content
+          .filter((item) => item?.type === "text" && typeof item.text === "string")
+          .map((item) => item.text)
+          .join(" | ");
+      }
+    } catch {
+      detail = "resultJson was not valid JSON";
+    }
+  }
   return {
     status: String(structured.status || ""),
-    error: String(structured.error || structured.message || "").slice(0, 500),
+    detail: String(detail || structured.error || structured.message || "").slice(0, 500),
     hasResult: Boolean(structured.resultJson),
     isError: result?.isError === true,
   };
