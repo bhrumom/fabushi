@@ -44,6 +44,10 @@ if missing:
 
 producer_source = main + "\n" + (ext_path.read_text(encoding='utf-8') if ext_path.is_file() else '')
 produced_events = set(re.findall(r"broadcastNativeEvent\(['\"]([^'\"]+)['\"]", producer_source))
+produced_events.update(re.findall(
+    r"nativeEdgeServer\.emit\([^,]+,\s*['\"]([^'\"]+)['\"]",
+    producer_source,
+))
 missing_producers = [event for event in ts_events if event not in produced_events]
 if missing_producers:
     print('native desktop parity guard: events have no producer: ' + ', '.join(missing_producers), file=sys.stderr)

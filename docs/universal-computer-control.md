@@ -27,6 +27,24 @@ This gives the requested UU-remote-style discovery without making account presen
 
 The MCP runtime is content-addressed and copied into `desktop/resources/computer-control` during CI packaging. Electron reuses its signed executable as a private Node runtime and injects the MCP configuration into every local Bot thread. It never exposes the MCP server on a TCP port.
 
+
+## Fabushi Agent Surface: Web MCP and App MCP
+
+Fabushi now adds a structured application layer without replacing any remote or
+local computer-control path. The main Web application registers the shared
+`fabushi.app.status`, `snapshot`, `find`, `action`, `wait`, and `assert` tools
+through WebMCP when the browser supports it. Electron exposes the same live
+renderer state through a private loopback bridge to the packaged stdio MCP, and
+iOS/Android implement the same native semantic contract for platform tests and
+future account-bound device transports.
+
+The preferred routing is App MCP for Fabushi, browser DOM/accessibility for Web
+content, native AX/UIA/AT-SPI for other applications, and bounded screenshot /
+coordinate Computer Use only as the final fallback. The complete existing
+`computer_*` registrar, remote device discovery, WebRTC control, CI session
+tools, secure input, human-input preemption and OS permission boundaries remain
+available. See `docs/fabushi-agent-surface.md` for the full contract.
+
 ## Background Computer Use behavior
 
 Fabushi uses application-scoped observation before whole-desktop coordinates:

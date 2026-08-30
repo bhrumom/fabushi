@@ -29,6 +29,17 @@ const HASH_ENTRIES = Object.freeze([
 const REQUIRED_RUNTIME_FILES = Object.freeze([
   "bin/chatgpt-computer-control.js",
   "bin/fabushi-computer-mcp.js",
+  "bin/fabushi-remote-mcp.js",
+  "bin/fabushi-device-agent.js",
+  "bin/fabushi-ci-account-login.js",
+  "lib/fabushi-remote-mcp-server.js",
+  "lib/fabushi-account-auth.js",
+  "lib/device-agent.js",
+  "lib/fabushi-account-session.js",
+  "lib/ci-session-tools.js",
+  "lib/app-agent-surface-client.js",
+  "lib/app-agent-surface-client.d.ts",
+  "lib/app-agent-tools.js",
   "extension/manifest.json",
   "lib/fabushi-computer-policy.js",
   "native/linux/accessibility-helper.py",
@@ -57,6 +68,13 @@ const EXPECTED_TOOLS = Object.freeze([
   "computer_window",
   "computer_use",
   "computer_use_bridge",
+  "fabushi.app.status",
+  "fabushi.app.snapshot",
+  "fabushi.app.find",
+  "fabushi.app.action",
+  "fabushi.app.wait",
+  "fabushi.app.assert",
+  "computer_control_route",
 ]);
 
 function fail(message) {
