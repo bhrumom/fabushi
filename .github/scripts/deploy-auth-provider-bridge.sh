@@ -63,6 +63,14 @@ for environment in development production; do
       cd "$LEGACY_DIR"
       printf '%s' "$bridge_secret" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_PROVIDER_BRIDGE_SECRET --env "$environment" >/dev/null
       printf '%s' "$PLATFORM_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_PROVIDER_BRIDGE_RETURN_BASE --env "$environment" >/dev/null
+      # The public account system requires an actual registration path. If the
+      # deployed legacy Worker already has both self-hosted mail credentials,
+      # enable that capability explicitly. We still fail closed when either
+      # credential is absent, and the capability probe below verifies runtime
+      # configuration before publishing the bridge to the account Worker.
+      if [[ "$mail" == true ]]; then
+        printf '%s' 'true' | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_SYSTEM_MAIL_ENABLED --env "$environment" >/dev/null
+      fi
     )
   fi
 done
