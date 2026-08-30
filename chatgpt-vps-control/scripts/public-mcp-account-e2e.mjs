@@ -104,6 +104,18 @@ if (!tokenResponse.ok) throw new Error(`MCP token exchange failed: HTTP ${tokenR
 const tokens = await tokenResponse.json();
 if (!tokens?.access_token) throw new Error("MCP token exchange returned no access token");
 
+function safeRelaySummary(result) {
+  const structured = result?.structuredContent && typeof result.structuredContent === "object"
+    ? result.structuredContent
+    : {};
+  return {
+    status: String(structured.status || ""),
+    error: String(structured.error || structured.message || "").slice(0, 500),
+    hasResult: Boolean(structured.resultJson),
+    isError: result?.isError === true,
+  };
+}
+
 const transport = new StreamableHTTPClientTransport(new URL(mcpUrl), {
   requestInit: { headers: { Authorization: `Bearer ${tokens.access_token}` } },
 });
@@ -117,12 +129,33 @@ try {
     throw new Error(`expected same-account device ${expectedDeviceId} was not returned by list_devices`);
   }
 
+  for (const requiredTool of ["ci_session_status", "computer_state"]) {
+    const described = await client.callTool({
+      name: "describe_device_tool",
+      arguments: { deviceId: expectedDeviceId, toolName: requiredTool },
+    });
+    if (described?.structuredContent?.available !== true) {
+      throw new Error(`live Runner does not advertise required tool ${requiredTool}`);
+    }
+  }
+
+  const relayResult = await client.callTool({
+    name: "device_call",
+    arguments: { deviceId: expectedDeviceId, toolName: "ci_session_status", argumentsJson: "{}" },
+  });
+  const relaySummary = safeRelaySummary(relayResult);
+  if (relaySummary.status !== "completed") {
+    throw new Error(`device_call relay failed for ci_session_status: ${JSON.stringify(relaySummary)}`);
+  }
+  process.stdout.write(`Public Fabushi MCP relay completed ci_session_status on ${expectedDeviceId}.\n`);
+
   const controlResult = await client.callTool({
     name: "device_call",
     arguments: { deviceId: expectedDeviceId, toolName: "computer_state", argumentsJson: "{}" },
   });
-  if (controlResult?.structuredContent?.status !== "completed") {
-    throw new Error("device_call computer_state did not complete successfully");
+  const controlSummary = safeRelaySummary(controlResult);
+  if (controlSummary.status !== "completed") {
+    throw new Error(`device_call computer_state failed: ${JSON.stringify(controlSummary)}`);
   }
 
   process.stdout.write(`Public Fabushi MCP discovered and controlled ${expectedDeviceId}.\n`);
