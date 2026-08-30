@@ -1,0 +1,191 @@
+name: Apply Fabushi MCP account auth patch
+
+on:
+  push:
+    branches: [feat/fabushi-mcp-account-oauth]
+    paths: [.github/workflows/fabushi-mcp-account-auth-patch.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/fabushi-mcp-account-oauth
+          fetch-depth: 1
+      - name: Apply exact source patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path('chatgpt-vps-control/lib/fabushi-remote-mcp-server.js')
+          s = p.read_text()
+          old = '''    const started = await accountClient.startBrowserLogin({ deviceId: `mcp-${sha256Base64Url(clientId).slice(0, 28)}`, platform: "web" });
+    const requestId = randomToken(32);
+'''
+          new = '''    const requestId = randomToken(32);
+    const started = await accountClient.startBrowserLogin({ deviceId: `mcp-oauth-${requestId}`, platform: "web" });
+'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          old = '''    await audit({ type: "oauth.authorization.started", clientId: sha256Base64Url(clientId).slice(0, 16) });
+    writeHtml(response, authorizationPage({ requestId, loginUrl: started.loginUrl }));
+  }
+'''
+          new = '''    await audit({ type: "oauth.authorization.started", clientId: sha256Base64Url(clientId).slice(0, 16) });
+    response.writeHead(302, {
+      location: started.loginUrl,
+      "cache-control": "no-store",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+    });
+    response.end();
+  }
+'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          marker = '''function positiveLimit(value, fallback) {
+'''
+          helper = '''function authorizationCompletionPage(requestId) {
+  const safeRequestId = htmlEscape(requestId);
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fabushi MCP 授权</title></head><body><main data-request-id="${safeRequestId}">Fabushi 登录完成，正在返回 AI 客户端…</main><script>const requestId=${JSON.stringify(requestId)};async function finish(){try{const response=await fetch('/oauth/fabushi/status?request_id='+encodeURIComponent(requestId),{headers:{accept:'application/json'},cache:'no-store'});const result=await response.json();if(result.status==='completed'&&result.redirectUrl){location.replace(result.redirectUrl);return}if(['failed','expired','cancelled'].includes(result.status)){document.body.textContent=result.message||'Fabushi 授权未完成，请返回 AI 客户端重试。';return}}catch{}setTimeout(finish,500)}finish();</script></body></html>`;
+}
+
+'''
+          assert marker in s
+          s = s.replace(marker, helper + marker, 1)
+          old = '''      if (request.method === "GET" && url.pathname === "/oauth/authorize") return beginAuthorization(request, response, url);
+      if (request.method === "GET" && url.pathname === "/oauth/fabushi/status") return pollAuthorization(request, response, url);
+'''
+          new = '''      if (request.method === "GET" && url.pathname === "/oauth/authorize") return beginAuthorization(request, response, url);
+      if (request.method === "GET" && url.pathname === "/oauth/fabushi/complete") {
+        const requestId = url.searchParams.get("request_id") || "";
+        if (!/^[A-Za-z0-9_-]{32,128}$/u.test(requestId) || !authorizationRequests.has(requestId)) {
+          return writeJson(response, 400, { error: "invalid_request", error_description: "Fabushi authorization request is missing or expired." });
+        }
+        return writeHtml(response, authorizationCompletionPage(requestId));
+      }
+      if (request.method === "GET" && url.pathname === "/oauth/fabushi/status") return pollAuthorization(request, response, url);
+'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/account.rs')
+          s = p.read_text()
+          marker = '''fn browser_result_page(success: bool, message: &str, attempt_id: Option<&str>) -> Result<Response> {
+'''
+          helper = '''fn browser_result_page_for_device(
+    success: bool,
+    message: &str,
+    attempt_id: Option<&str>,
+    device_id: &str,
+) -> Result<Response> {
+    if success {
+        if let Some(request_id) = device_id.strip_prefix("mcp-oauth-") {
+            let valid = (32..=128).contains(&request_id.len())
+                && request_id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'));
+            if valid {
+                let return_url = format!(
+                    "https://fabushi-mcp.ombhrum.com/oauth/fabushi/complete?request_id={request_id}"
+                );
+                let literal = serde_json::to_string(&return_url).unwrap_or_else(|_| "null".into());
+                return browser_html_response(format!(
+                    r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fabushi 登录</title></head><body><main>登录成功，正在返回 AI 客户端…</main><script>location.replace({literal});</script></body></html>"#
+                ));
+            }
+        }
+    }
+    browser_result_page(success, message, attempt_id)
+}
+
+'''
+          assert marker in s
+          s = s.replace(marker, helper + marker, 1)
+          old = '''    browser_result_page(true, "登录完成，正在返回 Fabushi", Some(&attempt_id))
+'''
+          new = '''    browser_result_page_for_device(
+        true,
+        "登录完成，正在返回 Fabushi",
+        Some(&attempt_id),
+        &attempt.device_id,
+    )
+'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          old = '''    browser_result_page(true, "注册完成，正在返回 Fabushi", Some(&attempt_id))
+'''
+          new = '''    browser_result_page_for_device(
+        true,
+        "注册完成，正在返回 Fabushi",
+        Some(&attempt_id),
+        &attempt.device_id,
+    )
+'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          old = '''    browser_result_page(
+        true,
+        "登录完成，正在返回 Fabushi",
+        Some(&attempt.attempt_id),
+    )
+'''
+          new = '''    browser_result_page_for_device(
+        true,
+        "登录完成，正在返回 Fabushi",
+        Some(&attempt.attempt_id),
+        &attempt.device_id,
+    )
+'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('chatgpt-vps-control/tests/fabushi-remote-mcp-server.test.js')
+          s = p.read_text()
+          old = '''  const accountClient = {
+    async startBrowserLogin() {
+'''
+          new = '''  let browserDeviceId = "";
+  const accountClient = {
+    async startBrowserLogin({ deviceId }) {
+      browserDeviceId = deviceId;
+'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          old = '''  const authorizePage = await fetch(authorizeUrl).then((response) => response.text());
+  assert.match(authorizePage, /连接 Fabushi 设备 MCP/);
+  const requestId = authorizePage.match(/data-request-id="([^"]+)"/)?.[1];
+  assert.ok(requestId);
+
+'''
+          new = '''  const authorizeResponse = await fetch(authorizeUrl, { redirect: "manual" });
+  assert.equal(authorizeResponse.status, 302);
+  assert.equal(authorizeResponse.headers.get("location"), "https://accounts.example.test/login/attempt-1");
+  assert.match(browserDeviceId, /^mcp-oauth-[A-Za-z0-9_-]{32,128}$/);
+  const requestId = browserDeviceId.slice("mcp-oauth-".length);
+  const completionPage = await fetch(`${origin}/oauth/fabushi/complete?request_id=${encodeURIComponent(requestId)}`).then((response) => response.text());
+  assert.match(completionPage, /正在返回 AI 客户端/);
+
+'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+      - name: Commit source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add chatgpt-vps-control/lib/fabushi-remote-mcp-server.js chatgpt-vps-control/tests/fabushi-remote-mcp-server.test.js third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/account.rs
+          git diff --cached --check
+          git commit -m 'feat(mcp): use direct Fabushi account login flow'
+          git push origin HEAD:feat/fabushi-mcp-account-oauth
