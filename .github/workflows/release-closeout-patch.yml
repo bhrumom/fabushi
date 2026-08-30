@@ -34,10 +34,11 @@ jobs:
 
           workflow = Path('.github/workflows/interactive-runner-mcp.yml')
           source = workflow.read_text()
-          old_runner = '${{ runner.temp }}/fabushi-interactive'
+          old_runner = '$' + '{{ runner.temp }}/fabushi-interactive'
+          new_runner = '$' + '{{ github.workspace }}/.fabushi-interactive'
           if old_runner not in source:
               raise SystemExit('runner.temp release patch target not found')
-          workflow.write_text(source.replace(old_runner, '${{ github.workspace }}/.fabushi-interactive'))
+          workflow.write_text(source.replace(old_runner, new_runner))
           PY
           rm .github/workflows/release-closeout-patch.yml
           git diff --check
