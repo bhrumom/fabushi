@@ -1,0 +1,102 @@
+name: Release Mini App protocol patch
+
+on:
+  push:
+    branches:
+      - codex/release-close-hydration-20260829
+    paths:
+      - .github/workflows/release-miniapp-protocol-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: codex/release-close-hydration-20260829
+          fetch-depth: 0
+      - name: Apply isolated Mini App document protocol
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main = Path('desktop/electron/main.cjs')
+          source = main.read_text()
+          source = source.replace("const fsSync = require('node:fs');\n", "const fsSync = require('node:fs');\nconst crypto = require('node:crypto');\n", 1)
+          old = """  {\n    scheme: 'fabushi-blob',\n    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },\n  },\n]);\n"""
+          new = """  {\n    scheme: 'fabushi-blob',\n    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },\n  },\n  {\n    scheme: 'fabushi-miniapp',\n    privileges: { standard: true, secure: true },\n  },\n]);\n"""
+          if old not in source: raise SystemExit('scheme target missing')
+          source = source.replace(old, new, 1)
+          anchor = "function encryptedProviderSecret(name) {\n"
+          block = """const miniAppDocuments = new Map();\nconst MINIAPP_DOCUMENT_TTL_MS = 10 * 60 * 1000;\nconst MINIAPP_DOCUMENT_MAX_BYTES = 5 * 1024 * 1024;\n\nfunction pruneMiniAppDocuments(now = Date.now()) {\n  for (const [token, entry] of miniAppDocuments) {\n    if (!entry || entry.expiresAtMs <= now) miniAppDocuments.delete(token);\n  }\n  while (miniAppDocuments.size > 64) miniAppDocuments.delete(miniAppDocuments.keys().next().value);\n}\n\nfunction registerMiniAppDocument(pluginId, html) {\n  const normalizedPluginId = String(pluginId ?? '').trim().toLowerCase();\n  if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(normalizedPluginId)) throw new Error('Invalid Mini App plugin id.');\n  if (typeof html !== 'string' || !html.trim()) throw new Error('Mini App HTML is required.');\n  if (Buffer.byteLength(html, 'utf8') > MINIAPP_DOCUMENT_MAX_BYTES) throw new Error('Mini App HTML exceeds the desktop document limit.');\n  pruneMiniAppDocuments();\n  const token = crypto.randomUUID();\n  miniAppDocuments.set(token, { pluginId: normalizedPluginId, html, expiresAtMs: Date.now() + MINIAPP_DOCUMENT_TTL_MS });\n  return `fabushi-miniapp://document/${token}`;\n}\n\nfunction handleMiniAppDocumentRequest(request) {\n  const requested = new URL(request.url);\n  if (requested.hostname !== 'document') return new Response('Not found', { status: 404 });\n  pruneMiniAppDocuments();\n  const token = decodeURIComponent(requested.pathname.replace(/^\\/+/, ''));\n  const entry = miniAppDocuments.get(token);\n  if (!entry) return new Response('Not found', { status: 404 });\n  return new Response(entry.html, {\n    status: 200,\n    headers: {\n      'Content-Type': 'text/html; charset=utf-8',\n      'Cache-Control': 'no-store',\n      'Content-Security-Policy': \"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'\",\n      'X-Content-Type-Options': 'nosniff',\n    },\n  });\n}\n\n"""
+          if anchor not in source: raise SystemExit('document store anchor missing')
+          source = source.replace(anchor, block + anchor, 1)
+          old = "  protocol.handle('fabushi-blob', handleMessagingBlobRequest);\n"
+          if old not in source: raise SystemExit('protocol install target missing')
+          source = source.replace(old, old + "  protocol.handle('fabushi-miniapp', handleMiniAppDocumentRequest);\n", 1)
+          old = """  ipcMain.handle('fabushi:window-focused', async (event) => {\n    assertTrustedSender(event);\n    return BrowserWindow.fromWebContents(event.sender)?.isFocused() ?? false;\n  });\n\n"""
+          new = old + """  ipcMain.handle('fabushi:register-miniapp-document', async (event, payload) => {\n    assertTrustedSender(event);\n    return registerMiniAppDocument(payload?.pluginId, payload?.html);\n  });\n\n"""
+          if old not in source: raise SystemExit('IPC anchor missing')
+          main.write_text(source.replace(old, new, 1))
+
+          preload = Path('desktop/electron/preload.cjs')
+          source = preload.read_text()
+          old = """  windowFocused() {\n    return ipcRenderer.invoke('fabushi:window-focused');\n  },\n"""
+          new = old + """  registerMiniAppDocument(pluginId, html) {\n    return ipcRenderer.invoke('fabushi:register-miniapp-document', { pluginId, html });\n  },\n"""
+          if old not in source: raise SystemExit('preload anchor missing')
+          preload.write_text(source.replace(old, new, 1))
+
+          bridge = Path('frontend/apps/web/src/lib/mahayana-host/electron-transport.ts')
+          source = bridge.read_text()
+          old = "  windowFocused(): Promise<boolean>;\n"
+          if old not in source: raise SystemExit('bridge type anchor missing')
+          bridge.write_text(source.replace(old, old + "  registerMiniAppDocument(pluginId: string, html: string): Promise<string>;\n", 1))
+
+          index = Path('desktop/index.html')
+          source = index.read_text()
+          old = "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+          new = "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src 'self' fabushi-miniapp:"
+          if old not in source: raise SystemExit('desktop CSP target missing')
+          index.write_text(source.replace(old, new, 1))
+
+          shell = Path('desktop/src/messaging-shell-v2.tsx')
+          source = shell.read_text()
+          old = "const [miniApp, setMiniApp] = useState<{ id: string; title: string; html: string } | null>(null);"
+          new = "const [miniApp, setMiniApp] = useState<{ id: string; title: string; url: string } | null>(null);"
+          if old not in source: raise SystemExit('Mini App state target missing')
+          source = source.replace(old, new, 1)
+          anchor = "  async function openMiniApp(id: string) {\n"
+          helper = """  async function showMiniAppDocument(id: string, title: string, html: string) {\n    const preparedHtml = miniAppCloudBridgeDocument(prepareDesktopMiniAppWebMcpDocument(id, html));\n    const url = await window.fabushi.registerMiniAppDocument(id, preparedHtml);\n    setMiniApp({ id, title, url });\n  }\n\n"""
+          if anchor not in source: raise SystemExit('open Mini App anchor missing')
+          source = source.replace(anchor, helper + anchor, 1)
+          old = "      setMiniApp({ id, title, html: prepareDesktopMiniAppWebMcpDocument(id, document.html) });"
+          if old not in source: raise SystemExit('open Mini App target missing')
+          source = source.replace(old, "      await showMiniAppDocument(id, title, document.html);", 1)
+          old = "          setMiniApp({ id: event.miniAppId, title, html: event.html });\n"
+          new = """          void showMiniAppDocument(event.miniAppId, title, event.html).catch((cause) => {\n            setError(cause instanceof Error ? cause.message : String(cause));\n          });\n"""
+          if old not in source: raise SystemExit('runtime Mini App target missing')
+          source = source.replace(old, new, 1)
+          old = "function MiniAppDialog({ app, onClose }: { app: { id: string; title: string; html: string }; onClose: () => void }) {"
+          new = "function MiniAppDialog({ app, onClose }: { app: { id: string; title: string; url: string }; onClose: () => void }) {"
+          if old not in source: raise SystemExit('Mini App dialog type target missing')
+          source = source.replace(old, new, 1)
+          old = '<iframe ref={frameRef} title={app.id} sandbox="allow-scripts allow-forms" srcDoc={miniAppCloudBridgeDocument(app.html)} />'
+          new = '<iframe ref={frameRef} title={app.id} sandbox="allow-scripts allow-forms" src={app.url} />'
+          if old not in source: raise SystemExit('Mini App iframe target missing')
+          shell.write_text(source.replace(old, new, 1))
+          PY
+          git diff --check
+          node --check desktop/electron/main.cjs
+          node --check desktop/electron/preload.cjs
+      - name: Commit protocol fix
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add desktop/electron/main.cjs desktop/electron/preload.cjs desktop/index.html desktop/src/messaging-shell-v2.tsx frontend/apps/web/src/lib/mahayana-host/electron-transport.ts
+          git commit -m 'fix(desktop): isolate Mini App documents from renderer CSP'
+          git push origin HEAD:codex/release-close-hydration-20260829
