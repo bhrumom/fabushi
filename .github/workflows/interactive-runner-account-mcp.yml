@@ -1,0 +1,174 @@
+name: Fabushi account interactive Runner MCP
+
+on:
+  workflow_dispatch:
+    inputs:
+      hold_minutes:
+        description: Maximum live-control window after the source Runner becomes ready
+        required: true
+        default: '60'
+        type: choice
+        options: ['15', '30', '60', '90', '120']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fabushi-account-interactive-runner-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  interactive-runner:
+    name: Account-bound interactive Linux Runner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-interactive
+      DEVICE_NAME: Fabushi GitHub Actions ${{ github.run_id }}
+      DEVICE_GATEWAY_URL: wss://fabushi-mcp.ombhrum.com/agent
+      DEVICE_LEASE_SECONDS: '14400'
+      FABUSHI_API_BASE_URL: https://api.ombhrum.com
+      DISPLAY: ':99'
+      GDK_BACKEND: x11
+      NO_AT_BRIDGE: '0'
+      GTK_MODULES: gail:atk-bridge
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      COMPUTER_MANAGED_X11: '0'
+
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+
+      - name: Prepare private Runner session paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/fabushi-interactive"
+          umask 077
+          mkdir -p "$dir"
+          {
+            echo "FABUSHI_CI_SESSION_DIR=$dir"
+            echo "FABUSHI_ACCOUNT_SESSION_FILE=$dir/account-session.json"
+            echo "FABUSHI_CI_ACCOUNT_SESSION_FILE=$dir/app-account-session.json"
+            echo "FABUSHI_COMPUTER_POLICY_FILE=$dir/computer-policy.json"
+            echo "FABUSHI_DEVICE_CALL_TRACE_FILE=$dir/device-calls.jsonl"
+            echo "FABUSHI_APP_AGENT_DISCOVERY_FILE=$dir/app-agent-bridge.json"
+          } >> "$GITHUB_ENV"
+          cat > "$dir/computer-policy.json" <<'JSON'
+          {"localExecution":true,"aiComputerControlEnabled":true,"localToolPermission":"always"}
+          JSON
+
+      - name: Install source Computer Use runtime
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+
+      - name: Sign the Runner into the dedicated Fabushi test account
+        env:
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+        run: node chatgpt-vps-control/scripts/login-ci-test-account.mjs
+
+      - name: Copy the ordinary account session for the application
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 600 "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
+
+      - name: Install private X11 desktop dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            xvfb xfwm4 x11-utils xdotool wmctrl dbus-x11 at-spi2-core libatk-adaptor python3-pyatspi
+
+      - name: Start private X11 desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          eval "$(dbus-launch --sh-syntax)"
+          echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_PID=$DBUS_SESSION_BUS_PID" >> "$GITHUB_ENV"
+          RUNNER_TRACKING_ID= nohup Xvfb "$DISPLAY" -screen 0 1280x800x24 -ac +extension GLX +render -noreset \
+            > "$FABUSHI_CI_SESSION_DIR/xvfb.log" 2>&1 &
+          echo $! > "$FABUSHI_CI_SESSION_DIR/xvfb.pid"
+          for attempt in $(seq 1 100); do
+            xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && break
+            sleep 0.1
+          done
+          xdpyinfo -display "$DISPLAY" >/dev/null
+          RUNNER_TRACKING_ID= nohup xfwm4 --compositor=off > "$FABUSHI_CI_SESSION_DIR/xfwm4.log" 2>&1 &
+          echo $! > "$FABUSHI_CI_SESSION_DIR/xfwm4.pid"
+
+      - name: Bring the same-account Runner online
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RUNNER_TRACKING_ID=
+          export DEVICE_LOCAL_MCP_ENTRY="$GITHUB_WORKSPACE/chatgpt-vps-control/bin/fabushi-computer-mcp.js"
+          export DEVICE_LOCAL_MCP_CWD="$GITHUB_WORKSPACE/chatgpt-vps-control"
+          nohup node chatgpt-vps-control/bin/fabushi-device-agent.js > "$FABUSHI_CI_SESSION_DIR/source-agent.log" 2>&1 &
+          agent_pid=$!
+          echo "$agent_pid" > "$FABUSHI_CI_SESSION_DIR/device-agent.pid"
+          for attempt in $(seq 1 90); do
+            grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/source-agent.log" && break
+            kill -0 "$agent_pid"
+            sleep 1
+          done
+          grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/source-agent.log"
+          {
+            echo '## Fabushi same-account interactive Runner'
+            echo
+            echo '- MCP URL: `https://fabushi-mcp.ombhrum.com/mcp`'
+            echo "- Device ID: \`$DEVICE_ID\`"
+            echo '- Sign the AI client into the same Fabushi test account, call `list_devices`, and select this device.'
+            echo '- This Runner uses an ordinary refreshable Fabushi account session; GitHub identity is not its owner.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the Runner available for AI control
+        shell: bash
+        run: |
+          set -euo pipefail
+          hold_seconds=$(( ${{ inputs.hold_minutes }} * 60 ))
+          started=$(date +%s)
+          agent_pid=$(cat "$FABUSHI_CI_SESSION_DIR/device-agent.pid")
+          while (( $(date +%s) - started < hold_seconds )); do
+            kill -0 "$agent_pid"
+            sleep 5
+          done
+
+      - name: Stop temporary processes
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          for file in device-agent.pid xfwm4.pid xvfb.pid; do
+            if test -f "$FABUSHI_CI_SESSION_DIR/$file"; then
+              kill -TERM "$(cat "$FABUSHI_CI_SESSION_DIR/$file")" 2>/dev/null || true
+            fi
+          done
+          if test -n "${DBUS_SESSION_BUS_PID:-}"; then kill -TERM "$DBUS_SESSION_BUS_PID" 2>/dev/null || true; fi
+          rm -f "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
+
+      - name: Upload non-secret Runner evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-account-interactive-runner-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/fabushi-interactive/source-agent.log
+            ${{ runner.temp }}/fabushi-interactive/device-calls.jsonl
+            ${{ runner.temp }}/fabushi-interactive/xvfb.log
+            ${{ runner.temp }}/fabushi-interactive/xfwm4.log
+          if-no-files-found: warn
+          retention-days: 14
