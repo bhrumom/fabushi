@@ -49,12 +49,6 @@ jobs:
       DEVICE_LEASE_SECONDS: '14400'
       FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
       MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
-      FABUSHI_CI_SESSION_DIR: ${{ github.workspace }}/.fabushi-interactive
-      FABUSHI_ACCOUNT_SESSION_FILE: ${{ github.workspace }}/.fabushi-interactive/agent-account-session.json
-      FABUSHI_CI_ACCOUNT_SESSION_FILE: ${{ github.workspace }}/.fabushi-interactive/app-account-session.json
-      FABUSHI_COMPUTER_POLICY_FILE: ${{ github.workspace }}/.fabushi-interactive/computer-policy.json
-      FABUSHI_DEVICE_CALL_TRACE_FILE: ${{ github.workspace }}/.fabushi-interactive/device-calls.jsonl
-      FABUSHI_APP_AGENT_DISCOVERY_FILE: ${{ github.workspace }}/.fabushi-interactive/app-agent-bridge.json
       DISPLAY: ':99'
       GDK_BACKEND: x11
       NO_AT_BRIDGE: '0'
@@ -82,6 +76,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          FABUSHI_CI_SESSION_DIR="$RUNNER_TEMP/fabushi-interactive"
+          FABUSHI_ACCOUNT_SESSION_FILE="$FABUSHI_CI_SESSION_DIR/agent-account-session.json"
+          FABUSHI_CI_ACCOUNT_SESSION_FILE="$FABUSHI_CI_SESSION_DIR/app-account-session.json"
+          FABUSHI_COMPUTER_POLICY_FILE="$FABUSHI_CI_SESSION_DIR/computer-policy.json"
+          FABUSHI_DEVICE_CALL_TRACE_FILE="$FABUSHI_CI_SESSION_DIR/device-calls.jsonl"
+          FABUSHI_APP_AGENT_DISCOVERY_FILE="$FABUSHI_CI_SESSION_DIR/app-agent-bridge.json"
+          export FABUSHI_CI_SESSION_DIR FABUSHI_ACCOUNT_SESSION_FILE FABUSHI_CI_ACCOUNT_SESSION_FILE
+          export FABUSHI_COMPUTER_POLICY_FILE FABUSHI_DEVICE_CALL_TRACE_FILE FABUSHI_APP_AGENT_DISCOVERY_FILE
+          {
+            echo "FABUSHI_CI_SESSION_DIR=$FABUSHI_CI_SESSION_DIR"
+            echo "FABUSHI_ACCOUNT_SESSION_FILE=$FABUSHI_ACCOUNT_SESSION_FILE"
+            echo "FABUSHI_CI_ACCOUNT_SESSION_FILE=$FABUSHI_CI_ACCOUNT_SESSION_FILE"
+            echo "FABUSHI_COMPUTER_POLICY_FILE=$FABUSHI_COMPUTER_POLICY_FILE"
+            echo "FABUSHI_DEVICE_CALL_TRACE_FILE=$FABUSHI_DEVICE_CALL_TRACE_FILE"
+            echo "FABUSHI_APP_AGENT_DISCOVERY_FILE=$FABUSHI_APP_AGENT_DISCOVERY_FILE"
+          } >> "$GITHUB_ENV"
           case "$DEVICE_GATEWAY_URL" in
             wss://*/agent) ;;
             *) echo 'FABUSHI_REMOTE_MCP_DEVICE_GATEWAY_URL or gateway_url must be wss://.../agent.' >&2; exit 1 ;;
@@ -407,18 +417,18 @@ jobs:
         with:
           name: fabushi-interactive-runner-${{ github.run_id }}
           path: |
-            ${{ github.workspace }}/.fabushi-interactive/status.json
-            ${{ github.workspace }}/.fabushi-interactive/finish-requested.json
-            ${{ github.workspace }}/.fabushi-interactive/remote-notes.jsonl
-            ${{ github.workspace }}/.fabushi-interactive/device-calls.jsonl
-            ${{ github.workspace }}/.fabushi-interactive/generated-regression.json
-            ${{ github.workspace }}/.fabushi-interactive/live-session.mp4
-            ${{ github.workspace }}/.fabushi-interactive/final-screen.png
-            ${{ github.workspace }}/.fabushi-interactive/source-agent.log
-            ${{ github.workspace }}/.fabushi-interactive/packaged-agent.log
-            ${{ github.workspace }}/.fabushi-interactive/fabushi-app.log
-            ${{ github.workspace }}/.fabushi-interactive/ffmpeg.log
-            ${{ github.workspace }}/.fabushi-interactive/evidence-files.txt
+            ${{ runner.temp }}/fabushi-interactive/status.json
+            ${{ runner.temp }}/fabushi-interactive/finish-requested.json
+            ${{ runner.temp }}/fabushi-interactive/remote-notes.jsonl
+            ${{ runner.temp }}/fabushi-interactive/device-calls.jsonl
+            ${{ runner.temp }}/fabushi-interactive/generated-regression.json
+            ${{ runner.temp }}/fabushi-interactive/live-session.mp4
+            ${{ runner.temp }}/fabushi-interactive/final-screen.png
+            ${{ runner.temp }}/fabushi-interactive/source-agent.log
+            ${{ runner.temp }}/fabushi-interactive/packaged-agent.log
+            ${{ runner.temp }}/fabushi-interactive/fabushi-app.log
+            ${{ runner.temp }}/fabushi-interactive/ffmpeg.log
+            ${{ runner.temp }}/fabushi-interactive/evidence-files.txt
           if-no-files-found: warn
           retention-days: 30
 
