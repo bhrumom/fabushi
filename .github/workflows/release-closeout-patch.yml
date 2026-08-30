@@ -18,7 +18,7 @@ jobs:
         with:
           ref: codex/release-close-hydration-20260829
           fetch-depth: 0
-      - name: Apply verified release fixes
+      - name: Fix Mini App resend state
         shell: bash
         run: |
           python3 - <<'PY'
@@ -30,22 +30,13 @@ jobs:
           if old not in source:
               raise SystemExit('pendingSend release patch target not found')
           path.write_text(source.replace(old, new, 1))
-
-          workflow = Path('.github/workflows/interactive-runner-mcp.yml')
-          source = workflow.read_text()
-          old_runner = '$' + '{{ runner.temp }}/fabushi-interactive'
-          new_runner = '$' + '{{ github.workspace }}/.fabushi-interactive'
-          if old_runner not in source:
-              raise SystemExit('runner.temp release patch target not found')
-          workflow.write_text(source.replace(old_runner, new_runner))
           PY
-          rm .github/workflows/release-closeout-patch.yml
           git diff --check
-      - name: Commit exact patch
+      - name: Commit product fix
         shell: bash
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add desktop/src/messaging-shell-v2.tsx .github/workflows/interactive-runner-mcp.yml .github/workflows/release-closeout-patch.yml
-          git commit -m 'chore: apply release closeout patch'
+          git add desktop/src/messaging-shell-v2.tsx
+          git commit -m 'fix(desktop): re-enable Mini App send after success'
           git push origin HEAD:codex/release-close-hydration-20260829
