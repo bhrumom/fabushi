@@ -99,7 +99,7 @@ test('installed Credential Vault keeps plaintext opaque, stays usable with OS en
     await page.getByPlaceholder('https://api.github.com\nhttps://uploads.github.com').fill('https://api.example.com');
     await page.getByRole('button', { name: '保存凭据' }).click();
 
-    const encryptionUnavailable = page.getByRole('alert').filter({ hasText: 'OS-backed secret encryption is not available' });
+    const encryptionUnavailable = page.getByRole('alert').filter({ hasText: /OS-backed secret encryption is not available|Secure OS credential storage is unavailable/ });
     if (await encryptionUnavailable.isVisible().catch(() => false)) {
       await expect(encryptionUnavailable).toBeVisible();
       await expect(page.locator('body')).not.toContainText(FIRST_CANARY);

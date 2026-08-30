@@ -2849,7 +2849,7 @@ async function saveInvoiceDialog() {
               </div>
             </header>
             {error ? <div className={styles.errorBanner} role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}><X size={14} /></button></div> : null}
-            <div className={styles.messageArea}>
+            <div className={styles.messageArea} data-testid="message-list">
               <div className={styles.dayDivider}>今天</div>
               {matchingMessages.length > renderedMessages.length ? <button type="button" data-testid="message-list-load-earlier" onClick={() => setMessageRenderCount((count) => count + initialMessageRenderCount)}>加载更早消息</button> : null}
               {renderedMessages.map((message) => (
