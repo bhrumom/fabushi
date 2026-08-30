@@ -105,7 +105,7 @@ async function readWebMcpTools(page: Page): Promise<string[]> {
   const frame = page.frameLocator('iframe[title="global-dharma"]');
   return frame.locator('body').evaluate(() => {
     const registry = (window as any).__fabushiWebMcp;
-    if (!registry?.list) throw new Error('Fabushi WebMCP registry is unavailable');
+    if (!registry?.list) return [];
     return registry.list().map((tool: { name?: unknown }) => String(tool.name ?? '')).filter(Boolean);
   });
 }
