@@ -193,10 +193,9 @@ export function miniAppBotResponseText(value: unknown): string {
   const command = recordValue(response?.command);
   const slash = stringValue(command?.slash);
   const description = stringValue(command?.description);
-  if (slash) return description ? `${slash}\n${description}` : slash;
-
   const route = stringValue(response?.route);
   const reason = stringValue(response?.reason);
+  if (slash) return [route, slash, description, reason].filter(Boolean).join('\n');
   if (route || reason) return [route, reason].filter(Boolean).join('\n');
 
   const kind = stringValue(response?.kind);

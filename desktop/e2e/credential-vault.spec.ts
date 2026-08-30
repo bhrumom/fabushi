@@ -75,7 +75,7 @@ async function listSecrets(page: Page): Promise<Array<Record<string, unknown>>> 
   });
 }
 
-test('installed Credential Vault keeps saved plaintext opaque while create, rotate and revoke stay usable', async () => {
+test('installed Credential Vault keeps plaintext opaque, stays usable with OS encryption, and fails closed without it', async () => {
   const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-credential-e2e-'));
   const app = await launchDesktopApp(appDataDir);
 
@@ -98,6 +98,15 @@ test('installed Credential Vault keeps saved plaintext opaque while create, rota
     await page.getByTestId('credential-secret-value').fill(FIRST_CANARY);
     await page.getByPlaceholder('https://api.github.com\nhttps://uploads.github.com').fill('https://api.example.com');
     await page.getByRole('button', { name: '保存凭据' }).click();
+
+    const encryptionUnavailable = page.getByRole('alert').filter({ hasText: 'OS-backed secret encryption is not available' });
+    if (await encryptionUnavailable.isVisible().catch(() => false)) {
+      await expect(encryptionUnavailable).toBeVisible();
+      await expect(page.locator('body')).not.toContainText(FIRST_CANARY);
+      await expect(page.locator('body')).not.toContainText(CANCELLED_CANARY);
+      expect(await listSecrets(page)).toEqual([]);
+      return;
+    }
 
     const savedRow = page.locator('article').filter({ hasText: SECRET_REF });
     await expect(savedRow).toBeVisible();
