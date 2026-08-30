@@ -45,7 +45,7 @@ jobs:
     env:
       DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-interactive
       DEVICE_NAME: Fabushi GitHub Actions ${{ github.run_id }}
-      DEVICE_GATEWAY_URL: ${{ inputs.gateway_url || vars.FABUSHI_REMOTE_MCP_DEVICE_GATEWAY_URL }}
+      DEVICE_GATEWAY_URL: ${{ inputs.gateway_url || vars.FABUSHI_REMOTE_MCP_DEVICE_GATEWAY_URL || 'wss://fabushi-mcp.ombhrum.com/agent' }}
       DEVICE_LEASE_SECONDS: '14400'
       FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
       MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
