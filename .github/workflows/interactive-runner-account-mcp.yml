@@ -74,8 +74,8 @@ jobs:
 
       - name: Sign the Runner into the dedicated Fabushi test account
         env:
-          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
-          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME || secrets.STAGING_TEST_LOGIN }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD || secrets.STAGING_TEST_PASSWORD }}
         run: node chatgpt-vps-control/scripts/login-ci-test-account.mjs
 
       - name: Copy the ordinary account session for the application
