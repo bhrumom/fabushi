@@ -95,6 +95,7 @@ import {
   type MiniAppBotCommand,
 } from './miniapp-bot-projection';
 import { MiniAppCallDialog } from './miniapp-call-dialog';
+import { prepareDesktopMiniAppWebMcpDocument } from './miniapp-webmcp-host';
 import {
   accountMiniAppsAsMarketplaceSummaries,
   appendMiniAppBotMessages,
@@ -2281,7 +2282,7 @@ async function saveInvoiceDialog() {
           const installed = installedMiniApps[activePeer.miniAppId] ?? await transport.pluginActive(activePeer.miniAppId);
           if (!installed) throw new Error('请先安装这个 Mini App，再使用它自定义的通话界面。');
           const document = await transport.pluginUiDocument(activePeer.miniAppId);
-          html = document.html;
+          html = prepareDesktopMiniAppWebMcpDocument(activePeer.miniAppId, document.html);
         }
         setMiniAppCall({
           callId: 'miniapp-call:' + crypto.randomUUID(),
@@ -2614,7 +2615,7 @@ async function saveInvoiceDialog() {
       if (!reconciledInstalled) throw new Error('请先从在线 Mini App 市场安装此应用');
       const document = await transport.pluginUiDocument(id);
       const title = miniAppIdentityCatalog.find((app) => app.pluginId === id)?.displayName ?? marketplaceApps.find((app) => app.pluginId === id)?.displayName ?? id;
-      setMiniApp({ id, title, html: document.html });
+      setMiniApp({ id, title, html: prepareDesktopMiniAppWebMcpDocument(id, document.html) });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
