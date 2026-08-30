@@ -100,7 +100,14 @@ test('installed Credential Vault keeps plaintext opaque, stays usable with OS en
     await page.getByRole('button', { name: '保存凭据' }).click();
 
     const encryptionUnavailable = page.getByRole('alert').filter({ hasText: /OS-backed secret encryption is not available|Secure OS credential storage is unavailable/ });
-    if (await encryptionUnavailable.isVisible().catch(() => false)) {
+    const savedRow = page.locator('article').filter({ hasText: SECRET_REF });
+    const outcome = await expect.poll(async () => {
+      if (await savedRow.isVisible().catch(() => false)) return 'saved';
+      if (await encryptionUnavailable.isVisible().catch(() => false)) return 'fail-closed';
+      return 'pending';
+    }, { timeout: 15_000 }).not.toBe('pending').then(async () =>
+      await savedRow.isVisible().catch(() => false) ? 'saved' : 'fail-closed');
+    if (outcome === 'fail-closed') {
       await expect(encryptionUnavailable).toBeVisible();
       await expect(page.locator('body')).not.toContainText(FIRST_CANARY);
       await expect(page.locator('body')).not.toContainText(CANCELLED_CANARY);
@@ -108,7 +115,6 @@ test('installed Credential Vault keeps plaintext opaque, stays usable with OS en
       return;
     }
 
-    const savedRow = page.locator('article').filter({ hasText: SECRET_REF });
     await expect(savedRow).toBeVisible();
     await expect(savedRow).toContainText('https://api.example.com');
     await expect(page.locator('body')).not.toContainText(FIRST_CANARY);
