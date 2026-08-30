@@ -1862,8 +1862,9 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
       setScheduledAtMs(undefined);
     } catch (cause) {
       updateComposer(text);
-      setPendingSend(false);
       setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPendingSend(false);
     }
   }
 
