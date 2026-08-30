@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { brand } from "@fabushi/shared";
 import { LocaleProvider } from "../components/locale-provider";
+import { FabushiAppAgentSurface } from "../components/fabushi-app-agent-surface";
 import { MarketplaceWebMcp } from "../components/marketplace/marketplace-webmcp";
 import { siteUrl } from "../lib/site-url";
 import "./globals.css";
@@ -82,6 +83,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         <MarketplaceWebMcp />
+        <FabushiAppAgentSurface />
         <LocaleProvider>{children}</LocaleProvider>
       </body>
     </html>

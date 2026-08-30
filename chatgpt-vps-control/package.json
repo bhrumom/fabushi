@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node secure-entry.js",
     "check": "node --check server.js && node --check secure-entry.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "remote-mcp": "node bin/fabushi-remote-mcp.js",
+    "device-agent": "node bin/fabushi-device-agent.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.2",
