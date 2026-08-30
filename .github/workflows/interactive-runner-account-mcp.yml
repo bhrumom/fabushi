@@ -90,7 +90,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            xvfb xfwm4 x11-utils xdotool wmctrl dbus-x11 at-spi2-core libatk-adaptor python3-pyatspi
+            xvfb xfwm4 x11-utils xdotool wmctrl ffmpeg dbus-x11 at-spi2-core libatk-adaptor python3-pyatspi
 
       - name: Start private X11 desktop
         shell: bash
