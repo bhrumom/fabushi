@@ -117,10 +117,26 @@ jobs:
           curl --fail --silent --show-error             --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$oidc_url" > "$oidc_json"
           oidc_token="$(jq -er '.value | select(type == "string" and length > 100)' "$oidc_json")"
           echo "::add-mask::$oidc_token"
+          claims_json="$FABUSHI_CI_SESSION_DIR/github-oidc-claims.json"
+          node - "$oidc_token" > "$claims_json" <<'NODE'
+          const token = process.argv[2];
+          const part = token.split('.')[1] || '';
+          const payload = JSON.parse(Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+          const allowed = [
+            'iss', 'sub', 'aud', 'repository', 'repository_id', 'repository_owner_id',
+            'repository_visibility', 'workflow_ref', 'workflow_sha', 'ref', 'sha',
+            'event_name', 'runner_environment', 'ref_protected', 'iat', 'exp'
+          ];
+          const safe = Object.fromEntries(allowed.map((key) => [key, payload[key] ?? null]));
+          process.stdout.write(`${JSON.stringify(safe)}\n`);
+          NODE
           jq -n --arg deviceId "$DEVICE_ID" --arg sourceSha "$GITHUB_SHA"             '{deviceId: $deviceId, sourceSha: $sourceSha}' > "$request_json"
           status="$(curl --silent --show-error             --output "$response_json"             --write-out '%{http_code}'             --request POST             --header 'Accept: application/json'             --header 'Content-Type: application/json'             --header "Authorization: Bearer $oidc_token"             --data-binary "@$request_json"             "$FABUSHI_API_BASE_URL/v1/ci/runner-session")"
           if [ "$status" != '200' ]; then
-            jq -r '.error.message // .message // .error // "Fabushi CI Runner account binding failed"' "$response_json" >&2 || true
+            echo "Fabushi CI Runner binding HTTP status: $status" >&2
+            jq -r 'if type == "object" then (.message // (if (.error | type) == "string" then .error else .error.message end) // "Fabushi CI Runner account binding failed") else tostring end' "$response_json" >&2 || cat "$response_json" >&2 || true
+            echo 'GitHub OIDC safe claims:' >&2
+            jq . "$claims_json" >&2 || true
             exit 1
           fi
           jq -e             --arg deviceId "$DEVICE_ID"             --arg runId "$GITHUB_RUN_ID"             --arg runAttempt "$GITHUB_RUN_ATTEMPT" '
@@ -156,7 +172,7 @@ jobs:
           mv "$FABUSHI_ACCOUNT_SESSION_FILE.tmp" "$FABUSHI_ACCOUNT_SESSION_FILE"
           install -m 600 "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
           account_ref="$(jq -r '.userId' "$FABUSHI_ACCOUNT_SESSION_FILE" | sha256sum | cut -c1-16)"
-          rm -f "$oidc_json" "$response_json" "$request_json"
+          rm -f "$oidc_json" "$response_json" "$request_json" "$claims_json"
           {
             echo '- Runner account: Fabushi account linked to the GitHub workflow actor (identity redacted)'
             echo "- Account reference: \`$account_ref\`"
