@@ -159,4 +159,7 @@ contextBridge.exposeInMainWorld('fabushi', Object.freeze({
   windowFocused() {
     return ipcRenderer.invoke('fabushi:window-focused');
   },
+  registerMiniAppDocument(pluginId, html) {
+    return ipcRenderer.invoke('fabushi:register-miniapp-document', { pluginId, html });
+  },
 }));

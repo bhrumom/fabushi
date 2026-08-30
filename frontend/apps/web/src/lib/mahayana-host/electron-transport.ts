@@ -37,6 +37,7 @@ type ElectronShellBridge = {
   openExternal(url: string): Promise<boolean | void>;
   openSystemSettings(pane: "screen-recording" | "accessibility"): Promise<boolean | void>;
   windowFocused(): Promise<boolean>;
+  registerMiniAppDocument(pluginId: string, html: string): Promise<string>;
 };
 
 declare global {
