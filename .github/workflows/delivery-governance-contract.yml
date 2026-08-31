@@ -93,6 +93,10 @@ jobs:
             grep -Fq -- '--latest=false' "$workflow"
           done
 
+          important_gate=.github/workflows/important-release-gate.yml
+          grep -Fq 'uses: ./.github/workflows/native-mobile.yml' "$important_gate"
+          ! grep -Fq 'android-real-device-e2e.yml' "$important_gate"
+
       - name: Validate narrow CODEOWNERS coverage
         shell: bash
         run: |
