@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
 import WebSocket from "ws";
@@ -8,7 +8,7 @@ import {
   callRegisteredDevice,
   resetDeviceGatewayStateForTests,
 } from "../lib/device-gateway.js";
-import { buildSignedMeshRegistration } from "../lib/device-mesh.js";
+import { buildSignedMeshRegistration, canonicalMeshJson } from "../lib/device-mesh.js";
 
 function listen(server) {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));
@@ -32,23 +32,7 @@ function identity() {
 function descriptor() {
   return { name: "computer_state", inputSchema: { type: "object", properties: {}, additionalProperties: false }, outputSchema: { type: "object" } };
 }
-function register(ws, { deviceId, generation, identity: nodeIdentity, port }) {
-  const tool = descriptor();
-  ws.send(JSON.stringify({
-    type: "register",
-    deviceId,
-    generation,
-    name: deviceId,
-    platform: "linux",
-    capabilities: [tool.name],
-    tools: [tool],
-    mesh: buildSignedMeshRegistration({ identity: nodeIdentity, deviceId, generation, toolSchemaVersion: "ignored-by-helper-test" }),
-    direct: { version: "fabushi.direct-path.v1", candidates: [{ id: `${deviceId}-loopback`, host: "127.0.0.1", port, scope: "host", priority: 500 }] },
-  }));
-}
 
-// The generator runs before this test in the direct-path CI workflow, so this test
-// exercises the actual generated Gateway direct-forward/fallback branches.
 test("gateway routes through a healthy peer then retries the same invocation over relay", async (t) => {
   resetDeviceGatewayStateForTests();
   const server = createServer((_req, res) => res.writeHead(404).end());
@@ -60,7 +44,9 @@ test("gateway routes through a healthy peer then retries the same invocation ove
   const router = new WebSocket(`ws://127.0.0.1:${port}/agent`, { headers: { Authorization: "Bearer token-a" } });
   const target = new WebSocket(`ws://127.0.0.1:${port}/agent`, { headers: { Authorization: "Bearer token-a" } });
   t.after(async () => {
-    router.terminate(); target.terminate(); await gateway.close();
+    router.terminate();
+    target.terminate();
+    await gateway.close();
     await new Promise((resolve) => server.close(resolve));
     resetDeviceGatewayStateForTests();
   });
@@ -70,29 +56,29 @@ test("gateway routes through a healthy peer then retries the same invocation ove
   const targetIdentity = identity();
   const routerGeneration = "router-generation-123456";
   const targetGeneration = "target-generation-123456";
-
-  // toolSchemaVersion is derived by the gateway, so derive a valid signed registration
-  // by first using a temporary helper message generated from the same descriptor hash.
-  // In tests the helper accepts an explicit version only; use the known catalog hash by
-  // reading the first rejected attempt is unnecessary because both peers share descriptor.
   const tool = descriptor();
-  const { createHash } = await import("node:crypto");
-  const catalogVersion = createHash("sha256").update(JSON.stringify([{ name: tool.name, inputSchema: tool.inputSchema, outputSchema: tool.outputSchema, annotations: undefined }])).digest("base64url");
+  const catalogVersion = createHash("sha256").update(canonicalMeshJson([tool])).digest("hex");
 
   const sendRegistration = (ws, deviceId, generation, nodeIdentity, directPort) => ws.send(JSON.stringify({
-    type: "register", deviceId, generation, name: deviceId, platform: "linux",
-    capabilities: [tool.name], tools: [tool],
+    type: "register",
+    deviceId,
+    generation,
+    name: deviceId,
+    platform: "linux",
+    capabilities: [tool.name],
+    tools: [tool],
     mesh: buildSignedMeshRegistration({ identity: nodeIdentity, deviceId, generation, toolSchemaVersion: catalogVersion }),
-    direct: { version: "fabushi.direct-path.v1", candidates: [{ id: `${deviceId}-candidate`, host: "127.0.0.1", port: directPort, scope: "host", priority: 500 }] },
+    direct: {
+      version: "fabushi.direct-path.v1",
+      candidates: [{ id: `${deviceId}-candidate`, host: "127.0.0.1", port: directPort, scope: "host", priority: 500 }],
+    },
   }));
 
   sendRegistration(router, "router", routerGeneration, routerIdentity, 41001);
   sendRegistration(target, "target", targetGeneration, targetIdentity, 41002);
 
-  // Registered + peer-map messages may arrive in either order. Drain until both devices
-  // have received a registered acknowledgement.
   async function waitRegistered(ws) {
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < 8; i += 1) {
       const message = await nextJson(ws);
       if (message.type === "registered") return message;
     }
@@ -100,7 +86,6 @@ test("gateway routes through a healthy peer then retries the same invocation ove
   }
   await Promise.all([waitRegistered(router), waitRegistered(target)]);
 
-  // The router reports a successful authenticated probe of target's published candidate.
   router.send(JSON.stringify({
     type: "direct_path_health",
     targetDeviceId: "target",
@@ -116,7 +101,9 @@ test("gateway routes through a healthy peer then retries the same invocation ove
     const handler = (raw) => {
       const message = JSON.parse(raw.toString("utf8"));
       if (message.type !== "direct_forward_call") return;
-      clearTimeout(timer); router.off("message", handler); resolve(message);
+      clearTimeout(timer);
+      router.off("message", handler);
+      resolve(message);
     };
     router.on("message", handler);
   });
@@ -125,8 +112,6 @@ test("gateway routes through a healthy peer then retries the same invocation ove
   assert.equal(forwarded.targetDeviceId, "target");
   assert.match(forwarded.invocationId, /^[a-f0-9]{32}$/u);
 
-  // Simulate a lost/unreachable direct data path after dispatch. Gateway must fall back
-  // to relay without minting a second invocation id.
   router.send(JSON.stringify({
     type: "direct_forward_failed",
     requestId: forwarded.requestId,
@@ -139,7 +124,9 @@ test("gateway routes through a healthy peer then retries the same invocation ove
     const handler = (raw) => {
       const message = JSON.parse(raw.toString("utf8"));
       if (message.type !== "call") return;
-      clearTimeout(timer); target.off("message", handler); resolve(message);
+      clearTimeout(timer);
+      target.off("message", handler);
+      resolve(message);
     };
     target.on("message", handler);
   });
