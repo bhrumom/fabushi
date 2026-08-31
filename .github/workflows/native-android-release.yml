@@ -2,6 +2,11 @@ name: Native Android GitHub release
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Native mobile quality gate
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
@@ -14,6 +19,15 @@ concurrency:
 
 jobs:
   release:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        contains(github.event.workflow_run.head_commit.message, '[native-mobile-release-20260831]')
+      )
     name: Build and publish signed Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -24,6 +38,7 @@ jobs:
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - name: Require manual dispatch from main
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
@@ -35,7 +50,7 @@ jobs:
       - name: Checkout immutable main source
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
           fetch-depth: 1
           submodules: recursive
           persist-credentials: false
@@ -48,7 +63,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
           RELEASE_TARGET: android
         run: |
           set -euo pipefail
@@ -250,5 +265,5 @@ jobs:
           gh release create "$tag" "${assets[@]}" \
             --target '${{ steps.source.outputs.sha }}' \
             --title 'Fabushi Android ${{ steps.release.outputs.version_name }} (${{ steps.release.outputs.version_code }})' \
-            --notes 'Manual GitHub Android release from main after CI result and Native mobile result passed for the exact source SHA. The APK includes the GitHub self-update channel.' \
+            --notes 'GitHub Android release from main after CI result and Native mobile result passed for the exact source SHA. The APK includes the GitHub self-update channel.' \
             --latest=false
