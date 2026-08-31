@@ -378,6 +378,7 @@ struct ContentView: View {
                         Button { destination = .remoteComputer } label: { Label("我的电脑", systemImage: "desktopcomputer") }
                         Button { destination = .marketplace } label: { Label("插件市场", systemImage: "shippingbox.fill") }
                     } label: { avatar.frame(width: 34, height: 34) }
+                    .accessibilityElement(children: .ignore)
                     .accessibilityIdentifier("profile-avatar")
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
