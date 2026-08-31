@@ -63,6 +63,7 @@ struct ContentView: View {
     @State private var locationSharePresented = false
     @State private var locationService = LocationService()
     @State private var voiceRecorder = VoiceRecorder()
+    @State private var voicePlayback = VoicePlaybackController()
     @State private var contactSharePresented = false
     @State private var pollComposerPresented = false
     @State private var pollQuestion = ""
@@ -734,7 +735,13 @@ struct ContentView: View {
                                                     }
                                                 }.frame(maxWidth: .infinity, alignment: .leading)
                                             case "voice":
-                                                HStack(spacing: 10) { Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(Color.accentColor); VStack(alignment: .leading) { Text("语音消息").fontWeight(.medium); Text(message.mediaFileName ?? "录音").font(.caption).foregroundStyle(.secondary) }; Spacer() }
+                                                Button { Task { await voicePlayback.toggle(message: message, messaging: messaging) } } label: {
+                                                    HStack(spacing: 10) {
+                                                        Image(systemName: voicePlayback.playingMessageId == message.id ? "stop.circle.fill" : "play.circle.fill").font(.title2).foregroundStyle(Color.accentColor)
+                                                        VStack(alignment: .leading) { Text("语音消息").fontWeight(.medium).foregroundStyle(.primary); Text(voicePlayback.playingMessageId == message.id ? "正在播放" : (message.mediaFileName ?? "录音")).font(.caption).foregroundStyle(.secondary) }
+                                                        Spacer()
+                                                    }
+                                                }.buttonStyle(.plain)
                                             case "audio":
                                                 HStack(spacing: 10) { Image(systemName: "music.note").font(.title2).foregroundStyle(Color.accentColor); Text(message.mediaFileName ?? "音频"); Spacer() }
                                             case "photo", "video", "document":
