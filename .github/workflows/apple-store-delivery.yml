@@ -69,7 +69,7 @@ jobs:
             if [ "$UPSTREAM_EVENT" = 'push' ] &&
                [ "$UPSTREAM_CONCLUSION" = 'success' ] &&
                [ "$UPSTREAM_BRANCH" = 'main' ] &&
-               [[ "$UPSTREAM_MESSAGE" == *"[native-ios-release-retry3-20260831]"* ]]; then
+               [[ "$UPSTREAM_MESSAGE" == *"[full-platform-release-final-20260831]"* ]]; then
               should_release=true
             fi
           fi
