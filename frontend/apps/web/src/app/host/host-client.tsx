@@ -47,7 +47,7 @@ import type {
   WorkflowSummary,
   WorkflowTrigger,
 } from "../../lib/mahayana-host/contracts";
-import { isElectronMahayanaHostAvailable } from "../../lib/mahayana-host/electron-transport";
+import { ElectronMahayanaHostTransport, isElectronMahayanaHostAvailable } from "../../lib/mahayana-host/electron-transport";
 import { MockMahayanaHostTransport } from "../../lib/mahayana-host/mock-transport";
 import type { MahayanaHostTransport } from "../../lib/mahayana-host/transport";
 import { MahayanaCoordinator } from "../../lib/mahayana-host/coordinator";
@@ -388,10 +388,15 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
   const screenshotMode = new URLSearchParams(window.location.search).get("screenshot");
   const screenshotHasMiniApp = screenshotMode === "miniapp";
   const screenshotComputerOpen = ["computer", "running", "miniapp"].includes(screenshotMode ?? "");
-  const transport = useMemo<MahayanaHostTransport>(
-    () => new MockMahayanaHostTransport({ authenticated: screenshotMode !== null }),
-    [screenshotMode],
-  );
+  const transport = useMemo<MahayanaHostTransport>(() => {
+    // Screenshot fixtures intentionally stay deterministic, but the real desktop
+    // login surface must authenticate the same Electron/Rust Host that the
+    // Messenger shell will use after the handoff. Using the mock here makes the
+    // browser flow appear successful while the authoritative Host remains signed out.
+    if (screenshotMode !== null) return new MockMahayanaHostTransport({ authenticated: true });
+    if (isElectronMahayanaHostAvailable()) return new ElectronMahayanaHostTransport();
+    return new MockMahayanaHostTransport({ authenticated: false });
+  }, [screenshotMode]);
   const coordinator = useMemo(() => new MahayanaCoordinator(transport), [transport]);
   const requestSequence = useRef(0);
   const attachmentInput = useRef<HTMLInputElement>(null);

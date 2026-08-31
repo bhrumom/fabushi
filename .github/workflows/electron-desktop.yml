@@ -101,14 +101,13 @@ jobs:
         run: npm ci --ignore-scripts --prefer-offline
 
       - name: Install Playwright video diagnostics runtime
-        if: github.event_name != 'pull_request'
         working-directory: desktop
         run: npx playwright install ffmpeg
 
       - name: Run Electron main-process contract tests
         if: matrix.target == 'linux'
         shell: bash
-        run: node --test desktop/scripts/prepare-desktop-window-branding.test.mjs desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/remote-device-agent-supervisor.test.cjs desktop/electron/test-auth-session.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs desktop/electron/main-lifecycle.test.cjs
+        run: node --test desktop/scripts/prepare-desktop-window-branding.test.mjs desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/remote-device-agent-supervisor.test.cjs desktop/electron/test-auth-session.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs desktop/electron/main-lifecycle.test.cjs desktop/electron/preload-runtime-replay.test.cjs
 
       - name: Verify renderer TypeScript
         if: matrix.target == 'linux'
@@ -118,11 +117,11 @@ jobs:
       - name: Record PR fast-path completion
         if: github.event_name == 'pull_request'
         shell: bash
-        run: echo 'Electron PR fast checks passed on the single Linux desktop runner; installer and packaged E2E remain post-main gates.' >> "$GITHUB_STEP_SUMMARY"
+        run: echo 'Electron PR contract checks passed; the Linux runner also executes the real Rust Host pre-package black-box journey before merge. Installer and packaged E2E remain post-main gates.' >> "$GITHUB_STEP_SUMMARY"
 
       - id: host-source-key
         name: Freeze Rust Host source cache key
-        if: github.event_name != 'pull_request'
+        if: true
         shell: bash
         env:
           SOURCE_HASH: ${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
@@ -130,31 +129,31 @@ jobs:
 
       - id: host-binary-cache
         name: Restore reusable native Host binary
-        if: github.event_name != 'pull_request'
+        if: true
         uses: actions/cache/restore@v4
         with:
           path: desktop/resources/bin
           key: electron-host-${{ runner.os }}-${{ runner.arch }}-v9-rust-1.97.1-${{ steps.host-source-key.outputs.hash }}
 
       - name: Record native Host cache result
-        if: github.event_name != 'pull_request'
+        if: true
         shell: bash
         run: echo "${{ matrix.label }} Host binary cache hit=${{ steps.host-binary-cache.outputs.cache-hit }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Rust on Host cache miss
-        if: github.event_name != 'pull_request' && steps.host-binary-cache.outputs.cache-hit != 'true'
+        if: steps.host-binary-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.97.1
 
       - name: Enable compiler-result cache on Host cache miss
-        if: github.event_name != 'pull_request' && steps.host-binary-cache.outputs.cache-hit != 'true'
+        if: steps.host-binary-cache.outputs.cache-hit != 'true'
         uses: mozilla-actions/sccache-action@v0.0.11
         with:
           version: v0.16.0
 
       - name: Install Linux native Host dependencies on cache miss
-        if: github.event_name != 'pull_request' && matrix.target == 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
+        if: matrix.target == 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           sudo apt-get update
@@ -164,14 +163,14 @@ jobs:
             libegl1-mesa-dev libgbm-dev
 
       - name: Restore Rust dependency/target cache on Host cache miss
-        if: github.event_name != 'pull_request' && steps.host-binary-cache.outputs.cache-hit != 'true'
+        if: steps.host-binary-cache.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
           shared-key: electron-platform-${{ runner.os }}-v8-rust-1.97.1
 
       - name: Build and stage CI native Host on cache miss
-        if: github.event_name != 'pull_request' && steps.host-binary-cache.outputs.cache-hit != 'true'
+        if: steps.host-binary-cache.outputs.cache-hit != 'true'
         working-directory: desktop
         env:
           SCCACHE_GHA_ENABLED: 'true'
@@ -179,24 +178,33 @@ jobs:
         run: npm run build:host:ci
 
       - name: Show Rust compiler cache stats
-        if: github.event_name != 'pull_request' && steps.host-binary-cache.outputs.cache-hit != 'true'
+        if: steps.host-binary-cache.outputs.cache-hit != 'true'
         shell: bash
         run: sccache --show-stats >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Save reusable native Host binary immediately
-        if: github.event_name != 'pull_request' && steps.host-binary-cache.outputs.cache-hit != 'true'
+        if: steps.host-binary-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: desktop/resources/bin
           key: electron-host-${{ runner.os }}-${{ runner.arch }}-v9-rust-1.97.1-${{ steps.host-source-key.outputs.hash }}
 
       - name: Build Electron renderer
-        if: github.event_name != 'pull_request'
+        if: true
         working-directory: desktop
         run: npm run build:renderer
 
+      - name: Diagnose real Linux desktop bootstrap before the full user journey
+        if: matrix.target == 'linux'
+        working-directory: desktop
+        env:
+          FABUSHI_FEATURE_HOST_MODE: test
+          FABUSHI_E2E: '1'
+          MAHAYANA_APP_HOST_BIN: ${{ github.workspace }}/desktop/resources/bin/mahayana-app-host
+        run: xvfb-run -a node scripts/diagnose-desktop-bootstrap.mjs
+
       - name: Simulate a user against the real Linux Rust Host before packaging
-        if: github.event_name != 'pull_request' && matrix.target == 'linux'
+        if: matrix.target == 'linux'
         working-directory: desktop
         env:
           FABUSHI_FEATURE_HOST_MODE: test
@@ -386,7 +394,7 @@ jobs:
           node .github/scripts/verify-packaged-computer-control.mjs "${args[@]}"
 
       - name: Simulate the complete user journey in packaged Linux Electron
-        if: github.event_name != 'pull_request' && matrix.target == 'linux'
+        if: matrix.target == 'linux'
         working-directory: desktop
         env:
           FABUSHI_FEATURE_HOST_MODE: test
