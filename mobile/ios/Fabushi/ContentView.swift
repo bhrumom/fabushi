@@ -396,7 +396,7 @@ struct ContentView: View {
         .confirmationDialog("导航", isPresented: $profileMenuPresented, titleVisibility: .visible) {
             ForEach(MobileSection.allCases) { section in
                 Button(section.label) { handleSection(section) }
-                    .accessibilityIdentifier("profile-section-\\(section.rawValue)")
+                    .accessibilityIdentifier("profile-section-\(section.rawValue)")
             }
             Button("我的电脑") { destination = .remoteComputer }
                 .accessibilityIdentifier("remote-computer-entry")
