@@ -106,7 +106,7 @@ final class MessagingModel {
         return conversations.first(where: { $0.id == id })
     }
 
-    func sendText(conversationId: String, text: String) async throws {
+    func sendText(conversationId: String, text: String, replyToMessageId: String? = nil) async throws {
         try await ensureIdentity()
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
@@ -115,7 +115,7 @@ final class MessagingModel {
             "conversationId": conversationId,
             "clientMessageId": "ios:\(UUID().uuidString.lowercased())",
             "content": ["type": "text", "data": ["text": ["text": value, "entities": []]]],
-            "replyToMessageId": NSNull(),
+            "replyToMessageId": replyToMessageId ?? NSNull(),
             "threadRootMessageId": NSNull(),
             "scheduledAtMs": NSNull(),
             "silent": false,
@@ -143,6 +143,49 @@ final class MessagingModel {
     func markRead(_ conversationId: String) async {
         guard let last = conversations.first(where: { $0.id == conversationId })?.lastMessageId else { return }
         try? await executeAfterIdentity(["type": "markRead", "conversationId": conversationId, "messageId": last])
+    }
+
+    func editText(conversationId: String, messageId: String, text: String) async throws {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        try await executeAfterIdentity([
+            "type": "editMessage",
+            "conversationId": conversationId,
+            "messageId": messageId,
+            "content": ["type": "text", "data": ["text": ["text": value, "entities": []]]],
+        ])
+    }
+
+    func deleteMessage(conversationId: String, messageId: String, forEveryone: Bool = true) async {
+        try? await executeAfterIdentity(["type": "deleteMessages", "conversationId": conversationId, "messageIds": [messageId], "forEveryone": forEveryone])
+    }
+
+    func setReaction(conversationId: String, messageId: String, reaction: String, enabled: Bool) async {
+        try? await ensureIdentity()
+        try? await execute(command: [
+            "type": "setReaction",
+            "conversationId": conversationId,
+            "messageId": messageId,
+            "reaction": ["reaction": reaction, "count": enabled ? 1 : 0, "chosenByMe": enabled, "recentActorIds": enabled ? [actorId] : []],
+        ])
+    }
+
+    func forwardMessage(sourceConversationId: String, messageId: String, destinationConversationId: String) async {
+        try? await executeAfterIdentity([
+            "type": "forwardMessage",
+            "sourceConversationId": sourceConversationId,
+            "messageId": messageId,
+            "destinationConversationId": destinationConversationId,
+            "clientMessageId": "ios:\(UUID().uuidString.lowercased())",
+        ])
+    }
+
+    func startTyping(_ conversationId: String) async {
+        try? await executeAfterIdentity(["type": "startTyping", "conversationId": conversationId, "action": "typing"])
+    }
+
+    func stopTyping(_ conversationId: String) async {
+        try? await executeAfterIdentity(["type": "stopTyping", "conversationId": conversationId])
     }
 
     private func executeAfterIdentity(_ command: [String: Any]) async throws {
