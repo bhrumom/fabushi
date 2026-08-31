@@ -288,13 +288,15 @@ struct ContentView: View {
                         }
 
                         if !archivedConversations.isEmpty && homeQuery.isEmpty {
-                            HStack(spacing: 12) {
-                                Image(systemName: "archivebox.fill").foregroundStyle(.secondary)
-                                Text("已归档").font(.headline)
-                                Spacer()
-                                Text("\(archivedConversations.count)").foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 16).frame(height: 48)
+                            Button { activeSection = .archive } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "archivebox.fill").foregroundStyle(.secondary)
+                                    Text("已归档").font(.headline).foregroundStyle(.primary)
+                                    Spacer()
+                                    Text("\(archivedConversations.count)").foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 16).frame(height: 48)
+                            }.buttonStyle(.plain)
                         }
 
                         ForEach(filteredConversations) { conversation in
@@ -496,7 +498,14 @@ struct ContentView: View {
                         }
                     }
                     if rows.isEmpty { ContentUnavailableView(section.label, systemImage: section.symbol) }
-                    ForEach(rows) { conversation in conversationRow(conversation) }
+                    ForEach(rows) { conversation in
+                        conversationRow(conversation)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                if section == .archive {
+                                    Button("恢复") { Task { await messaging.setArchived(conversation.id, archived: false) } }.tint(.blue)
+                                }
+                            }
+                    }
                 }
                 .navigationTitle(section.label)
                 .toolbar { ToolbarItem(placement: .topBarLeading) { Button("完成") { activeSection = nil } } }
@@ -555,6 +564,11 @@ struct ContentView: View {
             ZStack {
                 Color(red: 0.055, green: 0.06, blue: 0.07).ignoresSafeArea()
                 VStack(spacing: 0) {
+                    if let typingName = messaging.typingActorByConversation[conversation.id] {
+                        Text("\(typingName) 正在输入…")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity).padding(.vertical, 4)
+                    }
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(spacing: 8) {
@@ -611,6 +625,12 @@ struct ContentView: View {
                             Button("联系人", systemImage: "person.crop.circle") {}
                         } label: { Image(systemName: "paperclip").font(.title3).frame(width: 36, height: 36) }
                         TextField("消息", text: $messageDraft, axis: .vertical).lineLimit(1...5)
+                            .onChange(of: messageDraft) { _, value in
+                                Task {
+                                    if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { await messaging.stopTyping(conversation.id) }
+                                    else { await messaging.startTyping(conversation.id) }
+                                }
+                            }
                             .padding(.horizontal, 12).padding(.vertical, 9).background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 18))
                         Button { sendMessage(in: conversation) } label: {
                             Image(systemName: messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "mic.fill" : "arrow.up")
@@ -653,6 +673,7 @@ struct ContentView: View {
         let edit = editingMessage
         let reply = replyTarget
         messageDraft = ""
+        Task { await messaging.stopTyping(conversation.id) }
         editingMessage = nil
         replyTarget = nil
         Task {

@@ -92,6 +92,7 @@ object TestTags {
 }
 
 private enum class MobileDestination { HOME, MARKETPLACE, REMOTE_COMPUTER }
+private enum class AndroidMobileSection(val label: String) { CONTACTS("联系人"), BOTS("Bots"), GROUPS("群组"), CHANNELS("频道"), SAVED("收藏"), ARCHIVE("归档"), CALLS("通话"), FOLDERS("文件夹"), SETTINGS("设置") }
 private val homeBackground = Color(0xFF0B0B0C)
 private val homeSurface = Color(0xFF151516)
 private val homeBorder = Color(0xFF29292B)
@@ -124,6 +125,8 @@ fun FabushiScreen(
     onDeleteMessage: (String, String) -> Unit = { _, _ -> },
     onSetReaction: (String, String, String, Boolean) -> Unit = { _, _, _, _ -> },
     onForwardMessage: (String, String, String) -> Unit = { _, _, _ -> },
+    onStartTyping: (String) -> Unit = {},
+    onStopTyping: (String) -> Unit = {},
     onSetPinned: (ConversationSummary, Boolean) -> Unit = { _, _ -> },
     onSetArchived: (ConversationSummary, Boolean) -> Unit = { _, _ -> },
     onSetMuted: (ConversationSummary, Boolean) -> Unit = { _, _ -> },
@@ -296,6 +299,8 @@ fun FabushiScreen(
             onDeleteMessage = onDeleteMessage,
             onSetReaction = onSetReaction,
             onForwardMessage = onForwardMessage,
+            onStartTyping = onStartTyping,
+            onStopTyping = onStopTyping,
             onSetPinned = onSetPinned,
             onSetArchived = onSetArchived,
             onSetMuted = onSetMuted,
@@ -333,6 +338,8 @@ private fun ConversationHome(
     onDeleteMessage: (String, String) -> Unit,
     onSetReaction: (String, String, String, Boolean) -> Unit,
     onForwardMessage: (String, String, String) -> Unit,
+    onStartTyping: (String) -> Unit,
+    onStopTyping: (String) -> Unit,
     onSetPinned: (ConversationSummary, Boolean) -> Unit,
     onSetArchived: (ConversationSummary, Boolean) -> Unit,
     onSetMuted: (ConversationSummary, Boolean) -> Unit,
@@ -345,11 +352,24 @@ private fun ConversationHome(
     var pendingKind by remember { mutableStateOf<ConversationKind?>(null) }
     var composeName by remember { mutableStateOf("") }
     var selectedConversation by remember { mutableStateOf<ConversationSummary?>(null) }
+    var activeSection by remember { mutableStateOf<AndroidMobileSection?>(null) }
     val conversations = messagingState.conversations
     val filteredConversations = conversations
         .filter { !it.isArchived }
         .sortedWith(compareByDescending<ConversationSummary> { it.isPinned }.thenByDescending { it.time })
         .filter { conversation -> searchQuery.isBlank() || conversation.title.contains(searchQuery, true) || conversation.preview.contains(searchQuery, true) }
+
+    activeSection?.let { section ->
+        AndroidSectionSurface(
+            section = section,
+            messagingState = messagingState,
+            onBack = { activeSection = null },
+            onCreateDirect = { contact -> activeSection = null; onCreateDirect(contact) },
+            onOpenConversation = { conversation -> activeSection = null; selectedConversation = conversation; onMarkRead(conversation) },
+            onUnarchive = { conversation -> onSetArchived(conversation, false) },
+        )
+        return
+    }
 
     selectedConversation?.let { selected ->
         val conversation = conversations.firstOrNull { it.id == selected.id } ?: selected
@@ -363,6 +383,8 @@ private fun ConversationHome(
             onReact = { messageId, reaction -> onSetReaction(conversation.id, messageId, reaction, true) },
             onForward = { messageId, destinationId -> onForwardMessage(conversation.id, messageId, destinationId) },
             forwardDestinations = conversations.filter { it.id != conversation.id && !it.isArchived },
+            typingActorName = messagingState.typingActorByConversation[conversation.id],
+            onTypingChanged = { typing -> if (typing) onStartTyping(conversation.id) else onStopTyping(conversation.id) },
             onToggleMute = { onSetMuted(conversation, !conversation.isMuted) },
             onTogglePin = { onSetPinned(conversation, !conversation.isPinned) },
             onArchive = { onSetArchived(conversation, true); selectedConversation = null },
@@ -446,14 +468,15 @@ private fun ConversationHome(
                         ProfileAvatar(onClick = { onShowAddMenuChange(true) })
                         DropdownMenu(expanded = showAddMenu, onDismissRequest = { onShowAddMenuChange(false) }, containerColor = homeSurface) {
                             DropdownMenuItem(text = { Text("聊天", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
-                            DropdownMenuItem(text = { Text("联系人", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
-                            DropdownMenuItem(text = { Text("Bots", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
-                            DropdownMenuItem(text = { Text("群组", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
-                            DropdownMenuItem(text = { Text("频道", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
-                            DropdownMenuItem(text = { Text("通话", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
-                            DropdownMenuItem(text = { Text("收藏", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
-                            DropdownMenuItem(text = { Text("归档", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
-                            DropdownMenuItem(text = { Text("文件夹", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
+                            DropdownMenuItem(text = { Text("联系人", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); activeSection = AndroidMobileSection.CONTACTS })
+                            DropdownMenuItem(text = { Text("Bots", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); activeSection = AndroidMobileSection.BOTS })
+                            DropdownMenuItem(text = { Text("群组", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); activeSection = AndroidMobileSection.GROUPS })
+                            DropdownMenuItem(text = { Text("频道", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); activeSection = AndroidMobileSection.CHANNELS })
+                            DropdownMenuItem(text = { Text("通话", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); activeSection = AndroidMobileSection.CALLS })
+                            DropdownMenuItem(text = { Text("收藏", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); activeSection = AndroidMobileSection.SAVED })
+                            DropdownMenuItem(text = { Text("归档", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); activeSection = AndroidMobileSection.ARCHIVE })
+                            DropdownMenuItem(text = { Text("文件夹", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); activeSection = AndroidMobileSection.FOLDERS })
+                            DropdownMenuItem(text = { Text("设置", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); activeSection = AndroidMobileSection.SETTINGS })
                             DropdownMenuItem(modifier = Modifier.testTag(TestTags.MarketplaceEntry), text = { Text("Mini Apps / 插件市场", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); onOpenMarketplace() })
                             DropdownMenuItem(modifier = Modifier.testTag(TestTags.RemoteComputerEntry), text = { Text("我的电脑", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); onOpenRemoteComputer() })
                             if (updateState.phase != AndroidUpdatePhase.DISABLED) DropdownMenuItem(text = { Text("检查更新", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); onCheckUpdate() })
@@ -474,7 +497,7 @@ private fun ConversationHome(
             }
             if (shouldShowUpdateBanner(updateState.phase)) item { UpdateBanner(updateState, onCheckUpdate, onInstallUpdate) }
             if (conversations.any { it.isArchived } && searchQuery.isBlank()) item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clickable { activeSection = AndroidMobileSection.ARCHIVE }.padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("▣", color = homeSecondaryText); Text("已归档", color = homePrimaryText, modifier = Modifier.padding(start = 12.dp).weight(1f)); Text("${conversations.count { it.isArchived }}", color = homeSecondaryText)
                 }
             }
@@ -490,6 +513,66 @@ private fun ConversationHome(
                 })
             }
             item { Spacer(Modifier.height(88.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun AndroidSectionSurface(
+    section: AndroidMobileSection,
+    messagingState: MessagingUiState,
+    onBack: () -> Unit,
+    onCreateDirect: (MessagingContact) -> Unit,
+    onOpenConversation: (ConversationSummary) -> Unit,
+    onUnarchive: (ConversationSummary) -> Unit,
+) {
+    val conversations = when (section) {
+        AndroidMobileSection.GROUPS -> messagingState.conversations.filter { it.kind == ConversationKind.GROUP && !it.isArchived }
+        AndroidMobileSection.CHANNELS -> messagingState.conversations.filter { it.kind == ConversationKind.CHANNEL && !it.isArchived }
+        AndroidMobileSection.SAVED -> messagingState.conversations.filter { it.kind == ConversationKind.SAVED_MESSAGES }
+        AndroidMobileSection.ARCHIVE -> messagingState.conversations.filter { it.isArchived }
+        else -> emptyList()
+    }
+    val contacts = when (section) {
+        AndroidMobileSection.CONTACTS -> messagingState.contacts
+        AndroidMobileSection.BOTS -> messagingState.contacts.filter { it.kind == "bot" || it.kind == "assistant" }
+        else -> emptyList()
+    }
+    Scaffold(containerColor = homeBackground) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = homePrimaryText, fontSize = 34.sp, modifier = Modifier.clickable(onClick = onBack).padding(8.dp))
+                Text(section.label, color = homePrimaryText, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+            }
+            LazyColumn(Modifier.fillMaxSize()) {
+                if (contacts.isNotEmpty()) items(contacts, key = { it.id }) { contact ->
+                    Row(Modifier.fillMaxWidth().clickable { onCreateDirect(contact) }.padding(horizontal = 18.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(46.dp).background(homeAccent, CircleShape), contentAlignment = Alignment.Center) { Text(contact.displayName.take(1).uppercase(), color = Color.Black, fontWeight = FontWeight.Bold) }
+                        Column(Modifier.padding(start = 13.dp)) { Text(contact.displayName, color = homePrimaryText); Text(contact.username?.let { "@$it" } ?: contact.kind, color = homeSecondaryText, style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+                if (conversations.isNotEmpty()) items(conversations, key = { it.id }) { conversation ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { ConversationRow(conversation, onClick = { onOpenConversation(conversation) }) }
+                        if (section == AndroidMobileSection.ARCHIVE) Text("恢复", color = homeAccent, modifier = Modifier.clickable { onUnarchive(conversation) }.padding(14.dp))
+                    }
+                }
+                if (contacts.isEmpty() && conversations.isEmpty()) item {
+                    Column(Modifier.fillMaxWidth().padding(top = 96.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(section.label, color = homePrimaryText, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            when (section) {
+                                AndroidMobileSection.CALLS -> "暂无通话记录"
+                                AndroidMobileSection.FOLDERS -> "暂无会话文件夹"
+                                AndroidMobileSection.SETTINGS -> "设置由统一账户配置提供"
+                                else -> "暂无内容"
+                            },
+                            color = homeSecondaryText,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -582,6 +665,8 @@ private fun ConversationDetail(
     onReact: (String, String) -> Unit,
     onForward: (String, String) -> Unit,
     forwardDestinations: List<ConversationSummary>,
+    typingActorName: String?,
+    onTypingChanged: (Boolean) -> Unit,
     onToggleMute: () -> Unit,
     onTogglePin: () -> Unit,
     onArchive: () -> Unit,
@@ -643,6 +728,9 @@ private fun ConversationDetail(
                     }
                 }
             }
+            if (typingActorName != null) {
+                Text("$typingActorName 正在输入…", color = homeSecondaryText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp))
+            }
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (messages.isEmpty()) item { Text("开始与 ${conversation.title} 对话", color = homeSecondaryText, modifier = Modifier.fillMaxWidth().padding(top = 72.dp)) }
                 items(messages, key = { it.id }) { message ->
@@ -672,7 +760,7 @@ private fun ConversationDetail(
             Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
                 Text("⌕", color = homeSecondaryText, fontSize = 22.sp, modifier = Modifier.padding(10.dp))
                 OutlinedTextField(
-                    value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f), placeholder = { Text("消息", color = homeSecondaryText) }, maxLines = 5,
+                    value = draft, onValueChange = { draft = it; onTypingChanged(it.isNotBlank()) }, modifier = Modifier.weight(1f), placeholder = { Text("消息", color = homeSecondaryText) }, maxLines = 5,
                     colors = OutlinedTextFieldDefaults.colors(focusedTextColor = homePrimaryText, unfocusedTextColor = homePrimaryText, focusedContainerColor = homeSurface, unfocusedContainerColor = homeSurface), shape = RoundedCornerShape(22.dp),
                 )
                 Text(if (draft.isBlank()) "●" else "➤", color = if (draft.isBlank()) homeSecondaryText else homeAccent, fontSize = 22.sp,
@@ -681,7 +769,7 @@ private fun ConversationDetail(
                         if (text.isNotEmpty()) {
                             val edit = editingMessage
                             if (edit != null) onEdit(edit.id, text) else onSend(text, replyTarget?.id)
-                            draft = ""; editingMessage = null; replyTarget = null
+                            draft = ""; onTypingChanged(false); editingMessage = null; replyTarget = null
                         }
                     }.padding(10.dp))
             }
