@@ -460,6 +460,7 @@ struct ContentView: View {
             Form {
                 Section {
                     TextField(kind == .direct ? "联系人名称" : "名称", text: $composeName)
+                        .accessibilityIdentifier("compose-name")
                     if kind == .channel { TextField("描述", text: $composeDescription, axis: .vertical) }
                 }
                 if kind == .group || kind == .bot {
@@ -470,7 +471,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { composeKind = nil } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("创建") { createConversation(kind: kind) }.disabled(composeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("创建") { createConversation(kind: kind) }.accessibilityIdentifier("compose-create").disabled(composeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }

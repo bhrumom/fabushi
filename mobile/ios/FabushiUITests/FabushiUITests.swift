@@ -33,8 +33,15 @@ final class FabushiUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["conversation-list"].exists)
         XCTAssertFalse(app.staticTexts["Chief of Staff"].exists)
         app.buttons["home-add-button"].tap()
-        XCTAssertTrue(app.navigationBars["新对话 1"].waitForExistence(timeout: 5))
-        app.buttons["返回"].tap()
+        let newDirect = app.buttons["新建私聊"]
+        XCTAssertTrue(newDirect.waitForExistence(timeout: 5))
+        newDirect.tap()
+        let composeName = app.textFields["compose-name"]
+        XCTAssertTrue(composeName.waitForExistence(timeout: 5))
+        composeName.tap()
+        composeName.typeText("测试联系人")
+        app.buttons["compose-create"].tap()
+        XCTAssertTrue(app.navigationBars["测试联系人"].waitForExistence(timeout: 5))
 
         openRemoteComputer(in: app)
         let remoteComputer = app.descendants(matching: .any)["remote-computer-surface"]

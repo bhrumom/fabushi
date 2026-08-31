@@ -40,7 +40,10 @@ class FabushiScreenTest {
         compose.onNodeWithTag(TestTags.ConversationList).assertIsDisplayed()
         compose.onNodeWithTag(TestTags.ConversationRow).assertDoesNotExist()
         compose.onNodeWithTag(TestTags.AddButton).performClick()
-        compose.onNodeWithText("新对话 1").assertIsDisplayed()
+        compose.onNodeWithText("新建私聊").assertIsDisplayed().performClick()
+        compose.onNodeWithTag(TestTags.ComposeName).performTextInput("测试联系人")
+        compose.onNodeWithTag(TestTags.ComposeCreate).performClick()
+        compose.onNodeWithText("测试联系人").assertIsDisplayed()
         compose.onNodeWithText("Chief of Staff").assertDoesNotExist()
     }
 
