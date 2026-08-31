@@ -157,6 +157,16 @@ jobs:
       release_version: ${{ steps.collect.outputs.version }}
       source_sha: ${{ needs.gate.outputs.source_sha }}
     steps:
+      - name: Checkout version policy sync script
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.gate.outputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            app-version.json
+            .github/scripts/sync-app-version-policy.mjs
       - name: Download tested macOS package artifacts from exact Electron run
         uses: actions/download-artifact@v8
         with:
