@@ -32,6 +32,22 @@ internal struct ConversationSummary: Identifiable, Equatable, Sendable {
     var isMuted: Bool
     var isArchived: Bool
     var lastMessageId: String?
+    var pinnedMessageIds: [String]
+    var folderIds: [String]
+}
+
+internal struct MessagingFolder: Identifiable, Equatable, Sendable {
+    let id: String
+    var title: String
+    var icon: String?
+    var conversationIds: [String]
+    var includeContacts: Bool
+    var includeBots: Bool
+    var includeGroups: Bool
+    var includeChannels: Bool
+    var excludeMuted: Bool
+    var excludeRead: Bool
+    var excludeArchived: Bool
 }
 
 internal struct MessagingContact: Identifiable, Equatable, Sendable {
@@ -73,6 +89,7 @@ internal struct ChatMessage: Identifiable, Equatable, Sendable {
 final class MessagingModel {
     private(set) var conversations: [ConversationSummary] = []
     private(set) var contacts: [MessagingContact] = []
+    private(set) var folders: [MessagingFolder] = []
     private(set) var messagesByConversation: [String: [ChatMessage]] = [:]
     private(set) var typingActorByConversation: [String: String] = [:]
     private(set) var loading = false
@@ -208,6 +225,25 @@ final class MessagingModel {
         ])
     }
 
+    func setMessagePinned(conversationId: String, messageId: String, pinned: Bool) async {
+        try? await executeAfterIdentity(["type": "pinMessage", "conversationId": conversationId, "messageId": messageId, "pinned": pinned])
+    }
+
+    func upsertFolder(_ folder: MessagingFolder) async {
+        try? await executeAfterIdentity([
+            "type": "upsertFolder",
+            "folder": [
+                "id": folder.id, "title": folder.title, "icon": folder.icon ?? NSNull(), "conversationIds": folder.conversationIds,
+                "includeContacts": folder.includeContacts, "includeBots": folder.includeBots, "includeGroups": folder.includeGroups, "includeChannels": folder.includeChannels,
+                "excludeMuted": folder.excludeMuted, "excludeRead": folder.excludeRead, "excludeArchived": folder.excludeArchived,
+            ],
+        ])
+    }
+
+    func deleteFolder(_ folderId: String) async {
+        try? await executeAfterIdentity(["type": "deleteFolder", "folderId": folderId])
+    }
+
     func setPinned(_ conversationId: String, pinned: Bool) async {
         try? await executeAfterIdentity(["type": "pinConversation", "conversationId": conversationId, "pinned": pinned])
     }
@@ -338,10 +374,17 @@ final class MessagingModel {
                 let rows = (event["conversations"] as? [[String: Any]] ?? []).compactMap(parseConversation)
                 conversations = rows
                 contacts = (event["actors"] as? [[String: Any]] ?? []).compactMap(parseContact)
+                folders = (event["folders"] as? [[String: Any]] ?? []).compactMap(parseFolder)
                 let messages = (event["messages"] as? [[String: Any]] ?? []).compactMap(parseMessage)
                 messagesByConversation = Dictionary(grouping: messages, by: \.conversationId)
             case "conversationChanged":
                 if let raw = event["conversation"] as? [String: Any], let conversation = parseConversation(raw) { upsert(conversation) }
+            case "folderChanged":
+                if let raw = event["folder"] as? [String: Any], let folder = parseFolder(raw) {
+                    if let index = folders.firstIndex(where: { $0.id == folder.id }) { folders[index] = folder } else { folders.append(folder) }
+                }
+            case "folderDeleted":
+                if let folderId = event["folderId"] as? String { folders.removeAll { $0.id == folderId } }
             case "messageAdded", "messageChanged":
                 if let raw = event["message"] as? [String: Any], let message = parseMessage(raw) {
                     var list = messagesByConversation[message.conversationId] ?? []
@@ -398,6 +441,16 @@ final class MessagingModel {
         return MessagingContact(id: id, displayName: name, username: raw["username"] as? String, kind: raw["kind"] as? String ?? "human")
     }
 
+    private func parseFolder(_ raw: [String: Any]) -> MessagingFolder? {
+        guard let id = raw["id"] as? String, let title = raw["title"] as? String else { return nil }
+        return MessagingFolder(
+            id: id, title: title, icon: raw["icon"] as? String, conversationIds: raw["conversationIds"] as? [String] ?? [],
+            includeContacts: raw["includeContacts"] as? Bool ?? false, includeBots: raw["includeBots"] as? Bool ?? false,
+            includeGroups: raw["includeGroups"] as? Bool ?? false, includeChannels: raw["includeChannels"] as? Bool ?? false,
+            excludeMuted: raw["excludeMuted"] as? Bool ?? false, excludeRead: raw["excludeRead"] as? Bool ?? false, excludeArchived: raw["excludeArchived"] as? Bool ?? true
+        )
+    }
+
     private func parseConversation(_ raw: [String: Any]) -> ConversationSummary? {
         guard let id = raw["id"] as? String, let title = raw["title"] as? String else { return nil }
         let kind = ConversationKind(rawValue: raw["kind"] as? String ?? "direct") ?? .direct
@@ -415,7 +468,9 @@ final class MessagingModel {
             isPinned: raw["pinned"] as? Bool ?? false,
             isMuted: (mutedUntil?.int64Value ?? 0) > Int64(Date().timeIntervalSince1970 * 1000),
             isArchived: raw["archived"] as? Bool ?? false,
-            lastMessageId: raw["lastMessageId"] as? String
+            lastMessageId: raw["lastMessageId"] as? String,
+            pinnedMessageIds: raw["pinnedMessageIds"] as? [String] ?? [],
+            folderIds: raw["folderIds"] as? [String] ?? []
         )
     }
 
