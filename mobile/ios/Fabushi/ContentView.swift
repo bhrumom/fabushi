@@ -54,6 +54,7 @@ struct ContentView: View {
     @State private var homeQuery = ""
     @State private var selectedConversation: ConversationSummary?
     @State private var messageDraft = ""
+    @State private var draftSyncTask: Task<Void, Never>?
     @State private var replyTarget: ChatMessage?
     @State private var editingMessage: ChatMessage?
     @State private var forwardMessage: ChatMessage?
@@ -655,6 +656,8 @@ struct ContentView: View {
                     if conversation.unreadCount > 0 {
                         Text("\(conversation.unreadCount)").font(.caption2.bold()).foregroundStyle(.white)
                             .padding(.horizontal, 6).frame(minWidth: 20, minHeight: 20).background(Color.accentColor, in: Capsule())
+                    } else if conversation.markedUnread {
+                        Circle().fill(Color.accentColor).frame(width: 10, height: 10)
                     }
                 }
             }
@@ -665,6 +668,7 @@ struct ContentView: View {
         .contextMenu {
             Button(conversation.isPinned ? "取消置顶" : "置顶", systemImage: "pin") { Task { await messaging.setPinned(conversation.id, pinned: !conversation.isPinned) } }
             Button(conversation.isMuted ? "取消静音" : "静音", systemImage: "speaker.slash") { Task { await messaging.setMuted(conversation.id, muted: !conversation.isMuted) } }
+            Button(conversation.markedUnread ? "取消标为未读" : "标为未读", systemImage: "circle.fill") { Task { await messaging.setMarkedUnread(conversation.id, markedUnread: !conversation.markedUnread) } }
             Button(conversation.isArchived ? "恢复" : "归档", systemImage: "archivebox") { Task { await messaging.setArchived(conversation.id, archived: !conversation.isArchived) } }
         }
         .accessibilityIdentifier("conversation-\(conversation.id)")
@@ -828,7 +832,9 @@ struct ContentView: View {
                                     if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { await messaging.stopTyping(conversation.id) }
                                     else { await messaging.startTyping(conversation.id) }
                                 }
+                                scheduleDraftSync(conversationId: conversation.id)
                             }
+                            .onChange(of: replyTarget?.id) { _, _ in scheduleDraftSync(conversationId: conversation.id) }
                             .padding(.horizontal, 12).padding(.vertical, 9).background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 18))
                         Button {
                             if messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -873,10 +879,16 @@ struct ContentView: View {
                         Button(chatSearchPresented ? "关闭搜索" : "搜索", systemImage: "magnifyingglass") { chatSearchPresented.toggle(); if !chatSearchPresented { chatSearchQuery = "" } }
                         Button(conversation.isMuted ? "取消静音" : "静音", systemImage: "speaker.slash") { Task { await messaging.setMuted(conversation.id, muted: !conversation.isMuted) } }
                         Button(conversation.isPinned ? "取消置顶" : "置顶", systemImage: "pin") { Task { await messaging.setPinned(conversation.id, pinned: !conversation.isPinned) } }
+                        Button("标为未读", systemImage: "circle.fill") { Task { await messaging.setMarkedUnread(conversation.id, markedUnread: true) }; selectedConversation = nil }
                         Button("归档", systemImage: "archivebox") { Task { await messaging.setArchived(conversation.id, archived: true) }; selectedConversation = nil }
                     } label: { Image(systemName: "ellipsis.circle") }
                 }
             }
+        }
+        .task(id: conversation.id) {
+            let draft = messaging.draftsByConversation[conversation.id]
+            messageDraft = draft?.text ?? ""
+            replyTarget = draft?.replyToMessageId.flatMap { replyId in messaging.messagesByConversation[conversation.id]?.first(where: { $0.id == replyId }) }
         }
         .sheet(item: $forwardMessage) { message in
             NavigationStack {
@@ -972,8 +984,9 @@ struct ContentView: View {
         guard !text.isEmpty else { return }
         let edit = editingMessage
         let reply = replyTarget
+        draftSyncTask?.cancel()
         messageDraft = ""
-        Task { await messaging.stopTyping(conversation.id) }
+        Task { await messaging.stopTyping(conversation.id); await messaging.setDraft(conversationId: conversation.id, text: "", replyToMessageId: nil) }
         editingMessage = nil
         replyTarget = nil
         Task {
@@ -981,6 +994,18 @@ struct ContentView: View {
                 if let edit { try await messaging.editText(conversationId: conversation.id, messageId: edit.id, text: text) }
                 else { try await messaging.sendText(conversationId: conversation.id, text: text, replyToMessageId: reply?.id, silent: silent, scheduledAtMs: scheduledAtMs) }
             } catch { model.message = "发送失败：\(error.localizedDescription)" }
+        }
+    }
+
+    private func scheduleDraftSync(conversationId: String) {
+        guard editingMessage == nil else { return }
+        draftSyncTask?.cancel()
+        let text = messageDraft
+        let replyId = replyTarget?.id
+        draftSyncTask = Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await messaging.setDraft(conversationId: conversationId, text: text, replyToMessageId: replyId)
         }
     }
 
