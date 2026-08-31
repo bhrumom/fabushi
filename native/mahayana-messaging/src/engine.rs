@@ -1,4 +1,4 @@
-use crate::actor::{Actor, ActorId, ActorKind, Presence};
+use crate::actor::{Actor, ActorId, ActorKind, Participant, ParticipantRole, Presence};
 use crate::bot::{BotExecution, BotInvocation, BotProfile, BotRegistry};
 use crate::community::{
     CommunityError, CommunityMember, CommunityState, ForumTopicState, InviteLink, JoinRequest,
@@ -37,6 +37,19 @@ pub enum Command {
     },
     UpsertConversation {
         conversation: Conversation,
+    },
+    UpdateConversationInfo {
+        conversation_id: ConversationId,
+        title: String,
+        description: Option<String>,
+    },
+    SetConversationParticipant {
+        conversation_id: ConversationId,
+        participant: Participant,
+    },
+    RemoveConversationParticipant {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
     },
     ArchiveConversation {
         conversation_id: ConversationId,
@@ -258,6 +271,19 @@ pub enum Event {
     },
     ConversationUpserted {
         conversation: Conversation,
+    },
+    ConversationInfoUpdated {
+        conversation_id: ConversationId,
+        title: String,
+        description: Option<String>,
+    },
+    ConversationParticipantUpserted {
+        conversation_id: ConversationId,
+        participant: Participant,
+    },
+    ConversationParticipantRemoved {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
     },
     ConversationArchived {
         conversation_id: ConversationId,
@@ -617,6 +643,52 @@ impl MessagingEngine {
                     return Err(EngineError::InvalidSecretConversation);
                 }
                 Ok(vec![Event::ConversationUpserted { conversation }])
+            }
+            Command::UpdateConversationInfo {
+                conversation_id,
+                title,
+                description,
+            } => {
+                self.require_conversation(&conversation_id)?;
+                if title.trim().is_empty() || title.trim().len() > 200 {
+                    return Err(EngineError::InvalidConversationParticipant);
+                }
+                Ok(vec![Event::ConversationInfoUpdated {
+                    conversation_id,
+                    title: title.trim().to_string(),
+                    description: description
+                        .map(|value| value.trim().to_string())
+                        .filter(|value| !value.is_empty()),
+                }])
+            }
+            Command::SetConversationParticipant {
+                conversation_id,
+                participant,
+            } => {
+                let conversation = self.require_conversation(&conversation_id)?;
+                self.require_actor(&participant.actor_id)?;
+                if conversation.owner_id.as_ref() == Some(&participant.actor_id)
+                    && !matches!(participant.role, ParticipantRole::Owner)
+                {
+                    return Err(EngineError::InvalidConversationParticipant);
+                }
+                Ok(vec![Event::ConversationParticipantUpserted {
+                    conversation_id,
+                    participant,
+                }])
+            }
+            Command::RemoveConversationParticipant {
+                conversation_id,
+                actor_id,
+            } => {
+                let conversation = self.require_conversation(&conversation_id)?;
+                if conversation.owner_id.as_ref() == Some(&actor_id) {
+                    return Err(EngineError::InvalidConversationParticipant);
+                }
+                Ok(vec![Event::ConversationParticipantRemoved {
+                    conversation_id,
+                    actor_id,
+                }])
             }
             Command::ArchiveConversation {
                 conversation_id,
@@ -1529,6 +1601,51 @@ impl MessagingEngine {
                 self.state
                     .conversations
                     .insert(conversation.id.clone(), conversation);
+            }
+            Event::ConversationInfoUpdated {
+                conversation_id,
+                title,
+                description,
+            } => {
+                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
+                    conversation.title = title;
+                    conversation.description = description;
+                }
+            }
+            Event::ConversationParticipantUpserted {
+                conversation_id,
+                participant,
+            } => {
+                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
+                    if let Some(existing) = conversation
+                        .participants
+                        .iter_mut()
+                        .find(|item| item.actor_id == participant.actor_id)
+                    {
+                        *existing = participant;
+                    } else {
+                        conversation.participants.push(participant);
+                    }
+                }
+            }
+            Event::ConversationParticipantRemoved {
+                conversation_id,
+                actor_id,
+            } => {
+                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
+                    conversation
+                        .participants
+                        .retain(|participant| participant.actor_id != actor_id);
+                }
+                if let Some(cursors) = self.state.read_cursors.get_mut(&conversation_id) {
+                    cursors.remove(&actor_id);
+                }
+                if let Some(drafts) = self.state.drafts.get_mut(&conversation_id) {
+                    drafts.remove(&actor_id);
+                }
+                if let Some(marked) = self.state.marked_unread_by_actor.get_mut(&conversation_id) {
+                    marked.remove(&actor_id);
+                }
             }
             Event::ConversationArchived {
                 conversation_id,

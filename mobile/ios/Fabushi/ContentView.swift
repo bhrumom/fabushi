@@ -60,6 +60,7 @@ struct ContentView: View {
     @State private var editingMessage: ChatMessage?
     @State private var forwardMessage: ChatMessage?
     @State private var mediaViewerMessage: ChatMessage?
+    @State private var conversationInfoPresented = false
     @State private var chatSearchPresented = false
     @State private var chatSearchQuery = ""
     @State private var attachmentPickerPresented = false
@@ -900,9 +901,14 @@ struct ContentView: View {
                     }.padding(.horizontal, 8).padding(.vertical, 7).background(.ultraThinMaterial)
                 }
             }
-            .navigationTitle(conversation.title)
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Button { conversationInfoPresented = true } label: {
+                        VStack(spacing: 1) { Text(conversation.title).font(.headline); Text("\(conversation.participants.count) 位成员").font(.caption2).foregroundStyle(.secondary) }
+                    }.buttonStyle(.plain)
+                }
                 ToolbarItem(placement: .topBarLeading) { Button { chatSearchPresented = false; chatSearchQuery = ""; selectedConversation = nil } label: { Image(systemName: "chevron.left") } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -919,6 +925,9 @@ struct ContentView: View {
             let draft = messaging.draftsByConversation[conversation.id]
             messageDraft = draft?.text ?? ""
             replyTarget = draft?.replyToMessageId.flatMap { replyId in messaging.messagesByConversation[conversation.id]?.first(where: { $0.id == replyId }) }
+        }
+        .sheet(isPresented: $conversationInfoPresented) {
+            ConversationInfoView(conversationId: conversation.id, messaging: messaging) { conversationInfoPresented = false }
         }
         .fullScreenCover(item: $mediaViewerMessage) { message in
             MediaViewer(message: message, messaging: messaging) { mediaViewerMessage = nil }

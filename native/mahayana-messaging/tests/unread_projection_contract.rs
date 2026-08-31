@@ -510,3 +510,159 @@ fn poll_votes_share_counts_but_keep_actor_selection_private() {
         Err(MessagingServiceError::Engine(EngineError::InvalidPollVote))
     ));
 }
+
+#[test]
+fn conversation_management_enforces_owner_admin_boundaries_and_removal() {
+    let mut service = MessagingService::load(MemoryStateStore::default()).unwrap();
+    for (id, name) in [
+        ("human:owner", "Owner"),
+        ("human:admin", "Admin"),
+        ("human:member", "Member"),
+        ("human:new", "New"),
+    ] {
+        handle(
+            &mut service,
+            id,
+            &format!("profile-{id}"),
+            ClientCommand::UpsertProfile {
+                actor: Actor::human(id, name),
+            },
+            1,
+        );
+    }
+
+    let conversation_id = "group:management-contract";
+    let mut conversation = Conversation::direct(
+        conversation_id,
+        "Managed group",
+        vec![
+            Participant {
+                actor_id: ActorId::new("human:owner"),
+                role: ParticipantRole::Owner,
+                joined_at_ms: 2,
+                muted_until_ms: None,
+            },
+            Participant {
+                actor_id: ActorId::new("human:admin"),
+                role: ParticipantRole::Admin,
+                joined_at_ms: 2,
+                muted_until_ms: None,
+            },
+            Participant {
+                actor_id: ActorId::new("human:member"),
+                role: ParticipantRole::Member,
+                joined_at_ms: 2,
+                muted_until_ms: None,
+            },
+        ],
+        2,
+    );
+    conversation.kind = ConversationKind::Group;
+    conversation.owner_id = Some(ActorId::new("human:owner"));
+    handle(
+        &mut service,
+        "human:owner",
+        "create-group",
+        ClientCommand::CreateConversation { conversation },
+        2,
+    );
+
+    handle(
+        &mut service,
+        "human:admin",
+        "admin-add-member",
+        ClientCommand::SetConversationParticipant {
+            conversation_id: ConversationId::new(conversation_id),
+            participant: Participant {
+                actor_id: ActorId::new("human:new"),
+                role: ParticipantRole::Member,
+                joined_at_ms: 3,
+                muted_until_ms: None,
+            },
+        },
+        3,
+    );
+    assert!(
+        synced_conversation(&mut service, "human:new", conversation_id, 4)
+            .participants
+            .iter()
+            .any(|participant| participant.actor_id == ActorId::new("human:new"))
+    );
+
+    let member_edit = service.handle(
+        ClientEnvelope::new(
+            context("human:member", "member-edit"),
+            ClientCommand::UpdateConversationInfo {
+                conversation_id: ConversationId::new(conversation_id),
+                title: "Should fail".into(),
+                description: None,
+            },
+        ),
+        5,
+    );
+    assert!(matches!(
+        member_edit,
+        Err(MessagingServiceError::UnauthorizedCommand(_))
+    ));
+
+    handle(
+        &mut service,
+        "human:owner",
+        "owner-promote",
+        ClientCommand::SetConversationParticipant {
+            conversation_id: ConversationId::new(conversation_id),
+            participant: Participant {
+                actor_id: ActorId::new("human:new"),
+                role: ParticipantRole::Admin,
+                joined_at_ms: 3,
+                muted_until_ms: None,
+            },
+        },
+        6,
+    );
+
+    let admin_remove_admin = service.handle(
+        ClientEnvelope::new(
+            context("human:admin", "admin-remove-admin"),
+            ClientCommand::RemoveConversationParticipant {
+                conversation_id: ConversationId::new(conversation_id),
+                actor_id: ActorId::new("human:new"),
+            },
+        ),
+        7,
+    );
+    assert!(matches!(
+        admin_remove_admin,
+        Err(MessagingServiceError::UnauthorizedCommand(_))
+    ));
+
+    handle(
+        &mut service,
+        "human:owner",
+        "owner-remove-member",
+        ClientCommand::RemoveConversationParticipant {
+            conversation_id: ConversationId::new(conversation_id),
+            actor_id: ActorId::new("human:member"),
+        },
+        8,
+    );
+    let removed_sync = handle(
+        &mut service,
+        "human:member",
+        "removed-sync",
+        ClientCommand::Sync {
+            cursor: None,
+            limit: 100,
+        },
+        9,
+    );
+    let still_visible = removed_sync
+        .into_iter()
+        .any(|envelope| match envelope.event {
+            ServerEvent::SyncBatch { conversations, .. } => conversations
+                .into_iter()
+                .any(|conversation| conversation.id == ConversationId::new(conversation_id)),
+            _ => false,
+        });
+    assert!(!still_visible);
+}

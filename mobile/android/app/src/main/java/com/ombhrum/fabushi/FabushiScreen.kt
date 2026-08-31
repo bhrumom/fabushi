@@ -133,6 +133,7 @@ fun FabushiScreen(
     onCheckUpdate: () -> Unit = {},
     onInstallUpdate: () -> Unit = {},
     messagingState: MessagingUiState = MessagingUiState(),
+    messagingActorId: String = "",
     onMessagingRefresh: () -> Unit = {},
     onCreateDirect: (MessagingContact) -> Unit = {},
     onCreateConversation: (ConversationKind, String, String, List<String>) -> Unit = { _, _, _, _ -> },
@@ -157,6 +158,9 @@ fun FabushiScreen(
     onMarkRead: (ConversationSummary) -> Unit = {},
     onSetMarkedUnread: (ConversationSummary, Boolean) -> Unit = { _, _ -> },
     onSetDraft: (String, String, String?) -> Unit = { _, _, _ -> },
+    onUpdateConversationInfo: (String, String, String) -> Unit = { _, _, _ -> },
+    onSetConversationParticipant: (ConversationSummary, String, String) -> Unit = { _, _, _ -> },
+    onRemoveConversationParticipant: (String, String) -> Unit = { _, _ -> },
     onUpsertFolder: (MessagingFolder) -> Unit = {},
     onDeleteFolder: (String) -> Unit = {},
     appAgentSurface: FabushiAppAgentSurface? = null,
@@ -319,6 +323,7 @@ fun FabushiScreen(
             showAddMenu = showAddMenu,
             onShowAddMenuChange = { showAddMenu = it },
             messagingState = messagingState,
+            messagingActorId = messagingActorId,
             onMessagingRefresh = onMessagingRefresh,
             onCreateDirect = onCreateDirect,
             onCreateConversation = onCreateConversation,
@@ -343,6 +348,9 @@ fun FabushiScreen(
             onMarkRead = onMarkRead,
             onSetMarkedUnread = onSetMarkedUnread,
             onSetDraft = onSetDraft,
+            onUpdateConversationInfo = onUpdateConversationInfo,
+            onSetConversationParticipant = onSetConversationParticipant,
+            onRemoveConversationParticipant = onRemoveConversationParticipant,
             onUpsertFolder = onUpsertFolder,
             onDeleteFolder = onDeleteFolder,
         )
@@ -370,6 +378,7 @@ private fun ConversationHome(
     showAddMenu: Boolean,
     onShowAddMenuChange: (Boolean) -> Unit,
     messagingState: MessagingUiState,
+    messagingActorId: String,
     onMessagingRefresh: () -> Unit,
     onCreateDirect: (MessagingContact) -> Unit,
     onCreateConversation: (ConversationKind, String, String, List<String>) -> Unit,
@@ -394,6 +403,9 @@ private fun ConversationHome(
     onMarkRead: (ConversationSummary) -> Unit,
     onSetMarkedUnread: (ConversationSummary, Boolean) -> Unit,
     onSetDraft: (String, String, String?) -> Unit,
+    onUpdateConversationInfo: (String, String, String) -> Unit,
+    onSetConversationParticipant: (ConversationSummary, String, String) -> Unit,
+    onRemoveConversationParticipant: (String, String) -> Unit,
     onUpsertFolder: (MessagingFolder) -> Unit,
     onDeleteFolder: (String) -> Unit,
 ) {
@@ -451,6 +463,11 @@ private fun ConversationHome(
             messages = messagingState.messagesByConversation[conversation.id].orEmpty(),
             sharedDraft = messagingState.draftsByConversation[conversation.id],
             onDraftChanged = { text, replyTo -> onSetDraft(conversation.id, text, replyTo) },
+            currentActorId = messagingActorId,
+            contacts = messagingState.contacts,
+            onUpdateConversationInfo = { title, description -> onUpdateConversationInfo(conversation.id, title, description) },
+            onSetConversationParticipant = { actorId, role -> onSetConversationParticipant(conversation, actorId, role) },
+            onRemoveConversationParticipant = { actorId -> onRemoveConversationParticipant(conversation.id, actorId) },
             onBack = { selectedConversation = null },
             onSend = { text, replyTo, silent, scheduledAt -> onSendText(conversation.id, text, replyTo, silent, scheduledAt) },
             onSendAttachment = { fileName, mimeType, bytes -> onSendAttachment(conversation.id, fileName, mimeType, bytes) },
@@ -825,6 +842,11 @@ private fun ConversationDetail(
     messages: List<ChatMessage>,
     sharedDraft: MessagingDraft?,
     onDraftChanged: (String, String?) -> Unit,
+    currentActorId: String,
+    contacts: List<MessagingContact>,
+    onUpdateConversationInfo: (String, String) -> Unit,
+    onSetConversationParticipant: (String, String) -> Unit,
+    onRemoveConversationParticipant: (String) -> Unit,
     onBack: () -> Unit,
     onSend: (String, String?, Boolean, Long?) -> Unit,
     onSendAttachment: (String, String, ByteArray) -> Unit,
@@ -854,6 +876,7 @@ private fun ConversationDetail(
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var forwardingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var mediaViewerMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var showConversationInfo by remember { mutableStateOf(false) }
     var showChatSearch by remember { mutableStateOf(false) }
     var chatSearchQuery by remember { mutableStateOf("") }
     var showAttachmentMenu by remember { mutableStateOf(false) }
@@ -908,6 +931,14 @@ private fun ConversationDetail(
                 onSendAttachment(name, mime, bytes)
             }
         }
+    }
+
+    if (showConversationInfo) {
+        AndroidConversationInfo(
+            conversation = conversation, contacts = contacts, currentActorId = currentActorId, onBack = { showConversationInfo = false },
+            onUpdateInfo = onUpdateConversationInfo, onSetParticipant = onSetConversationParticipant, onRemoveParticipant = onRemoveConversationParticipant,
+        )
+        return
     }
 
     mediaViewerMessage?.let { mediaMessage ->
@@ -1023,9 +1054,9 @@ private fun ConversationDetail(
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("‹", color = homePrimaryText, fontSize = 34.sp, modifier = Modifier.clickable(onClick = onBack).padding(8.dp))
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f).clickable { showConversationInfo = true }.padding(vertical = 4.dp)) {
                     Text(conversation.title, color = homePrimaryText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                    Text(conversation.kind.label, color = homeSecondaryText, style = MaterialTheme.typography.bodySmall)
+                    Text("${conversation.participants.size} 位成员 · ${conversation.kind.label}", color = homeSecondaryText, style = MaterialTheme.typography.bodySmall)
                 }
                 Text("⌕", color = homePrimaryText, fontSize = 23.sp, modifier = Modifier.clickable { showChatSearch = !showChatSearch; if (!showChatSearch) chatSearchQuery = "" }.padding(8.dp))
                 Box {

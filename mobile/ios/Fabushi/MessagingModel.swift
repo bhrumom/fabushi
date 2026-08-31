@@ -20,9 +20,19 @@ internal enum ConversationKind: String, Identifiable, Sendable {
     }
 }
 
+internal struct ConversationParticipant: Identifiable, Equatable, Sendable {
+    var id: String { actorId }
+    let actorId: String
+    var role: String
+    var joinedAtMs: Int64
+}
+
 internal struct ConversationSummary: Identifiable, Equatable, Sendable {
     let id: String
     var title: String
+    var description: String
+    var ownerId: String?
+    var participants: [ConversationParticipant]
     var preview: String
     var time: String
     var badge: String
@@ -124,6 +134,8 @@ final class MessagingModel {
     init(host: MahayanaHost) {
         self.host = host
     }
+
+    var currentActorId: String { actorId }
 
     func refresh() async {
         loading = true
@@ -312,6 +324,19 @@ final class MessagingModel {
         try? await executeAfterIdentity(["type": "deleteFolder", "folderId": folderId])
     }
 
+    func updateConversationInfo(conversationId: String, title: String, description: String) async {
+        try? await executeAfterIdentity(["type": "updateConversationInfo", "conversationId": conversationId, "title": title, "description": description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? NSNull() : description])
+    }
+
+    func setConversationParticipant(conversation: ConversationSummary, actorId targetActorId: String, role: String) async {
+        let joinedAt = conversation.participants.first(where: { $0.actorId == targetActorId })?.joinedAtMs ?? Int64(Date().timeIntervalSince1970 * 1000)
+        try? await executeAfterIdentity(["type": "setConversationParticipant", "conversationId": conversation.id, "participant": ["actorId": targetActorId, "role": role, "joinedAtMs": joinedAt, "mutedUntilMs": NSNull()]])
+    }
+
+    func removeConversationParticipant(conversationId: String, actorId targetActorId: String) async {
+        try? await executeAfterIdentity(["type": "removeConversationParticipant", "conversationId": conversationId, "actorId": targetActorId])
+    }
+
     func setMarkedUnread(_ conversationId: String, markedUnread: Bool) async {
         try? await executeAfterIdentity(["type": "setMarkedUnread", "conversationId": conversationId, "markedUnread": markedUnread])
     }
@@ -458,6 +483,10 @@ final class MessagingModel {
                 messagesByConversation = Dictionary(grouping: messages, by: \.conversationId)
             case "conversationChanged":
                 if let raw = event["conversation"] as? [String: Any], let conversation = parseConversation(raw) { upsert(conversation) }
+            case "conversationParticipantChanged":
+                if let removedActorId = event["removedActorId"] as? String, removedActorId == actorId, let raw = event["conversation"] as? [String: Any], let id = raw["id"] as? String {
+                    conversations.removeAll { $0.id == id }; messagesByConversation.removeValue(forKey: id); draftsByConversation.removeValue(forKey: id)
+                } else if let raw = event["conversation"] as? [String: Any], let conversation = parseConversation(raw) { upsert(conversation) }
             case "markedUnreadChanged":
                 guard let conversationId = event["conversationId"] as? String else { continue }
                 if let index = conversations.firstIndex(where: { $0.id == conversationId }) { conversations[index].markedUnread = event["markedUnread"] as? Bool ?? false }
@@ -548,12 +577,19 @@ final class MessagingModel {
     private func parseConversation(_ raw: [String: Any]) -> ConversationSummary? {
         guard let id = raw["id"] as? String, let title = raw["title"] as? String else { return nil }
         let kind = ConversationKind(rawValue: raw["kind"] as? String ?? "direct") ?? .direct
+        let participants = (raw["participants"] as? [[String: Any]] ?? []).compactMap { participant -> ConversationParticipant? in
+            guard let actorId = participant["actorId"] as? String, let role = participant["role"] as? String else { return nil }
+            return ConversationParticipant(actorId: actorId, role: role, joinedAtMs: (participant["joinedAtMs"] as? NSNumber)?.int64Value ?? 0)
+        }
         let mutedUntil = (raw["notificationSettings"] as? [String: Any])?["mutedUntilMs"] as? NSNumber
         let updatedAt = (raw["updatedAtMs"] as? NSNumber)?.int64Value ?? 0
         let initial = title.trimmingCharacters(in: .whitespacesAndNewlines).first.map { String($0).uppercased() } ?? "✦"
         return ConversationSummary(
             id: id,
             title: title,
+            description: (raw["description"] as? String) ?? "",
+            ownerId: raw["ownerId"] as? String,
+            participants: participants,
             preview: (raw["description"] as? String) ?? "",
             time: Self.timeLabel(updatedAt),
             badge: initial,
