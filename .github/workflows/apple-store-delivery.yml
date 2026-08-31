@@ -1,12 +1,5 @@
-name: Apple Store delivery - Electron macOS and native iOS
-
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - Native mobile quality gate
-    types: [completed]
-    branches: [main]
     inputs:
       source_ref:
         description: Git ref to build. Leave as main for the current production source.
@@ -30,6 +23,11 @@ on:
         description: Apple build number. Leave empty to use UTC YYYY.MM.DD; override when rerunning on the same day.
         required: false
         type: string
+  workflow_run:
+    workflows:
+      - Native mobile quality gate
+    types: [completed]
+    branches: [main]
 
 concurrency:
   group: apple-store-delivery
@@ -42,19 +40,11 @@ permissions:
 
 jobs:
   resolve:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'main' &&
-        contains(github.event.workflow_run.head_commit.message, '[native-ios-release-retry2-20260831]')
-      )
     name: Resolve Apple release identity
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      should_release: ${{ steps.select.outputs.should_release }}
       source_sha: ${{ steps.release.outputs.source_sha }}
       app_version: ${{ steps.release.outputs.app_version }}
       build_number: ${{ steps.release.outputs.build_number }}
@@ -62,13 +52,39 @@ jobs:
       ios: ${{ steps.release.outputs.ios }}
       release_tag: ${{ steps.release.outputs.release_tag }}
     steps:
+      - id: select
+        name: Select marked automatic Apple release
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPSTREAM_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          UPSTREAM_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+        run: |
+          set -euo pipefail
+          should_release=true
+          if [ "$EVENT_NAME" = 'workflow_run' ]; then
+            should_release=false
+            if [ "$UPSTREAM_EVENT" = 'push' ] &&
+               [ "$UPSTREAM_CONCLUSION" = 'success' ] &&
+               [ "$UPSTREAM_BRANCH" = 'main' ] &&
+               [[ "$UPSTREAM_MESSAGE" == *"[native-ios-release-retry3-20260831]"* ]]; then
+              should_release=true
+            fi
+          fi
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+          echo "Automatic Apple release selected: $should_release" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout requested source
+        if: steps.select.outputs.should_release == 'true'
         uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.event.workflow_run.head_sha }}
           fetch-depth: 1
 
       - id: release
+        if: steps.select.outputs.should_release == 'true'
         name: Resolve version and selected platforms
         shell: bash
         env:
@@ -133,6 +149,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Require canonical release source gates
+        if: steps.select.outputs.should_release == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -563,7 +580,7 @@ jobs:
   result:
     name: Apple Store delivery result
     needs: [resolve, macos-electron, ios-native]
-    if: always() && needs.resolve.result == 'success'
+    if: always() && needs.resolve.result == 'success' && needs.resolve.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
