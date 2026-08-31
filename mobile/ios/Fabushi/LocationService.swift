@@ -34,23 +34,35 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
-            manager.requestLocation()
-        } else if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
-            loading = false
-            errorMessage = "请在系统设置中允许位置权限"
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        Task { @MainActor [weak self, status] in
+            guard let self else { return }
+            if status == .authorizedWhenInUse || status == .authorizedAlways {
+                self.manager.requestLocation()
+            } else if status == .denied || status == .restricted {
+                loading = false
+                errorMessage = "请在系统设置中允许位置权限"
+            }
         }
     }
 
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        loading = false
-        coordinate = locations.last?.coordinate
-        if coordinate == nil { errorMessage = "暂时无法获取当前位置" }
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        let nextCoordinate = locations.last?.coordinate
+        Task { @MainActor [weak self, nextCoordinate] in
+            guard let self else { return }
+            loading = false
+            coordinate = nextCoordinate
+            if coordinate == nil { errorMessage = "暂时无法获取当前位置" }
+        }
     }
 
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        loading = false
-        errorMessage = error.localizedDescription
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let message = error.localizedDescription
+        Task { @MainActor [weak self, message] in
+            guard let self else { return }
+            loading = false
+            errorMessage = message
+        }
     }
 }

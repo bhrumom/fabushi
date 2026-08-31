@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 private enum MobileDestination {
     case home
@@ -58,6 +59,8 @@ struct ContentView: View {
     @State private var replyTarget: ChatMessage?
     @State private var editingMessage: ChatMessage?
     @State private var forwardMessage: ChatMessage?
+    @State private var mediaViewerMessage: ChatMessage?
+    @State private var conversationInfoPresented = false
     @State private var chatSearchPresented = false
     @State private var chatSearchQuery = ""
     @State private var attachmentPickerPresented = false
@@ -733,9 +736,26 @@ struct ContentView: View {
                                             case "poll":
                                                 VStack(alignment: .leading, spacing: 7) {
                                                     Text(message.pollQuestion ?? "投票").fontWeight(.semibold)
-                                                    ForEach(Array(message.pollOptions.enumerated()), id: \.offset) { index, option in
-                                                        HStack(spacing: 7) { Image(systemName: "circle").font(.caption); Text(option); Spacer(); Text("\(index + 1)").font(.caption2).foregroundStyle(.secondary) }
-                                                            .padding(.vertical, 2)
+                                                    ForEach(message.pollOptions) { option in
+                                                        Button {
+                                                            let chosenIds = Set(message.pollOptions.filter(\.chosen).map(\.id))
+                                                            let next: [String]
+                                                            if message.pollMultipleAnswers {
+                                                                var values = chosenIds
+                                                                if option.chosen { values.remove(option.id) } else { values.insert(option.id) }
+                                                                next = Array(values)
+                                                            } else {
+                                                                next = option.chosen ? [] : [option.id]
+                                                            }
+                                                            Task { await messaging.votePoll(conversationId: conversation.id, messageId: message.id, optionIds: next) }
+                                                        } label: {
+                                                            HStack(spacing: 7) {
+                                                                Image(systemName: option.chosen ? "checkmark.circle.fill" : "circle").foregroundStyle(option.chosen ? Color.accentColor : .secondary)
+                                                                Text(option.text).foregroundStyle(.primary)
+                                                                Spacer()
+                                                                Text("\(option.voterCount)").font(.caption2).foregroundStyle(.secondary)
+                                                            }.padding(.vertical, 3)
+                                                        }.buttonStyle(.plain)
                                                     }
                                                 }.frame(maxWidth: .infinity, alignment: .leading)
                                             case "voice":
@@ -749,11 +769,13 @@ struct ContentView: View {
                                             case "audio":
                                                 HStack(spacing: 10) { Image(systemName: "music.note").font(.title2).foregroundStyle(Color.accentColor); Text(message.mediaFileName ?? "音频"); Spacer() }
                                             case "photo", "video", "document":
-                                                HStack(spacing: 9) {
-                                                    Image(systemName: message.contentType == "photo" ? "photo.fill" : message.contentType == "video" ? "video.fill" : "doc.fill").font(.title2).foregroundStyle(Color.accentColor)
-                                                    VStack(alignment: .leading) { Text(message.mediaFileName ?? message.text).fontWeight(.medium); Text(message.contentType == "photo" ? "图片" : message.contentType == "video" ? "视频" : "文件").font(.caption).foregroundStyle(.secondary) }
-                                                    Spacer()
-                                                }.frame(maxWidth: .infinity)
+                                                Button { mediaViewerMessage = message } label: {
+                                                    HStack(spacing: 9) {
+                                                        Image(systemName: message.contentType == "photo" ? "photo.fill" : message.contentType == "video" ? "video.fill" : "doc.fill").font(.title2).foregroundStyle(Color.accentColor)
+                                                        VStack(alignment: .leading) { Text(message.mediaFileName ?? message.text).fontWeight(.medium).foregroundStyle(.primary); Text(message.contentType == "photo" ? "图片 · 点击查看" : message.contentType == "video" ? "视频 · 点击播放" : "文件 · 点击打开").font(.caption).foregroundStyle(.secondary) }
+                                                        Spacer()
+                                                    }.frame(maxWidth: .infinity)
+                                                }.buttonStyle(.plain)
                                             default:
                                                 Text(message.text).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
                                             }
@@ -776,6 +798,15 @@ struct ContentView: View {
                                         }
                                         .padding(.horizontal, 11).padding(.vertical, 7)
                                         .background(message.isOutgoing ? Color.accentColor.opacity(0.20) : Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+                                        .simultaneousGesture(
+                                            DragGesture(minimumDistance: 18)
+                                                .onEnded { value in
+                                                    guard value.translation.width > 58, abs(value.translation.height) < 70 else { return }
+                                                    replyTarget = message
+                                                    editingMessage = nil
+                                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                                }
+                                        )
                                         .contextMenu {
                                             Button("回复", systemImage: "arrowshape.turn.up.left") { replyTarget = message; editingMessage = nil }
                                             Button("转发", systemImage: "arrowshape.turn.up.right") { forwardMessage = message }
@@ -870,9 +901,14 @@ struct ContentView: View {
                     }.padding(.horizontal, 8).padding(.vertical, 7).background(.ultraThinMaterial)
                 }
             }
-            .navigationTitle(conversation.title)
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Button { conversationInfoPresented = true } label: {
+                        VStack(spacing: 1) { Text(conversation.title).font(.headline); Text("\(conversation.participants.count) 位成员").font(.caption2).foregroundStyle(.secondary) }
+                    }.buttonStyle(.plain)
+                }
                 ToolbarItem(placement: .topBarLeading) { Button { chatSearchPresented = false; chatSearchQuery = ""; selectedConversation = nil } label: { Image(systemName: "chevron.left") } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -889,6 +925,12 @@ struct ContentView: View {
             let draft = messaging.draftsByConversation[conversation.id]
             messageDraft = draft?.text ?? ""
             replyTarget = draft?.replyToMessageId.flatMap { replyId in messaging.messagesByConversation[conversation.id]?.first(where: { $0.id == replyId }) }
+        }
+        .sheet(isPresented: $conversationInfoPresented) {
+            ConversationInfoView(conversationId: conversation.id, messaging: messaging) { conversationInfoPresented = false }
+        }
+        .fullScreenCover(item: $mediaViewerMessage) { message in
+            MediaViewer(message: message, messaging: messaging) { mediaViewerMessage = nil }
         }
         .sheet(item: $forwardMessage) { message in
             NavigationStack {
