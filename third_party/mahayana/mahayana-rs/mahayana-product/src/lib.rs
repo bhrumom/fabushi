@@ -699,12 +699,10 @@ impl MahayanaProductClient {
         let session = self.required_session()?;
         let access_token = self.active_session_token(session)?;
         let current = self.required_session()?;
-        let session_id = optional_string(&current, "sessionId").ok_or_else(|| {
-            ProductError::Session("account session is missing sessionId".into())
-        })?;
-        let device_id = optional_string(&current, "deviceId").ok_or_else(|| {
-            ProductError::Session("account session is missing deviceId".into())
-        })?;
+        let session_id = optional_string(&current, "sessionId")
+            .ok_or_else(|| ProductError::Session("account session is missing sessionId".into()))?;
+        let device_id = optional_string(&current, "deviceId")
+            .ok_or_else(|| ProductError::Session("account session is missing deviceId".into()))?;
         let user = current.get("user").cloned().unwrap_or(Value::Null);
         let user_id = current
             .get("userId")
