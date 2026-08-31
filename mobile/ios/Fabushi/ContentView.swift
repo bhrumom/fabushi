@@ -53,6 +53,9 @@ struct ContentView: View {
     @State private var homeQuery = ""
     @State private var selectedConversation: ConversationSummary?
     @State private var messageDraft = ""
+    @State private var replyTarget: ChatMessage?
+    @State private var editingMessage: ChatMessage?
+    @State private var forwardMessage: ChatMessage?
     @State private var composeMenuPresented = false
     @State private var composeKind: ConversationKind?
     @State private var composeName = ""
@@ -567,6 +570,15 @@ struct ContentView: View {
                                         }
                                         .padding(.horizontal, 11).padding(.vertical, 7)
                                         .background(message.isOutgoing ? Color.accentColor.opacity(0.20) : Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+                                        .contextMenu {
+                                            Button("回复", systemImage: "arrowshape.turn.up.left") { replyTarget = message; editingMessage = nil }
+                                            Button("转发", systemImage: "arrowshape.turn.up.right") { forwardMessage = message }
+                                            Button("👍", systemImage: "hand.thumbsup") { Task { await messaging.setReaction(conversationId: conversation.id, messageId: message.id, reaction: "👍", enabled: true) } }
+                                            if message.isOutgoing {
+                                                Button("编辑", systemImage: "pencil") { editingMessage = message; replyTarget = nil; messageDraft = message.text }
+                                            }
+                                            Button("删除", systemImage: "trash", role: .destructive) { Task { await messaging.deleteMessage(conversationId: conversation.id, messageId: message.id) } }
+                                        }
                                         if !message.isOutgoing { Spacer(minLength: 56) }
                                     }.padding(.horizontal, 10).id(message.id)
                                 }
@@ -575,6 +587,21 @@ struct ContentView: View {
                         .onChange(of: messaging.messagesByConversation[conversation.id]?.count ?? 0) { _, _ in
                             if let id = messaging.messagesByConversation[conversation.id]?.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
                         }
+                    }
+                    if let editingMessage {
+                        HStack {
+                            Image(systemName: "pencil")
+                            VStack(alignment: .leading, spacing: 2) { Text("编辑消息").font(.caption.bold()); Text(editingMessage.text).font(.caption).lineLimit(1) }
+                            Spacer()
+                            Button { self.editingMessage = nil; messageDraft = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        }.padding(.horizontal, 12).padding(.vertical, 6).background(.ultraThinMaterial)
+                    } else if let replyTarget {
+                        HStack {
+                            Image(systemName: "arrowshape.turn.up.left")
+                            VStack(alignment: .leading, spacing: 2) { Text("回复").font(.caption.bold()); Text(replyTarget.text).font(.caption).lineLimit(1) }
+                            Spacer()
+                            Button { self.replyTarget = nil } label: { Image(systemName: "xmark.circle.fill") }
+                        }.padding(.horizontal, 12).padding(.vertical, 6).background(.ultraThinMaterial)
                     }
                     HStack(alignment: .bottom, spacing: 8) {
                         Menu {
@@ -606,15 +633,33 @@ struct ContentView: View {
                 }
             }
         }
+        .sheet(item: $forwardMessage) { message in
+            NavigationStack {
+                List(messaging.conversations.filter { $0.id != conversation.id && !$0.isArchived }) { destination in
+                    Button {
+                        Task { await messaging.forwardMessage(sourceConversationId: conversation.id, messageId: message.id, destinationConversationId: destination.id) }
+                        forwardMessage = nil
+                    } label: { Text(destination.title) }
+                }
+                .navigationTitle("转发到")
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { forwardMessage = nil } } }
+            }
+        }
     }
 
     private func sendMessage(in conversation: ConversationSummary) {
         let text = messageDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        let edit = editingMessage
+        let reply = replyTarget
         messageDraft = ""
+        editingMessage = nil
+        replyTarget = nil
         Task {
-            do { try await messaging.sendText(conversationId: conversation.id, text: text) }
-            catch { model.message = "发送失败：\(error.localizedDescription)" }
+            do {
+                if let edit { try await messaging.editText(conversationId: conversation.id, messageId: edit.id, text: text) }
+                else { try await messaging.sendText(conversationId: conversation.id, text: text, replyToMessageId: reply?.id) }
+            } catch { model.message = "发送失败：\(error.localizedDescription)" }
         }
     }
 
