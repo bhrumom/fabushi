@@ -1,0 +1,54 @@
+name: Device direct path
+
+on:
+  push:
+    branches:
+      - codex/tailscale-mobile-device-mesh
+    paths:
+      - .github/workflows/device-direct-path-ci.yml
+      - chatgpt-vps-control/lib/device-direct-path.js
+      - chatgpt-vps-control/lib/device-mesh.js
+      - chatgpt-vps-control/tests/device-direct-path.test.js
+  pull_request:
+    paths:
+      - .github/workflows/device-direct-path-ci.yml
+      - chatgpt-vps-control/lib/device-direct-path.js
+      - chatgpt-vps-control/lib/device-mesh.js
+      - chatgpt-vps-control/tests/device-direct-path.test.js
+
+permissions:
+  contents: read
+
+concurrency:
+  group: device-direct-path-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authenticated-udp:
+    name: Signed UDP direct path and relay fallback
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+
+      - name: Install remote MCP dependencies
+        run: npm ci --prefix chatgpt-vps-control
+
+      - name: Syntax-check direct path core
+        run: |
+          node --check chatgpt-vps-control/lib/device-direct-path.js
+          node --check chatgpt-vps-control/tests/device-direct-path.test.js
+
+      - name: Run authenticated direct-path tests
+        run: node --test chatgpt-vps-control/tests/device-direct-path.test.js
+
+      - name: Run complete remote MCP regression suite
+        run: npm test --prefix chatgpt-vps-control
