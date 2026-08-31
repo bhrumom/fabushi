@@ -53,6 +53,7 @@ data class MessagingUiState(
     val conversations: List<ConversationSummary> = emptyList(),
     val contacts: List<MessagingContact> = emptyList(),
     val messagesByConversation: Map<String, List<ChatMessage>> = emptyMap(),
+    val typingActorByConversation: Map<String, String> = emptyMap(),
     val error: String? = null,
 )
 
@@ -169,6 +170,7 @@ internal class MessagingViewModel(application: Application) : AndroidViewModel(a
     private fun apply(envelopes: JSONArray) {
         var conversations = mutableState.value.conversations.toMutableList()
         var contacts = mutableState.value.contacts
+        val typingMap = mutableState.value.typingActorByConversation.toMutableMap()
         val messageMap = mutableState.value.messagesByConversation.mapValues { it.value.toMutableList() }.toMutableMap()
         for (i in 0 until envelopes.length()) {
             val event = envelopes.optJSONObject(i)?.optJSONObject("event") ?: continue
@@ -188,12 +190,18 @@ internal class MessagingViewModel(application: Application) : AndroidViewModel(a
                 "messagesDeleted" -> {
                     val conversationId = event.optString("conversationId"); val ids = event.optJSONArray("messageIds")?.toStringSet().orEmpty(); messageMap[conversationId]?.removeAll { it.id in ids }
                 }
+                "typingChanged" -> {
+                    val conversationId = event.optString("conversationId")
+                    val typingActorId = event.optString("actorId")
+                    if (typingActorId.isBlank() || typingActorId == actorId || event.isNull("action")) typingMap.remove(conversationId)
+                    else typingMap[conversationId] = contacts.firstOrNull { it.id == typingActorId }?.displayName ?: "对方"
+                }
             }
         }
         conversations = conversations.map { conversation ->
             val last = messageMap[conversation.id]?.lastOrNull(); if (last == null) conversation else conversation.copy(preview = last.text, time = last.time)
         }.toMutableList()
-        mutableState.value = mutableState.value.copy(conversations = conversations, contacts = contacts, messagesByConversation = messageMap.mapValues { it.value.toList() }, error = null)
+        mutableState.value = mutableState.value.copy(conversations = conversations, contacts = contacts, messagesByConversation = messageMap.mapValues { it.value.toList() }, typingActorByConversation = typingMap, error = null)
     }
 
     private fun parseContacts(array: JSONArray) = buildList {

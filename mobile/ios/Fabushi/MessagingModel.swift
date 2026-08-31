@@ -55,6 +55,7 @@ final class MessagingModel {
     private(set) var conversations: [ConversationSummary] = []
     private(set) var contacts: [MessagingContact] = []
     private(set) var messagesByConversation: [String: [ChatMessage]] = [:]
+    private(set) var typingActorByConversation: [String: String] = [:]
     private(set) var loading = false
     private(set) var errorMessage: String?
 
@@ -266,6 +267,13 @@ final class MessagingModel {
             case "messagesDeleted":
                 guard let id = event["conversationId"] as? String, let ids = event["messageIds"] as? [String] else { continue }
                 messagesByConversation[id]?.removeAll { ids.contains($0.id) }
+            case "typingChanged":
+                guard let conversationId = event["conversationId"] as? String, let typingActorId = event["actorId"] as? String else { continue }
+                if typingActorId == actorId || event["action"] is NSNull || event["action"] == nil {
+                    typingActorByConversation.removeValue(forKey: conversationId)
+                } else {
+                    typingActorByConversation[conversationId] = contacts.first(where: { $0.id == typingActorId })?.displayName ?? "对方"
+                }
             default:
                 break
             }
