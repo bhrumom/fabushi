@@ -75,8 +75,8 @@ replace(agentTarget,
   "// GBF-412 iOS direct peer probing",
 );
 replace(agentTarget,
-  "        heartbeatTask?.cancel()\n        heartbeatTask = nil\n        webSocket?.cancel(with: code, reason: reason.data(using: .utf8))\n",
-  "        heartbeatTask?.cancel()\n        heartbeatTask = nil\n        directPath?.stop()\n        directPath = nil // GBF-412 iOS direct lifecycle cleanup\n        webSocket?.cancel(with: code, reason: reason.data(using: .utf8))\n",
+  "        heartbeatTask?.cancel()\n        heartbeatTask = nil\n        let socket = webSocket\n",
+  "        heartbeatTask?.cancel()\n        heartbeatTask = nil\n        directPath?.stop()\n        directPath = nil // GBF-412 iOS direct lifecycle cleanup\n        let socket = webSocket\n",
   "// GBF-412 iOS direct lifecycle cleanup",
 );
 agent = agentTarget.text;
