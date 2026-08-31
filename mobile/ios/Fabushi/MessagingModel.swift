@@ -41,12 +41,24 @@ internal struct MessagingContact: Identifiable, Equatable, Sendable {
     let kind: String
 }
 
+internal struct ChatReaction: Equatable, Sendable {
+    let reaction: String
+    let count: Int
+    let chosenByMe: Bool
+}
+
 internal struct ChatMessage: Identifiable, Equatable, Sendable {
     let id: String
     let conversationId: String
     let text: String
     let isOutgoing: Bool
     let time: String
+    let replyToMessageId: String?
+    let forwardOrigin: String?
+    let reactions: [ChatReaction]
+    let deliveryState: String
+    let isEdited: Bool
+    let isPinned: Bool
 }
 
 @MainActor
@@ -55,6 +67,7 @@ final class MessagingModel {
     private(set) var conversations: [ConversationSummary] = []
     private(set) var contacts: [MessagingContact] = []
     private(set) var messagesByConversation: [String: [ChatMessage]] = [:]
+    private(set) var typingActorByConversation: [String: String] = [:]
     private(set) var loading = false
     private(set) var errorMessage: String?
 
@@ -266,6 +279,13 @@ final class MessagingModel {
             case "messagesDeleted":
                 guard let id = event["conversationId"] as? String, let ids = event["messageIds"] as? [String] else { continue }
                 messagesByConversation[id]?.removeAll { ids.contains($0.id) }
+            case "typingChanged":
+                guard let conversationId = event["conversationId"] as? String, let typingActorId = event["actorId"] as? String else { continue }
+                if typingActorId == actorId || event["action"] is NSNull || event["action"] == nil {
+                    typingActorByConversation.removeValue(forKey: conversationId)
+                } else {
+                    typingActorByConversation[conversationId] = contacts.first(where: { $0.id == typingActorId })?.displayName ?? "对方"
+                }
             default:
                 break
             }
@@ -346,7 +366,23 @@ final class MessagingModel {
         default: text = "消息"
         }
         let createdAt = (raw["createdAtMs"] as? NSNumber)?.int64Value ?? 0
-        return ChatMessage(id: id, conversationId: conversationId, text: text, isOutgoing: senderId == actorId, time: Self.timeLabel(createdAt))
+        let reactions = (raw["reactions"] as? [[String: Any]] ?? []).compactMap { reaction -> ChatReaction? in
+            guard let symbol = reaction["reaction"] as? String else { return nil }
+            return ChatReaction(reaction: symbol, count: (reaction["count"] as? NSNumber)?.intValue ?? 0, chosenByMe: reaction["chosenByMe"] as? Bool ?? false)
+        }
+        let deliveryState: String = {
+            if let state = raw["deliveryState"] as? String { return state }
+            if let object = raw["deliveryState"] as? [String: Any] {
+                if let state = object["state"] as? String { return state }
+                return object.keys.first ?? "sent"
+            }
+            return "sent"
+        }()
+        return ChatMessage(
+            id: id, conversationId: conversationId, text: text, isOutgoing: senderId == actorId, time: Self.timeLabel(createdAt),
+            replyToMessageId: raw["replyToMessageId"] as? String, forwardOrigin: raw["forwardOrigin"] as? String, reactions: reactions,
+            deliveryState: deliveryState, isEdited: raw["editedAtMs"] is NSNumber, isPinned: raw["pinned"] as? Bool ?? false
+        )
     }
 
     private static func timeLabel(_ milliseconds: Int64) -> String {
