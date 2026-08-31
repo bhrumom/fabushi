@@ -849,6 +849,18 @@ struct ContentView: View {
                             Image(systemName: messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (voiceRecorder.isRecording ? "stop.fill" : "mic.fill") : "arrow.up")
                                 .font(.system(size: 18, weight: .bold)).foregroundStyle(.white).frame(width: 38, height: 38).background(voiceRecorder.isRecording ? Color.red : Color.accentColor, in: Circle())
                         }
+                        .contextMenu {
+                            if !messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Button("静默发送", systemImage: "bell.slash.fill") { sendMessage(in: conversation, silent: true) }
+                                Button("1 小时后发送", systemImage: "clock.fill") { sendMessage(in: conversation, scheduledAtMs: Int64(Date().addingTimeInterval(3600).timeIntervalSince1970 * 1000)) }
+                                Button("明天上午 9:00", systemImage: "calendar") {
+                                    let calendar = Calendar.current
+                                    let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date().addingTimeInterval(86400)
+                                    let scheduled = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow) ?? tomorrow
+                                    sendMessage(in: conversation, scheduledAtMs: Int64(scheduled.timeIntervalSince1970 * 1000))
+                                }
+                            }
+                        }
                     }.padding(.horizontal, 8).padding(.vertical, 7).background(.ultraThinMaterial)
                 }
             }
@@ -955,7 +967,7 @@ struct ContentView: View {
         }
     }
 
-    private func sendMessage(in conversation: ConversationSummary) {
+    private func sendMessage(in conversation: ConversationSummary, silent: Bool = false, scheduledAtMs: Int64? = nil) {
         let text = messageDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let edit = editingMessage
@@ -967,7 +979,7 @@ struct ContentView: View {
         Task {
             do {
                 if let edit { try await messaging.editText(conversationId: conversation.id, messageId: edit.id, text: text) }
-                else { try await messaging.sendText(conversationId: conversation.id, text: text, replyToMessageId: reply?.id) }
+                else { try await messaging.sendText(conversationId: conversation.id, text: text, replyToMessageId: reply?.id, silent: silent, scheduledAtMs: scheduledAtMs) }
             } catch { model.message = "发送失败：\(error.localizedDescription)" }
         }
     }
