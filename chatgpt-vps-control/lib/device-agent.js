@@ -10,6 +10,13 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import WebSocket from "ws";
 import { createSecureInputChannel, resolveSensitiveTemplate } from "./secure-input.js";
 import { createFabushiAccountSessionStore } from "./fabushi-account-session.js";
+import {
+  buildSignedMeshRegistration,
+  defaultMeshIdentityPath,
+  loadOrCreateMeshIdentity,
+  meshPostureFromEnvironment,
+  parseMeshTags,
+} from "./device-mesh.js"; // GBF-412 device mesh
 
 const HEARTBEAT_MS = 20_000;
 const MAX_RECONNECT_MS = 30_000;
@@ -255,6 +262,9 @@ export function resolveDeviceAgentConfig(env = process.env) {
     metadata: runnerMetadata(env),
     tracePath: String(env.FABUSHI_DEVICE_CALL_TRACE_FILE || "").trim(),
     ipFamily: [4, 6].includes(Number(env.DEVICE_GATEWAY_IP_FAMILY)) ? Number(env.DEVICE_GATEWAY_IP_FAMILY) : 0,
+    meshIdentityPath: defaultMeshIdentityPath(env),
+    meshTags: parseMeshTags(env.DEVICE_MESH_TAGS_JSON),
+    meshPosture: meshPostureFromEnvironment(env), // GBF-412 mesh config
   };
 }
 
@@ -322,6 +332,9 @@ export function startDeviceAgent(options = {}) {
   let activeSocket = null;
   let reconnectTimer = null;
   const readyWaiters = new Set();
+  const meshIdentity = options.meshIdentity ?? loadOrCreateMeshIdentity(
+    config.meshIdentityPath ?? defaultMeshIdentityPath(options.env ?? process.env),
+  ); // GBF-412 persistent node identity
 
   function announceRegistered(value) {
     registered = value;
@@ -345,6 +358,14 @@ export function startDeviceAgent(options = {}) {
       secureChannel = await createSecureInputChannel();
       const connectionGeneration = randomBytes(16).toString("hex");
       const activeGatewayToken = config.getGatewayToken ? await config.getGatewayToken() : config.gatewayToken;
+      const mesh = buildSignedMeshRegistration({
+        identity: meshIdentity,
+        deviceId: config.deviceId,
+        generation: connectionGeneration,
+        toolSchemaVersion: local.toolSchemaVersion,
+        tags: config.meshTags,
+        posture: config.meshPosture,
+      }); // GBF-412 signed registration
       const socket = new WebSocketImpl(config.gatewayUrl, {
         headers: { Authorization: `Bearer ${activeGatewayToken}` },
         ...(config.ipFamily ? { family: config.ipFamily } : {}),
@@ -369,6 +390,7 @@ export function startDeviceAgent(options = {}) {
           generation: connectionGeneration,
           leaseSeconds: config.leaseSeconds,
           metadata: config.metadata,
+          mesh, // GBF-412 signed node and relay path state
         }));
         registrationTimer = setTimeout(() => {
           logError("Fabushi device gateway registration timed out; reconnecting.");
@@ -384,7 +406,11 @@ export function startDeviceAgent(options = {}) {
           }
           awaitingPong = true;
           socket.ping();
-          socket.send(JSON.stringify({ type: "heartbeat", at: Date.now() }));
+          socket.send(JSON.stringify({
+            type: "heartbeat",
+            at: Date.now(),
+            mesh: { activePath: "relay", posture: config.meshPosture ?? {} },
+          })); // GBF-412 mesh heartbeat
         }, HEARTBEAT_MS);
         heartbeatTimer.unref?.();
       });

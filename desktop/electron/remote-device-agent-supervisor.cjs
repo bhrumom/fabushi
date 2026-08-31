@@ -154,6 +154,11 @@ class RemoteDeviceAgentSupervisor {
           DEVICE_LOCAL_MCP_ELECTRON_NODE: '1',
           FABUSHI_COMPUTER_POLICY_FILE: policyFile,
           FABUSHI_APP_AGENT_DISCOVERY_FILE: discoveryFile,
+          DEVICE_MESH_IDENTITY_FILE: path.join(this.app.getPath('userData'), 'remote-device', 'mesh-identity.json'),
+          DEVICE_MESH_TAGS_JSON: JSON.stringify(['client:fabushi', 'platform:desktop']),
+          FABUSHI_APP_VERSION: typeof this.app.getVersion === 'function' ? this.app.getVersion() : '',
+          DEVICE_CLASS: 'desktop',
+          DEVICE_APP_STATE: 'running', // GBF-412 desktop mesh posture
         },
       });
       this.child = child;
