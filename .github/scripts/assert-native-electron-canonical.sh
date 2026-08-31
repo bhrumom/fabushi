@@ -29,13 +29,38 @@ grep -q 'androidx.compose' mobile/android/app/build.gradle || fail 'Android cano
 grep -q 'SwiftUI' mobile/ios/Fabushi/FabushiApp.swift || fail 'iOS canonical UI is not SwiftUI'
 python3 - <<'PY'
 import json
+import re
 from pathlib import Path
 
-canonical = json.loads(Path('app-version.json').read_text(encoding='utf-8'))['version']
-desktop = json.loads(Path('desktop/package.json').read_text(encoding='utf-8'))['version']
-mobile = json.loads(Path('mobile/package.json').read_text(encoding='utf-8'))['version']
-if desktop != canonical or mobile != canonical:
-    raise SystemExit(f'version drift: canonical={canonical} desktop={desktop} mobile={mobile}')
+canonical_data = json.loads(Path('app-version.json').read_text(encoding='utf-8'))
+canonical = str(canonical_data.get('version', '')).strip()
+if not re.fullmatch(r'\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?', canonical):
+    raise SystemExit(f'invalid canonical semantic version: {canonical!r}')
+
+def package_version(path):
+    return json.loads(Path(path).read_text(encoding='utf-8'))['version']
+
+def lock_root_version(path):
+    document = json.loads(Path(path).read_text(encoding='utf-8'))
+    return document['packages']['']['version']
+
+versions = {
+    'desktop/package.json': package_version('desktop/package.json'),
+    'desktop/package-lock.json': lock_root_version('desktop/package-lock.json'),
+    'mobile/package.json': package_version('mobile/package.json'),
+    'mobile/package-lock.json': lock_root_version('mobile/package-lock.json'),
+}
+drift = {path: version for path, version in versions.items() if version != canonical}
+if drift:
+    raise SystemExit(f'version drift: canonical={canonical} values={drift}')
+
+ios_project = Path('mobile/ios/project.yml').read_text(encoding='utf-8')
+marketing_match = re.search(r'^\s*MARKETING_VERSION:\s*[\'"]?([^\s\'"]+)', ios_project, re.MULTILINE)
+if not marketing_match or marketing_match.group(1) != canonical:
+    observed = marketing_match.group(1) if marketing_match else '<missing>'
+    raise SystemExit(f'iOS marketing version drift: canonical={canonical} project={observed}')
+if str(canonical_data.get('iosBuildNumber', '')).strip() != '5':
+    raise SystemExit('iOS build number policy must be advanced alongside the 1.1.0 release')
 PY
 
 if grep -Eq '"@tauri-apps/|"@capacitor/' mobile/package.json desktop/package.json; then
