@@ -129,7 +129,19 @@ export async function appendMiniAppBotMessages(
 }
 
 export async function readMiniAppCloudStorage(miniAppId: string, key?: string): Promise<Record<string, unknown>> {
-  return invokeNativeDesktop<Record<string, unknown>>('getMiniAppCloudStorage', { pluginId: miniAppId, key });
+  const response = await invokeNativeDesktop<Record<string, unknown>>('getMiniAppCloudStorage', { pluginId: miniAppId, key });
+  if (!key || response.item) return response;
+
+  // The account service returns the same list-shaped payload for both full and
+  // keyed CloudStorage reads. The Mini App bridge exposes Telegram-compatible
+  // getItem(), so normalize a keyed list result into the single-item shape the
+  // bridge consumes. This also keeps the native/account wire contract unchanged.
+  const items = Array.isArray(response.items) ? response.items : [];
+  const item = items.find((candidate) => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false;
+    return (candidate as { key?: unknown }).key === key;
+  });
+  return { ...response, item: item ?? null };
 }
 
 export async function writeMiniAppCloudStorage(miniAppId: string, values: Record<string, string>): Promise<Record<string, unknown>> {
