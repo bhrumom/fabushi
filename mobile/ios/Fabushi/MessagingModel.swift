@@ -185,9 +185,9 @@ final class MessagingModel {
             "conversationId": conversationId,
             "clientMessageId": "ios:\(UUID().uuidString.lowercased())",
             "content": ["type": "text", "data": ["text": ["text": value, "entities": []]]],
-            "replyToMessageId": replyToMessageId ?? NSNull(),
+            "replyToMessageId": nullableValue(replyToMessageId),
             "threadRootMessageId": NSNull(),
-            "scheduledAtMs": scheduledAtMs ?? NSNull(),
+            "scheduledAtMs": nullableValue(scheduledAtMs),
             "silent": silent,
             "protectedContent": false,
         ])
@@ -206,7 +206,7 @@ final class MessagingModel {
         try await ensureIdentity()
         _ = try await execute(command: [
             "type": "sendMessage", "conversationId": conversationId, "clientMessageId": "ios:\(UUID().uuidString.lowercased())",
-            "content": ["type": "location", "data": ["latitude": latitude, "longitude": longitude, "liveUntilMs": liveUntilMs ?? NSNull()]],
+            "content": ["type": "location", "data": ["latitude": latitude, "longitude": longitude, "liveUntilMs": nullableValue(liveUntilMs)]],
             "replyToMessageId": NSNull(), "threadRootMessageId": NSNull(), "scheduledAtMs": NSNull(), "silent": false, "protectedContent": false,
         ])
     }
@@ -313,7 +313,7 @@ final class MessagingModel {
         try? await executeAfterIdentity([
             "type": "upsertFolder",
             "folder": [
-                "id": folder.id, "title": folder.title, "icon": folder.icon ?? NSNull(), "conversationIds": folder.conversationIds,
+                "id": folder.id, "title": folder.title, "icon": nullableValue(folder.icon), "conversationIds": folder.conversationIds,
                 "includeContacts": folder.includeContacts, "includeBots": folder.includeBots, "includeGroups": folder.includeGroups, "includeChannels": folder.includeChannels,
                 "excludeMuted": folder.excludeMuted, "excludeRead": folder.excludeRead, "excludeArchived": folder.excludeArchived,
             ],
@@ -325,7 +325,14 @@ final class MessagingModel {
     }
 
     func updateConversationInfo(conversationId: String, title: String, description: String) async {
-        try? await executeAfterIdentity(["type": "updateConversationInfo", "conversationId": conversationId, "title": title, "description": description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? NSNull() : description])
+        let cleanDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nullableDescription: String? = cleanDescription.isEmpty ? nil : cleanDescription
+        try? await executeAfterIdentity([
+            "type": "updateConversationInfo",
+            "conversationId": conversationId,
+            "title": title,
+            "description": nullableValue(nullableDescription),
+        ])
     }
 
     func setConversationParticipant(conversation: ConversationSummary, actorId targetActorId: String, role: String) async {
@@ -343,7 +350,7 @@ final class MessagingModel {
 
     func setDraft(conversationId: String, text: String, replyToMessageId: String?) async {
         try? await executeAfterIdentity([
-            "type": "setDraft", "conversationId": conversationId, "text": text, "replyToMessageId": replyToMessageId ?? NSNull(),
+            "type": "setDraft", "conversationId": conversationId, "text": text, "replyToMessageId": nullableValue(replyToMessageId),
         ])
     }
 
@@ -415,6 +422,11 @@ final class MessagingModel {
 
     func stopTyping(_ conversationId: String) async {
         try? await executeAfterIdentity(["type": "stopTyping", "conversationId": conversationId])
+    }
+
+    private func nullableValue<T>(_ value: T?) -> Any {
+        guard let value else { return NSNull() }
+        return value
     }
 
     private func executeAfterIdentity(_ command: [String: Any]) async throws {
@@ -547,9 +559,11 @@ final class MessagingModel {
     }
 
     private func conversationPayload(id: String, kind: ConversationKind, title: String, description: String, participants: [[String: Any]], now: Int64) -> [String: Any] {
-        [
+        let cleanDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nullableDescription: String? = cleanDescription.isEmpty ? nil : cleanDescription
+        return [
             "id": id, "kind": kind.rawValue, "title": title,
-            "description": description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? NSNull() : description.trimmingCharacters(in: .whitespacesAndNewlines),
+            "description": nullableValue(nullableDescription),
             "avatarUrl": NSNull(), "participants": participants, "ownerId": actorId,
             "lastMessageId": NSNull(), "lastReadMessageId": NSNull(), "unreadCount": 0, "mentionCount": 0, "pinnedMessageIds": [],
             "notificationSettings": ["mutedUntilMs": NSNull(), "sound": NSNull(), "showPreview": true, "notifyMentions": true],
