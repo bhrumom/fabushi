@@ -75,6 +75,7 @@ struct ContentView: View {
     @State private var pollOption2 = ""
     @State private var pollOption3 = ""
     @State private var composeMenuPresented = false
+    @State private var profileMenuPresented = false
     @State private var composeKind: ConversationKind?
     @State private var composeName = ""
     @State private var composeDescription = ""
@@ -368,17 +369,10 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        ForEach(MobileSection.allCases) { section in
-                            Button { handleSection(section) } label: {
-                                Label(section.label, systemImage: section.symbol)
-                            }
-                        }
-                        Divider()
-                        Button { destination = .remoteComputer } label: { Label("我的电脑", systemImage: "desktopcomputer") }
-                        Button { destination = .marketplace } label: { Label("插件市场", systemImage: "shippingbox.fill") }
-                    } label: { avatar.frame(width: 34, height: 34) }
-                    .accessibilityElement(children: .ignore)
+                    Button { profileMenuPresented = true } label: {
+                        avatar.frame(width: 34, height: 34)
+                    }
+                    .accessibilityLabel("个人菜单")
                     .accessibilityIdentifier("profile-avatar")
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -397,6 +391,17 @@ struct ContentView: View {
             Button("新建群组") { startCompose(.group) }
             Button("新建频道") { startCompose(.channel) }
             Button("联系人分组") { contactGroupsPresented = true }
+            Button("取消", role: .cancel) {}
+        }
+        .confirmationDialog("导航", isPresented: $profileMenuPresented, titleVisibility: .visible) {
+            ForEach(MobileSection.allCases) { section in
+                Button(section.label) { handleSection(section) }
+                    .accessibilityIdentifier("profile-section-\(section.rawValue)")
+            }
+            Button("我的电脑") { destination = .remoteComputer }
+                .accessibilityIdentifier("remote-computer-entry")
+            Button("插件市场") { destination = .marketplace }
+                .accessibilityIdentifier("marketplace-entry")
             Button("取消", role: .cancel) {}
         }
         .sheet(item: $composeKind) { kind in composeSheet(kind) }
