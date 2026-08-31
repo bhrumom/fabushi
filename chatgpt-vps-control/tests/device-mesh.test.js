@@ -78,6 +78,8 @@ test("legacy device public state is explicit and never claims a signed or direct
   assert.deepEqual(publicMeshState(null), {
     protocolVersion: null,
     signed: false,
+    identityStatus: "legacy",
+    identityBindingVersion: null, // GBF-412 legacy identity test
     supportedPaths: ["relay"],
     preferredPath: "relay",
     activePath: "relay",
