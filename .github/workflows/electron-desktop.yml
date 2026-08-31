@@ -34,7 +34,7 @@ on:
       - '.github/workflows/electron-desktop.yml'
       - '.github/scripts/verify-packaged-computer-control.mjs'
   push:
-    branches: [main]
+    branches: [main, codex/tailscale-mobile-device-mesh] # GBF-412 temporary branch full-package black-box gate
   workflow_dispatch:
 
 concurrency:
