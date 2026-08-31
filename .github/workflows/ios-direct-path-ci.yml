@@ -1,0 +1,125 @@
+name: iOS direct path
+
+on:
+  push:
+    branches:
+      - codex/tailscale-mobile-device-mesh
+    paths:
+      - .github/workflows/ios-direct-path-ci.yml
+      - scripts/apply-ios-direct-path.mjs
+      - mobile/ios/Fabushi/FabushiDeviceDirectPath.swift
+      - mobile/ios/Fabushi/FabushiDeviceMeshAgent.swift
+  pull_request:
+    paths:
+      - .github/workflows/ios-direct-path-ci.yml
+      - scripts/apply-ios-direct-path.mjs
+      - mobile/ios/Fabushi/FabushiDeviceDirectPath.swift
+      - mobile/ios/Fabushi/FabushiDeviceMeshAgent.swift
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-direct-path-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply iOS direct path adapter
+        run: |
+          node scripts/apply-ios-direct-path.mjs
+          node scripts/apply-ios-device-mesh-compile-fixes.mjs
+          git diff --check
+      - id: staticlib-source-key
+        shell: bash
+        env:
+          SOURCE_HASH: ${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+        run: echo "hash=$SOURCE_HASH" >> "$GITHUB_OUTPUT"
+      - id: staticlib-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: mobile/ios/Frameworks/libmahayana_app_host.a
+          key: native-host-ios-sim-v8-${{ steps.staticlib-source-key.outputs.hash }}
+      - if: steps.staticlib-cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+      - if: steps.staticlib-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: native-mobile-ios-platform-v7
+      - name: Build iOS Rust host on cache miss
+        if: steps.staticlib-cache.outputs.cache-hit != 'true'
+        run: |
+          cargo build --profile ci -p mahayana-app-host-mobile --target aarch64-apple-ios-sim --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          mkdir -p mobile/ios/Frameworks
+          cp third_party/mahayana/mahayana-rs/target/aarch64-apple-ios-sim/ci/libmahayana_app_host.a mobile/ios/Frameworks/
+      - if: steps.staticlib-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: mobile/ios/Frameworks/libmahayana_app_host.a
+          key: native-host-ios-sim-v8-${{ steps.staticlib-source-key.outputs.hash }}
+      - name: Generate Xcode project
+        working-directory: mobile/ios
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen generate
+      - id: simulator
+        name: Select simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          udid="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for runtime in d.values() for x in runtime if x.get("isAvailable") and x.get("name", "").startswith("iPhone")))')"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Compile and test iOS direct path
+        working-directory: mobile/ios
+        run: >-
+          xcodebuild test
+          -project Fabushi.xcodeproj
+          -scheme Fabushi
+          -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}'
+          -derivedDataPath "${{ runner.temp }}/FabushiDirectPathDerivedData"
+          CODE_SIGNING_ALLOWED=NO
+
+  persist:
+    needs: verify
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          node scripts/apply-ios-direct-path.mjs
+          node scripts/apply-ios-device-mesh-compile-fixes.mjs
+          git diff --check
+      - shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "fabushi-ci[bot]"
+          git config user.email "fabushi-ci[bot]@users.noreply.github.com"
+          git add mobile/ios/Fabushi/FabushiDeviceDirectPath.swift mobile/ios/Fabushi/FabushiDeviceMeshAgent.swift
+          git commit -m "feat(mesh): enable iOS direct path probing"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  generated-clean:
+    needs: verify
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          node scripts/apply-ios-direct-path.mjs
+          node scripts/apply-ios-device-mesh-compile-fixes.mjs
+          git diff --check
+          git diff --exit-code
