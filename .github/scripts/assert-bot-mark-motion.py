@@ -129,6 +129,7 @@ required_durability = [
     "CONVERSATION_JOURNAL_STORAGE_KEY = 'fabushi.desktop.mahayana-conversation-journal.v1'",
     "SELFHOSTED_INVOCATION_CLAIMS_KEY = 'fabushi.desktop.selfhosted-mahayana-invocations.v1'",
     "invokeNativeDesktop<unknown>('readClientPersistence'",
+    'DURABLE_AGENT_RESTORE_TIMEOUT_MS = 600',
     "invokeNativeDesktop<boolean>('writeClientPersistence'",
     "invokeNativeDesktop<boolean>('removeClientPersistence'",
     'MAHAYANA_ACCOUNT_SESSION_RESET_EVENT',
