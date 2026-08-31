@@ -1,0 +1,91 @@
+name: Device mesh integration
+
+on:
+  push:
+    branches:
+      - codex/tailscale-mobile-device-mesh
+    paths:
+      - .github/workflows/device-mesh-ci.yml
+      - scripts/apply-device-mesh-integration.mjs
+      - chatgpt-vps-control/lib/device-agent.js
+      - chatgpt-vps-control/lib/device-gateway.js
+      - chatgpt-vps-control/lib/device-mesh.js
+      - chatgpt-vps-control/tests/device-mesh*.test.js
+      - desktop/electron/remote-device-agent-supervisor.cjs
+      - mobile/**
+      - projects/grok-bot-fabushi-integration/**
+  pull_request:
+    paths:
+      - .github/workflows/device-mesh-ci.yml
+      - scripts/apply-device-mesh-integration.mjs
+      - chatgpt-vps-control/lib/device-agent.js
+      - chatgpt-vps-control/lib/device-gateway.js
+      - chatgpt-vps-control/lib/device-mesh.js
+      - chatgpt-vps-control/tests/device-mesh*.test.js
+      - desktop/electron/remote-device-agent-supervisor.cjs
+      - mobile/**
+
+permissions:
+  contents: write
+
+concurrency:
+  group: device-mesh-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node-device-mesh:
+    name: Signed device mesh protocol and gateway
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+
+      - name: Apply idempotent integration patch
+        run: node scripts/apply-device-mesh-integration.mjs
+
+      - name: Reject whitespace and patch damage
+        run: git diff --check
+
+      - name: Install remote MCP dependencies
+        run: npm ci --prefix chatgpt-vps-control
+
+      - name: Syntax-check mesh sources
+        run: |
+          node --check chatgpt-vps-control/lib/device-mesh.js
+          node --check chatgpt-vps-control/lib/device-agent.js
+          node --check chatgpt-vps-control/lib/device-gateway.js
+          node --check scripts/apply-device-mesh-integration.mjs
+
+      - name: Run complete remote MCP test suite
+        run: npm test --prefix chatgpt-vps-control
+
+      - name: Commit generated integration on task branch
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Device mesh integration is already committed."
+            exit 0
+          fi
+          git config user.name "fabushi-ci[bot]"
+          git config user.email "fabushi-ci[bot]@users.noreply.github.com"
+          git add \
+            chatgpt-vps-control/lib/device-agent.js \
+            chatgpt-vps-control/lib/device-gateway.js \
+            desktop/electron/remote-device-agent-supervisor.cjs
+          git commit -m "feat(mesh): integrate signed device mesh into remote control"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Require committed integration in pull requests
+        if: github.event_name == 'pull_request'
+        run: git diff --exit-code
