@@ -592,11 +592,31 @@ struct ContentView: View {
                                 }) { message in
                                     HStack {
                                         if message.isOutgoing { Spacer(minLength: 56) }
-                                        VStack(alignment: .trailing, spacing: 3) {
+                                        VStack(alignment: .trailing, spacing: 4) {
+                                            if let origin = message.forwardOrigin {
+                                                HStack(spacing: 4) { Image(systemName: "arrowshape.turn.up.right.fill"); Text("转发自 \(origin)") }
+                                                    .font(.caption2.bold()).foregroundStyle(Color.accentColor).frame(maxWidth: .infinity, alignment: .leading)
+                                            }
+                                            if let replyId = message.replyToMessageId, let replied = messaging.messagesByConversation[conversation.id]?.first(where: { $0.id == replyId }) {
+                                                VStack(alignment: .leading, spacing: 2) { Text("回复").font(.caption2.bold()); Text(replied.text).font(.caption).lineLimit(2) }
+                                                    .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 8).overlay(alignment: .leading) { Rectangle().fill(Color.accentColor).frame(width: 2) }
+                                            }
                                             Text(message.text).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
+                                            if !message.reactions.isEmpty {
+                                                HStack(spacing: 5) {
+                                                    ForEach(Array(message.reactions.enumerated()), id: \.offset) { _, reaction in
+                                                        Text("\(reaction.reaction) \(reaction.count)").font(.caption2).padding(.horizontal, 7).padding(.vertical, 3)
+                                                            .background(reaction.chosenByMe ? Color.accentColor.opacity(0.25) : Color.white.opacity(0.08), in: Capsule())
+                                                    }
+                                                }.frame(maxWidth: .infinity, alignment: .leading)
+                                            }
                                             HStack(spacing: 3) {
+                                                if message.isEdited { Text("已编辑").font(.caption2).foregroundStyle(.secondary) }
                                                 Text(message.time).font(.caption2).foregroundStyle(.secondary)
-                                                if message.isOutgoing { Image(systemName: "checkmark.checkmark").font(.caption2).foregroundStyle(.blue) }
+                                                if message.isOutgoing {
+                                                    Image(systemName: message.deliveryState.lowercased().contains("read") ? "checkmark.checkmark" : message.deliveryState.lowercased().contains("deliver") ? "checkmark.checkmark" : "checkmark")
+                                                        .font(.caption2).foregroundStyle(message.deliveryState.lowercased().contains("read") ? .blue : .secondary)
+                                                }
                                             }
                                         }
                                         .padding(.horizontal, 11).padding(.vertical, 7)

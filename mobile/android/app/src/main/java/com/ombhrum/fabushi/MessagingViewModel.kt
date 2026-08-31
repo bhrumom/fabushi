@@ -40,12 +40,20 @@ data class MessagingContact(
     val kind: String,
 )
 
+data class ChatReaction(val reaction: String, val count: Int, val chosenByMe: Boolean)
+
 data class ChatMessage(
     val id: String,
     val conversationId: String,
     val text: String,
     val outgoing: Boolean,
     val time: String,
+    val replyToMessageId: String? = null,
+    val forwardOrigin: String? = null,
+    val reactions: List<ChatReaction> = emptyList(),
+    val deliveryState: String = "sent",
+    val edited: Boolean = false,
+    val pinned: Boolean = false,
 )
 
 data class MessagingUiState(
@@ -239,7 +247,21 @@ internal class MessagingViewModel(application: Application) : AndroidViewModel(a
             "text" -> content.optJSONObject("data")?.optJSONObject("text")?.optString("text").orEmpty()
             "photo" -> "🖼 图片"; "video" -> "🎬 视频"; "document" -> "📎 文件"; "location" -> "📍 位置"; "contact" -> "👤 联系人"; "invoice" -> "🧾 账单"; "miniApp" -> "▣ Mini App"; else -> "消息"
         }
-        return ChatMessage(id, conversationId, text, senderId == actorId, timeLabel(raw.optLong("createdAtMs")))
+        val reactions = buildList {
+            val array = raw.optJSONArray("reactions") ?: JSONArray()
+            for (i in 0 until array.length()) {
+                val reaction = array.optJSONObject(i) ?: continue
+                val symbol = reaction.optString("reaction"); if (symbol.isNotBlank()) add(ChatReaction(symbol, reaction.optInt("count"), reaction.optBoolean("chosenByMe")))
+            }
+        }
+        val deliveryRaw = raw.opt("deliveryState")
+        val deliveryState = when (deliveryRaw) {
+            is String -> deliveryRaw
+            is JSONObject -> deliveryRaw.optString("state").ifBlank { deliveryRaw.keys().asSequence().firstOrNull() ?: "sent" }
+            else -> "sent"
+        }
+        return ChatMessage(id, conversationId, text, senderId == actorId, timeLabel(raw.optLong("createdAtMs")),
+            raw.optString("replyToMessageId").takeIf { it.isNotBlank() }, raw.optString("forwardOrigin").takeIf { it.isNotBlank() }, reactions, deliveryState, !raw.isNull("editedAtMs"), raw.optBoolean("pinned"))
     }
 
     private fun timeLabel(ms: Long): String = if (ms <= 0) "" else java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(ms))
