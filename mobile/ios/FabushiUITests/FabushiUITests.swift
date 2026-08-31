@@ -31,14 +31,17 @@ final class FabushiUITests: XCTestCase {
         XCTAssertTrue(app.buttons["home-search-button"].exists)
         XCTAssertTrue(app.buttons["home-add-button"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["conversation-list"].exists)
-        XCTAssertTrue(app.staticTexts["Chief of Staff"].waitForExistence(timeout: 5))
-
-        app.buttons["home-search-button"].tap()
-        let homeSearch = app.textFields["home-search-field"]
-        XCTAssertTrue(homeSearch.waitForExistence(timeout: 5))
-        homeSearch.tap()
-        homeSearch.typeText("Chief")
-        XCTAssertTrue(app.staticTexts["Chief of Staff"].exists)
+        XCTAssertFalse(app.staticTexts["Chief of Staff"].exists)
+        app.buttons["home-add-button"].tap()
+        let newDirect = app.buttons["新建私聊"]
+        XCTAssertTrue(newDirect.waitForExistence(timeout: 5))
+        newDirect.tap()
+        let composeName = app.textFields["compose-name"]
+        XCTAssertTrue(composeName.waitForExistence(timeout: 5))
+        composeName.tap()
+        composeName.typeText("测试联系人")
+        app.buttons["compose-create"].tap()
+        XCTAssertTrue(app.navigationBars["测试联系人"].waitForExistence(timeout: 5))
 
         openRemoteComputer(in: app)
         let remoteComputer = app.descendants(matching: .any)["remote-computer-surface"]
@@ -118,9 +121,9 @@ final class FabushiUITests: XCTestCase {
 
     @MainActor
     private func openMarketplace(in app: XCUIApplication) {
-        let add = app.buttons["home-add-button"]
-        XCTAssertTrue(add.waitForExistence(timeout: 10))
-        add.tap()
+        let profile = app.descendants(matching: .any)["profile-avatar"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10))
+        profile.tap()
         let marketplace = app.buttons["marketplace-entry"]
         XCTAssertTrue(marketplace.waitForExistence(timeout: 5))
         marketplace.tap()
@@ -128,9 +131,9 @@ final class FabushiUITests: XCTestCase {
 
     @MainActor
     private func openRemoteComputer(in app: XCUIApplication) {
-        let add = app.buttons["home-add-button"]
-        XCTAssertTrue(add.waitForExistence(timeout: 10))
-        add.tap()
+        let profile = app.descendants(matching: .any)["profile-avatar"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10))
+        profile.tap()
         let remoteComputer = app.buttons["remote-computer-entry"]
         XCTAssertTrue(remoteComputer.waitForExistence(timeout: 5))
         remoteComputer.tap()
