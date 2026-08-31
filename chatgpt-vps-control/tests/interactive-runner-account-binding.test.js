@@ -5,11 +5,20 @@ import test from "node:test";
 const root = new URL("../../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
-test("interactive Runner uses GitHub OIDC and no shared test-account credential", async () => {
+test("interactive Runner supports explicit protected account bindings", async () => {
   const workflow = await read(".github/workflows/interactive-runner-mcp.yml");
+  assert.match(workflow, /account_binding:/u);
+  assert.match(workflow, /default: github-actor/u);
+  assert.match(workflow, /- ci-test-account/u);
   assert.match(workflow, /id-token: write/u);
   assert.match(workflow, /audience=fabushi-ci-runner/u);
   assert.match(workflow, /\/v1\/ci\/runner-session/u);
+  assert.match(workflow, /if: inputs\.account_binding == 'github-actor'/u);
+  assert.match(workflow, /if: inputs\.account_binding == 'ci-test-account'/u);
+  assert.match(workflow, /secrets\.FABUSHI_CI_TEST_USERNAME/u);
+  assert.match(workflow, /secrets\.FABUSHI_CI_TEST_PASSWORD/u);
+  assert.match(workflow, /login-ci-test-account\.mjs/u);
+  assert.match(workflow, /export-ci-app-account-session\.mjs/u);
   assert.match(workflow, /FABUSHI_ACCOUNT_SESSION_FILE/u);
   assert.match(workflow, /FABUSHI_CI_ACCOUNT_SESSION_FILE/u);
   assert.match(workflow, /GitHub-linked Fabushi account/u);
@@ -17,6 +26,16 @@ test("interactive Runner uses GitHub OIDC and no shared test-account credential"
   assert.doesNotMatch(workflow, /MAHAYANA_TEST_ACCOUNT_TOKEN/u);
   assert.doesNotMatch(workflow, /FABUSHI_ACCOUNT_ACCESS_TOKEN/u);
   assert.doesNotMatch(workflow, /FABUSHI_CI_TEST_ACCOUNT_AUTOLOGIN/u);
+});
+
+test("account-bound source Runner exports only a short-lived app session", async () => {
+  const workflow = await read(".github/workflows/interactive-runner-account-mcp.yml");
+  assert.match(workflow, /login-ci-test-account\.mjs/u);
+  assert.match(workflow, /export-ci-app-account-session\.mjs/u);
+  assert.doesNotMatch(
+    workflow,
+    /install -m 600 "\$FABUSHI_ACCOUNT_SESSION_FILE" "\$FABUSHI_CI_ACCOUNT_SESSION_FILE"/u,
+  );
 });
 
 test("CI Runner token exchange is exact-repository, exact-workflow and linked-account scoped", async () => {
