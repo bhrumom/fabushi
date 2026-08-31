@@ -147,7 +147,7 @@ final class MessagingModel {
         return conversations.first(where: { $0.id == id })
     }
 
-    func sendText(conversationId: String, text: String, replyToMessageId: String? = nil) async throws {
+    func sendText(conversationId: String, text: String, replyToMessageId: String? = nil, silent: Bool = false, scheduledAtMs: Int64? = nil) async throws {
         try await ensureIdentity()
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
@@ -158,8 +158,8 @@ final class MessagingModel {
             "content": ["type": "text", "data": ["text": ["text": value, "entities": []]]],
             "replyToMessageId": replyToMessageId ?? NSNull(),
             "threadRootMessageId": NSNull(),
-            "scheduledAtMs": NSNull(),
-            "silent": false,
+            "scheduledAtMs": scheduledAtMs ?? NSNull(),
+            "silent": silent,
             "protectedContent": false,
         ])
     }
