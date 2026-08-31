@@ -769,8 +769,28 @@ private fun ConversationDetail(
                                 .combinedClickable(onClick = {}, onLongClick = { selectedMessage = message })
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
+                            if (message.forwardOrigin != null) Text("↪ 转发自 ${message.forwardOrigin}", color = homeAccent, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                            val replied = message.replyToMessageId?.let { replyId -> messages.firstOrNull { it.id == replyId } }
+                            if (replied != null) {
+                                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                    Text("回复", color = homeAccent, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text(replied.text, color = homeSecondaryText, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
                             Text(message.text, color = homePrimaryText)
-                            Text(if (message.outgoing) "${message.time}  ✓✓" else message.time, color = homeSecondaryText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.End))
+                            if (message.reactions.isNotEmpty()) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(top = 5.dp)) {
+                                    message.reactions.take(5).forEach { reaction ->
+                                        Text("${reaction.reaction} ${reaction.count}", color = homePrimaryText, fontSize = 11.sp, modifier = Modifier.background(if (reaction.chosenByMe) homeAccent.copy(alpha = 0.25f) else homeBorder, RoundedCornerShape(10.dp)).padding(horizontal = 7.dp, vertical = 3.dp))
+                                    }
+                                }
+                            }
+                            val check = when {
+                                message.deliveryState.contains("read", true) -> "✓✓"
+                                message.deliveryState.contains("deliver", true) -> "✓✓"
+                                else -> "✓"
+                            }
+                            Text((if (message.edited) "已编辑  " else "") + message.time + if (message.outgoing) "  $check" else "", color = if (message.outgoing && message.deliveryState.contains("read", true)) homeAccent else homeSecondaryText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.End))
                         }
                     }
                 }
