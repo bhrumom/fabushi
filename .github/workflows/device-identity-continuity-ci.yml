@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/device-identity-continuity-ci.yml
       - scripts/apply-device-identity-pinning.mjs
+      - scripts/apply-device-identity-pinning-v2.mjs
       - chatgpt-vps-control/lib/device-identity-registry.js
       - chatgpt-vps-control/lib/device-mesh.js
       - chatgpt-vps-control/lib/device-gateway.js
@@ -18,6 +19,7 @@ on:
     paths:
       - .github/workflows/device-identity-continuity-ci.yml
       - scripts/apply-device-identity-pinning.mjs
+      - scripts/apply-device-identity-pinning-v2.mjs
       - chatgpt-vps-control/lib/device-identity-registry.js
       - chatgpt-vps-control/lib/device-mesh.js
       - chatgpt-vps-control/lib/device-gateway.js
@@ -52,7 +54,7 @@ jobs:
           cache-dependency-path: chatgpt-vps-control/package-lock.json
 
       - name: Apply persistent identity integration
-        run: node scripts/apply-device-identity-pinning.mjs
+        run: node scripts/apply-device-identity-pinning-v2.mjs
 
       - name: Reject whitespace and generated patch damage
         run: git diff --check
@@ -63,6 +65,7 @@ jobs:
       - name: Syntax-check identity sources
         run: |
           node --check scripts/apply-device-identity-pinning.mjs
+          node --check scripts/apply-device-identity-pinning-v2.mjs
           node --check chatgpt-vps-control/lib/device-identity-registry.js
           node --check chatgpt-vps-control/lib/device-mesh.js
           node --check chatgpt-vps-control/lib/device-gateway.js
@@ -85,7 +88,7 @@ jobs:
 
       - name: Apply verified identity integration
         run: |
-          node scripts/apply-device-identity-pinning.mjs
+          node scripts/apply-device-identity-pinning-v2.mjs
           git diff --check
 
       - name: Commit generated identity sources
@@ -118,6 +121,6 @@ jobs:
 
       - name: Require committed generated sources
         run: |
-          node scripts/apply-device-identity-pinning.mjs
+          node scripts/apply-device-identity-pinning-v2.mjs
           git diff --check
           git diff --exit-code
