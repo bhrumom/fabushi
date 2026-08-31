@@ -31,9 +31,9 @@ python3 - <<'PY'
 import json
 from pathlib import Path
 
-canonical = json.loads(Path('app-version.json').read_text())['version']
-desktop = json.loads(Path('desktop/package.json').read_text())['version']
-mobile = json.loads(Path('mobile/package.json').read_text())['version']
+canonical = json.loads(Path('app-version.json').read_text(encoding='utf-8'))['version']
+desktop = json.loads(Path('desktop/package.json').read_text(encoding='utf-8'))['version']
+mobile = json.loads(Path('mobile/package.json').read_text(encoding='utf-8'))['version']
 if desktop != canonical or mobile != canonical:
     raise SystemExit(f'version drift: canonical={canonical} desktop={desktop} mobile={mobile}')
 PY
