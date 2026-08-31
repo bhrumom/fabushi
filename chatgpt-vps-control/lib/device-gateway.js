@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 import {
+  canonicalMeshJson, // GBF-412 canonical gateway catalog
   mergeMeshHeartbeat,
   publicMeshState,
   verifyAndNormalizeMeshRegistration,
@@ -74,7 +75,7 @@ function normalizeToolCatalog(tools, capabilities) {
 }
 
 function toolCatalogVersion(tools) {
-  return tools.length ? createHash("sha256").update(JSON.stringify(tools)).digest("hex") : "";
+  return tools.length ? createHash("sha256").update(canonicalMeshJson(tools)).digest("hex") : ""; // GBF-412 canonical gateway schema hash
 }
 
 function safeSecureInputPublicKey(value) {

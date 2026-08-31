@@ -111,6 +111,7 @@ struct FabushiMeshNodeIdentity {
             kSecClass as String: kSecClassKey,
             kSecAttrApplicationTag as String: keyTag,
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
             kSecReturnRef as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
@@ -144,10 +145,6 @@ struct FabushiMeshNodeIdentity {
             kSecAttrApplicationTag as String: keyTag,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
-        // Explicitly disable synchronizable storage. A mesh node identity must
-        // never migrate through iCloud Keychain to another physical device.
-        privateAttributes[kSecAttrSynchronizable as String] = false
-
         var attributes: [String: Any] = [
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
             kSecAttrKeySizeInBits as String: 256,

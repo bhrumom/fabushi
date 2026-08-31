@@ -13,6 +13,7 @@ import {
 } from "../lib/device-gateway.js";
 import {
   buildSignedMeshRegistration,
+  canonicalMeshJson, // GBF-412 canonical gateway fixture
   loadOrCreateMeshIdentity,
 } from "../lib/device-mesh.js";
 
@@ -77,7 +78,7 @@ test("gateway exposes verified mesh identity and updates safe heartbeat posture"
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     outputSchema: { type: "object" },
   };
-  const toolSchemaVersion = createHash("sha256").update(JSON.stringify([descriptor])).digest("hex");
+  const toolSchemaVersion = createHash("sha256").update(canonicalMeshJson([descriptor])).digest("hex") // GBF-412 canonical gateway fixture hash;
   const generation = "mesh_generation_0123456789abcdef";
   const identity = loadOrCreateMeshIdentity(join(root, "identity.json"));
   const mesh = buildSignedMeshRegistration({

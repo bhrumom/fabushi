@@ -12,6 +12,7 @@ import { createSecureInputChannel, resolveSensitiveTemplate } from "./secure-inp
 import { createFabushiAccountSessionStore } from "./fabushi-account-session.js";
 import {
   buildSignedMeshRegistration,
+  canonicalMeshJson, // GBF-412 canonical agent catalog
   defaultMeshIdentityPath,
   loadOrCreateMeshIdentity,
   meshPostureFromEnvironment,
@@ -289,7 +290,7 @@ export async function openDeviceLocalClient(config) {
     const listed = await client.listTools();
     const toolDescriptors = buildToolCatalog(listed.tools);
     const capabilities = toolDescriptors.map((tool) => tool.name);
-    const toolSchemaVersion = createHash("sha256").update(JSON.stringify(toolDescriptors)).digest("hex");
+    const toolSchemaVersion = createHash("sha256").update(canonicalMeshJson(toolDescriptors)).digest("hex"); // GBF-412 canonical agent schema hash
     return { client, transport, capabilities, toolDescriptors, toolSchemaVersion };
   } catch (error) {
     await client.close().catch(() => {});
