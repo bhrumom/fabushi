@@ -10,6 +10,8 @@ import {
   parseStunBindingResponse,
   sealDirectDatagram,
 } from "../lib/device-direct-path.js";
+import { attachDirectRpcTransport } from "../lib/device-direct-transport.js";
+import { createInvocationDeduper } from "../lib/device-direct-rpc.js";
 import { meshIdentityFingerprint } from "../lib/device-mesh.js";
 
 function identity() {
@@ -111,4 +113,9 @@ test("STUN XOR-MAPPED-ADDRESS parsing yields a server-reflexive IPv4 endpoint", 
   const cookie = [0x21, 0x12, 0xA4, 0x42];
   address.forEach((byte, index) => { response[28 + index] = byte ^ cookie[index]; });
   assert.deepEqual(parseStunBindingResponse(response, transactionId), { host: "203.0.113.9", port });
+});
+
+test("direct RPC transport and exactly-once dedupe are part of the mesh runtime", () => {
+  assert.equal(typeof attachDirectRpcTransport, "function");
+  assert.equal(typeof createInvocationDeduper, "function");
 });
