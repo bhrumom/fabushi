@@ -62,6 +62,7 @@ struct ContentView: View {
     @State private var attachmentPickerPresented = false
     @State private var locationSharePresented = false
     @State private var locationService = LocationService()
+    @State private var voiceRecorder = VoiceRecorder()
     @State private var contactSharePresented = false
     @State private var pollComposerPresented = false
     @State private var pollQuestion = ""
@@ -732,6 +733,10 @@ struct ContentView: View {
                                                             .padding(.vertical, 2)
                                                     }
                                                 }.frame(maxWidth: .infinity, alignment: .leading)
+                                            case "voice":
+                                                HStack(spacing: 10) { Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(Color.accentColor); VStack(alignment: .leading) { Text("语音消息").fontWeight(.medium); Text(message.mediaFileName ?? "录音").font(.caption).foregroundStyle(.secondary) }; Spacer() }
+                                            case "audio":
+                                                HStack(spacing: 10) { Image(systemName: "music.note").font(.title2).foregroundStyle(Color.accentColor); Text(message.mediaFileName ?? "音频"); Spacer() }
                                             case "photo", "video", "document":
                                                 HStack(spacing: 9) {
                                                     Image(systemName: message.contentType == "photo" ? "photo.fill" : message.contentType == "video" ? "video.fill" : "doc.fill").font(.title2).foregroundStyle(Color.accentColor)
@@ -794,6 +799,14 @@ struct ContentView: View {
                             Button { self.replyTarget = nil } label: { Image(systemName: "xmark.circle.fill") }
                         }.padding(.horizontal, 12).padding(.vertical, 6).background(.ultraThinMaterial)
                     }
+                    if voiceRecorder.isRecording {
+                        HStack(spacing: 10) {
+                            Circle().fill(Color.red).frame(width: 9, height: 9)
+                            Text("正在录音 \(voiceRecorder.elapsedSeconds / 60):\(String(format: "%02d", voiceRecorder.elapsedSeconds % 60))").font(.subheadline).fontWeight(.semibold)
+                            Spacer()
+                            Button("取消", role: .destructive) { voiceRecorder.cancel() }
+                        }.padding(.horizontal, 12).padding(.vertical, 7).background(.ultraThinMaterial)
+                    }
                     HStack(alignment: .bottom, spacing: 8) {
                         Menu {
                             Button("照片或视频", systemImage: "photo") { attachmentPickerPresented = true }
@@ -810,9 +823,24 @@ struct ContentView: View {
                                 }
                             }
                             .padding(.horizontal, 12).padding(.vertical, 9).background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 18))
-                        Button { sendMessage(in: conversation) } label: {
-                            Image(systemName: messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "mic.fill" : "arrow.up")
-                                .font(.system(size: 18, weight: .bold)).foregroundStyle(.white).frame(width: 38, height: 38).background(Color.accentColor, in: Circle())
+                        Button {
+                            if messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                if voiceRecorder.isRecording {
+                                    if let recording = voiceRecorder.stop() {
+                                        Task {
+                                            do { try await messaging.sendVoice(conversationId: conversation.id, fileName: recording.url.lastPathComponent, mimeType: "audio/mp4", data: recording.data) }
+                                            catch { model.message = "语音发送失败：\(error.localizedDescription)" }
+                                        }
+                                    }
+                                } else {
+                                    Task { await voiceRecorder.start() }
+                                }
+                            } else {
+                                sendMessage(in: conversation)
+                            }
+                        } label: {
+                            Image(systemName: messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (voiceRecorder.isRecording ? "stop.fill" : "mic.fill") : "arrow.up")
+                                .font(.system(size: 18, weight: .bold)).foregroundStyle(.white).frame(width: 38, height: 38).background(voiceRecorder.isRecording ? Color.red : Color.accentColor, in: Circle())
                         }
                     }.padding(.horizontal, 8).padding(.vertical, 7).background(.ultraThinMaterial)
                 }
