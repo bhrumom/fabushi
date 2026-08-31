@@ -106,14 +106,15 @@ final class MessagingModel {
         return conversations.first(where: { $0.id == id })
     }
 
-    func createConversation(kind: ConversationKind, title: String, description: String = "") async throws -> ConversationSummary? {
+    func createConversation(kind: ConversationKind, title: String, description: String = "", participantActorIds: [String] = []) async throws -> ConversationSummary? {
         guard kind == .group || kind == .channel else {
             throw MahayanaHost.HostError.requestFailed("私聊请从联系人列表发起")
         }
         try await ensureIdentity()
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let id = "\(kind.rawValue):\(UUID().uuidString.lowercased())"
-        let participants: [[String: Any]] = [["actorId": actorId, "role": "owner", "joinedAtMs": now, "mutedUntilMs": NSNull()]]
+        let uniqueParticipantIds = participantActorIds.filter { !$0.isEmpty && $0 != actorId }.reduce(into: [String]()) { values, id in if !values.contains(id) { values.append(id) } }
+        let participants: [[String: Any]] = [["actorId": actorId, "role": "owner", "joinedAtMs": now, "mutedUntilMs": NSNull()]] + uniqueParticipantIds.map { ["actorId": $0, "role": "member", "joinedAtMs": now, "mutedUntilMs": NSNull()] }
         let conversation = conversationPayload(id: id, kind: kind, title: title.trimmingCharacters(in: .whitespacesAndNewlines), description: description, participants: participants, now: now)
         _ = try await execute(command: ["type": "createConversation", "conversation": conversation])
         return conversations.first(where: { $0.id == id })

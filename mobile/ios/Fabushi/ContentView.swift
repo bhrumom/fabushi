@@ -62,6 +62,7 @@ struct ContentView: View {
     @State private var composeKind: ConversationKind?
     @State private var composeName = ""
     @State private var composeDescription = ""
+    @State private var composeParticipantIds: Set<String> = []
     @State private var activeSection: MobileSection?
     @State private var contactGroupsPresented = false
 
@@ -400,6 +401,7 @@ struct ContentView: View {
     private func startCompose(_ kind: ConversationKind) {
         composeName = ""
         composeDescription = ""
+        composeParticipantIds = []
         composeKind = kind
     }
 
@@ -413,14 +415,30 @@ struct ContentView: View {
                     if kind == .channel { TextField("描述", text: $composeDescription, axis: .vertical) }
                 }
                 if kind == .group {
-                    Section("Fabushi") { Text("创建后可从统一联系人与 Bot 目录添加成员。") }
+                    Section("添加成员") {
+                        if messaging.contacts.isEmpty {
+                            Text("暂无可用联系人").foregroundStyle(.secondary)
+                        } else {
+                            ForEach(messaging.contacts) { contact in
+                                Button {
+                                    if composeParticipantIds.contains(contact.id) { composeParticipantIds.remove(contact.id) } else { composeParticipantIds.insert(contact.id) }
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading) { Text(contact.displayName).foregroundStyle(.primary); Text(contact.username.map { "@\($0)" } ?? contact.kind).font(.caption).foregroundStyle(.secondary) }
+                                        Spacer()
+                                        if composeParticipantIds.contains(contact.id) { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor) }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .navigationTitle("新建\(kind.label)")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { composeKind = nil } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("创建") { createConversation(kind: kind) }.accessibilityIdentifier("compose-create").disabled(composeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("创建") { createConversation(kind: kind) }.accessibilityIdentifier("compose-create").disabled(composeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (kind == .group && composeParticipantIds.isEmpty))
                 }
             }
         }
@@ -429,9 +447,10 @@ struct ContentView: View {
     private func createConversation(kind: ConversationKind) {
         let title = composeName.trimmingCharacters(in: .whitespacesAndNewlines)
         let description = composeDescription
+        let participantIds = Array(composeParticipantIds)
         Task {
             do {
-                let created = try await messaging.createConversation(kind: kind, title: title, description: description)
+                let created = try await messaging.createConversation(kind: kind, title: title, description: description, participantActorIds: participantIds)
                 composeKind = nil
                 if let created { selectedConversation = created }
             } catch {
