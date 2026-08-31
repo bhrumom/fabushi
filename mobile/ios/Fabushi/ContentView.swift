@@ -21,15 +21,8 @@ struct ContentView: View {
     @State private var destination: MobileDestination = .home
     @State private var isSearching = false
     @State private var homeQuery = ""
-    @State private var conversations: [ConversationSummary] = [
-        ConversationSummary(
-            id: "chief-of-staff",
-            title: "Chief of Staff",
-            preview: "I can also pull in email, Slack, or other tools…",
-            time: "02:41",
-            badge: "••"
-        )
-    ]
+    @State private var selectedConversation: ConversationSummary?
+    @State private var conversations: [ConversationSummary] = []
 
     var body: some View {
         Group {
@@ -146,7 +139,7 @@ struct ContentView: View {
                         action: .init(allowed: ["setValue"]) { value in homeQuery = value ?? "" }
                     )
                 }
-                add("home-add-button", role: "button", name: "添加")
+                add("home-add-button", role: "button", name: "新建对话", action: .init(allowed: ["invoke"]) { _ in addConversation() })
                 add(
                     "marketplace-entry",
                     role: "menuitem",
@@ -159,7 +152,6 @@ struct ContentView: View {
                     name: "我的电脑",
                     action: .init(allowed: ["invoke"]) { _ in destination = .remoteComputer }
                 )
-                add("conversation-chief-of-staff", role: "button", name: "Chief of Staff")
             case .marketplace:
                 screen = "marketplace"
                 add(
@@ -236,29 +228,19 @@ struct ContentView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     HStack(spacing: 12) {
-                        avatar
-                        Spacer()
-                        circleButton(systemName: "magnifyingglass", identifier: "home-search-button") {
-                            withAnimation(.easeInOut(duration: 0.18)) { isSearching.toggle() }
-                        }
                         Menu {
-                            Button("新建对话") { addConversation() }
                             Button("我的电脑") { destination = .remoteComputer }
                                 .accessibilityIdentifier("remote-computer-entry")
                             Button("插件市场") { destination = .marketplace }
                                 .accessibilityIdentifier("marketplace-entry")
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(red: 0.063, green: 0.063, blue: 0.067))
-                                    .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
-                                Image(systemName: "plus")
-                                    .font(.system(size: 23, weight: .regular))
-                                    .foregroundStyle(.white)
-                            }
-                            .frame(width: 54, height: 54)
+                        } label: { avatar }
+                        Spacer()
+                        circleButton(systemName: "magnifyingglass", identifier: "home-search-button") {
+                            withAnimation(.easeInOut(duration: 0.18)) { isSearching.toggle() }
                         }
-                        .accessibilityIdentifier("home-add-button")
+                        circleButton(systemName: "square.and.pencil", identifier: "home-add-button") {
+                            addConversation()
+                        }
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 10)
@@ -283,11 +265,17 @@ struct ContentView: View {
                             conversationRow(conversation)
                         }
                         if filteredConversations.isEmpty {
-                            Text("没有找到匹配的消息")
-                                .foregroundStyle(Color.white.opacity(0.48))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 30)
-                                .padding(.vertical, 28)
+                            VStack(spacing: 10) {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                                    .font(.system(size: 34, weight: .regular))
+                                Text(homeQuery.isEmpty ? "还没有对话" : "没有找到匹配的消息")
+                                    .font(.headline)
+                                Text(homeQuery.isEmpty ? "点右上角写消息按钮开始新的对话" : "换个关键词试试")
+                                    .font(.subheadline)
+                            }
+                            .foregroundStyle(Color.white.opacity(0.48))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 70)
                         }
                     }
                     .accessibilityIdentifier("conversation-list")
@@ -302,6 +290,33 @@ struct ContentView: View {
             }
         }
         .accessibilityIdentifier("app-shell")
+        .fullScreenCover(item: $selectedConversation) { conversation in
+            NavigationStack {
+                VStack(spacing: 0) {
+                    Spacer()
+                    Text("开始与 \(conversation.title) 对话")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    HStack(spacing: 10) {
+                        TextField("消息", text: .constant(""))
+                            .padding(.horizontal, 14)
+                            .frame(height: 44)
+                            .background(Color.secondary.opacity(0.12), in: Capsule())
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 34))
+                    }
+                    .padding()
+                }
+                .navigationTitle(conversation.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("返回") { selectedConversation = nil }
+                    }
+                }
+            }
+        }
     }
 
     private var avatar: some View {
@@ -365,8 +380,10 @@ struct ContentView: View {
         .padding(.trailing, 24)
         .padding(.vertical, 13)
         .contentShape(Rectangle())
+        .onTapGesture { selectedConversation = conversation }
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(conversation.id == "chief-of-staff" ? "conversation-chief-of-staff" : "conversation-\(conversation.id)")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("conversation-\(conversation.id)")
     }
 
     private var filteredConversations: [ConversationSummary] {
@@ -378,10 +395,9 @@ struct ContentView: View {
 
     private func addConversation() {
         let next = conversations.count + 1
-        conversations.insert(
-            ConversationSummary(id: "new-\(next)", title: "新对话 \(next)", preview: "开始一段新的对话", time: "现在", badge: "+"),
-            at: 0
-        )
+        let conversation = ConversationSummary(id: "new-\(next)", title: "新对话 \(next)", preview: "开始一段新的对话", time: "现在", badge: "✦")
+        conversations.insert(conversation, at: 0)
+        selectedConversation = conversation
     }
 
     private var marketplaceView: some View {
