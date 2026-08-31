@@ -1,0 +1,97 @@
+name: Android direct path
+
+on:
+  push:
+    branches:
+      - codex/tailscale-mobile-device-mesh
+    paths:
+      - .github/workflows/android-direct-path-ci.yml
+      - scripts/apply-android-direct-path.mjs
+      - mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiDeviceDirectPath.kt
+      - mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiDeviceMeshAgent.kt
+  pull_request:
+    paths:
+      - .github/workflows/android-direct-path-ci.yml
+      - scripts/apply-android-direct-path.mjs
+      - mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiDeviceDirectPath.kt
+      - mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiDeviceMeshAgent.kt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-direct-path-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply direct path adapter
+        run: |
+          node scripts/apply-android-direct-path.mjs
+          git diff --check
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '14742923'
+          packages: 'platform-tools'
+      - name: Install Android 17 preview SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          available_packages="$(sdkmanager --list --channel=3)"
+          platform_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/platforms;android-(37([.]0)?|CinnamonBun)/ && !found { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found=1 }')"
+          build_tools_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/build-tools;37[.]/ && !found { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found=1 }')"
+          test -n "$platform_package" && test -n "$build_tools_package"
+          sdkmanager --channel=3 "$platform_package" "$build_tools_package"
+          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            installed_platform="$(find "$ANDROID_HOME/platforms" -maxdepth 1 -type d \( -name 'android-37*' -o -name 'android-CinnamonBun*' \) | head -n 1)"
+            test -n "$installed_platform"
+            ln -s "$installed_platform" "$ANDROID_HOME/platforms/android-37"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile and lint Android direct path
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon --build-cache :app:compileDebugKotlin :app:lintDebug
+
+  persist:
+    needs: verify
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          node scripts/apply-android-direct-path.mjs
+          git diff --check
+      - shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "fabushi-ci[bot]"
+          git config user.email "fabushi-ci[bot]@users.noreply.github.com"
+          git add mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiDeviceMeshAgent.kt
+          git commit -m "feat(mesh): enable Android direct path probing"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  generated-clean:
+    needs: verify
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          node scripts/apply-android-direct-path.mjs
+          git diff --check
+          git diff --exit-code
