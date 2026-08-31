@@ -43,6 +43,7 @@ final class FabushiUITests: XCTestCase {
         openRemoteComputer(in: app)
         let remoteComputer = app.descendants(matching: .any)["remote-computer-surface"]
         XCTAssertTrue(remoteComputer.waitForExistence(timeout: 10))
+        attachScreenshot(named: "remote-computer-open", app: app)
         tapSurfaceClose(identifier: "remote-computer-close", in: app)
         XCTAssertTrue(remoteComputer.waitForNonExistence(timeout: 10))
 
@@ -96,6 +97,15 @@ final class FabushiUITests: XCTestCase {
 
         tapSurfaceClose(identifier: "miniapp-webmcp-close", in: app)
         XCTAssertTrue(surface.waitForNonExistence(timeout: 10))
+    }
+
+
+    @MainActor
+    private func attachScreenshot(named name: String, app: XCUIApplication) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     @MainActor

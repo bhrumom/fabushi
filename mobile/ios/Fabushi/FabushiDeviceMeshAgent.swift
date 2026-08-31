@@ -63,6 +63,10 @@ final class FabushiDeviceMeshAgent {
     private var heartbeatTask: Task<Void, Never>?
     private var webSocket: URLSessionWebSocketTask?
     private var connectionGeneration: String?
+    private var directPath: FabushiDeviceDirectPath? // GBF-412 iOS direct path
+    private struct InvocationOutcome: Sendable { let ok: Bool; let data: Data; let error: String? }
+    private var invocationCache: [String: InvocationOutcome] = [:]
+    private var invocationTasks: [String: Task<InvocationOutcome, Never>] = [:] // GBF-412 iOS exactly-once calls
 
     init(
         host: MahayanaHost,
@@ -134,6 +138,10 @@ final class FabushiDeviceMeshAgent {
             let catalog = toolCatalog()
             let schemaVersion = try FabushiMeshNodeIdentity.schemaVersion(catalog)
             let generation = try randomData(count: 24).base64URLString
+            directPath?.stop()
+            let direct = FabushiDeviceDirectPath(deviceId: account.deviceId, generation: generation, identity: identity)
+            try await direct.start()
+            directPath = direct // GBF-412 iOS direct endpoint start
             let request = try gatewayRequest(accessToken: account.accessToken)
             let socket = session.webSocketTask(with: request)
             webSocket = socket
@@ -229,7 +237,7 @@ final class FabushiDeviceMeshAgent {
             "tags": ["client:fabushi", "platform:ios", "role:mobile"],
             "posture": posture(appState: "foreground"),
         ]
-        return [
+        var registration: [String: Any] = [
             "type": "register",
             "deviceId": account.deviceId,
             "name": String(name.prefix(200)),
@@ -245,6 +253,14 @@ final class FabushiDeviceMeshAgent {
             ],
             "mesh": mesh,
         ]
+        if let directPath {
+            registration["direct"] = directPath.registrationJSON()
+            var directMesh = mesh
+            directMesh["supportedPaths"] = ["direct-udp", "relay"]
+            directMesh["preferredPath"] = "direct-udp"
+            registration["mesh"] = directMesh
+        } // GBF-412 iOS publish direct candidates
+        return registration
     }
 
     private func beginReceiveLoop(_ socket: URLSessionWebSocketTask) {
@@ -272,14 +288,16 @@ final class FabushiDeviceMeshAgent {
                 catch { return }
                 guard self.webSocket === socket, self.state.applicationActive else { return }
                 do {
-                    try await self.send([
+                    var heartbeat: [String: Any] = [
                         "type": "heartbeat",
                         "at": Int64(Date().timeIntervalSince1970 * 1_000),
                         "mesh": [
                             "activePath": "relay",
                             "posture": self.posture(appState: self.surface.status().available ? "foreground" : "foreground-unavailable"),
                         ],
-                    ], over: socket)
+                    ]
+                    if let directPath = self.directPath { heartbeat["direct"] = directPath.registrationJSON() } // GBF-412 iOS direct heartbeat
+                    try await self.send(heartbeat, over: socket)
                 } catch {
                     self.connectionFailed(socket, error: error)
                     return
@@ -304,11 +322,89 @@ final class FabushiDeviceMeshAgent {
             guard webSocket === socket else { return }
             state.registered = true
             state.error = nil
+        case "direct_peer_map":
+            guard object["version"] as? String == FabushiDeviceDirectPath.protocolVersion,
+                  let directPath, let peers = object["peers"] as? [[String: Any]] else { return }
+            directPath.updatePeers(peers)
+            directPath.configureRPC(accountBinding: object["accountBinding"] as? String) { [weak self] invocationId, toolName, arguments in
+                guard let self else { throw AgentError.invalidArguments("device agent stopped") }
+                return try await self.executeInvocation(invocationId: invocationId, toolName: toolName, arguments: arguments)
+            } // GBF-412 iOS account-bound direct RPC
+            directPath.probeAll { [weak self, weak socket] health in
+                guard let self, let socket, self.webSocket === socket else { return }
+                Task { @MainActor in
+                    try? await self.send([
+                        "type": "direct_path_health",
+                        "targetDeviceId": health.targetDeviceId,
+                        "candidateId": health.candidateId,
+                        "reachable": health.reachable,
+                        "latencyMs": health.latencyMs,
+                        "loss": health.loss,
+                    ], over: socket)
+                }
+            } // GBF-412 iOS direct peer probing
+        case "direct_forward_call":
+            try await handleDirectForward(object, from: socket) // GBF-412 iOS direct forwarding
         case "call":
             try await handleCall(object, from: socket)
         default:
             break
         }
+    }
+
+    private func handleDirectForward(_ message: [String: Any], from socket: URLSessionWebSocketTask) async throws {
+        let requestId = String((message["requestId"] as? String ?? "").prefix(128))
+        let invocationId = String((message["invocationId"] as? String ?? requestId).prefix(128))
+        let targetDeviceId = String((message["targetDeviceId"] as? String ?? "").prefix(128))
+        let targetGeneration = String((message["targetGeneration"] as? String ?? "").prefix(128))
+        let toolName = String((message["toolName"] as? String ?? "").prefix(128))
+        let arguments = message["arguments"] as? [String: Any] ?? [:]
+        guard let directPath, let peer = directPath.peer(deviceId: targetDeviceId),
+              peer.generation == targetGeneration, let candidate = directPath.preferredCandidate(for: peer) else {
+            try await send(["type": "direct_forward_failed", "requestId": requestId, "invocationId": invocationId, "error": "No authenticated iOS direct route is available."], over: socket)
+            return
+        }
+        do {
+            let payload = try await directPath.call(
+                peer: peer, candidate: candidate, toolName: toolName, arguments: arguments, invocationId: invocationId,
+                timeoutNanoseconds: UInt64(max(500, min(5_000, integer(message["timeoutMs"]) ?? 2_500))) * 1_000_000
+            )
+            let result = payload["result"] as? [String: Any] ?? [:]
+            try await send(["type": "result", "requestId": requestId, "invocationId": invocationId, "ok": true, "route": "direct-udp", "result": result], over: socket)
+        } catch {
+            try await send(["type": "direct_forward_failed", "requestId": requestId, "invocationId": invocationId, "error": safeError(error)], over: socket)
+        }
+    } // GBF-412 iOS peer direct call path
+
+    private func executeInvocation(invocationId: String, toolName: String, arguments: [String: Any]) async throws -> [String: Any] {
+        guard invocationId.range(of: #"^[A-Za-z0-9._:-]{16,128}$"#, options: .regularExpression) != nil,
+              FabushiAppAgentSurface.toolNames.contains(toolName) else { throw AgentError.unsupportedTool }
+        if let cached = invocationCache[invocationId] { return try decodeInvocation(cached) }
+        let task: Task<InvocationOutcome, Never>
+        if let existing = invocationTasks[invocationId] { task = existing }
+        else {
+            task = Task { @MainActor [weak self] in
+                guard let self else { return InvocationOutcome(ok: false, data: Data(), error: "device agent stopped") }
+                do {
+                    let structured = try await self.call(toolName: toolName, arguments: arguments)
+                    let result: [String: Any] = ["structuredContent": structured, "content": [["type": "text", "text": self.summary(toolName: toolName, result: structured)]]]
+                    let data = (try? JSONSerialization.data(withJSONObject: result)) ?? Data()
+                    return InvocationOutcome(ok: true, data: data, error: nil)
+                } catch { return InvocationOutcome(ok: false, data: Data(), error: self.safeError(error)) }
+            }
+            invocationTasks[invocationId] = task
+        }
+        let outcome = await task.value
+        invocationTasks.removeValue(forKey: invocationId)
+        invocationCache[invocationId] = outcome
+        if invocationCache.count > 512, let oldest = invocationCache.keys.first(where: { $0 != invocationId }) { invocationCache.removeValue(forKey: oldest) }
+        return try decodeInvocation(outcome)
+    } // GBF-412 iOS exactly-once execution boundary
+
+    private func decodeInvocation(_ outcome: InvocationOutcome) throws -> [String: Any] {
+        guard outcome.ok else { throw AgentError.invalidArguments(outcome.error ?? "device call failed") }
+        guard let object = try JSONSerialization.jsonObject(with: outcome.data) as? [String: Any] else { throw AgentError.invalidJSON }
+        return object
     }
 
     private func handleCall(_ message: [String: Any], from socket: URLSessionWebSocketTask) async throws {
@@ -318,24 +414,24 @@ final class FabushiDeviceMeshAgent {
               FabushiAppAgentSurface.toolNames.contains(toolName)
         else { return }
         let arguments = message["arguments"] as? [String: Any] ?? [:]
+        let invocationId = String((message["invocationId"] as? String ?? requestId).prefix(128)) // GBF-412 iOS relay invocation id
         let response: [String: Any]
         do {
-            let structured = try await call(toolName: toolName, arguments: arguments)
+            let result = try await executeInvocation(invocationId: invocationId, toolName: toolName, arguments: arguments)
             response = [
                 "type": "result",
                 "requestId": requestId,
+                "invocationId": invocationId,
                 "ok": true,
-                "result": [
-                    "structuredContent": structured,
-                    "content": [["type": "text", "text": summary(toolName: toolName, result: structured)]],
-                ],
-            ]
+                "result": result,
+            ] // GBF-412 iOS relay shares direct dedupe
         } catch {
             response = [
                 "type": "result",
                 "requestId": requestId,
+                "invocationId": invocationId,
                 "ok": false,
-                "error": safeError(error),
+                "error": safeError(error), // GBF-412 iOS failed invocation echo
             ]
         }
         guard webSocket === socket else { return }
@@ -491,6 +587,8 @@ final class FabushiDeviceMeshAgent {
         receiveTask = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
+        directPath?.stop()
+        directPath = nil // GBF-412 iOS direct lifecycle cleanup
         let socket = webSocket
         webSocket = nil
         connectionGeneration = nil

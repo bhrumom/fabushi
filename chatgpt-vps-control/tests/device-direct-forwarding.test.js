@@ -86,15 +86,18 @@ test("gateway routes through a healthy peer then retries the same invocation ove
   }
   await Promise.all([waitRegistered(router), waitRegistered(target)]);
 
-  router.send(JSON.stringify({
-    type: "direct_path_health",
-    targetDeviceId: "target",
-    candidateId: "udp:host:127.0.0.1:41002",
-    reachable: true,
-    latencyMs: 4,
-    loss: 0,
-  }));
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  // Route hysteresis intentionally requires two consecutive healthy observations before promotion.
+  for (let sample = 0; sample < 2; sample += 1) {
+    router.send(JSON.stringify({
+      type: "direct_path_health",
+      targetDeviceId: "target",
+      candidateId: "udp:host:127.0.0.1:41002",
+      reachable: true,
+      latencyMs: 4,
+      loss: 0,
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
 
   const forwardedPromise = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("missing direct_forward_call")), 2_000);

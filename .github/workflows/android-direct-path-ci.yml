@@ -63,7 +63,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Compile and lint Android direct path
         working-directory: mobile/android
-        run: ./gradlew --no-daemon --build-cache :app:compileDebugKotlin :app:lintDebug
+        run: ./gradlew --no-daemon --build-cache :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug
 
   persist:
     needs: verify

@@ -12,6 +12,9 @@ final class FabushiDeviceDirectPath {
     static let rpcProtocolVersion = "fabushi.direct-rpc.v1"
     private static let rpcPacketType = "fabushi-direct-rpc"
     private static let replayWindow: UInt64 = 128
+    private static let stunMagicCookie: UInt32 = 0x2112A442
+    private static let stunServer = NWEndpoint.Host("stun.cloudflare.com")
+    private static let stunPort = NWEndpoint.Port(rawValue: 3478)!
 
     struct Candidate: Hashable {
         let id: String
@@ -79,6 +82,8 @@ final class FabushiDeviceDirectPath {
     private var sessions: [String: RPCSession] = [:]
     private var accountBinding: String?
     private var rpcExecutor: RPCExecutor?
+    private var serverReflexiveCandidate: Candidate?
+    private var pathMonitor: NWPathMonitor?
 
     init(deviceId: String, generation: String, identity: FabushiMeshNodeIdentity) {
         self.deviceId = deviceId
@@ -106,12 +111,17 @@ final class FabushiDeviceDirectPath {
         } // GBF-412 await UDP listener readiness // GBF-412 Swift 6 start continuation
         guard let port = listener.port?.rawValue else { throw DirectPathError.listenerPortUnavailable }
         boundPort = port
+        startPathMonitor()
+        Task { @MainActor [weak self] in await self?.refreshServerReflexiveCandidate() }
     }
 
     func stop() {
         listener?.cancel()
         listener = nil
         boundPort = nil
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        serverReflexiveCandidate = nil
         for connection in incoming { connection.cancel() }
         incoming.removeAll()
         peers.removeAll()
@@ -160,7 +170,76 @@ final class FabushiDeviceDirectPath {
             let priority = family == AF_INET ? 200 : 180
             result.append(Candidate(id: "udp:host:\(addressText):\(port)", host: addressText, port: port, priority: priority, scope: "host"))
         }
+        if let serverReflexiveCandidate { result.append(serverReflexiveCandidate) }
         return Array(Set(result)).sorted { $0.priority > $1.priority }.prefix(24).map { $0 }
+    }
+
+    private func startPathMonitor() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        pathMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.serverReflexiveCandidate = nil
+                self.sessions.removeAll()
+                await self.refreshServerReflexiveCandidate()
+            }
+        }
+        monitor.start(queue: queue)
+    }
+
+    private func refreshServerReflexiveCandidate() async {
+        guard let port = boundPort else { return }
+        let transactionId = randomData(count: 12)
+        let parameters = NWParameters.udp
+        parameters.allowLocalEndpointReuse = true
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host("0.0.0.0"), port: NWEndpoint.Port(rawValue: port)!)
+        let connection = NWConnection(host: Self.stunServer, port: Self.stunPort, using: parameters)
+        defer { connection.cancel() }
+        do {
+            try await startConnection(connection)
+            let request = Self.stunBindingRequest(transactionId: transactionId)
+            try await sendRaw(request, over: connection)
+            let response = try await receiveRawDatagram(connection, timeoutNanoseconds: 1_500_000_000)
+            serverReflexiveCandidate = Self.parseStunMappedAddress(response, transactionId: transactionId)
+        } catch {
+            serverReflexiveCandidate = nil
+        }
+    }
+
+    static func stunBindingRequest(transactionId: Data) -> Data {
+        precondition(transactionId.count == 12)
+        var bytes = Data([0x00, 0x01, 0x00, 0x00, 0x21, 0x12, 0xA4, 0x42])
+        bytes.append(transactionId)
+        return bytes
+    }
+
+    static func parseStunMappedAddress(_ data: Data, transactionId: Data) -> Candidate? {
+        guard transactionId.count == 12, data.count >= 20 else { return nil }
+        let bytes = [UInt8](data)
+        guard bytes[0] == 0x01, bytes[1] == 0x01,
+              bytes[4] == 0x21, bytes[5] == 0x12, bytes[6] == 0xA4, bytes[7] == 0x42,
+              Data(bytes[8..<20]) == transactionId else { return nil }
+        let messageLength = Int(bytes[2]) << 8 | Int(bytes[3])
+        guard 20 + messageLength <= bytes.count else { return nil }
+        let cookie = [UInt8](arrayLiteral: 0x21, 0x12, 0xA4, 0x42)
+        var offset = 20
+        while offset + 4 <= 20 + messageLength {
+            let type = Int(bytes[offset]) << 8 | Int(bytes[offset + 1])
+            let length = Int(bytes[offset + 2]) << 8 | Int(bytes[offset + 3])
+            let value = offset + 4
+            guard value + length <= bytes.count else { return nil }
+            if type == 0x0020, length >= 8, bytes[value + 1] == 0x01 {
+                let xorPort = UInt16(bytes[value + 2]) << 8 | UInt16(bytes[value + 3])
+                let mappedPort = xorPort ^ UInt16(Self.stunMagicCookie >> 16)
+                let octets = (0..<4).map { bytes[value + 4 + $0] ^ cookie[$0] }
+                let host = octets.map(String.init).joined(separator: ".")
+                return Candidate(id: "udp:srflx:\(host):\(mappedPort)", host: host, port: mappedPort, priority: 120, scope: "srflx")
+            }
+            offset = value + ((length + 3) & ~3)
+        }
+        return nil
     }
 
     func updatePeers(_ rawPeers: [[String: Any]]) {
@@ -579,7 +658,22 @@ final class FabushiDeviceDirectPath {
     }
 
     private func receiveDatagram(_ connection: NWConnection, timeoutNanoseconds: UInt64) async throws -> [String: Any] {
-        let data = try await withThrowingTaskGroup(of: Data.self) { group in
+        let data = try await receiveRawDatagram(connection, timeoutNanoseconds: timeoutNanoseconds)
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw DirectPathError.invalidPacket }
+        return object // GBF-412 Swift 6 Sendable datagram boundary
+    }
+
+    private func sendRaw(_ data: Data, over connection: NWConnection) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(content: data, completion: .contentProcessed { error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume(returning: ()) }
+            })
+        }
+    }
+
+    private func receiveRawDatagram(_ connection: NWConnection, timeoutNanoseconds: UInt64) async throws -> Data {
+        try await withThrowingTaskGroup(of: Data.self) { group in
             group.addTask {
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
                     connection.receiveMessage { data, _, _, error in
@@ -600,8 +694,6 @@ final class FabushiDeviceDirectPath {
             group.cancelAll()
             return result
         }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw DirectPathError.invalidPacket }
-        return object // GBF-412 Swift 6 Sendable datagram boundary
     }
 
     private func randomData(count: Int) -> Data {

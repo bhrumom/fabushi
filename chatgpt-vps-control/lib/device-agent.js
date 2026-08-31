@@ -18,6 +18,9 @@ import {
   meshPostureFromEnvironment,
   parseMeshTags,
 } from "./device-mesh.js"; // GBF-412 device mesh
+import { bindDirectProbeEndpoint, collectHostUdpCandidates, discoverServerReflexiveCandidate } from "./device-direct-path.js"; // GBF-412 direct agent
+import { createInvocationDeduper } from "./device-direct-rpc.js"; // GBF-412 direct RPC dedupe
+import { attachDirectRpcTransport } from "./device-direct-transport.js"; // GBF-412 encrypted peer RPC transport
 
 const HEARTBEAT_MS = 20_000;
 const MAX_RECONNECT_MS = 30_000;
@@ -266,6 +269,13 @@ export function resolveDeviceAgentConfig(env = process.env) {
     meshIdentityPath: defaultMeshIdentityPath(env),
     meshTags: parseMeshTags(env.DEVICE_MESH_TAGS_JSON),
     meshPosture: meshPostureFromEnvironment(env), // GBF-412 mesh config
+    directPath: {
+      enabled: !/^(0|false|no)$/iu.test(String(env.FABUSHI_DIRECT_PATH_ENABLED ?? "1")),
+      host: String(env.FABUSHI_DIRECT_BIND_HOST || "0.0.0.0"),
+      port: Math.max(0, Math.min(65535, Number(env.FABUSHI_DIRECT_BIND_PORT) || 0)),
+      stunHost: String(env.FABUSHI_STUN_HOST || "").trim(),
+      stunPort: Math.max(1, Math.min(65535, Number(env.FABUSHI_STUN_PORT) || 3478)),
+    }, // GBF-412 direct path config
   };
 }
 
@@ -336,6 +346,16 @@ export function startDeviceAgent(options = {}) {
   const meshIdentity = options.meshIdentity ?? loadOrCreateMeshIdentity(
     config.meshIdentityPath ?? defaultMeshIdentityPath(options.env ?? process.env),
   ); // GBF-412 persistent node identity
+  const invocationDeduper = createInvocationDeduper(); // GBF-412 exactly-once invocation boundary
+  let directRpcTransport = null; // GBF-412 direct RPC lifecycle
+
+  async function executeDeviceInvocation(invocationId, toolName, args) {
+    return invocationDeduper.run(invocationId, async () => {
+      return toolName === "secure_input_submit"
+        ? await runSecureInput(local, secureChannel, args ?? {})
+        : await local.client.callTool({ name: toolName, arguments: args ?? {} });
+    });
+  } // GBF-412 shared direct/relay execution boundary
 
   function announceRegistered(value) {
     registered = value;
@@ -358,6 +378,31 @@ export function startDeviceAgent(options = {}) {
       if (!local) local = await openLocal(config);
       secureChannel = await createSecureInputChannel();
       const connectionGeneration = randomBytes(16).toString("hex");
+      const directPeers = new Map();
+      let directEndpoint = null;
+      let directCandidates = [];
+      if (config.directPath?.enabled) {
+        directEndpoint = await bindDirectProbeEndpoint({
+          identity: meshIdentity,
+          deviceId: config.deviceId,
+          generation: connectionGeneration,
+          host: config.directPath.host,
+          port: config.directPath.port,
+          expectedPeer: (peerDeviceId) => {
+            const peer = directPeers.get(peerDeviceId);
+            return peer ? { fromDeviceId: peer.deviceId, fromGeneration: peer.generation, nodeKeyFingerprint: peer.nodeKeyFingerprint } : null;
+          },
+        });
+        directCandidates = collectHostUdpCandidates(directEndpoint.address.port);
+        if (config.directPath.stunHost) {
+          try {
+            const srflx = await discoverServerReflexiveCandidate({ socket: directEndpoint.socket, stunHost: config.directPath.stunHost, stunPort: config.directPath.stunPort });
+            if (srflx) directCandidates = [...directCandidates, srflx];
+          } catch (error) {
+            logError(`Fabushi STUN endpoint discovery failed; relay remains available: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      } // GBF-412 establish direct probe endpoint
       const activeGatewayToken = config.getGatewayToken ? await config.getGatewayToken() : config.gatewayToken;
       const mesh = buildSignedMeshRegistration({
         identity: meshIdentity,
@@ -392,7 +437,8 @@ export function startDeviceAgent(options = {}) {
           leaseSeconds: config.leaseSeconds,
           metadata: config.metadata,
           mesh, // GBF-412 signed node and relay path state
-        }));
+          ...(directEndpoint ? { direct: { version: "fabushi.direct-path.v1", candidates: directCandidates } } : {}),
+        })); // GBF-412 publish direct candidates
         registrationTimer = setTimeout(() => {
           logError("Fabushi device gateway registration timed out; reconnecting.");
           socket.terminate();
@@ -411,7 +457,8 @@ export function startDeviceAgent(options = {}) {
             type: "heartbeat",
             at: Date.now(),
             mesh: { activePath: "relay", posture: config.meshPosture ?? {} },
-          })); // GBF-412 mesh heartbeat
+            ...(directEndpoint ? { direct: { version: "fabushi.direct-path.v1", candidates: directCandidates } } : {}),
+          })); // GBF-412 mesh heartbeat and direct candidate refresh
         }, HEARTBEAT_MS);
         heartbeatTimer.unref?.();
       });
@@ -427,28 +474,81 @@ export function startDeviceAgent(options = {}) {
           log(`Fabushi device agent registered with ${new URL(config.gatewayUrl).host} as ${config.deviceId}.`);
           return;
         }
+        if (message.type === "direct_peer_map") {
+          if (!directEndpoint || message.version !== "fabushi.direct-path.v1" || !Array.isArray(message.peers)) return;
+          directPeers.clear();
+          for (const peer of message.peers.slice(0, 50)) {
+            if (!peer?.deviceId || !peer?.generation || !peer?.nodeKeyFingerprint || !Array.isArray(peer.candidates)) continue;
+            directPeers.set(String(peer.deviceId), peer);
+          }
+          if (!directRpcTransport && typeof message.accountBinding === "string" && message.accountBinding.length >= 16) {
+            directRpcTransport = attachDirectRpcTransport({
+              endpoint: directEndpoint,
+              identity: meshIdentity,
+              accountBinding: message.accountBinding,
+              deviceId: config.deviceId,
+              generation: connectionGeneration,
+              peerLookup: (peerDeviceId) => directPeers.get(String(peerDeviceId)) ?? null,
+              executeInvocation: executeDeviceInvocation,
+            });
+          } // GBF-412 attach account-bound encrypted peer RPC
+          for (const peer of directPeers.values()) {
+            for (const candidate of peer.candidates.slice(0, 8)) {
+              if (!candidate?.id || !candidate?.host || !candidate?.port) continue;
+              const started = Date.now();
+              directEndpoint.probe({ peer, candidate, timeoutMs: 1_500 })
+                .then((result) => {
+                  if (socket.readyState === WebSocketImpl.OPEN) socket.send(JSON.stringify({ type: "direct_path_health", targetDeviceId: peer.deviceId, candidateId: candidate.id, reachable: true, latencyMs: result.latencyMs, loss: 0 }));
+                })
+                .catch(() => {
+                  if (socket.readyState === WebSocketImpl.OPEN) socket.send(JSON.stringify({ type: "direct_path_health", targetDeviceId: peer.deviceId, candidateId: candidate.id, reachable: false, latencyMs: Date.now() - started, loss: 1 }));
+                });
+            }
+          }
+          return;
+        } // GBF-412 probe same-account peers
+        if (message.type === "direct_forward_call") {
+          const requestId = String(message.requestId || "").slice(0, 128);
+          const invocationId = String(message.invocationId || requestId).slice(0, 128);
+          const targetDeviceId = String(message.targetDeviceId || "").slice(0, 128);
+          const peer = directPeers.get(targetDeviceId);
+          const candidate = peer?.candidates?.find((entry) => entry?.health?.reachable === true) ?? peer?.candidates?.[0];
+          if (!directRpcTransport || !peer || peer.generation !== String(message.targetGeneration || "") || !candidate) {
+            if (socket.readyState === WebSocketImpl.OPEN) socket.send(JSON.stringify({ type: "direct_forward_failed", requestId, invocationId, error: "No authenticated direct route is available." }));
+            return;
+          }
+          directRpcTransport.call({
+            peer, candidate, toolName: String(message.toolName || "").slice(0, 128), arguments: message.arguments ?? {}, invocationId,
+            timeoutMs: Math.max(500, Math.min(5_000, Number(message.timeoutMs) || 2_500)),
+          }).then((response) => {
+            if (socket.readyState === WebSocketImpl.OPEN) socket.send(JSON.stringify({ type: "result", requestId, invocationId, ok: response.result?.isError !== true, result: response.result, route: "direct-udp" }));
+          }).catch((error) => {
+            if (socket.readyState === WebSocketImpl.OPEN) socket.send(JSON.stringify({ type: "direct_forward_failed", requestId, invocationId, error: error instanceof Error ? error.message.slice(0, 1_000) : String(error).slice(0, 1_000) }));
+          });
+          return;
+        } // GBF-412 peer direct forwarding
         if (message.type !== "call" || !message.requestId || !message.toolName) return;
+        const invocationId = String(message.invocationId || message.requestId).slice(0, 128); // GBF-412 stable transport-independent invocation
         const traceBase = {
           requestId: String(message.requestId).slice(0, 128),
+          invocationId,
           deviceId: config.deviceId,
           toolName: String(message.toolName).slice(0, 128),
           arguments: redactDeviceCallArguments(message.toolName, message.arguments ?? {}),
         };
         await appendDeviceTrace(config.tracePath, { ...traceBase, phase: "requested" }).catch(() => {});
         try {
-          const result = message.toolName === "secure_input_submit"
-            ? await runSecureInput(local, secureChannel, message.arguments ?? {})
-            : await local.client.callTool({ name: message.toolName, arguments: message.arguments ?? {} });
+          const result = await executeDeviceInvocation(invocationId, message.toolName, message.arguments ?? {}); // GBF-412 execute once across direct/relay retries // GBF-412 shared execution used by relay
           await appendDeviceTrace(config.tracePath, {
             ...traceBase,
             phase: "completed",
             ok: !result.isError,
             structuredContent: redactDeviceCallResult(message.toolName, result.structuredContent ?? null),
           }).catch(() => {});
-          socket.send(JSON.stringify({ type: "result", requestId: message.requestId, ok: !result.isError, result }));
+          socket.send(JSON.stringify({ type: "result", requestId: message.requestId, invocationId, ok: !result.isError, result })); // GBF-412 echo invocation id
         } catch (error) {
           await appendDeviceTrace(config.tracePath, { ...traceBase, phase: "completed", ok: false, error: error instanceof Error ? error.message.slice(0, 1_000) : String(error).slice(0, 1_000) }).catch(() => {});
-          socket.send(JSON.stringify({ type: "result", requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) }));
+          socket.send(JSON.stringify({ type: "result", requestId: message.requestId, invocationId, ok: false, error: error instanceof Error ? error.message : String(error) })); // GBF-412 echo failed invocation id
         }
       });
 
@@ -459,6 +559,8 @@ export function startDeviceAgent(options = {}) {
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         if (registrationTimer) clearTimeout(registrationTimer);
         if (activeSocket === socket) activeSocket = null;
+        if (directRpcTransport) { try { directRpcTransport.close(); } catch {} directRpcTransport = null; } // GBF-412 close direct RPC on reconnect
+        if (directEndpoint) { try { directEndpoint.close(); } catch {} directEndpoint = null; } // GBF-412 close direct socket on reconnect
         if (stopped) return;
         const delay = reconnectMs;
         reconnectMs = Math.min(reconnectMs * 2, MAX_RECONNECT_MS);
