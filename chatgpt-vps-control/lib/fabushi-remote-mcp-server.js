@@ -6,7 +6,8 @@ import { dirname, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { attachDeviceGateway, registerDeviceTools } from "./device-gateway.js";
+import { attachDeviceGateway, disconnectRegisteredDevice, registerDeviceTools } from "./device-gateway.js";
+import { createDeviceIdentityRegistry } from "./device-identity-registry.js"; // GBF-412 persistent node registry
 import { createFabushiAccountClient } from "./fabushi-account-auth.js";
 
 const ACCESS_TOKEN_TTL_SECONDS = 8 * 60 * 60;
@@ -20,6 +21,8 @@ const DEFAULT_LIMITS = Object.freeze({
   codes: 500,
   accessTokens: 5_000,
   refreshTokens: 5_000,
+  deviceIdentities: 10_000,
+  identityClaims: 1_000, // GBF-412 identity capacity
 });
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMITS = Object.freeze({
@@ -31,6 +34,31 @@ const RATE_LIMITS = Object.freeze({
 const MCP_SCOPES = ["devices.read", "devices.control"];
 const READ_SECURITY_SCHEMES = [{ type: "oauth2", scopes: ["devices.read"] }];
 const WRITE_SECURITY_SCHEMES = [{ type: "oauth2", scopes: ["devices.control"] }];
+
+const deviceIdentityBindingShape = z.object({
+  version: z.number().int().positive(),
+  deviceId: z.string(),
+  nodeKeyFingerprint: z.string(),
+  status: z.enum(["active", "revoked"]),
+  platform: z.string(),
+  name: z.string(),
+  firstSeenAt: z.string(),
+  lastSeenAt: z.string(),
+  rotatedAt: z.string().nullable(),
+  revokedAt: z.string().nullable(),
+  rotationCount: z.number().int().nonnegative(),
+});
+const deviceIdentityClaimShape = z.object({
+  claimId: z.string(),
+  deviceId: z.string(),
+  currentFingerprint: z.string().nullable(),
+  requestedFingerprint: z.string(),
+  reason: z.string(),
+  platform: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+  expiresAt: z.string(),
+}); // GBF-412 identity MCP shapes
 
 function randomToken(bytes = 32) {
   return randomBytes(bytes).toString("base64url");
@@ -208,7 +236,7 @@ function trimMapToLimit(map, limit) {
 }
 
 function normalizeStatePayload(payload) {
-  const output = { clients: [], accessTokens: [], refreshTokens: [] };
+  const output = { clients: [], accessTokens: [], refreshTokens: [], deviceIdentities: [] }; // GBF-412 persisted identities
   for (const client of payload?.clients ?? []) {
     const clientId = String(client?.clientId || "");
     const redirectUris = Array.isArray(client?.redirectUris) ? client.redirectUris.map(String).filter(validRedirectUri) : [];
@@ -224,6 +252,7 @@ function normalizeStatePayload(payload) {
       createdAt: Number(token.createdAt || now), expiresAt,
     });
   }
+  output.deviceIdentities = Array.isArray(payload?.deviceIdentities) ? payload.deviceIdentities : []; // GBF-412 load identity snapshot
   for (const token of payload?.refreshTokens ?? []) {
     const expiresAt = Number(token?.expiresAt || 0);
     if (!token?.token || !token?.accountId || expiresAt <= now) continue;
@@ -252,6 +281,8 @@ export function createFabushiRemoteMcpServer(options = {}) {
     codes: positiveLimit(options.limits?.codes, DEFAULT_LIMITS.codes),
     accessTokens: positiveLimit(options.limits?.accessTokens, DEFAULT_LIMITS.accessTokens),
     refreshTokens: positiveLimit(options.limits?.refreshTokens, DEFAULT_LIMITS.refreshTokens),
+    deviceIdentities: positiveLimit(options.limits?.deviceIdentities, DEFAULT_LIMITS.deviceIdentities),
+    identityClaims: positiveLimit(options.limits?.identityClaims, DEFAULT_LIMITS.identityClaims), // GBF-412 identity limits
   };
   const clients = new Map();
   const authorizationRequests = new Map();
@@ -259,6 +290,11 @@ export function createFabushiRemoteMcpServer(options = {}) {
   const accessTokens = new Map();
   const refreshTokens = new Map();
   const rateBuckets = new Map();
+  const identityRegistry = createDeviceIdentityRegistry({
+    now,
+    maxBindings: limits.deviceIdentities,
+    maxClaims: limits.identityClaims,
+  }); // GBF-412 account node continuity
   let saveChain = Promise.resolve();
   let loaded = false;
   let listening = false;
@@ -280,6 +316,7 @@ export function createFabushiRemoteMcpServer(options = {}) {
       try { payload = JSON.parse(await readFile(statePath, "utf8")); } catch {}
     }
     const normalized = normalizeStatePayload(payload);
+    identityRegistry.load(normalized.deviceIdentities); // GBF-412 restore identity continuity
     for (const client of normalized.clients.slice(-limits.clients)) clients.set(client.clientId, { redirectUris: client.redirectUris, createdAt: client.createdAt || now() });
     for (const token of normalized.accessTokens.slice(-limits.accessTokens)) accessTokens.set(token.token, token);
     for (const token of normalized.refreshTokens.slice(-limits.refreshTokens)) refreshTokens.set(token.token, token);
@@ -293,6 +330,7 @@ export function createFabushiRemoteMcpServer(options = {}) {
         clients: [...clients].map(([clientId, value]) => ({ clientId, redirectUris: value.redirectUris, createdAt: value.createdAt })),
         accessTokens: [...accessTokens.values()],
         refreshTokens: [...refreshTokens.values()],
+        deviceIdentities: identityRegistry.snapshot(), // GBF-412 save identity continuity
       };
       await mkdir(dirname(statePath), { recursive: true });
       const temporary = `${statePath}.${process.pid}.${now()}.${randomBytes(4).toString("hex")}.tmp`;
@@ -305,6 +343,7 @@ export function createFabushiRemoteMcpServer(options = {}) {
 
   function cleanupExpired() {
     const timestamp = now();
+    identityRegistry.cleanup(); // GBF-412 expire identity claims
     for (const [id, value] of authorizationRequests) if (value.expiresAt <= timestamp) authorizationRequests.delete(id);
     for (const [id, value] of codes) if (value.expiresAt <= timestamp) codes.delete(id);
     let changed = false;
@@ -525,6 +564,51 @@ export function createFabushiRemoteMcpServer(options = {}) {
       isError: true,
       content: [{ type: "text", text: `The Fabushi MCP token does not grant ${scope}.` }],
     });
+    server.registerTool("list_device_identities", {
+      title: "List device identity bindings",
+      description: "List persistent signed-node bindings and pending replacement claims for this Fabushi account.",
+      inputSchema: {},
+      outputSchema: { bindings: z.array(deviceIdentityBindingShape), pendingClaims: z.array(deviceIdentityClaimShape) },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+      securitySchemes: READ_SECURITY_SCHEMES,
+    }, async () => {
+      if (!readAllowed) return authError("devices.read");
+      const result = {
+        bindings: identityRegistry.listBindings(account.accountId),
+        pendingClaims: identityRegistry.listClaims(account.accountId),
+      };
+      return { structuredContent: result, content: [{ type: "text", text: JSON.stringify(result) }] };
+    });
+    server.registerTool("approve_device_identity_rotation", {
+      title: "Approve device identity rotation",
+      description: "Approve one short-lived signed-node replacement claim after verifying the device id, platform, name, and requested fingerprint.",
+      inputSchema: { claimId: z.string().min(24).max(128) },
+      outputSchema: { binding: deviceIdentityBindingShape, previousFingerprint: z.string() },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
+      securitySchemes: WRITE_SECURITY_SCHEMES,
+    }, async ({ claimId }) => {
+      if (!writeAllowed) return authError("devices.control");
+      const result = identityRegistry.approve(account.accountId, claimId);
+      await saveState();
+      disconnectRegisteredDevice(account.accountId, result.binding.deviceId, "device identity rotated");
+      await audit({ type: "device.identity_rotation_approved", accountRef: safeAccountRef(account.accountId), deviceId: result.binding.deviceId, nodeKeyFingerprint: result.binding.nodeKeyFingerprint });
+      return { structuredContent: result, content: [{ type: "text", text: `Approved signed-node rotation for ${result.binding.deviceId}.` }] };
+    });
+    server.registerTool("revoke_device_identity", {
+      title: "Revoke a device identity",
+      description: "Revoke the persistent signed-node binding for a device. Reconnection requires an explicit approval claim; revocation never silently re-enrolls the old key.",
+      inputSchema: { deviceId: z.string().min(1).max(128) },
+      outputSchema: { revoked: z.boolean(), binding: deviceIdentityBindingShape.nullable() },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
+      securitySchemes: WRITE_SECURITY_SCHEMES,
+    }, async ({ deviceId }) => {
+      if (!writeAllowed) return authError("devices.control");
+      const result = identityRegistry.revoke(account.accountId, deviceId);
+      if (result.changed) await saveState();
+      if (result.revoked) disconnectRegisteredDevice(account.accountId, deviceId, "device identity revoked");
+      await audit({ type: "device.identity_revoked", accountRef: safeAccountRef(account.accountId), deviceId, revoked: result.revoked });
+      return { structuredContent: { revoked: result.revoked, binding: result.binding }, content: [{ type: "text", text: result.revoked ? `Revoked signed-node identity for ${deviceId}.` : `No signed-node identity was bound to ${deviceId}.` }] };
+    }); // GBF-412 identity management tools
     registerDeviceTools(server, {
       accountId: account.accountId,
       canRead: () => readAllowed,
@@ -613,6 +697,21 @@ export function createFabushiRemoteMcpServer(options = {}) {
     audit: (record) => void audit({ ...record, accountRef: record.accountId ? safeAccountRef(record.accountId) : undefined, accountId: undefined }),
     defaultLeaseSeconds: Number(options.defaultLeaseSeconds ?? process.env.DEVICE_DEFAULT_LEASE_SECONDS ?? 2 * 60 * 60),
     maxLeaseSeconds: Number(options.maxLeaseSeconds ?? process.env.DEVICE_MAX_LEASE_SECONDS ?? 4 * 60 * 60),
+    requireSignedMesh: options.requireSignedMesh ?? /^(1|true|yes)$/iu.test(String(process.env.DEVICE_REQUIRE_SIGNED_MESH || "")),
+    requirePinnedMesh: true,
+    authorizeMeshIdentity: async (request) => {
+      const decision = identityRegistry.authorize(request);
+      if (decision.accepted && decision.changed) await saveState();
+      await audit({
+        type: decision.accepted ? "device.identity_authorized" : "device.identity_claimed",
+        accountRef: safeAccountRef(request.accountId),
+        deviceId: request.deviceId,
+        nodeKeyFingerprint: request.nodeKeyFingerprint,
+        status: decision.status,
+        code: decision.code,
+      });
+      return decision;
+    }, // GBF-412 enforce persistent signed-node continuity
   });
 
   return {

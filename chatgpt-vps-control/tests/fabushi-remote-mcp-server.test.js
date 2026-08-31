@@ -131,7 +131,7 @@ test("Fabushi remote MCP binds ChatGPT OAuth and Runner devices to one account",
   client = new Client({ name: "fabushi-remote-mcp-test", version: "1.0.0" });
   await client.connect(transport);
   const listedTools = await client.listTools();
-  assert.deepEqual(listedTools.tools.map((tool) => tool.name), ["fabushi_account", "list_devices", "describe_device_tool", "device_call"]);
+  assert.deepEqual(listedTools.tools.map((tool) => tool.name), ["fabushi_account", "list_device_identities", "approve_device_identity_rotation", "revoke_device_identity", "list_devices", "describe_device_tool", "device_call"]); // GBF-412 identity tools
 
   device = new WebSocket(`ws://127.0.0.1:${address.port}/agent`, {
     headers: { Authorization: "Bearer runner-account-token" },

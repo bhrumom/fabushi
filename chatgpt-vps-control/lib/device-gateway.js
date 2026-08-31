@@ -162,7 +162,7 @@ function audit(options, record) {
   }
 }
 
-function handleAgentMessage(socket, raw, options) {
+async function handleAgentMessage(socket, raw, options) { // GBF-412 serialized async identity authorization
   let message;
   try {
     message = JSON.parse(raw.toString("utf8"));
@@ -206,6 +206,43 @@ function handleAgentMessage(socket, raw, options) {
       rejectSocket(socket, 1008, "signed mesh registration required");
       return;
     } // GBF-412 signed mesh verification
+    const meshMetadata = safeMetadata(message.metadata);
+    if (mesh) {
+      if (typeof options.authorizeMeshIdentity === "function") {
+        let authorization;
+        try {
+          authorization = await options.authorizeMeshIdentity({
+            accountId: socket.accountId,
+            deviceId: id,
+            nodeKeyFingerprint: mesh.nodeKeyFingerprint,
+            platform,
+            name,
+            metadata: meshMetadata,
+          });
+        } catch (error) {
+          audit(options, { type: "device.identity_authorization_failed", accountId: socket.accountId, deviceId: id, error: error instanceof Error ? error.message : String(error) });
+          rejectSocket(socket, 1011, "device identity authorization failed");
+          return;
+        }
+        if (!authorization?.accepted) {
+          audit(options, {
+            type: "device.identity_rejected",
+            accountId: socket.accountId,
+            deviceId: id,
+            nodeKeyFingerprint: mesh.nodeKeyFingerprint,
+            code: String(authorization?.code || "device_identity_rejected").slice(0, 120),
+          });
+          rejectSocket(socket, 1008, "device identity approval required");
+          return;
+        }
+        const identityStatus = String(authorization.status || "verified");
+        mesh.identityStatus = ["enrolled", "verified", "rotated"].includes(identityStatus) ? identityStatus : "verified";
+        mesh.identityBindingVersion = Number.isSafeInteger(authorization.bindingVersion) ? authorization.bindingVersion : 1;
+      } else if (options.requirePinnedMesh === true) {
+        rejectSocket(socket, 1011, "device identity registry unavailable");
+        return;
+      }
+    } // GBF-412 persistent node identity authorization
     const leaseSeconds = Math.min(
       Math.max(Number(message.leaseSeconds) || Number(options.defaultLeaseSeconds) || DEFAULT_DEVICE_LEASE_SECONDS, MIN_DEVICE_LEASE_SECONDS),
       Number(options.maxLeaseSeconds) || MAX_DEVICE_LEASE_SECONDS,
@@ -225,7 +262,7 @@ function handleAgentMessage(socket, raw, options) {
       rejectPendingForSocket(previous.socket, `Device ${id} reconnected before the call completed.`);
       rejectSocket(previous.socket, 4001, "device reconnected");
     }
-    const metadata = safeMetadata(message.metadata);
+    const metadata = meshMetadata; // GBF-412 reuse identity-authorized metadata
     const secureInputPublicKey = safeSecureInputPublicKey(message.secureInputPublicKey);
     devices.set(key, {
       accountId: socket.accountId,
@@ -342,12 +379,20 @@ export function attachDeviceGateway(httpServer, options = {}) {
   wss.on("connection", (socket, req) => {
     socket.accountId = String(req.fabushiAccount?.userId || "");
     socket.isAlive = true;
+    socket.messageChain = Promise.resolve(); // GBF-412 serialize registration and calls
     socket.on("pong", () => {
       socket.isAlive = true;
       const device = devices.get(socket.registryKey);
       if (device && device.socket === socket) device.lastSeen = Date.now();
     });
-    socket.on("message", (raw) => handleAgentMessage(socket, raw, options));
+    socket.on("message", (raw) => {
+      socket.messageChain = socket.messageChain
+        .then(() => handleAgentMessage(socket, raw, options))
+        .catch((error) => {
+          audit(options, { type: "device.message_failed", accountId: socket.accountId, deviceId: socket.deviceId || "", error: error instanceof Error ? error.message : String(error) });
+          rejectSocket(socket, 1011, "device message handling failed");
+        });
+    }); // GBF-412 serialized device message queue
     socket.on("close", () => {
       audit(options, { type: "device.disconnected", accountId: socket.accountId, deviceId: socket.deviceId || "" });
       markDisconnected(socket);
@@ -386,6 +431,21 @@ export function attachDeviceGateway(httpServer, options = {}) {
     },
   };
 }
+
+export function disconnectRegisteredDevice(accountId, deviceId, reason = "device identity trust changed") {
+  const key = registryKey(String(accountId || "").trim(), String(deviceId || "").trim());
+  const device = devices.get(key);
+  if (!device || device.central) return false;
+  const socket = device.socket;
+  device.status = "offline";
+  device.socket = null;
+  device.lastSeen = Date.now();
+  if (socket) {
+    rejectPendingForSocket(socket, `Device ${device.id} identity trust changed before the call completed.`);
+    rejectSocket(socket, 4004, String(reason || "device identity trust changed").slice(0, 120));
+  }
+  return true;
+} // GBF-412 identity rotation disconnect
 
 export function listRegisteredDevices(accountId) {
   const normalizedAccountId = String(accountId || "").trim();
@@ -456,6 +516,8 @@ const meshShape = z.object({
   protocolVersion: z.string().nullable(),
   nodeKeyFingerprint: z.string().optional(),
   signed: z.boolean(),
+  identityStatus: z.enum(["legacy", "self-signed", "enrolled", "verified", "rotated"]),
+  identityBindingVersion: z.number().int().positive().nullable(), // GBF-412 mesh identity schema
   supportedPaths: z.array(z.string()),
   preferredPath: z.string(),
   activePath: z.string(),
@@ -620,7 +682,7 @@ export function buildDeviceToolDescriptors(options = {}) {
                 status: { type: "string", enum: ["online", "offline"] }, lastSeen: { type: "string" },
                 expiresAt: { type: ["string", "null"] }, metadata: { type: "object", additionalProperties: { type: "string" } },
                 secureInputPublicKey: { anyOf: [{ type: "object", required: ["kty", "crv", "x", "y"], properties: { kty: { const: "EC" }, crv: { const: "P-256" }, x: { type: "string" }, y: { type: "string" } }, additionalProperties: false }, { type: "null" }] },
-                mesh: { type: "object", required: ["protocolVersion", "signed", "supportedPaths", "preferredPath", "activePath", "features", "tags", "posture"], properties: { protocolVersion: { type: ["string", "null"] }, nodeKeyFingerprint: { type: "string" }, signed: { type: "boolean" }, supportedPaths: { type: "array", items: { type: "string" } }, preferredPath: { type: "string" }, activePath: { type: "string" }, features: { type: "array", items: { type: "string" } }, tags: { type: "array", items: { type: "string" } }, posture: { type: "object", additionalProperties: { type: "string" } }, pathChangedAt: { type: "string" } }, additionalProperties: false }, // GBF-412 mesh JSON schema
+                mesh: { type: "object", required: ["protocolVersion", "signed", "identityStatus", "identityBindingVersion", "supportedPaths", "preferredPath", "activePath", "features", "tags", "posture"], properties: { protocolVersion: { type: ["string", "null"] }, nodeKeyFingerprint: { type: "string" }, signed: { type: "boolean" }, identityStatus: { type: "string", enum: ["legacy", "self-signed", "enrolled", "verified", "rotated"] }, identityBindingVersion: { type: ["integer", "null"], minimum: 1 }, supportedPaths: { type: "array", items: { type: "string" } }, preferredPath: { type: "string" }, activePath: { type: "string" }, features: { type: "array", items: { type: "string" } }, tags: { type: "array", items: { type: "string" } }, posture: { type: "object", additionalProperties: { type: "string" } }, pathChangedAt: { type: "string" } }, additionalProperties: false }, // GBF-412 pinned mesh JSON schema
                 capabilities: { type: "array", items: { type: "string" } },
                 toolSchemaCount: { type: "integer", minimum: 0 }, toolSchemaVersion: { type: "string" },
               },

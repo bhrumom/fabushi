@@ -260,6 +260,8 @@ export function verifyAndNormalizeMeshRegistration(mesh, registration) {
     tags: safeTags(mesh.tags),
     posture: safePosture(mesh.posture),
     signed: true,
+    identityStatus: "self-signed",
+    identityBindingVersion: null, // GBF-412 initial mesh identity trust
     pathChangedAt: Date.now(),
   };
 }
@@ -269,6 +271,8 @@ export function publicMeshState(mesh) {
     return {
       protocolVersion: null,
       signed: false,
+      identityStatus: "legacy",
+      identityBindingVersion: null, // GBF-412 legacy identity state
       supportedPaths: [DEVICE_MESH_RELAY_PATH],
       preferredPath: DEVICE_MESH_RELAY_PATH,
       activePath: DEVICE_MESH_RELAY_PATH,
@@ -281,6 +285,8 @@ export function publicMeshState(mesh) {
     protocolVersion: mesh.protocolVersion,
     nodeKeyFingerprint: mesh.nodeKeyFingerprint,
     signed: mesh.signed === true,
+    identityStatus: String(mesh.identityStatus || "self-signed"),
+    identityBindingVersion: Number.isSafeInteger(mesh.identityBindingVersion) ? mesh.identityBindingVersion : null, // GBF-412 public identity continuity
     supportedPaths: [...mesh.supportedPaths],
     preferredPath: mesh.preferredPath,
     activePath: mesh.activePath,
