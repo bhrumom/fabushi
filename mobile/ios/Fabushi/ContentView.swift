@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 private enum MobileDestination {
     case home
@@ -796,6 +797,15 @@ struct ContentView: View {
                                         }
                                         .padding(.horizontal, 11).padding(.vertical, 7)
                                         .background(message.isOutgoing ? Color.accentColor.opacity(0.20) : Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+                                        .simultaneousGesture(
+                                            DragGesture(minimumDistance: 18)
+                                                .onEnded { value in
+                                                    guard value.translation.width > 58, abs(value.translation.height) < 70 else { return }
+                                                    replyTarget = message
+                                                    editingMessage = nil
+                                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                                }
+                                        )
                                         .contextMenu {
                                             Button("回复", systemImage: "arrowshape.turn.up.left") { replyTarget = message; editingMessage = nil }
                                             Button("转发", systemImage: "arrowshape.turn.up.right") { forwardMessage = message }
