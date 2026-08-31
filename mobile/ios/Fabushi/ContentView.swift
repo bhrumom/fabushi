@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 private enum MobileDestination {
     case home
@@ -58,6 +59,15 @@ struct ContentView: View {
     @State private var forwardMessage: ChatMessage?
     @State private var chatSearchPresented = false
     @State private var chatSearchQuery = ""
+    @State private var attachmentPickerPresented = false
+    @State private var locationSharePresented = false
+    @State private var locationService = LocationService()
+    @State private var contactSharePresented = false
+    @State private var pollComposerPresented = false
+    @State private var pollQuestion = ""
+    @State private var pollOption1 = ""
+    @State private var pollOption2 = ""
+    @State private var pollOption3 = ""
     @State private var composeMenuPresented = false
     @State private var composeKind: ConversationKind?
     @State private var composeName = ""
@@ -620,7 +630,35 @@ struct ContentView: View {
                                                 VStack(alignment: .leading, spacing: 2) { Text("回复").font(.caption2.bold()); Text(replied.text).font(.caption).lineLimit(2) }
                                                     .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 8).overlay(alignment: .leading) { Rectangle().fill(Color.accentColor).frame(width: 2) }
                                             }
-                                            Text(message.text).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
+                                            switch message.contentType {
+                                            case "contact":
+                                                HStack(spacing: 10) {
+                                                    ZStack { Circle().fill(Color.accentColor); Text(String((message.contactName ?? "联").prefix(1))).foregroundStyle(.white).fontWeight(.bold) }.frame(width: 40, height: 40)
+                                                    VStack(alignment: .leading, spacing: 2) { Text(message.contactName ?? "联系人").fontWeight(.semibold); Text("联系人").font(.caption).foregroundStyle(.secondary) }
+                                                    Spacer()
+                                                }.frame(maxWidth: .infinity)
+                                            case "location":
+                                                VStack(alignment: .leading, spacing: 6) {
+                                                    HStack { Image(systemName: "map.fill").foregroundStyle(Color.accentColor); Text("位置").fontWeight(.semibold) }
+                                                    if let latitude = message.latitude, let longitude = message.longitude { Text("\(latitude, specifier: "%.6f"), \(longitude, specifier: "%.6f")").font(.caption).foregroundStyle(.secondary) }
+                                                }.frame(maxWidth: .infinity, alignment: .leading)
+                                            case "poll":
+                                                VStack(alignment: .leading, spacing: 7) {
+                                                    Text(message.pollQuestion ?? "投票").fontWeight(.semibold)
+                                                    ForEach(Array(message.pollOptions.enumerated()), id: \.offset) { index, option in
+                                                        HStack(spacing: 7) { Image(systemName: "circle").font(.caption); Text(option); Spacer(); Text("\(index + 1)").font(.caption2).foregroundStyle(.secondary) }
+                                                            .padding(.vertical, 2)
+                                                    }
+                                                }.frame(maxWidth: .infinity, alignment: .leading)
+                                            case "photo", "video", "document":
+                                                HStack(spacing: 9) {
+                                                    Image(systemName: message.contentType == "photo" ? "photo.fill" : message.contentType == "video" ? "video.fill" : "doc.fill").font(.title2).foregroundStyle(Color.accentColor)
+                                                    VStack(alignment: .leading) { Text(message.mediaFileName ?? message.text).fontWeight(.medium); Text(message.contentType == "photo" ? "图片" : message.contentType == "video" ? "视频" : "文件").font(.caption).foregroundStyle(.secondary) }
+                                                    Spacer()
+                                                }.frame(maxWidth: .infinity)
+                                            default:
+                                                Text(message.text).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
+                                            }
                                             if !message.reactions.isEmpty {
                                                 HStack(spacing: 5) {
                                                     ForEach(Array(message.reactions.enumerated()), id: \.offset) { _, reaction in
@@ -675,10 +713,11 @@ struct ContentView: View {
                     }
                     HStack(alignment: .bottom, spacing: 8) {
                         Menu {
-                            Button("照片或视频", systemImage: "photo") {}
-                            Button("文件", systemImage: "doc") {}
-                            Button("位置", systemImage: "location") {}
-                            Button("联系人", systemImage: "person.crop.circle") {}
+                            Button("照片或视频", systemImage: "photo") { attachmentPickerPresented = true }
+                            Button("文件", systemImage: "doc") { attachmentPickerPresented = true }
+                            Button("位置", systemImage: "location") { locationSharePresented = true; locationService.requestLocation() }
+                            Button("联系人", systemImage: "person.crop.circle") { contactSharePresented = true }
+                            Button("投票", systemImage: "chart.bar.fill") { pollQuestion = ""; pollOption1 = ""; pollOption2 = ""; pollOption3 = ""; pollComposerPresented = true }
                         } label: { Image(systemName: "paperclip").font(.title3).frame(width: 36, height: 36) }
                         TextField("消息", text: $messageDraft, axis: .vertical).lineLimit(1...5)
                             .onChange(of: messageDraft) { _, value in
@@ -719,6 +758,81 @@ struct ContentView: View {
                 }
                 .navigationTitle("转发到")
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { forwardMessage = nil } } }
+            }
+        }
+        .fileImporter(isPresented: $attachmentPickerPresented, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
+            guard case let .success(urls) = result, let url = urls.first else { return }
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                let values = try? url.resourceValues(forKeys: [.contentTypeKey])
+                let mime = values?.contentType?.preferredMIMEType ?? "application/octet-stream"
+                Task {
+                    do { try await messaging.sendAttachment(conversationId: conversation.id, fileName: url.lastPathComponent, mimeType: mime, data: data) }
+                    catch { model.message = "附件发送失败：\(error.localizedDescription)" }
+                }
+            } catch { model.message = "读取附件失败：\(error.localizedDescription)" }
+        }
+        .sheet(isPresented: $locationSharePresented) {
+            NavigationStack {
+                VStack(spacing: 18) {
+                    if locationService.loading { ProgressView("正在获取位置…") }
+                    else if let coordinate = locationService.coordinate {
+                        Image(systemName: "location.circle.fill").font(.system(size: 52)).foregroundStyle(Color.accentColor)
+                        Text("纬度 \(coordinate.latitude, specifier: "%.6f")")
+                        Text("经度 \(coordinate.longitude, specifier: "%.6f")")
+                        Button("发送此位置") {
+                            Task {
+                                do { try await messaging.sendLocation(conversationId: conversation.id, latitude: coordinate.latitude, longitude: coordinate.longitude); locationSharePresented = false }
+                                catch { model.message = "位置发送失败：\(error.localizedDescription)" }
+                            }
+                        }.buttonStyle(.borderedProminent)
+                    } else {
+                        ContentUnavailableView("无法获取位置", systemImage: "location.slash", description: Text(locationService.errorMessage ?? "请检查位置权限"))
+                        Button("重试") { locationService.requestLocation() }
+                    }
+                }.padding().navigationTitle("发送位置")
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { locationSharePresented = false } } }
+            }
+        }
+        .sheet(isPresented: $contactSharePresented) {
+            NavigationStack {
+                List(messaging.contacts) { contact in
+                    Button {
+                        Task {
+                            do { try await messaging.sendContact(conversationId: conversation.id, contact: contact); contactSharePresented = false }
+                            catch { model.message = "联系人发送失败：\(error.localizedDescription)" }
+                        }
+                    } label: { Text(contact.displayName) }
+                }
+                .navigationTitle("发送联系人")
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { contactSharePresented = false } } }
+            }
+        }
+        .sheet(isPresented: $pollComposerPresented) {
+            NavigationStack {
+                Form {
+                    Section("问题") { TextField("输入问题", text: $pollQuestion) }
+                    Section("选项") {
+                        TextField("选项 1", text: $pollOption1)
+                        TextField("选项 2", text: $pollOption2)
+                        TextField("选项 3（可选）", text: $pollOption3)
+                    }
+                }
+                .navigationTitle("新建投票")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") { pollComposerPresented = false } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("发送") {
+                            let question = pollQuestion; let options = [pollOption1, pollOption2, pollOption3]
+                            Task {
+                                do { try await messaging.sendPoll(conversationId: conversation.id, question: question, options: options); pollComposerPresented = false }
+                                catch { model.message = "投票发送失败：\(error.localizedDescription)" }
+                            }
+                        }.disabled(pollQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || pollOption1.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || pollOption2.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
             }
         }
     }
