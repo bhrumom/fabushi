@@ -2,6 +2,11 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { hostname } from "node:os";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
+import {
+  mergeMeshHeartbeat,
+  publicMeshState,
+  verifyAndNormalizeMeshRegistration,
+} from "./device-mesh.js"; // GBF-412 mesh gateway
 
 const DEFAULT_AGENT_PATH = "/agent";
 const DEFAULT_CALL_TIMEOUT_SECONDS = 120;
@@ -109,6 +114,7 @@ function publicDevice(device) {
     toolSchemaVersion: device.toolSchemaVersion || "",
     metadata: device.metadata,
     secureInputPublicKey: device.secureInputPublicKey,
+    mesh: publicMeshState(device.mesh), // GBF-412 public mesh state
   };
 }
 
@@ -178,6 +184,27 @@ function handleAgentMessage(socket, raw, options) {
 
     const tools = normalizeToolCatalog(message.tools, capabilities);
     const toolSchemaVersion = toolCatalogVersion(tools);
+    const generation = String(message.generation ?? "").trim();
+    if (message.mesh != null && !/^[A-Za-z0-9_-]{16,128}$/u.test(generation)) {
+      rejectSocket(socket, 1008, "signed mesh registration requires a valid generation");
+      return;
+    }
+    let mesh = null;
+    try {
+      mesh = verifyAndNormalizeMeshRegistration(message.mesh, {
+        deviceId: id,
+        generation,
+        toolSchemaVersion,
+      });
+    } catch (error) {
+      audit(options, { type: "device.mesh_rejected", accountId: socket.accountId, deviceId: id, error: error instanceof Error ? error.message : String(error) });
+      rejectSocket(socket, 1008, "invalid signed mesh registration");
+      return;
+    }
+    if (options.requireSignedMesh === true && !mesh) {
+      rejectSocket(socket, 1008, "signed mesh registration required");
+      return;
+    } // GBF-412 signed mesh verification
     const leaseSeconds = Math.min(
       Math.max(Number(message.leaseSeconds) || Number(options.defaultLeaseSeconds) || DEFAULT_DEVICE_LEASE_SECONDS, MIN_DEVICE_LEASE_SECONDS),
       Number(options.maxLeaseSeconds) || MAX_DEVICE_LEASE_SECONDS,
@@ -207,6 +234,8 @@ function handleAgentMessage(socket, raw, options) {
       capabilities,
       tools,
       toolSchemaVersion,
+      generation,
+      mesh, // GBF-412 stored node/path state
       metadata,
       secureInputPublicKey,
       status: "online",
@@ -216,8 +245,19 @@ function handleAgentMessage(socket, raw, options) {
     });
     socket.deviceId = id;
     socket.registryKey = key;
-    socket.send(JSON.stringify({ type: "registered", deviceId: id, expiresAt: new Date(expiresAt).toISOString() }));
-    audit(options, { type: "device.registered", accountId: socket.accountId, deviceId: id, metadata });
+    socket.send(JSON.stringify({
+      type: "registered",
+      deviceId: id,
+      expiresAt: new Date(expiresAt).toISOString(),
+      mesh: publicMeshState(mesh),
+    }));
+    audit(options, {
+      type: "device.registered",
+      accountId: socket.accountId,
+      deviceId: id,
+      metadata,
+      mesh: { signed: Boolean(mesh), nodeKeyFingerprint: mesh?.nodeKeyFingerprint || "", activePath: mesh?.activePath || "relay" },
+    }); // GBF-412 registration response and audit
     return;
   }
 
@@ -225,6 +265,7 @@ function handleAgentMessage(socket, raw, options) {
     const device = devices.get(socket.registryKey);
     if (device && device.socket === socket) {
       device.lastSeen = Date.now();
+      device.mesh = mergeMeshHeartbeat(device.mesh, message.mesh); // GBF-412 heartbeat posture/path
       device.status = device.expiresAt > Date.now() ? "online" : "offline";
       if (device.status === "offline") rejectSocket(socket, 4003, "device lease expired");
     }
@@ -261,6 +302,8 @@ export function attachDeviceGateway(httpServer, options = {}) {
       capabilities: options.centralCapabilities,
       tools: centralTools,
       toolSchemaVersion: toolCatalogVersion(centralTools),
+      generation: "central",
+      mesh: null, // GBF-412 central mesh compatibility
       metadata: { kind: "central" },
       secureInputPublicKey: null,
       status: "online",
@@ -408,6 +451,19 @@ export function resetDeviceGatewayStateForTests() {
   devices.clear();
 }
 
+const meshShape = z.object({
+  protocolVersion: z.string().nullable(),
+  nodeKeyFingerprint: z.string().optional(),
+  signed: z.boolean(),
+  supportedPaths: z.array(z.string()),
+  preferredPath: z.string(),
+  activePath: z.string(),
+  features: z.array(z.string()),
+  tags: z.array(z.string()),
+  posture: z.record(z.string(), z.string()),
+  pathChangedAt: z.string().optional(),
+}); // GBF-412 mesh output schema
+
 const deviceShape = z.object({
   id: z.string(),
   name: z.string(),
@@ -417,6 +473,7 @@ const deviceShape = z.object({
   expiresAt: z.string().nullable(),
   metadata: z.record(z.string(), z.string()),
   secureInputPublicKey: z.object({ kty: z.literal("EC"), crv: z.literal("P-256"), x: z.string(), y: z.string() }).nullable(),
+  mesh: meshShape, // GBF-412 mesh device shape
   capabilities: z.array(z.string()),
   toolSchemaCount: z.number().int().nonnegative(),
   toolSchemaVersion: z.string(),
@@ -562,10 +619,11 @@ export function buildDeviceToolDescriptors(options = {}) {
                 status: { type: "string", enum: ["online", "offline"] }, lastSeen: { type: "string" },
                 expiresAt: { type: ["string", "null"] }, metadata: { type: "object", additionalProperties: { type: "string" } },
                 secureInputPublicKey: { anyOf: [{ type: "object", required: ["kty", "crv", "x", "y"], properties: { kty: { const: "EC" }, crv: { const: "P-256" }, x: { type: "string" }, y: { type: "string" } }, additionalProperties: false }, { type: "null" }] },
+                mesh: { type: "object", required: ["protocolVersion", "signed", "supportedPaths", "preferredPath", "activePath", "features", "tags", "posture"], properties: { protocolVersion: { type: ["string", "null"] }, nodeKeyFingerprint: { type: "string" }, signed: { type: "boolean" }, supportedPaths: { type: "array", items: { type: "string" } }, preferredPath: { type: "string" }, activePath: { type: "string" }, features: { type: "array", items: { type: "string" } }, tags: { type: "array", items: { type: "string" } }, posture: { type: "object", additionalProperties: { type: "string" } }, pathChangedAt: { type: "string" } }, additionalProperties: false }, // GBF-412 mesh JSON schema
                 capabilities: { type: "array", items: { type: "string" } },
                 toolSchemaCount: { type: "integer", minimum: 0 }, toolSchemaVersion: { type: "string" },
               },
-              required: ["id", "name", "platform", "status", "lastSeen", "expiresAt", "metadata", "secureInputPublicKey", "capabilities", "toolSchemaCount", "toolSchemaVersion"],
+              required: ["id", "name", "platform", "status", "lastSeen", "expiresAt", "metadata", "secureInputPublicKey", "mesh", "capabilities", "toolSchemaCount", "toolSchemaVersion"], // GBF-412 mesh required
               additionalProperties: false,
             },
           },
