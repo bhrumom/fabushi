@@ -9,7 +9,7 @@
 
 ## 每轮必须执行
 
-- 队列控制器、隐藏 ChatGPT 实例、状态监控和日常代码修改先在本机运行。用 `bhrum2` 操作 `/Users/gloriachan/Documents/fabushi` 的现有 checkout，先检查工作树并保留用户改动；云端 PR、Actions、产物和 Release 必须切换 GitHub 连接器核验。
+- 队列控制器、隐藏 ChatGPT 实例、状态监控和日常代码修改先在本机运行。主连接器使用用户指定的 `fabushi test` 工作区插件操作 `/Users/gloriachan/Documents/fabushi` 的现有 checkout，先检查工作树并保留用户改动；云端 PR、Actions、产物和 Release再切换 GitHub 连接器核验。
 - 读取本目录全部文件和项目 Gmail 线程，检查是否有来自 `1315518325@qq.com` 的新要求。
 - 检查正在运行的外部操作和已有 checkout，继续现有实现，禁止只读、只计划、只总结或重开相同工作。
 - 每轮完成一个可验证的代码/工作流/测试/发布增量；若已有外部操作正在运行，则持续观察并并行完成不冲突的工作。
