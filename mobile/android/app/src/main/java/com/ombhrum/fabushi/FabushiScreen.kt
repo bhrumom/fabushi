@@ -37,6 +37,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -352,12 +353,28 @@ private fun ConversationHome(
     var pendingKind by remember { mutableStateOf<ConversationKind?>(null) }
     var composeName by remember { mutableStateOf("") }
     var selectedConversation by remember { mutableStateOf<ConversationSummary?>(null) }
+    var contextConversation by remember { mutableStateOf<ConversationSummary?>(null) }
     var activeSection by remember { mutableStateOf<AndroidMobileSection?>(null) }
     val conversations = messagingState.conversations
     val filteredConversations = conversations
         .filter { !it.isArchived }
         .sortedWith(compareByDescending<ConversationSummary> { it.isPinned }.thenByDescending { it.time })
         .filter { conversation -> searchQuery.isBlank() || conversation.title.contains(searchQuery, true) || conversation.preview.contains(searchQuery, true) }
+
+    contextConversation?.let { conversation ->
+        AlertDialog(
+            onDismissRequest = { contextConversation = null },
+            title = { Text(conversation.title) },
+            text = {
+                Column {
+                    TextButton(onClick = { onSetPinned(conversation, !conversation.isPinned); contextConversation = null }) { Text(if (conversation.isPinned) "取消置顶" else "置顶") }
+                    TextButton(onClick = { onSetMuted(conversation, !conversation.isMuted); contextConversation = null }) { Text(if (conversation.isMuted) "取消静音" else "静音") }
+                    TextButton(onClick = { onSetArchived(conversation, !conversation.isArchived); contextConversation = null }) { Text(if (conversation.isArchived) "恢复" else "归档") }
+                }
+            },
+            confirmButton = { OutlinedButton(onClick = { contextConversation = null }) { Text("取消") } },
+        )
+    }
 
     activeSection?.let { section ->
         AndroidSectionSurface(
@@ -510,7 +527,7 @@ private fun ConversationHome(
                 ConversationRow(conversation, onClick = {
                     selectedConversation = conversation
                     onMarkRead(conversation)
-                })
+                }, onLongClick = { contextConversation = conversation })
             }
             item { Spacer(Modifier.height(88.dp)) }
         }
@@ -677,6 +694,8 @@ private fun ConversationDetail(
     var replyTarget by remember { mutableStateOf<ChatMessage?>(null) }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var forwardingMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var showChatSearch by remember { mutableStateOf(false) }
+    var chatSearchQuery by remember { mutableStateOf("") }
 
     selectedMessage?.let { message ->
         AlertDialog(
@@ -719,6 +738,7 @@ private fun ConversationDetail(
                     Text(conversation.title, color = homePrimaryText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
                     Text(conversation.kind.label, color = homeSecondaryText, style = MaterialTheme.typography.bodySmall)
                 }
+                Text("⌕", color = homePrimaryText, fontSize = 23.sp, modifier = Modifier.clickable { showChatSearch = !showChatSearch; if (!showChatSearch) chatSearchQuery = "" }.padding(8.dp))
                 Box {
                     Text("⋯", color = homePrimaryText, fontSize = 28.sp, modifier = Modifier.clickable { showMenu = true }.padding(8.dp))
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, containerColor = homeSurface) {
@@ -728,12 +748,20 @@ private fun ConversationDetail(
                     }
                 }
             }
+            if (showChatSearch) {
+                OutlinedTextField(
+                    value = chatSearchQuery, onValueChange = { chatSearchQuery = it }, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    singleLine = true, placeholder = { Text("搜索此聊天", color = homeSecondaryText) },
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = homePrimaryText, unfocusedTextColor = homePrimaryText, focusedContainerColor = homeSurface, unfocusedContainerColor = homeSurface),
+                    shape = RoundedCornerShape(14.dp),
+                )
+            }
             if (typingActorName != null) {
                 Text("$typingActorName 正在输入…", color = homeSecondaryText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp))
             }
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (messages.isEmpty()) item { Text("开始与 ${conversation.title} 对话", color = homeSecondaryText, modifier = Modifier.fillMaxWidth().padding(top = 72.dp)) }
-                items(messages, key = { it.id }) { message ->
+                items(messages.filter { chatSearchQuery.isBlank() || it.text.contains(chatSearchQuery, ignoreCase = true) }, key = { it.id }) { message ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.outgoing) Arrangement.End else Arrangement.Start) {
                         Column(
                             Modifier.fillMaxWidth(0.78f)
@@ -777,12 +805,13 @@ private fun ConversationDetail(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ConversationRow(conversation: ConversationSummary, onClick: () -> Unit) {
+private fun ConversationRow(conversation: ConversationSummary, onClick: () -> Unit, onLongClick: () -> Unit = {}) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(start = 30.dp, end = 24.dp, top = 13.dp, bottom = 13.dp)
             ,
         verticalAlignment = Alignment.CenterVertically,

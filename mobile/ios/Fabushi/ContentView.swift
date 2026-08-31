@@ -56,6 +56,8 @@ struct ContentView: View {
     @State private var replyTarget: ChatMessage?
     @State private var editingMessage: ChatMessage?
     @State private var forwardMessage: ChatMessage?
+    @State private var chatSearchPresented = false
+    @State private var chatSearchQuery = ""
     @State private var composeMenuPresented = false
     @State private var composeKind: ConversationKind?
     @State private var composeName = ""
@@ -555,6 +557,11 @@ struct ContentView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button(conversation.isPinned ? "取消置顶" : "置顶", systemImage: "pin") { Task { await messaging.setPinned(conversation.id, pinned: !conversation.isPinned) } }
+            Button(conversation.isMuted ? "取消静音" : "静音", systemImage: "speaker.slash") { Task { await messaging.setMuted(conversation.id, muted: !conversation.isMuted) } }
+            Button(conversation.isArchived ? "恢复" : "归档", systemImage: "archivebox") { Task { await messaging.setArchived(conversation.id, archived: !conversation.isArchived) } }
+        }
         .accessibilityIdentifier("conversation-\(conversation.id)")
     }
 
@@ -564,6 +571,14 @@ struct ContentView: View {
             ZStack {
                 Color(red: 0.055, green: 0.06, blue: 0.07).ignoresSafeArea()
                 VStack(spacing: 0) {
+                    if chatSearchPresented {
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                            TextField("搜索此聊天", text: $chatSearchQuery).textInputAutocapitalization(.never).autocorrectionDisabled()
+                            if !chatSearchQuery.isEmpty { Button { chatSearchQuery = "" } label: { Image(systemName: "xmark.circle.fill") } }
+                        }
+                        .padding(.horizontal, 12).frame(height: 40).background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12)).padding(8)
+                    }
                     if let typingName = messaging.typingActorByConversation[conversation.id] {
                         Text("\(typingName) 正在输入…")
                             .font(.caption).foregroundStyle(.secondary)
@@ -572,7 +587,9 @@ struct ContentView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(spacing: 8) {
-                                ForEach(messaging.messagesByConversation[conversation.id] ?? []) { message in
+                                ForEach((messaging.messagesByConversation[conversation.id] ?? []).filter { message in
+                                    chatSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || message.text.localizedCaseInsensitiveContains(chatSearchQuery)
+                                }) { message in
                                     HStack {
                                         if message.isOutgoing { Spacer(minLength: 56) }
                                         VStack(alignment: .trailing, spacing: 3) {
@@ -642,10 +659,10 @@ struct ContentView: View {
             .navigationTitle(conversation.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button { selectedConversation = nil } label: { Image(systemName: "chevron.left") } }
+                ToolbarItem(placement: .topBarLeading) { Button { chatSearchPresented = false; chatSearchQuery = ""; selectedConversation = nil } label: { Image(systemName: "chevron.left") } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Button("搜索", systemImage: "magnifyingglass") {}
+                        Button(chatSearchPresented ? "关闭搜索" : "搜索", systemImage: "magnifyingglass") { chatSearchPresented.toggle(); if !chatSearchPresented { chatSearchQuery = "" } }
                         Button(conversation.isMuted ? "取消静音" : "静音", systemImage: "speaker.slash") { Task { await messaging.setMuted(conversation.id, muted: !conversation.isMuted) } }
                         Button(conversation.isPinned ? "取消置顶" : "置顶", systemImage: "pin") { Task { await messaging.setPinned(conversation.id, pinned: !conversation.isPinned) } }
                         Button("归档", systemImage: "archivebox") { Task { await messaging.setArchived(conversation.id, archived: true) }; selectedConversation = nil }
