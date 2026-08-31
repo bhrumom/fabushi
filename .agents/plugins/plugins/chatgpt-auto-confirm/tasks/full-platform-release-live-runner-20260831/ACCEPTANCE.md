@@ -33,6 +33,7 @@
 
 ## E. 自动确认持续运行
 
+- [ ] chatgpt-auto-confirm 控制器、隐藏 ChatGPT 会话和持久队列状态实际运行在本机，而不是 GitHub Actions Runner。
 - [ ] 队列隐藏 ChatGPT 会话的实际模型/工具活动与插件 task/revision/round/status/next_task、Runner 和 Action 状态一致。
 - [ ] 对 renderer 空白/覆盖层、CDP 断连、登录失效、网络错误、Action 中断和陈旧状态有恢复测试，恢复保持同一任务、分支、checkout、邮件线程和已完成证据。
 - [ ] 7 分钟健康检查在健康状态不制造重复任务或噪声，在异常状态可修复插件并恢复持续任务。

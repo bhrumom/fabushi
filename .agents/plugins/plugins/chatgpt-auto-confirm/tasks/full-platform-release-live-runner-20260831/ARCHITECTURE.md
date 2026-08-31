@@ -1,5 +1,7 @@
 # 架构与安全要求
 
+持续队列控制器和隐藏 ChatGPT 会话运行在本机；GitHub Actions 是它观察和调度的远端执行环境，不承载 chatgpt-auto-confirm 控制器本身。
+
 ## Runner 内在线修复循环
 
 长任务必须由一个可恢复的 Runner 控制器管理，而不是把全部逻辑塞进一次不可观察的命令：

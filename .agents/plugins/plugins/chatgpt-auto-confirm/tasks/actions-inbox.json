@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "revision": "2026-08-31.806",
+  "revision": "2026-08-26.805",
   "keepAlive": true,
   "authoritative": true,
   "maxConcurrent": 2,
@@ -78,37 +78,6 @@
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/ios-external-miniapp-e2e-20260810/ACCEPTANCE.md"
       ],
       "prompt": "实现 iOS 端从零插件的新用户状态开始的真实外部小程序全链路自动化：为 CLI 核心和 iOS/Flutter 薄 UI 建立业界标准、可快速驱动的测试接口；在构建安装包前后可自动启动、重置、查询、执行和读取结构化事件；搜索线上官方已发布的‘全球法布施’小程序，验证它不是内置功能，下载并校验远端构件后安装；验证更新版本可热更新且无需重新打包 App；进入该插件机器人会话发送确定性测试消息；最终不能依据 UI 文案判断成功，必须根据 CLI/runtime 日志、安装回执、来源与版本、tool call、correlation id 和插件真实返回完成断言。覆盖所有可发现 action 的契约自动化、失败恢复、进程重启后的安装持久化、安全边界，以及 iOS Simulator 的 CI 自动执行；真机只保留少量签名/系统能力烟雾测试，不再作为核心功能验证的唯一手段。"
-    },
-    {
-      "id": "full-platform-release-live-runner-20260831",
-      "goalVersion": 1,
-      "revision": 1,
-      "applyMode": "next_chat",
-      "title": "Fabushi 全平台全新版本发布、安装后远程操控与 Actions 在线修复",
-      "promptTemplate": "continue-to-complete",
-      "directive": "持续完成 Fabushi 全平台全新版本发布。每轮必须使用 GitHub 连接器操作 bhrumom/fabushi，读取本任务目录全部文件和项目邮件线程，并从已有分支、Runner、发布与会话状态继续实际实现。使用用户指定的 fabushi test 工作区插件验证安装后的真实应用远程操控能力。改造 GitHub Actions 长任务为可观察、可控制的会话内执行循环：测试或应用运行期间一旦出现失败，立即在同一 Runner 工作区诊断、修改测试或实现并只重跑受影响阶段，不等待整条 Action 结束；同时可启动已构建应用执行同步联调。不得用固定 sleep、轮询空等、假日志、mock UI 或只改工作流文案冒充完成。发布必须覆盖仓库实际支持的平台、签名/安装/升级/回滚/远控安全边界和正式 Release 证据。持续到 ACCEPTANCE.md 全部完成；只有用户凭证、商店审批或权限确实缺失时才按协议请求人工介入。",
-      "connector": "GitHub",
-      "repository": "bhrumom/fabushi",
-      "codeDirectory": ".",
-      "priority": 110,
-      "timeout": 21600,
-      "maxTaskContinuations": 0,
-      "maxRuntimeRetries": 3,
-      "dependsOn": [],
-      "resourceLocks": [
-        "release:fabushi-all-platforms",
-        "workflow:live-runner-control",
-        "plugin:fabushi-test",
-        "plugin:chatgpt-auto-confirm"
-      ],
-      "documentDirectory": ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/full-platform-release-live-runner-20260831",
-      "specSources": [
-        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/full-platform-release-live-runner-20260831/README.md",
-        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/full-platform-release-live-runner-20260831/TASK.md",
-        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/full-platform-release-live-runner-20260831/ARCHITECTURE.md",
-        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/full-platform-release-live-runner-20260831/ACCEPTANCE.md"
-      ],
-      "prompt": "实现并发布 Fabushi 的全平台全新正式版本。先盘点仓库声明支持的平台与现有发布工作流，建立统一版本、构建矩阵、签名、产物、校验和、安装、升级、回滚和发布证据。通过 fabushi test 工作区插件对真实安装后的应用建立经过认证、明确授权、可审计、可撤销的远程操控能力，并覆盖语义 UI、截图、输入、应用生命周期、日志和结构化状态。升级 GitHub Actions 与 ChatGPT 自动确认控制器，使一个长任务在同一 Runner 会话内并发运行受控应用和测试、流式采集事件；发现阶段失败后立即暂停受影响阶段，在该 Runner checkout 中修复实现或测试，运行轻量预检并重新执行受影响阶段，成功后继续后续阶段，不必等待整个 job 退出或依赖固定休眠。所有平台的重型构建、测试、安装和发布仅在 GitHub Actions 执行。最终交付正式 GitHub Release、各平台可安装产物、真实远程控制 E2E、失败中在线修复与恢复证据，以及商店/部署状态；任何需要人工账号或审批的步骤必须准确报告但不能阻止其他可完成工作。"
     }
   ]
 }
