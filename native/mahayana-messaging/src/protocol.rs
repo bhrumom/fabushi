@@ -152,6 +152,11 @@ pub enum ClientCommand {
         message_id: MessageId,
         pinned: bool,
     },
+    VotePoll {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        option_ids: Vec<String>,
+    },
     StartTyping {
         conversation_id: ConversationId,
         action: String,

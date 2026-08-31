@@ -65,6 +65,13 @@ internal struct MessagingContact: Identifiable, Equatable, Sendable {
     let kind: String
 }
 
+internal struct ChatPollOption: Identifiable, Equatable, Sendable {
+    let id: String
+    let text: String
+    let voterCount: Int
+    let chosen: Bool
+}
+
 internal struct ChatReaction: Equatable, Sendable {
     let reaction: String
     let count: Int
@@ -84,7 +91,8 @@ internal struct ChatMessage: Identifiable, Equatable, Sendable {
     let latitude: Double?
     let longitude: Double?
     let pollQuestion: String?
-    let pollOptions: [String]
+    let pollOptions: [ChatPollOption]
+    let pollMultipleAnswers: Bool
     let isOutgoing: Bool
     let time: String
     let replyToMessageId: String?
@@ -189,6 +197,15 @@ final class MessagingModel {
             "content": ["type": "location", "data": ["latitude": latitude, "longitude": longitude, "liveUntilMs": liveUntilMs ?? NSNull()]],
             "replyToMessageId": NSNull(), "threadRootMessageId": NSNull(), "scheduledAtMs": NSNull(), "silent": false, "protectedContent": false,
         ])
+    }
+
+    func votePoll(conversationId: String, messageId: String, optionIds: [String]) async {
+        do {
+            _ = try await executeAfterIdentity(["type": "votePoll", "conversationId": conversationId, "messageId": messageId, "optionIds": optionIds])
+            await refresh()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func sendPoll(conversationId: String, question: String, options: [String], multipleAnswers: Bool = false) async throws {
@@ -569,7 +586,11 @@ final class MessagingModel {
         let latitude = (data["latitude"] as? NSNumber)?.doubleValue
         let longitude = (data["longitude"] as? NSNumber)?.doubleValue
         let pollQuestion = (data["question"] as? [String: Any])?["text"] as? String
-        let pollOptions = (data["options"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
+        let pollOptions = (data["options"] as? [[String: Any]] ?? []).compactMap { option -> ChatPollOption? in
+            guard let id = option["id"] as? String, let text = option["text"] as? String else { return nil }
+            return ChatPollOption(id: id, text: text, voterCount: (option["voterCount"] as? NSNumber)?.intValue ?? 0, chosen: option["chosen"] as? Bool ?? false)
+        }
+        let pollMultipleAnswers = data["multipleAnswers"] as? Bool ?? false
         let text: String
         switch contentType {
         case "text": text = ((data["text"] as? [String: Any])?["text"] as? String) ?? ""
@@ -599,7 +620,7 @@ final class MessagingModel {
             return "sent"
         }()
         return ChatMessage(
-            id: id, conversationId: conversationId, text: text, contentType: contentType, mediaFileName: mediaFileName, mediaBlobId: mediaBlobId, mediaMimeType: mediaMimeType, mediaSizeBytes: mediaSizeBytes, contactName: contactName, latitude: latitude, longitude: longitude, pollQuestion: pollQuestion, pollOptions: pollOptions, isOutgoing: senderId == actorId, time: Self.timeLabel(createdAt),
+            id: id, conversationId: conversationId, text: text, contentType: contentType, mediaFileName: mediaFileName, mediaBlobId: mediaBlobId, mediaMimeType: mediaMimeType, mediaSizeBytes: mediaSizeBytes, contactName: contactName, latitude: latitude, longitude: longitude, pollQuestion: pollQuestion, pollOptions: pollOptions, pollMultipleAnswers: pollMultipleAnswers, isOutgoing: senderId == actorId, time: Self.timeLabel(createdAt),
             replyToMessageId: raw["replyToMessageId"] as? String, forwardOrigin: raw["forwardOrigin"] as? String, reactions: reactions,
             deliveryState: deliveryState, isEdited: raw["editedAtMs"] is NSNumber, isPinned: raw["pinned"] as? Bool ?? false
         )
