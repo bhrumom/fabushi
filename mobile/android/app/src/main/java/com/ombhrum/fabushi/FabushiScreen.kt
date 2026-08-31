@@ -27,6 +27,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -39,6 +40,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -64,6 +66,8 @@ object TestTags {
     const val AddButton = "home-add-button"
     const val ConversationList = "conversation-list"
     const val ConversationRow = "conversation-chief-of-staff"
+    const val ComposeName = "compose-name"
+    const val ComposeCreate = "compose-create"
     const val MarketplaceEntry = "marketplace-entry"
     const val RemoteComputerEntry = "remote-computer-entry"
     const val RemoteComputerSurface = "remote-computer-surface"
@@ -88,13 +92,26 @@ object TestTags {
 }
 
 private enum class MobileDestination { HOME, MARKETPLACE, REMOTE_COMPUTER }
+private enum class ConversationKind(val label: String) { DIRECT("私聊"), GROUP("群组"), CHANNEL("频道"), BOT("Bot") }
 
 private data class ConversationSummary(
     val id: String,
-    val title: String,
-    val preview: String,
-    val time: String,
+    var title: String,
+    var preview: String,
+    var time: String,
     val badge: String,
+    val kind: ConversationKind,
+    var unreadCount: Int = 0,
+    var isPinned: Boolean = false,
+    var isMuted: Boolean = false,
+    var isArchived: Boolean = false,
+)
+
+private data class ChatMessage(
+    val id: String,
+    val text: String,
+    val outgoing: Boolean,
+    val time: String,
 )
 
 private val homeBackground = Color(0xFF0B0B0C)
@@ -306,146 +323,148 @@ private fun ConversationHome(
 ) {
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var showComposeMenu by remember { mutableStateOf(false) }
+    var pendingKind by remember { mutableStateOf<ConversationKind?>(null) }
+    var composeName by remember { mutableStateOf("") }
     var selectedConversation by remember { mutableStateOf<ConversationSummary?>(null) }
     val conversations = remember { mutableStateListOf<ConversationSummary>() }
-    val filteredConversations = conversations.filter { conversation ->
-        searchQuery.isBlank() ||
-            conversation.title.contains(searchQuery, ignoreCase = true) ||
-            conversation.preview.contains(searchQuery, ignoreCase = true)
-    }
+    val messageStore = remember { mutableStateMapOf<String, List<ChatMessage>>() }
+    val filteredConversations = conversations
+        .filter { !it.isArchived }
+        .sortedWith(compareByDescending<ConversationSummary> { it.isPinned }.thenByDescending { it.time })
+        .filter { conversation -> searchQuery.isBlank() || conversation.title.contains(searchQuery, true) || conversation.preview.contains(searchQuery, true) }
 
-    if (selectedConversation != null) {
+    selectedConversation?.let { conversation ->
         ConversationDetail(
-            conversation = selectedConversation!!,
+            conversation = conversation,
+            messages = messageStore[conversation.id].orEmpty(),
             onBack = { selectedConversation = null },
+            onSend = { text ->
+                val next = ChatMessage(System.nanoTime().toString(), text, true, "现在")
+                messageStore[conversation.id] = messageStore[conversation.id].orEmpty() + next
+                val index = conversations.indexOfFirst { it.id == conversation.id }
+                if (index >= 0) {
+                    conversations[index] = conversations[index].copy(preview = text, time = "现在")
+                    selectedConversation = conversations[index]
+                }
+            },
+            onToggleMute = {
+                val index = conversations.indexOfFirst { it.id == conversation.id }
+                if (index >= 0) { conversations[index] = conversations[index].copy(isMuted = !conversations[index].isMuted); selectedConversation = conversations[index] }
+            },
+            onTogglePin = {
+                val index = conversations.indexOfFirst { it.id == conversation.id }
+                if (index >= 0) { conversations[index] = conversations[index].copy(isPinned = !conversations[index].isPinned); selectedConversation = conversations[index] }
+            },
+            onArchive = {
+                val index = conversations.indexOfFirst { it.id == conversation.id }
+                if (index >= 0) conversations[index] = conversations[index].copy(isArchived = true)
+                selectedConversation = null
+            },
         )
         return
+    }
+
+    if (pendingKind != null) {
+        AlertDialog(
+            onDismissRequest = { pendingKind = null; composeName = "" },
+            title = { Text("新建${pendingKind!!.label}") },
+            text = {
+                OutlinedTextField(value = composeName, onValueChange = { composeName = it }, modifier = Modifier.testTag(TestTags.ComposeName), singleLine = true, label = { Text("名称") })
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val title = composeName.trim()
+                    if (title.isNotEmpty()) {
+                        val kind = pendingKind!!
+                        val conversation = ConversationSummary(
+                            id = "${kind.name.lowercase()}-${System.nanoTime()}", title = title,
+                            preview = "开始一段新的对话", time = "现在", badge = title.take(1).uppercase(), kind = kind,
+                        )
+                        conversations.add(0, conversation)
+                        pendingKind = null; composeName = ""; selectedConversation = conversation
+                    }
+                }, modifier = Modifier.testTag(TestTags.ComposeCreate), enabled = composeName.isNotBlank()) { Text("创建") }
+            },
+            dismissButton = { OutlinedButton(onClick = { pendingKind = null; composeName = "" }) { Text("取消") } },
+        )
     }
 
     Scaffold(
         modifier = Modifier.fillMaxSize().testTag(TestTags.AppShell),
         containerColor = homeBackground,
-        contentColor = homePrimaryText,
+        floatingActionButton = {
+            Box {
+                FloatingActionButton(
+                    onClick = { showComposeMenu = true },
+                    modifier = Modifier.testTag(TestTags.AddButton),
+                    containerColor = homeAccent,
+                    contentColor = Color.Black,
+                ) { PlusGlyph() }
+                DropdownMenu(expanded = showComposeMenu, onDismissRequest = { showComposeMenu = false }, containerColor = homeSurface) {
+                    ConversationKind.entries.forEach { kind ->
+                        DropdownMenuItem(text = { Text("新建${kind.label}", color = homePrimaryText) }, onClick = { showComposeMenu = false; pendingKind = kind })
+                    }
+                    DropdownMenuItem(text = { Text("联系人分组", color = homePrimaryText) }, onClick = { showComposeMenu = false })
+                }
+            }
+        },
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .testTag(TestTags.ConversationList),
-        ) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding).testTag(TestTags.ConversationList)) {
             item {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 24.dp, end = 20.dp, top = 10.dp, bottom = 18.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box {
                         ProfileAvatar(onClick = { onShowAddMenuChange(true) })
-                        DropdownMenu(
-                            expanded = showAddMenu,
-                            onDismissRequest = { onShowAddMenuChange(false) },
-                            containerColor = homeSurface,
-                        ) {
-                            DropdownMenuItem(
-                                modifier = Modifier.testTag(TestTags.RemoteComputerEntry),
-                                text = { Text("我的电脑", color = homePrimaryText) },
-                                onClick = { onShowAddMenuChange(false); onOpenRemoteComputer() },
-                            )
-                            DropdownMenuItem(
-                                modifier = Modifier.testTag(TestTags.MarketplaceEntry),
-                                text = { Text("插件市场", color = homePrimaryText) },
-                                onClick = { onShowAddMenuChange(false); onOpenMarketplace() },
-                            )
-                            if (updateState.phase != AndroidUpdatePhase.DISABLED) {
-                                DropdownMenuItem(
-                                    text = { Text("检查更新", color = homePrimaryText) },
-                                    onClick = { onShowAddMenuChange(false); onCheckUpdate() },
-                                )
-                            }
+                        DropdownMenu(expanded = showAddMenu, onDismissRequest = { onShowAddMenuChange(false) }, containerColor = homeSurface) {
+                            DropdownMenuItem(text = { Text("聊天", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
+                            DropdownMenuItem(text = { Text("联系人", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
+                            DropdownMenuItem(text = { Text("Bots", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
+                            DropdownMenuItem(text = { Text("群组", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
+                            DropdownMenuItem(text = { Text("频道", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
+                            DropdownMenuItem(text = { Text("通话", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
+                            DropdownMenuItem(text = { Text("收藏", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
+                            DropdownMenuItem(text = { Text("归档", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
+                            DropdownMenuItem(text = { Text("文件夹", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false) })
+                            DropdownMenuItem(modifier = Modifier.testTag(TestTags.MarketplaceEntry), text = { Text("Mini Apps / 插件市场", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); onOpenMarketplace() })
+                            DropdownMenuItem(modifier = Modifier.testTag(TestTags.RemoteComputerEntry), text = { Text("我的电脑", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); onOpenRemoteComputer() })
+                            if (updateState.phase != AndroidUpdatePhase.DISABLED) DropdownMenuItem(text = { Text("检查更新", color = homePrimaryText) }, onClick = { onShowAddMenuChange(false); onCheckUpdate() })
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        CircularActionButton(
-                            tag = TestTags.HomeSearchButton,
-                            description = "搜索对话",
-                            onClick = { showSearch = !showSearch },
-                        ) { SearchGlyph() }
-                        CircularActionButton(
-                            tag = TestTags.AddButton,
-                            description = "新建对话",
-                            onClick = {
-                                val next = conversations.size + 1
-                                val conversation = ConversationSummary(
-                                    id = "new-$next",
-                                    title = "新对话 $next",
-                                    preview = "开始一段新的对话",
-                                    time = "现在",
-                                    badge = "✦",
-                                )
-                                conversations.add(0, conversation)
-                                selectedConversation = conversation
-                            },
-                        ) { PlusGlyph() }
-                    }
+                    Text("聊天", color = homePrimaryText, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+                    CircularActionButton(TestTags.HomeSearchButton, if (showSearch) "关闭搜索" else "搜索对话", { showSearch = !showSearch; if (!showSearch) searchQuery = "" }) { SearchGlyph() }
                 }
             }
-
-            if (showSearch) {
-                item {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 2.dp)
-                            .testTag(TestTags.HomeSearchField),
-                        singleLine = true,
-                        placeholder = { Text("搜索消息", color = homeSecondaryText) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = homePrimaryText,
-                            unfocusedTextColor = homePrimaryText,
-                            cursorColor = homeAccent,
-                            focusedBorderColor = Color(0xFF4A4A4E),
-                            unfocusedBorderColor = homeBorder,
-                            focusedContainerColor = homeSurface,
-                            unfocusedContainerColor = homeSurface,
-                        ),
-                        shape = RoundedCornerShape(16.dp),
-                    )
-                    Spacer(Modifier.height(10.dp))
+            if (showSearch) item {
+                OutlinedTextField(
+                    value = searchQuery, onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).testTag(TestTags.HomeSearchField),
+                    singleLine = true, placeholder = { Text("搜索", color = homeSecondaryText) },
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = homePrimaryText, unfocusedTextColor = homePrimaryText, focusedContainerColor = homeSurface, unfocusedContainerColor = homeSurface),
+                    shape = RoundedCornerShape(14.dp),
+                )
+            }
+            if (shouldShowUpdateBanner(updateState.phase)) item { UpdateBanner(updateState, onCheckUpdate, onInstallUpdate) }
+            if (conversations.any { it.isArchived } && searchQuery.isBlank()) item {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("▣", color = homeSecondaryText); Text("已归档", color = homePrimaryText, modifier = Modifier.padding(start = 12.dp).weight(1f)); Text("${conversations.count { it.isArchived }}", color = homeSecondaryText)
                 }
             }
-
-            if (shouldShowUpdateBanner(updateState.phase)) {
-                item {
-                    UpdateBanner(
-                        state = updateState,
-                        onCheckUpdate = onCheckUpdate,
-                        onInstallUpdate = onInstallUpdate,
-                    )
+            if (filteredConversations.isEmpty()) item {
+                Column(Modifier.fillMaxWidth().padding(vertical = 88.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (searchQuery.isBlank()) "还没有对话" else "没有找到结果", color = homeSecondaryText, fontWeight = FontWeight.SemiBold)
+                    Text(if (searchQuery.isBlank()) "点击右下角写消息按钮开始聊天" else "尝试其他关键词", color = homeSecondaryText, style = MaterialTheme.typography.bodySmall)
                 }
+            } else items(filteredConversations, key = { it.id }) { conversation ->
+                ConversationRow(conversation, onClick = {
+                    val index = conversations.indexOfFirst { it.id == conversation.id }
+                    if (index >= 0) conversations[index] = conversations[index].copy(unreadCount = 0)
+                    selectedConversation = conversations.firstOrNull { it.id == conversation.id } ?: conversation
+                })
             }
-
-            if (filteredConversations.isEmpty()) {
-                item {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 70.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(if (searchQuery.isBlank()) "还没有对话" else "没有找到匹配的消息", color = homeSecondaryText, fontWeight = FontWeight.SemiBold)
-                        Text(if (searchQuery.isBlank()) "点右上角写消息按钮开始新的对话" else "换个关键词试试", color = homeSecondaryText, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            } else {
-                items(filteredConversations, key = { it.id }) { conversation ->
-                    ConversationRow(conversation, onClick = { selectedConversation = conversation })
-                }
-            }
-
-            item { Spacer(Modifier.height(32.dp)) }
+            item { Spacer(Modifier.height(88.dp)) }
         }
     }
 }
@@ -527,7 +546,17 @@ private fun PlusGlyph() {
 
 
 @Composable
-private fun ConversationDetail(conversation: ConversationSummary, onBack: () -> Unit) {
+private fun ConversationDetail(
+    conversation: ConversationSummary,
+    messages: List<ChatMessage>,
+    onBack: () -> Unit,
+    onSend: (String) -> Unit,
+    onToggleMute: () -> Unit,
+    onTogglePin: () -> Unit,
+    onArchive: () -> Unit,
+) {
+    var draft by remember(conversation.id) { mutableStateOf("") }
+    var showMenu by remember { mutableStateOf(false) }
     Scaffold(containerColor = homeBackground) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(
@@ -535,27 +564,56 @@ private fun ConversationDetail(conversation: ConversationSummary, onBack: () -> 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("‹", color = homePrimaryText, fontSize = 34.sp, modifier = Modifier.clickable(onClick = onBack).padding(8.dp))
-                Text(conversation.title, color = homePrimaryText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                Column(Modifier.weight(1f)) {
+                    Text(conversation.title, color = homePrimaryText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                    Text(conversation.kind.label, color = homeSecondaryText, style = MaterialTheme.typography.bodySmall)
+                }
+                Box {
+                    Text("⋯", color = homePrimaryText, fontSize = 28.sp, modifier = Modifier.clickable { showMenu = true }.padding(8.dp))
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, containerColor = homeSurface) {
+                        DropdownMenuItem(text = { Text(if (conversation.isMuted) "取消静音" else "静音", color = homePrimaryText) }, onClick = { showMenu = false; onToggleMute() })
+                        DropdownMenuItem(text = { Text(if (conversation.isPinned) "取消置顶" else "置顶", color = homePrimaryText) }, onClick = { showMenu = false; onTogglePin() })
+                        DropdownMenuItem(text = { Text("归档", color = homePrimaryText) }, onClick = { showMenu = false; onArchive() })
+                    }
+                }
             }
-            Spacer(Modifier.weight(1f))
-            Text(
-                "开始与 ${conversation.title} 对话",
-                color = homeSecondaryText,
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(24.dp),
-            )
-            Spacer(Modifier.weight(1f))
-            OutlinedTextField(
-                value = "",
-                onValueChange = {},
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                placeholder = { Text("消息", color = homeSecondaryText) },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = homePrimaryText, unfocusedTextColor = homePrimaryText,
-                    focusedContainerColor = homeSurface, unfocusedContainerColor = homeSurface,
-                ),
-                shape = RoundedCornerShape(22.dp),
-            )
+            LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (messages.isEmpty()) item {
+                    Text("开始与 ${conversation.title} 对话", color = homeSecondaryText, modifier = Modifier.fillMaxWidth().padding(top = 72.dp))
+                }
+                items(messages, key = { it.id }) { message ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.outgoing) Arrangement.End else Arrangement.Start) {
+                        Column(
+                            Modifier
+                                .fillMaxWidth(0.78f)
+                                .background(if (message.outgoing) homeAccent.copy(alpha = 0.18f) else homeSurface, RoundedCornerShape(16.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            Text(message.text, color = homePrimaryText)
+                            Text(if (message.outgoing) "${message.time}  ✓✓" else message.time, color = homeSecondaryText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.End))
+                        }
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
+                Text("⌕", color = homeSecondaryText, fontSize = 22.sp, modifier = Modifier.padding(10.dp))
+                OutlinedTextField(
+                    value = draft, onValueChange = { draft = it },
+                    modifier = Modifier.weight(1f), placeholder = { Text("消息", color = homeSecondaryText) },
+                    maxLines = 5,
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = homePrimaryText, unfocusedTextColor = homePrimaryText, focusedContainerColor = homeSurface, unfocusedContainerColor = homeSurface),
+                    shape = RoundedCornerShape(22.dp),
+                )
+                Text(
+                    if (draft.isBlank()) "●" else "➤",
+                    color = if (draft.isBlank()) homeSecondaryText else homeAccent,
+                    fontSize = 22.sp,
+                    modifier = Modifier.clickable {
+                        val text = draft.trim()
+                        if (text.isNotEmpty()) { onSend(text); draft = "" }
+                    }.padding(10.dp),
+                )
+            }
         }
     }
 }
@@ -567,7 +625,7 @@ private fun ConversationRow(conversation: ConversationSummary, onClick: () -> Un
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(start = 30.dp, end = 24.dp, top = 13.dp, bottom = 13.dp)
-            .then(if (conversation.id == "chief-of-staff") Modifier.testTag(TestTags.ConversationRow) else Modifier),
+            ,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -580,14 +638,14 @@ private fun ConversationRow(conversation: ConversationSummary, onClick: () -> Un
             modifier = Modifier.weight(1f).padding(start = 18.dp, end = 12.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Text(
-                conversation.title,
-                color = homePrimaryText,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    conversation.title, color = homePrimaryText, style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                )
+                if (conversation.isMuted) Text("⌁", color = homeSecondaryText, fontSize = 12.sp)
+                if (conversation.isPinned) Text("⌖", color = homeSecondaryText, fontSize = 12.sp)
+            }
             Text(
                 conversation.preview,
                 color = homeSecondaryText,
@@ -596,11 +654,12 @@ private fun ConversationRow(conversation: ConversationSummary, onClick: () -> Un
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(
-            conversation.time,
-            color = Color(0xFF56565B),
-            style = MaterialTheme.typography.bodySmall,
-        )
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(conversation.time, color = Color(0xFF56565B), style = MaterialTheme.typography.bodySmall)
+            if (conversation.unreadCount > 0) {
+                Text("${conversation.unreadCount}", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.background(homeAccent, CircleShape).padding(horizontal = 6.dp, vertical = 2.dp))
+            }
+        }
     }
 }
 
