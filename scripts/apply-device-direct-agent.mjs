@@ -118,4 +118,5 @@ replaceOnce(
 );
 
 if (changed) writeFileSync(path, source);
-console.log(changed ? "Applied desktop direct path agent integration." : "Desktop direct path agent integration already applied.");
+await import("./apply-device-direct-rpc-agent.mjs");
+console.log(changed ? "Applied desktop direct path agent integration." : "Direct path gateway rendezvous integration already applied.");
