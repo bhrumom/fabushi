@@ -16,6 +16,8 @@ on:
       - chatgpt-vps-control/tests/device-direct-path.test.js
       - mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiDeviceDirectPath.kt
       - mobile/ios/Fabushi/FabushiDeviceDirectPath.swift
+      - mobile/ios/Fabushi/RemoteComputerSurface.swift
+      - mobile/ios/FabushiUITests/FabushiUITests.swift
   workflow_dispatch:
 
 permissions:
