@@ -8,12 +8,25 @@ on:
       - .github/workflows/device-mesh-finalize-ci.yml
       - scripts/apply-device-direct-gateway.mjs
       - scripts/apply-device-direct-agent.mjs
+      - scripts/apply-device-direct-hysteresis.mjs
+      - scripts/apply-device-direct-rpc-agent.mjs
+      - scripts/apply-device-direct-rpc-gateway.mjs
+      - scripts/apply-device-direct-forward-agent.mjs
+      - scripts/apply-device-direct-forward-gateway.mjs
+      - scripts/apply-device-direct-route-schema.mjs
       - scripts/apply-android-direct-path.mjs
+      - scripts/apply-android-direct-rpc.mjs
       - scripts/apply-ios-direct-path.mjs
       - scripts/apply-ios-direct-path-swift6.mjs
+      - scripts/apply-ios-direct-rpc-agent.mjs
       - scripts/apply-ios-device-mesh-compile-fixes.mjs
       - chatgpt-vps-control/lib/device-direct-path.js
+      - chatgpt-vps-control/lib/device-direct-rpc.js
+      - chatgpt-vps-control/lib/device-direct-transport.js
       - chatgpt-vps-control/tests/device-direct-path.test.js
+      - chatgpt-vps-control/tests/device-direct-rpc.test.js
+      - chatgpt-vps-control/tests/device-direct-transport.test.js
+      - chatgpt-vps-control/tests/device-direct-forwarding.test.js
       - mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiDeviceDirectPath.kt
       - mobile/ios/Fabushi/FabushiDeviceDirectPath.swift
       - mobile/ios/Fabushi/RemoteComputerSurface.swift
@@ -41,6 +54,7 @@ jobs:
           cache-dependency-path: chatgpt-vps-control/package-lock.json
       - name: Apply desktop and gateway adapters
         run: |
+          node scripts/apply-device-direct-hysteresis.mjs
           node scripts/apply-device-direct-gateway.mjs
           node scripts/apply-device-direct-agent.mjs
           git diff --check
@@ -48,9 +62,15 @@ jobs:
       - name: Syntax and direct-path tests
         run: |
           node --check chatgpt-vps-control/lib/device-direct-path.js
+          node --check chatgpt-vps-control/lib/device-direct-rpc.js
+          node --check chatgpt-vps-control/lib/device-direct-transport.js
           node --check chatgpt-vps-control/lib/device-gateway.js
           node --check chatgpt-vps-control/lib/device-agent.js
-          node --test chatgpt-vps-control/tests/device-direct-path.test.js
+          node --test \
+            chatgpt-vps-control/tests/device-direct-path.test.js \
+            chatgpt-vps-control/tests/device-direct-rpc.test.js \
+            chatgpt-vps-control/tests/device-direct-transport.test.js \
+            chatgpt-vps-control/tests/device-direct-forwarding.test.js
       - name: Full remote MCP regression
         run: npm test --prefix chatgpt-vps-control
 
@@ -170,6 +190,7 @@ jobs:
           fetch-depth: 0
       - name: Apply all verified adapters on latest head
         run: |
+          node scripts/apply-device-direct-hysteresis.mjs
           node scripts/apply-device-direct-gateway.mjs
           node scripts/apply-device-direct-agent.mjs
           node scripts/apply-android-direct-path.mjs
@@ -187,10 +208,11 @@ jobs:
           git config user.name "fabushi-ci[bot]"
           git config user.email "fabushi-ci[bot]@users.noreply.github.com"
           git add \
+            chatgpt-vps-control/lib/device-direct-path.js \
             chatgpt-vps-control/lib/device-gateway.js \
             chatgpt-vps-control/lib/device-agent.js \
             mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiDeviceMeshAgent.kt \
             mobile/ios/Fabushi/FabushiDeviceDirectPath.swift \
             mobile/ios/Fabushi/FabushiDeviceMeshAgent.swift
-          git commit -m "feat(mesh): persist verified direct mesh adapters"
+          git commit -m "feat(mesh): persist verified encrypted direct mesh adapters"
           git push origin "HEAD:${GITHUB_REF_NAME}"
