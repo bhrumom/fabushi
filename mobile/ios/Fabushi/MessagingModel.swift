@@ -34,6 +34,14 @@ internal struct ConversationSummary: Identifiable, Equatable, Sendable {
     var lastMessageId: String?
     var pinnedMessageIds: [String]
     var folderIds: [String]
+    var markedUnread: Bool
+}
+
+internal struct MessagingDraft: Equatable, Sendable {
+    let conversationId: String
+    let text: String
+    let replyToMessageId: String?
+    let updatedAtMs: Int64
 }
 
 internal struct MessagingFolder: Identifiable, Equatable, Sendable {
@@ -93,6 +101,7 @@ final class MessagingModel {
     private(set) var conversations: [ConversationSummary] = []
     private(set) var contacts: [MessagingContact] = []
     private(set) var folders: [MessagingFolder] = []
+    private(set) var draftsByConversation: [String: MessagingDraft] = [:]
     private(set) var messagesByConversation: [String: [ChatMessage]] = [:]
     private(set) var typingActorByConversation: [String: String] = [:]
     private(set) var loading = false
@@ -286,6 +295,16 @@ final class MessagingModel {
         try? await executeAfterIdentity(["type": "deleteFolder", "folderId": folderId])
     }
 
+    func setMarkedUnread(_ conversationId: String, markedUnread: Bool) async {
+        try? await executeAfterIdentity(["type": "setMarkedUnread", "conversationId": conversationId, "markedUnread": markedUnread])
+    }
+
+    func setDraft(conversationId: String, text: String, replyToMessageId: String?) async {
+        try? await executeAfterIdentity([
+            "type": "setDraft", "conversationId": conversationId, "text": text, "replyToMessageId": replyToMessageId ?? NSNull(),
+        ])
+    }
+
     func setPinned(_ conversationId: String, pinned: Bool) async {
         try? await executeAfterIdentity(["type": "pinConversation", "conversationId": conversationId, "pinned": pinned])
     }
@@ -417,10 +436,19 @@ final class MessagingModel {
                 conversations = rows
                 contacts = (event["actors"] as? [[String: Any]] ?? []).compactMap(parseContact)
                 folders = (event["folders"] as? [[String: Any]] ?? []).compactMap(parseFolder)
+                draftsByConversation = Dictionary(uniqueKeysWithValues: (event["drafts"] as? [[String: Any]] ?? []).compactMap(parseDraft).map { ($0.conversationId, $0) })
                 let messages = (event["messages"] as? [[String: Any]] ?? []).compactMap(parseMessage)
                 messagesByConversation = Dictionary(grouping: messages, by: \.conversationId)
             case "conversationChanged":
                 if let raw = event["conversation"] as? [String: Any], let conversation = parseConversation(raw) { upsert(conversation) }
+            case "markedUnreadChanged":
+                guard let conversationId = event["conversationId"] as? String else { continue }
+                if let index = conversations.firstIndex(where: { $0.id == conversationId }) { conversations[index].markedUnread = event["markedUnread"] as? Bool ?? false }
+            case "draftChanged":
+                if let raw = event["draft"] as? [String: Any], let draft = parseDraft(raw) {
+                    if draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.replyToMessageId == nil { draftsByConversation.removeValue(forKey: draft.conversationId) }
+                    else { draftsByConversation[draft.conversationId] = draft }
+                }
             case "folderChanged":
                 if let raw = event["folder"] as? [String: Any], let folder = parseFolder(raw) {
                     if let index = folders.firstIndex(where: { $0.id == folder.id }) { folders[index] = folder } else { folders.append(folder) }
@@ -458,7 +486,9 @@ final class MessagingModel {
     private func hydratePreviews() {
         for index in conversations.indices {
             let conversation = conversations[index]
-            if let last = messagesByConversation[conversation.id]?.last {
+            if let draft = draftsByConversation[conversation.id] {
+                conversations[index].preview = "草稿：\(draft.text)"
+            } else if let last = messagesByConversation[conversation.id]?.last {
                 conversations[index].preview = last.text
                 conversations[index].time = last.time
             }
@@ -481,6 +511,11 @@ final class MessagingModel {
     private func parseContact(_ raw: [String: Any]) -> MessagingContact? {
         guard let id = raw["id"] as? String, id != actorId, let name = raw["displayName"] as? String, !name.isEmpty else { return nil }
         return MessagingContact(id: id, displayName: name, username: raw["username"] as? String, kind: raw["kind"] as? String ?? "human")
+    }
+
+    private func parseDraft(_ raw: [String: Any]) -> MessagingDraft? {
+        guard let conversationId = raw["conversationId"] as? String else { return nil }
+        return MessagingDraft(conversationId: conversationId, text: raw["text"] as? String ?? "", replyToMessageId: raw["replyToMessageId"] as? String, updatedAtMs: (raw["updatedAtMs"] as? NSNumber)?.int64Value ?? 0)
     }
 
     private func parseFolder(_ raw: [String: Any]) -> MessagingFolder? {
@@ -512,7 +547,8 @@ final class MessagingModel {
             isArchived: raw["archived"] as? Bool ?? false,
             lastMessageId: raw["lastMessageId"] as? String,
             pinnedMessageIds: raw["pinnedMessageIds"] as? [String] ?? [],
-            folderIds: raw["folderIds"] as? [String] ?? []
+            folderIds: raw["folderIds"] as? [String] ?? [],
+            markedUnread: raw["markedUnread"] as? Bool ?? false
         )
     }
 
