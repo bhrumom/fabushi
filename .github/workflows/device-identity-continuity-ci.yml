@@ -1,0 +1,123 @@
+name: Device identity continuity
+
+on:
+  push:
+    branches:
+      - codex/tailscale-mobile-device-mesh
+    paths:
+      - .github/workflows/device-identity-continuity-ci.yml
+      - scripts/apply-device-identity-pinning.mjs
+      - chatgpt-vps-control/lib/device-identity-registry.js
+      - chatgpt-vps-control/lib/device-mesh.js
+      - chatgpt-vps-control/lib/device-gateway.js
+      - chatgpt-vps-control/lib/fabushi-remote-mcp-server.js
+      - chatgpt-vps-control/tests/device-identity-registry.test.js
+      - chatgpt-vps-control/tests/device-mesh.test.js
+      - chatgpt-vps-control/tests/fabushi-remote-mcp-server.test.js
+  pull_request:
+    paths:
+      - .github/workflows/device-identity-continuity-ci.yml
+      - scripts/apply-device-identity-pinning.mjs
+      - chatgpt-vps-control/lib/device-identity-registry.js
+      - chatgpt-vps-control/lib/device-mesh.js
+      - chatgpt-vps-control/lib/device-gateway.js
+      - chatgpt-vps-control/lib/fabushi-remote-mcp-server.js
+      - chatgpt-vps-control/tests/device-identity-registry.test.js
+      - chatgpt-vps-control/tests/device-mesh.test.js
+      - chatgpt-vps-control/tests/fabushi-remote-mcp-server.test.js
+
+permissions:
+  contents: write
+
+concurrency:
+  group: device-identity-continuity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Signed node pinning and rotation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+
+      - name: Apply persistent identity integration
+        run: node scripts/apply-device-identity-pinning.mjs
+
+      - name: Reject whitespace and generated patch damage
+        run: git diff --check
+
+      - name: Install remote MCP dependencies
+        run: npm ci --prefix chatgpt-vps-control
+
+      - name: Syntax-check identity sources
+        run: |
+          node --check scripts/apply-device-identity-pinning.mjs
+          node --check chatgpt-vps-control/lib/device-identity-registry.js
+          node --check chatgpt-vps-control/lib/device-mesh.js
+          node --check chatgpt-vps-control/lib/device-gateway.js
+          node --check chatgpt-vps-control/lib/fabushi-remote-mcp-server.js
+
+      - name: Run complete remote MCP test suite
+        run: npm test --prefix chatgpt-vps-control
+
+  persist:
+    name: Persist verified identity integration
+    needs: verify
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out tested branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply verified identity integration
+        run: |
+          node scripts/apply-device-identity-pinning.mjs
+          git diff --check
+
+      - name: Commit generated identity sources
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Persistent identity integration is already committed."
+            exit 0
+          fi
+          git config user.name "fabushi-ci[bot]"
+          git config user.email "fabushi-ci[bot]@users.noreply.github.com"
+          git add \
+            chatgpt-vps-control/lib/device-mesh.js \
+            chatgpt-vps-control/lib/device-gateway.js \
+            chatgpt-vps-control/lib/fabushi-remote-mcp-server.js \
+            chatgpt-vps-control/tests/device-mesh.test.js \
+            chatgpt-vps-control/tests/fabushi-remote-mcp-server.test.js
+          git commit -m "feat(mesh): enforce persistent signed-node identity"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  generated-clean:
+    name: Identity integration is committed
+    needs: verify
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out pull request head
+        uses: actions/checkout@v4
+
+      - name: Require committed generated sources
+        run: |
+          node scripts/apply-device-identity-pinning.mjs
+          git diff --check
+          git diff --exit-code
