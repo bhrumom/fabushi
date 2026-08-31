@@ -51,6 +51,13 @@ internal struct ChatMessage: Identifiable, Equatable, Sendable {
     let id: String
     let conversationId: String
     let text: String
+    let contentType: String
+    let mediaFileName: String?
+    let contactName: String?
+    let latitude: Double?
+    let longitude: Double?
+    let pollQuestion: String?
+    let pollOptions: [String]
     let isOutgoing: Bool
     let time: String
     let replyToMessageId: String?
@@ -134,6 +141,70 @@ final class MessagingModel {
             "scheduledAtMs": NSNull(),
             "silent": false,
             "protectedContent": false,
+        ])
+    }
+
+    func sendContact(conversationId: String, contact: MessagingContact) async throws {
+        try await ensureIdentity()
+        _ = try await execute(command: [
+            "type": "sendMessage", "conversationId": conversationId, "clientMessageId": "ios:\(UUID().uuidString.lowercased())",
+            "content": ["type": "contact", "data": ["actorId": contact.id, "displayName": contact.displayName, "phoneNumber": NSNull()]],
+            "replyToMessageId": NSNull(), "threadRootMessageId": NSNull(), "scheduledAtMs": NSNull(), "silent": false, "protectedContent": false,
+        ])
+    }
+
+    func sendLocation(conversationId: String, latitude: Double, longitude: Double, liveUntilMs: Int64? = nil) async throws {
+        try await ensureIdentity()
+        _ = try await execute(command: [
+            "type": "sendMessage", "conversationId": conversationId, "clientMessageId": "ios:\(UUID().uuidString.lowercased())",
+            "content": ["type": "location", "data": ["latitude": latitude, "longitude": longitude, "liveUntilMs": liveUntilMs ?? NSNull()]],
+            "replyToMessageId": NSNull(), "threadRootMessageId": NSNull(), "scheduledAtMs": NSNull(), "silent": false, "protectedContent": false,
+        ])
+    }
+
+    func sendPoll(conversationId: String, question: String, options: [String], multipleAnswers: Bool = false) async throws {
+        try await ensureIdentity()
+        let cleanOptions = options.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, cleanOptions.count >= 2 else { return }
+        let pollOptions = cleanOptions.enumerated().map { index, option in ["id": "option-\(index + 1)", "text": option, "voterCount": 0, "chosen": false, "correct": NSNull()] as [String: Any] }
+        _ = try await execute(command: [
+            "type": "sendMessage", "conversationId": conversationId, "clientMessageId": "ios:\(UUID().uuidString.lowercased())",
+            "content": ["type": "poll", "data": ["question": ["text": question.trimmingCharacters(in: .whitespacesAndNewlines), "entities": []], "options": pollOptions, "anonymous": true, "multipleAnswers": multipleAnswers, "quiz": false]],
+            "replyToMessageId": NSNull(), "threadRootMessageId": NSNull(), "scheduledAtMs": NSNull(), "silent": false, "protectedContent": false,
+        ])
+    }
+
+    func sendAttachment(conversationId: String, fileName: String, mimeType: String, data: Data) async throws {
+        guard !data.isEmpty else { throw MahayanaHost.HostError.requestFailed("不能发送空文件") }
+        try await ensureIdentity()
+        let blobId = "blob-\(UUID().uuidString.lowercased())"
+        let createdAt = Int64(Date().timeIntervalSince1970 * 1000)
+        _ = try await execute(command: [
+            "type": "beginBlobUpload",
+            "metadata": ["id": blobId, "fileName": fileName, "mimeType": mimeType, "sizeBytes": data.count, "contentHash": NSNull(), "createdAtMs": createdAt],
+        ])
+        let chunkSize = 512 * 1024
+        var offset = 0
+        while offset < data.count {
+            let end = min(data.count, offset + chunkSize)
+            let chunk = data.subdata(in: offset..<end)
+            _ = try await execute(command: ["type": "appendBlobChunk", "blobId": blobId, "offset": offset, "dataBase64": chunk.base64EncodedString()])
+            offset = end
+        }
+        _ = try await execute(command: ["type": "finishBlobUpload", "blobId": blobId])
+        let media: [String: Any] = ["id": blobId, "fileName": fileName, "mimeType": mimeType, "sizeBytes": data.count, "remoteUrl": "fabushi-blob://\(blobId)"]
+        let caption: [String: Any] = ["text": "", "entities": []]
+        let content: [String: Any]
+        if mimeType.hasPrefix("image/") {
+            content = ["type": "photo", "data": ["media": media, "caption": caption, "spoiler": false]]
+        } else if mimeType.hasPrefix("video/") {
+            content = ["type": "video", "data": ["media": media, "caption": caption, "spoiler": false, "streaming": true]]
+        } else {
+            content = ["type": "document", "data": ["media": media, "caption": caption]]
+        }
+        _ = try await execute(command: [
+            "type": "sendMessage", "conversationId": conversationId, "clientMessageId": "ios:\(UUID().uuidString.lowercased())",
+            "content": content, "replyToMessageId": NSNull(), "threadRootMessageId": NSNull(), "scheduledAtMs": NSNull(), "silent": false, "protectedContent": false,
         ])
     }
 
@@ -354,15 +425,24 @@ final class MessagingModel {
               let senderId = raw["senderId"] as? String,
               let content = raw["content"] as? [String: Any]
         else { return nil }
+        let contentType = content["type"] as? String ?? "unknown"
+        let data = content["data"] as? [String: Any] ?? [:]
+        let mediaFileName = (data["media"] as? [String: Any])?["fileName"] as? String
+        let contactName = data["displayName"] as? String
+        let latitude = (data["latitude"] as? NSNumber)?.doubleValue
+        let longitude = (data["longitude"] as? NSNumber)?.doubleValue
+        let pollQuestion = (data["question"] as? [String: Any])?["text"] as? String
+        let pollOptions = (data["options"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
         let text: String
-        switch content["type"] as? String {
-        case "text": text = (((content["data"] as? [String: Any])?["text"] as? [String: Any])?["text"] as? String) ?? ""
-        case "photo": text = "🖼 图片"
-        case "video": text = "🎬 视频"
-        case "document": text = "📎 文件"
+        switch contentType {
+        case "text": text = ((data["text"] as? [String: Any])?["text"] as? String) ?? ""
+        case "photo": text = mediaFileName.map { "🖼 \($0)" } ?? "🖼 图片"
+        case "video": text = mediaFileName.map { "🎬 \($0)" } ?? "🎬 视频"
+        case "document": text = mediaFileName.map { "📎 \($0)" } ?? "📎 文件"
         case "location": text = "📍 位置"
-        case "contact": text = "👤 联系人"
+        case "contact": text = contactName.map { "👤 \($0)" } ?? "👤 联系人"
         case "invoice": text = "🧾 账单"
+        case "poll": text = pollQuestion.map { "📊 \($0)" } ?? "📊 投票"
         case "miniApp": text = "▣ Mini App"
         default: text = "消息"
         }
@@ -380,7 +460,7 @@ final class MessagingModel {
             return "sent"
         }()
         return ChatMessage(
-            id: id, conversationId: conversationId, text: text, isOutgoing: senderId == actorId, time: Self.timeLabel(createdAt),
+            id: id, conversationId: conversationId, text: text, contentType: contentType, mediaFileName: mediaFileName, contactName: contactName, latitude: latitude, longitude: longitude, pollQuestion: pollQuestion, pollOptions: pollOptions, isOutgoing: senderId == actorId, time: Self.timeLabel(createdAt),
             replyToMessageId: raw["replyToMessageId"] as? String, forwardOrigin: raw["forwardOrigin"] as? String, reactions: reactions,
             deliveryState: deliveryState, isEdited: raw["editedAtMs"] is NSNumber, isPinned: raw["pinned"] as? Bool ?? false
         )
