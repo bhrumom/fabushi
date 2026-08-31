@@ -59,8 +59,13 @@ marketing_match = re.search(r'^\s*MARKETING_VERSION:\s*[\'"]?([^\s\'"]+)', ios_p
 if not marketing_match or marketing_match.group(1) != canonical:
     observed = marketing_match.group(1) if marketing_match else '<missing>'
     raise SystemExit(f'iOS marketing version drift: canonical={canonical} project={observed}')
-if str(canonical_data.get('iosBuildNumber', '')).strip() != '5':
-    raise SystemExit('iOS build number policy must be advanced alongside the 1.1.0 release')
+ios_build_number = str(canonical_data.get('iosBuildNumber', '')).strip()
+if not re.fullmatch(r'\\d+', ios_build_number):
+    raise SystemExit(f'invalid canonical iOS build number: {ios_build_number!r}')
+ios_build_match = re.search(r'^\\s*CURRENT_PROJECT_VERSION:\\s*[\\\"]?([^\\s\\\"]+)', ios_project, re.MULTILINE)
+if not ios_build_match or ios_build_match.group(1) != ios_build_number:
+    observed = ios_build_match.group(1) if ios_build_match else '<missing>'
+    raise SystemExit(f'iOS build number drift: canonical={ios_build_number} project={observed}')
 PY
 
 if grep -Eq '"@tauri-apps/|"@capacitor/' mobile/package.json desktop/package.json; then
