@@ -356,7 +356,12 @@ final class MessagingModel {
     }
 
     func setMuted(_ conversationId: String, muted: Bool) async {
-        let until: Any = muted ? Int64.max / 4 : NSNull()
+        let until: Any
+        if muted {
+            until = Int64.max / 4
+        } else {
+            until = NSNull()
+        }
         try? await executeAfterIdentity([
             "type": "setConversationNotifications",
             "conversationId": conversationId,
