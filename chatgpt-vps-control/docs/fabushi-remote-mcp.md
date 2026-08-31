@@ -54,7 +54,9 @@ existing encrypted secure-input flow.
 
 ## GitHub Actions Runner flow
 
-`.github/workflows/interactive-runner-mcp.yml` starts the device agent before compiling the desktop app. ChatGPT can therefore discover the Runner and query `ci_session_status` while the build is running. After packaging, the same device id reconnects through the package's embedded Computer Use stdio MCP; the workflow then starts the packaged Fabushi app in Xvfb and records the live session.
+`.github/workflows/interactive-runner-mcp.yml` builds or downloads the real desktop package, launches it in Xvfb, and provisions the same protected account session that the installed application uses. Only the application starts and owns the device-registration child process and embedded Computer Use MCP. The Runner is intentionally undiscoverable until the logged-in Fabushi application is running.
+
+This is also the production ownership model. A signed installed application polls its Rust-owned account session from the trusted Electron main process, exports only the current access credential to an owner-only file, and registers the application device with the official gateway. Refresh credentials never leave the account session store. Logout or application shutdown removes the credential and stops device registration. The public plugin only discovers devices belonging to its authenticated Fabushi account and relays calls to the tools advertised by those applications.
 
 Use these tools in order:
 
@@ -70,7 +72,7 @@ The workflow uploads only an explicit evidence allowlist: status, notes, redacte
 
 ### GitHub-linked Runner identity
 
-The interactive Runner does not use the global platform `TEST_ACCOUNT_TOKEN`, a stored Fabushi password, or an account id supplied by the workflow. A job on protected `main` requests a GitHub Actions OIDC assertion for the `fabushi-ci-runner` audience. The Platform Worker verifies the exact repository and owner ids, workflow ref and source SHA, protected ref, event, GitHub-hosted environment, assertion age and derived device id, then resolves the workflow actor's GitHub identity to its existing Fabushi account. It returns a non-refreshable access session valid for at most four hours. The device agent and packaged app read separate owner-only copies of that session.
+The default interactive Runner uses the protected ordinary CI test account, then exports a non-refreshable application session valid only for that run. An optional GitHub-linked mode requests a GitHub Actions OIDC assertion for the `fabushi-ci-runner` audience. The Platform Worker verifies the exact repository and owner ids, workflow ref and source SHA, protected ref, event, GitHub-hosted environment, assertion age and derived device id, then resolves the workflow actor's GitHub identity to its existing Fabushi account. In both modes only the packaged application consumes the bounded CI session and registers the device.
 
 To see the Runner in ChatGPT, add `https://fabushi-mcp.ombhrum.com/mcp` and sign in to Fabushi with the same GitHub account that dispatched the workflow. `list_devices` then returns only devices in that Fabushi account namespace, including the live `gha-<run>-<attempt>-interactive` Runner.
 
