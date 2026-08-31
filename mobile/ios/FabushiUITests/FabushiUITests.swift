@@ -27,7 +27,7 @@ final class FabushiUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.descendants(matching: .any)["app-shell"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.descendants(matching: .any)["profile-avatar"].exists)
+        XCTAssertTrue(app.buttons["profile-avatar"].exists)
         XCTAssertTrue(app.buttons["home-search-button"].exists)
         XCTAssertTrue(app.buttons["home-add-button"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["conversation-list"].exists)
@@ -117,7 +117,7 @@ final class FabushiUITests: XCTestCase {
 
     @MainActor
     private func openMarketplace(in app: XCUIApplication) {
-        let profile = app.descendants(matching: .any)["profile-avatar"]
+        let profile = app.buttons["profile-avatar"]
         XCTAssertTrue(profile.waitForExistence(timeout: 10))
         profile.tap()
         let marketplace = app.buttons["marketplace-entry"]
@@ -127,7 +127,7 @@ final class FabushiUITests: XCTestCase {
 
     @MainActor
     private func openRemoteComputer(in app: XCUIApplication) {
-        let profile = app.descendants(matching: .any)["profile-avatar"]
+        let profile = app.buttons["profile-avatar"]
         XCTAssertTrue(profile.waitForExistence(timeout: 10))
         profile.tap()
         let remoteComputer = app.buttons["remote-computer-entry"]
