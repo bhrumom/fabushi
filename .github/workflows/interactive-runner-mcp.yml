@@ -7,10 +7,14 @@ on:
         description: Optional Electron desktop workflow run ID whose fabushi-electron-linux artifact should be reused
         required: false
         type: string
-      gateway_url:
-        description: Optional public wss://.../agent override for the Fabushi remote MCP device gateway
-        required: false
-        type: string
+      account_binding:
+        description: Fabushi account used for Runner discovery and the packaged application session
+        required: true
+        default: ci-test-account
+        type: choice
+        options:
+          - github-actor
+          - ci-test-account
       hold_minutes:
         description: Maximum live-control window after Fabushi becomes ready
         required: true
@@ -45,16 +49,10 @@ jobs:
     env:
       DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-interactive
       DEVICE_NAME: Fabushi GitHub Actions ${{ github.run_id }}
-      DEVICE_GATEWAY_URL: ${{ inputs.gateway_url || vars.FABUSHI_REMOTE_MCP_DEVICE_GATEWAY_URL }}
+      DEVICE_GATEWAY_URL: wss://fabushi-mcp.ombhrum.com/agent
       DEVICE_LEASE_SECONDS: '14400'
       FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
       MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
-      FABUSHI_CI_SESSION_DIR: ${{ github.workspace }}/.fabushi-interactive
-      FABUSHI_ACCOUNT_SESSION_FILE: ${{ github.workspace }}/.fabushi-interactive/agent-account-session.json
-      FABUSHI_CI_ACCOUNT_SESSION_FILE: ${{ github.workspace }}/.fabushi-interactive/app-account-session.json
-      FABUSHI_COMPUTER_POLICY_FILE: ${{ github.workspace }}/.fabushi-interactive/computer-policy.json
-      FABUSHI_DEVICE_CALL_TRACE_FILE: ${{ github.workspace }}/.fabushi-interactive/device-calls.jsonl
-      FABUSHI_APP_AGENT_DISCOVERY_FILE: ${{ github.workspace }}/.fabushi-interactive/app-agent-bridge.json
       DISPLAY: ':99'
       GDK_BACKEND: x11
       NO_AT_BRIDGE: '0'
@@ -82,20 +80,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "$DEVICE_GATEWAY_URL" in
-            wss://*/agent) ;;
-            *) echo 'FABUSHI_REMOTE_MCP_DEVICE_GATEWAY_URL or gateway_url must be wss://.../agent.' >&2; exit 1 ;;
-          esac
-          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || { echo 'GitHub Actions OIDC request URL is unavailable.' >&2; exit 1; }
-          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" || { echo 'GitHub Actions OIDC request token is unavailable.' >&2; exit 1; }
+          FABUSHI_CI_SESSION_DIR="$RUNNER_TEMP/fabushi-interactive"
+          FABUSHI_ACCOUNT_SESSION_FILE="$FABUSHI_CI_SESSION_DIR/agent-account-session.json"
+          FABUSHI_CI_ACCOUNT_SESSION_FILE="$FABUSHI_CI_SESSION_DIR/app-account-session.json"
+          FABUSHI_COMPUTER_POLICY_FILE="$FABUSHI_CI_SESSION_DIR/computer-policy.json"
+          FABUSHI_DEVICE_CALL_TRACE_FILE="$FABUSHI_CI_SESSION_DIR/device-calls.jsonl"
+          FABUSHI_APP_AGENT_DISCOVERY_FILE="$FABUSHI_CI_SESSION_DIR/app-agent-bridge.json"
+          export FABUSHI_CI_SESSION_DIR FABUSHI_ACCOUNT_SESSION_FILE FABUSHI_CI_ACCOUNT_SESSION_FILE
+          export FABUSHI_COMPUTER_POLICY_FILE FABUSHI_DEVICE_CALL_TRACE_FILE FABUSHI_APP_AGENT_DISCOVERY_FILE
+          {
+            echo "FABUSHI_CI_SESSION_DIR=$FABUSHI_CI_SESSION_DIR"
+            echo "FABUSHI_ACCOUNT_SESSION_FILE=$FABUSHI_ACCOUNT_SESSION_FILE"
+            echo "FABUSHI_CI_ACCOUNT_SESSION_FILE=$FABUSHI_CI_ACCOUNT_SESSION_FILE"
+            echo "FABUSHI_COMPUTER_POLICY_FILE=$FABUSHI_COMPUTER_POLICY_FILE"
+            echo "FABUSHI_DEVICE_CALL_TRACE_FILE=$FABUSHI_DEVICE_CALL_TRACE_FILE"
+            echo "FABUSHI_APP_AGENT_DISCOVERY_FILE=$FABUSHI_APP_AGENT_DISCOVERY_FILE"
+          } >> "$GITHUB_ENV"
+          if [ '${{ inputs.account_binding }}' = 'github-actor' ]; then
+            test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || { echo 'GitHub Actions OIDC request URL is unavailable.' >&2; exit 1; }
+            test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" || { echo 'GitHub Actions OIDC request token is unavailable.' >&2; exit 1; }
+          fi
           umask 077
           mkdir -p "$FABUSHI_CI_SESSION_DIR"
           cat > "$FABUSHI_COMPUTER_POLICY_FILE" <<'JSON'
           {"localExecution":true,"aiComputerControlEnabled":true,"localToolPermission":"always"}
           JSON
-          node .github/scripts/update-interactive-runner-status.mjs provisioning 'Preparing the temporary GitHub Actions desktop and GitHub-linked Fabushi account agent.'
+          node .github/scripts/update-interactive-runner-status.mjs provisioning 'Preparing the temporary GitHub Actions desktop and Fabushi account agent.'
 
       - name: Bind the Runner to the workflow actor's Fabushi account
+        if: inputs.account_binding == 'github-actor'
         shell: bash
         run: |
           set -euo pipefail
@@ -107,10 +120,26 @@ jobs:
           curl --fail --silent --show-error             --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$oidc_url" > "$oidc_json"
           oidc_token="$(jq -er '.value | select(type == "string" and length > 100)' "$oidc_json")"
           echo "::add-mask::$oidc_token"
+          claims_json="$FABUSHI_CI_SESSION_DIR/github-oidc-claims.json"
+          node - "$oidc_token" > "$claims_json" <<'NODE'
+          const token = process.argv[2];
+          const part = token.split('.')[1] || '';
+          const payload = JSON.parse(Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+          const allowed = [
+            'iss', 'sub', 'aud', 'repository', 'repository_id', 'repository_owner_id',
+            'repository_visibility', 'workflow_ref', 'workflow_sha', 'ref', 'sha',
+            'event_name', 'runner_environment', 'ref_protected', 'iat', 'exp'
+          ];
+          const safe = Object.fromEntries(allowed.map((key) => [key, payload[key] ?? null]));
+          process.stdout.write(`${JSON.stringify(safe)}\n`);
+          NODE
           jq -n --arg deviceId "$DEVICE_ID" --arg sourceSha "$GITHUB_SHA"             '{deviceId: $deviceId, sourceSha: $sourceSha}' > "$request_json"
           status="$(curl --silent --show-error             --output "$response_json"             --write-out '%{http_code}'             --request POST             --header 'Accept: application/json'             --header 'Content-Type: application/json'             --header "Authorization: Bearer $oidc_token"             --data-binary "@$request_json"             "$FABUSHI_API_BASE_URL/v1/ci/runner-session")"
           if [ "$status" != '200' ]; then
-            jq -r '.error.message // .message // .error // "Fabushi CI Runner account binding failed"' "$response_json" >&2 || true
+            echo "Fabushi CI Runner binding HTTP status: $status" >&2
+            jq -r 'if type == "object" then (.message // (if (.error | type) == "string" then .error else .error.message end) // "Fabushi CI Runner account binding failed") else tostring end' "$response_json" >&2 || cat "$response_json" >&2 || true
+            echo 'GitHub OIDC safe claims:' >&2
+            jq . "$claims_json" >&2 || true
             exit 1
           fi
           jq -e             --arg deviceId "$DEVICE_ID"             --arg runId "$GITHUB_RUN_ID"             --arg runAttempt "$GITHUB_RUN_ATTEMPT" '
@@ -146,7 +175,7 @@ jobs:
           mv "$FABUSHI_ACCOUNT_SESSION_FILE.tmp" "$FABUSHI_ACCOUNT_SESSION_FILE"
           install -m 600 "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
           account_ref="$(jq -r '.userId' "$FABUSHI_ACCOUNT_SESSION_FILE" | sha256sum | cut -c1-16)"
-          rm -f "$oidc_json" "$response_json" "$request_json"
+          rm -f "$oidc_json" "$response_json" "$request_json" "$claims_json"
           {
             echo '- Runner account: Fabushi account linked to the GitHub workflow actor (identity redacted)'
             echo "- Account reference: \`$account_ref\`"
@@ -159,7 +188,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            xvfb xfwm4 x11-utils xdotool wmctrl ffmpeg dbus-x11 at-spi2-core \
+            xvfb xfwm4 x11-utils x11-xserver-utils xdotool wmctrl ffmpeg dbus-x11 at-spi2-core \
             libatk-adaptor python3-pyatspi libgtk-3-0 libnss3 libgbm1 libasound2t64 \
             pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
             libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
@@ -189,34 +218,21 @@ jobs:
         working-directory: chatgpt-vps-control
         run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
 
-      - name: Bring the Runner online before the build
+      - name: Bind the Runner to the dedicated Fabushi CI test account
+        if: inputs.account_binding == 'ci-test-account'
+        env:
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
-          export RUNNER_TRACKING_ID=
-          export DEVICE_LOCAL_MCP_ENTRY="$GITHUB_WORKSPACE/chatgpt-vps-control/bin/fabushi-computer-mcp.js"
-          export DEVICE_LOCAL_MCP_CWD="$GITHUB_WORKSPACE/chatgpt-vps-control"
-          nohup node chatgpt-vps-control/bin/fabushi-device-agent.js \
-            > "$FABUSHI_CI_SESSION_DIR/source-agent.log" 2>&1 &
-          agent_pid=$!
-          echo "$agent_pid" > "$FABUSHI_CI_SESSION_DIR/device-agent.pid"
-          for attempt in $(seq 1 90); do
-            if grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/source-agent.log"; then break; fi
-            kill -0 "$agent_pid"
-            sleep 1
-          done
-          grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/source-agent.log"
-          node .github/scripts/update-interactive-runner-status.mjs runner-online 'The source control MCP is online; the desktop package is now being prepared.'
-          mcp_url="${DEVICE_GATEWAY_URL/wss:/https:}"
-          mcp_url="${mcp_url%/agent}/mcp"
+          node chatgpt-vps-control/scripts/login-ci-test-account.mjs
+          node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
+          account_ref="$(jq -er '.userId // .user.id // .username' "$FABUSHI_ACCOUNT_SESSION_FILE" | sha256sum | cut -c1-16)"
           {
-            echo '## Interactive Fabushi Runner'
-            echo
-            echo "- MCP URL: \`$mcp_url\`"
-            echo "- Device ID: \`$DEVICE_ID\`"
-            echo "- Runner URL: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            echo '- Connect ChatGPT with the same GitHub-linked Fabushi account, call `list_devices`, then select this device.'
-            echo '- Call `ci_session_status` while the package is building; after `appReady=true`, run live UI tests and finish with `ci_session_finish`.'
+            echo '- Runner account: dedicated Fabushi CI test account (identity redacted)'
+            echo "- Account reference: \`$account_ref\`"
+            echo '- Connect the `fabushi test` MCP with the same dedicated test account.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Download an existing Linux desktop package
@@ -269,12 +285,12 @@ jobs:
         working-directory: desktop
         run: npx electron-builder --linux --dir --publish never
 
-      - name: Verify the packaged application and switch to its MCP runtime
+      - name: Verify the packaged application control runtime
         id: packaged
         shell: bash
         run: |
           set -euo pipefail
-          node .github/scripts/update-interactive-runner-status.mjs package-verification 'Verifying the packaged Computer Use runtime and switching the device agent.'
+          node .github/scripts/update-interactive-runner-status.mjs package-verification 'Verifying that the installed Fabushi application contains its own Computer Use and device-registration runtime.'
           node .github/scripts/verify-packaged-computer-control.mjs \
             --release-root desktop/release \
             --platform linux
@@ -284,28 +300,9 @@ jobs:
           test -x "$app_executable"
           test -f "$packaged_mcp"
           test -f "$packaged_agent"
-          if test -f "$FABUSHI_CI_SESSION_DIR/device-agent.pid"; then
-            kill "$(cat "$FABUSHI_CI_SESSION_DIR/device-agent.pid")" 2>/dev/null || true
-            sleep 2
-          fi
-          export RUNNER_TRACKING_ID=
-          export DEVICE_LOCAL_MCP_COMMAND="$app_executable"
-          export DEVICE_LOCAL_MCP_ENTRY="$packaged_mcp"
-          export DEVICE_LOCAL_MCP_CWD="$(dirname "$(dirname "$packaged_mcp")")"
-          export DEVICE_LOCAL_MCP_ELECTRON_NODE='1'
-          nohup node "$packaged_agent" \
-            > "$FABUSHI_CI_SESSION_DIR/packaged-agent.log" 2>&1 &
-          agent_pid=$!
-          echo "$agent_pid" > "$FABUSHI_CI_SESSION_DIR/device-agent.pid"
-          for attempt in $(seq 1 90); do
-            if grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/packaged-agent.log"; then break; fi
-            kill -0 "$agent_pid"
-            sleep 1
-          done
-          grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/packaged-agent.log"
           echo "app_executable=$app_executable" >> "$GITHUB_OUTPUT"
           echo "packaged_mcp=$packaged_mcp" >> "$GITHUB_OUTPUT"
-          node .github/scripts/update-interactive-runner-status.mjs package-ready 'The same Runner device is now served by the packaged Fabushi MCP runtime.' false "$app_executable"
+          node .github/scripts/update-interactive-runner-status.mjs package-ready 'The Fabushi package owns the complete remote-device runtime and is ready to launch.' false "$app_executable"
 
       - name: Launch packaged Fabushi and begin evidence recording
         shell: bash
@@ -325,16 +322,32 @@ jobs:
           app_pid=$!
           echo "$app_pid" > "$FABUSHI_CI_SESSION_DIR/fabushi-app.pid"
           window_ready='false'
+          device_ready='false'
           for attempt in $(seq 1 120); do
             kill -0 "$app_pid"
             if wmctrl -lx 2>/dev/null | grep -qi 'fabushi'; then
               window_ready='true'
-              break
             fi
+            if grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/fabushi-app.log"; then
+              device_ready='true'
+            fi
+            if [ "$window_ready" = 'true' ] && [ "$device_ready" = 'true' ]; then break; fi
             sleep 1
           done
           test "$window_ready" = 'true'
-          node .github/scripts/update-interactive-runner-status.mjs app-ready 'Packaged Fabushi is running and ready for live ChatGPT MCP testing.' true "$app_executable"
+          test "$device_ready" = 'true'
+          node .github/scripts/update-interactive-runner-status.mjs app-ready 'The installed Fabushi app logged in, registered its own device, and is ready for live plugin testing.' true "$app_executable"
+          mcp_url="${DEVICE_GATEWAY_URL/wss:/https:}"
+          mcp_url="${mcp_url%/agent}/mcp"
+          {
+            echo '## Interactive Fabushi application device'
+            echo
+            echo "- MCP URL: \`$mcp_url\`"
+            echo "- Application device ID: \`$DEVICE_ID\`"
+            echo "- Runner URL: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo '- The installed application owns device registration and every advertised control tool; no standalone CI device agent is running.'
+            echo '- Connect `fabushi test` with the same account, call `list_devices`, test this application device, then call `ci_session_finish`.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the live Runner available for ChatGPT
         shell: bash
@@ -393,7 +406,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          for file in fabushi-app.pid device-agent.pid xfwm4.pid xvfb.pid; do
+          for file in fabushi-app.pid xfwm4.pid xvfb.pid; do
             if test -f "$FABUSHI_CI_SESSION_DIR/$file"; then
               kill -TERM "$(cat "$FABUSHI_CI_SESSION_DIR/$file")" 2>/dev/null || true
             fi
@@ -407,18 +420,16 @@ jobs:
         with:
           name: fabushi-interactive-runner-${{ github.run_id }}
           path: |
-            ${{ github.workspace }}/.fabushi-interactive/status.json
-            ${{ github.workspace }}/.fabushi-interactive/finish-requested.json
-            ${{ github.workspace }}/.fabushi-interactive/remote-notes.jsonl
-            ${{ github.workspace }}/.fabushi-interactive/device-calls.jsonl
-            ${{ github.workspace }}/.fabushi-interactive/generated-regression.json
-            ${{ github.workspace }}/.fabushi-interactive/live-session.mp4
-            ${{ github.workspace }}/.fabushi-interactive/final-screen.png
-            ${{ github.workspace }}/.fabushi-interactive/source-agent.log
-            ${{ github.workspace }}/.fabushi-interactive/packaged-agent.log
-            ${{ github.workspace }}/.fabushi-interactive/fabushi-app.log
-            ${{ github.workspace }}/.fabushi-interactive/ffmpeg.log
-            ${{ github.workspace }}/.fabushi-interactive/evidence-files.txt
+            ${{ runner.temp }}/fabushi-interactive/status.json
+            ${{ runner.temp }}/fabushi-interactive/finish-requested.json
+            ${{ runner.temp }}/fabushi-interactive/remote-notes.jsonl
+            ${{ runner.temp }}/fabushi-interactive/device-calls.jsonl
+            ${{ runner.temp }}/fabushi-interactive/generated-regression.json
+            ${{ runner.temp }}/fabushi-interactive/live-session.mp4
+            ${{ runner.temp }}/fabushi-interactive/final-screen.png
+            ${{ runner.temp }}/fabushi-interactive/fabushi-app.log
+            ${{ runner.temp }}/fabushi-interactive/ffmpeg.log
+            ${{ runner.temp }}/fabushi-interactive/evidence-files.txt
           if-no-files-found: warn
           retention-days: 30
 

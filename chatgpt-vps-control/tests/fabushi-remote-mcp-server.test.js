@@ -29,8 +29,10 @@ function nextJson(socket) {
 
 test("Fabushi remote MCP binds ChatGPT OAuth and Runner devices to one account", async (t) => {
   resetDeviceGatewayStateForTests();
+  let browserDeviceId = "";
   const accountClient = {
-    async startBrowserLogin() {
+    async startBrowserLogin({ deviceId }) {
+      browserDeviceId = deviceId;
       return {
         attemptId: "attempt-1",
         pollSecret: "poll-secret-1",
@@ -91,10 +93,13 @@ test("Fabushi remote MCP binds ChatGPT OAuth and Runner devices to one account",
     code_challenge: challenge(verifier),
     code_challenge_method: "S256",
   }).toString();
-  const authorizePage = await fetch(authorizeUrl).then((response) => response.text());
-  assert.match(authorizePage, /连接 Fabushi 设备 MCP/);
-  const requestId = authorizePage.match(/data-request-id="([^"]+)"/)?.[1];
-  assert.ok(requestId);
+  const authorizeResponse = await fetch(authorizeUrl, { redirect: "manual" });
+  assert.equal(authorizeResponse.status, 302);
+  assert.equal(authorizeResponse.headers.get("location"), "https://accounts.example.test/login/attempt-1");
+  assert.match(browserDeviceId, /^mcp-oauth-[A-Za-z0-9_-]{32,128}$/);
+  const requestId = browserDeviceId.slice("mcp-oauth-".length);
+  const completionPage = await fetch(`${origin}/oauth/fabushi/complete?request_id=${encodeURIComponent(requestId)}`).then((response) => response.text());
+  assert.match(completionPage, /正在返回 AI 客户端/);
 
   const authorization = await fetch(`${origin}/oauth/fabushi/status?request_id=${encodeURIComponent(requestId)}`).then((response) => response.json());
   assert.equal(authorization.status, "completed");

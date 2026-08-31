@@ -182,6 +182,11 @@ function authorizationPage({ requestId, loginUrl, accountLabel = "Fabushi 账号
 <script>const requestId=${JSON.stringify(requestId)};const status=document.getElementById('status');async function poll(){try{const response=await fetch('/oauth/fabushi/status?request_id='+encodeURIComponent(requestId),{headers:{accept:'application/json'},cache:'no-store'});const result=await response.json();if(result.status==='completed'&&result.redirectUrl){status.textContent='授权完成，正在返回 ChatGPT…';location.replace(result.redirectUrl);return}if(['failed','expired','cancelled'].includes(result.status)){status.className='status error';status.textContent=result.message||'授权未完成，请返回 ChatGPT 重试。';return}}catch{}setTimeout(poll,900)}setTimeout(poll,600);</script></body></html>`;
 }
 
+function authorizationCompletionPage(requestId) {
+  const safeRequestId = htmlEscape(requestId);
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fabushi MCP 授权</title></head><body><main data-request-id="${safeRequestId}">Fabushi 登录完成，正在返回 AI 客户端…</main><script>const requestId=${JSON.stringify(requestId)};async function finish(){try{const response=await fetch('/oauth/fabushi/status?request_id='+encodeURIComponent(requestId),{headers:{accept:'application/json'},cache:'no-store'});const result=await response.json();if(result.status==='completed'&&result.redirectUrl){location.replace(result.redirectUrl);return}if(['failed','expired','cancelled'].includes(result.status)){document.body.textContent=result.message||'Fabushi 授权未完成，请返回 AI 客户端重试。';return}}catch{}setTimeout(finish,500)}finish();</script></body></html>`;
+}
+
 function positiveLimit(value, fallback) {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -379,15 +384,21 @@ export function createFabushiRemoteMcpServer(options = {}) {
     if (!scopes) return writeJson(response, 400, { error: "invalid_scope" });
     if (resource !== resourceFor(request)) return writeJson(response, 400, { error: "invalid_target" });
 
-    const started = await accountClient.startBrowserLogin({ deviceId: `mcp-${sha256Base64Url(clientId).slice(0, 28)}`, platform: "web" });
     const requestId = randomToken(32);
+    const started = await accountClient.startBrowserLogin({ deviceId: `mcp-oauth-${requestId}`, platform: "web" });
     authorizationRequests.set(requestId, {
       requestId, clientId, redirectUri, state, codeChallenge: challenge, codeChallengeMethod: challengeMethod,
       resource, scopes, attemptId: started.attemptId, pollSecret: started.pollSecret,
       expiresAt: Math.min(now() + AUTHORIZATION_TTL_MS, started.expiresAt ? started.expiresAt * 1000 : Number.MAX_SAFE_INTEGER),
     });
     await audit({ type: "oauth.authorization.started", clientId: sha256Base64Url(clientId).slice(0, 16) });
-    writeHtml(response, authorizationPage({ requestId, loginUrl: started.loginUrl }));
+    response.writeHead(302, {
+      location: started.loginUrl,
+      "cache-control": "no-store",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+    });
+    response.end();
   }
 
   async function pollAuthorization(request, response, url) {
@@ -556,6 +567,13 @@ export function createFabushiRemoteMcpServer(options = {}) {
       }
       if (request.method === "POST" && url.pathname === "/oauth/register") return registerOAuthClient(request, response);
       if (request.method === "GET" && url.pathname === "/oauth/authorize") return beginAuthorization(request, response, url);
+      if (request.method === "GET" && url.pathname === "/oauth/fabushi/complete") {
+        const requestId = url.searchParams.get("request_id") || "";
+        if (!/^[A-Za-z0-9_-]{32,128}$/u.test(requestId) || !authorizationRequests.has(requestId)) {
+          return writeJson(response, 400, { error: "invalid_request", error_description: "Fabushi authorization request is missing or expired." });
+        }
+        return writeHtml(response, authorizationCompletionPage(requestId));
+      }
       if (request.method === "GET" && url.pathname === "/oauth/fabushi/status") return pollAuthorization(request, response, url);
       if (request.method === "POST" && url.pathname === "/oauth/token") return exchangeToken(request, response);
       if (url.pathname === mcpPath && ["GET", "POST", "DELETE"].includes(request.method || "")) {

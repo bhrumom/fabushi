@@ -107,7 +107,7 @@ jobs:
       - name: Run Electron main-process contract tests
         if: matrix.target == 'linux'
         shell: bash
-        run: node --test desktop/scripts/prepare-desktop-window-branding.test.mjs desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/test-auth-session.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs desktop/electron/main-lifecycle.test.cjs desktop/electron/preload-runtime-replay.test.cjs
+        run: node --test desktop/scripts/prepare-desktop-window-branding.test.mjs desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/remote-device-agent-supervisor.test.cjs desktop/electron/test-auth-session.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs desktop/electron/main-lifecycle.test.cjs desktop/electron/preload-runtime-replay.test.cjs
 
       - name: Verify renderer TypeScript
         if: matrix.target == 'linux'
