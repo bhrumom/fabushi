@@ -775,6 +775,23 @@ impl<S: MessagingStateStore> MessagingService<S> {
         projected
     }
 
+    fn project_message_for_actor(&self, actor_id: &ActorId, message: &Message) -> Message {
+        let mut projected = message.clone();
+        if let MessageContent::Poll { options, .. } = &mut projected.content {
+            let selected = self
+                .engine
+                .state()
+                .poll_votes
+                .get(&message.conversation_id)
+                .and_then(|messages| messages.get(&message.id))
+                .and_then(|actors| actors.get(actor_id));
+            for option in options {
+                option.chosen = selected.is_some_and(|ids| ids.contains(&option.id));
+            }
+        }
+        projected
+    }
+
     fn sync_envelope(&self, actor_id: &ActorId, limit: u32, server_time_ms: i64) -> ServerEnvelope {
         let state = self.engine.state();
         let max_items = usize::try_from(limit.max(1)).unwrap_or(usize::MAX);
@@ -828,7 +845,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
                     .filter_map(|id| state.messages.get(id))
                     .flat_map(|messages| messages.values())
                     .take(max_items)
-                    .cloned()
+                    .map(|message| self.project_message_for_actor(actor_id, message))
                     .collect(),
                 folders: state
                     .folders
@@ -1137,6 +1154,16 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 message_id,
                 pinned,
             }],
+            ClientCommand::VotePoll {
+                conversation_id,
+                message_id,
+                option_ids,
+            } => vec![Command::VotePoll {
+                conversation_id,
+                message_id,
+                actor_id: actor_id.clone(),
+                option_ids,
+            }],
             ClientCommand::Search { .. }
             | ClientCommand::StartTyping { .. }
             | ClientCommand::StopTyping { .. } => Vec::new(),
@@ -1332,6 +1359,11 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 ..
             }
             | Event::MessagePinned {
+                conversation_id,
+                message_id: server_message_id,
+                ..
+            }
+            | Event::PollVoteChanged {
                 conversation_id,
                 message_id: server_message_id,
                 ..

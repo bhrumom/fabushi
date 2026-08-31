@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
                         onLoadBlob = messagingModel::loadBlob,
                         onSendContact = messagingModel::sendContact,
                         onSendPoll = messagingModel::sendPoll,
+                        onVotePoll = messagingModel::votePoll,
                         onSendLocation = { conversationId, latitude, longitude -> messagingModel.sendLocation(conversationId, latitude, longitude) },
                         onEditText = messagingModel::editText,
                         onDeleteMessage = { conversationId, messageId -> messagingModel.deleteMessage(conversationId, messageId) },

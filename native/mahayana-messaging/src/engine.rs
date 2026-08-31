@@ -122,6 +122,12 @@ pub enum Command {
         message_id: MessageId,
         pinned: bool,
     },
+    VotePoll {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        actor_id: ActorId,
+        option_ids: Vec<String>,
+    },
     CreateInvoice {
         invoice: Invoice,
     },
@@ -318,6 +324,12 @@ pub enum Event {
         message_id: MessageId,
         pinned: bool,
     },
+    PollVoteChanged {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        actor_id: ActorId,
+        option_ids: Vec<String>,
+    },
     InvoiceCreated {
         invoice: Invoice,
     },
@@ -366,6 +378,8 @@ pub struct MessagingState {
     pub folders: BTreeMap<String, ConversationFolder>,
     pub messages: BTreeMap<ConversationId, BTreeMap<MessageId, Message>>,
     pub read_cursors: BTreeMap<ConversationId, BTreeMap<ActorId, MessageId>>,
+    pub poll_votes:
+        BTreeMap<ConversationId, BTreeMap<MessageId, BTreeMap<ActorId, BTreeSet<String>>>>,
     pub marked_unread_by_actor: BTreeMap<ConversationId, BTreeSet<ActorId>>,
     pub drafts: BTreeMap<ConversationId, BTreeMap<ActorId, ConversationDraft>>,
     pub invoices: BTreeMap<String, Invoice>,
@@ -403,6 +417,8 @@ pub enum EngineError {
     InvalidClientMessageId,
     #[error("message id list must not be empty")]
     EmptyMessageList,
+    #[error("poll vote is invalid")]
+    InvalidPollVote,
     #[error("message is protected from forwarding")]
     ProtectedContent,
     #[error("actor {actor_id:?} is not a participant of conversation {conversation_id:?}")]
@@ -957,6 +973,41 @@ impl MessagingEngine {
                     conversation_id,
                     message_id,
                     pinned,
+                }])
+            }
+            Command::VotePoll {
+                conversation_id,
+                message_id,
+                actor_id,
+                option_ids,
+            } => {
+                self.require_actor(&actor_id)?;
+                let message = self.require_message(&conversation_id, &message_id)?;
+                let (valid_ids, multiple_answers) = match &message.content {
+                    MessageContent::Poll {
+                        options,
+                        multiple_answers,
+                        ..
+                    } => (
+                        options
+                            .iter()
+                            .map(|option| option.id.clone())
+                            .collect::<BTreeSet<_>>(),
+                        *multiple_answers,
+                    ),
+                    _ => return Err(EngineError::InvalidPollVote),
+                };
+                let selected = option_ids.into_iter().collect::<BTreeSet<_>>();
+                if (!multiple_answers && selected.len() > 1)
+                    || selected.iter().any(|id| !valid_ids.contains(id))
+                {
+                    return Err(EngineError::InvalidPollVote);
+                }
+                Ok(vec![Event::PollVoteChanged {
+                    conversation_id,
+                    message_id,
+                    actor_id,
+                    option_ids: selected.into_iter().collect(),
                 }])
             }
             Command::CreateInvoice { invoice } => {
@@ -1688,6 +1739,44 @@ impl MessagingEngine {
                         .retain(|id| id != &message_id.0);
                     if pinned {
                         conversation.pinned_message_ids.push(message_id.0);
+                    }
+                }
+            }
+            Event::PollVoteChanged {
+                conversation_id,
+                message_id,
+                actor_id,
+                option_ids,
+            } => {
+                let selected = option_ids.into_iter().collect::<BTreeSet<_>>();
+                let by_message = self
+                    .state
+                    .poll_votes
+                    .entry(conversation_id.clone())
+                    .or_default();
+                let by_actor = by_message.entry(message_id.clone()).or_default();
+                if selected.is_empty() {
+                    by_actor.remove(&actor_id);
+                } else {
+                    by_actor.insert(actor_id, selected);
+                }
+                if let Some(message) = self
+                    .state
+                    .messages
+                    .get_mut(&conversation_id)
+                    .and_then(|messages| messages.get_mut(&message_id))
+                {
+                    if let MessageContent::Poll { options, .. } = &mut message.content {
+                        for option in options {
+                            option.voter_count = u32::try_from(
+                                by_actor
+                                    .values()
+                                    .filter(|votes| votes.contains(&option.id))
+                                    .count(),
+                            )
+                            .unwrap_or(u32::MAX);
+                            option.chosen = false;
+                        }
                     }
                 }
             }
