@@ -60,4 +60,5 @@ replaceOnce(
 );
 
 if (changed) writeFileSync(path, source);
+await import("./apply-device-direct-forward-agent.mjs");
 console.log(changed ? "Applied transport-independent invocation dedupe to device agent." : "Direct RPC agent dedupe already applied.");
