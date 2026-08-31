@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 class MainActivity : ComponentActivity() {
     private val deepLinks = MutableSharedFlow<Uri>(replay = 1, extraBufferCapacity = 31)
     private val updateModel: AndroidUpdateViewModel by viewModels()
-    private val appAgentSurface = FabushiAppAgentSurface()
+    private val appAgentSurface = FabushiAppAgentRegistry.surface
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,16 +59,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        FabushiDeviceMeshService.start(this)
         intent?.data?.let(::enqueueDeepLink)
     }
 
     override fun onStart() {
         super.onStart()
+        FabushiAppAgentRegistry.setApplicationForeground(true)
         updateModel.setForeground(true)
     }
 
     override fun onStop() {
         updateModel.setForeground(false)
+        FabushiAppAgentRegistry.setApplicationForeground(false)
         super.onStop()
     }
 
