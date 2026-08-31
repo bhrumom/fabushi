@@ -151,13 +151,8 @@ fun FabushiScreen(
             MobileDestination.HOME -> {
                 element(TestTags.AppShell, "application", "Fabushi")
                 element(TestTags.HomeSearchButton, "button", "搜索对话")
-                element(
-                    TestTags.AddButton,
-                    "button",
-                    "添加",
-                    action = FabushiAppAgentSurface.Action(setOf("invoke")) { showAddMenu = true },
-                )
-                element(TestTags.ConversationRow, "button", "Chief of Staff")
+                element(TestTags.ProfileAvatar, "button", "个人菜单", action = FabushiAppAgentSurface.Action(setOf("invoke")) { showAddMenu = true })
+                element(TestTags.AddButton, "button", "新建对话")
                 if (showAddMenu) {
                     element(
                         TestTags.MarketplaceEntry,
@@ -310,21 +305,20 @@ private fun ConversationHome(
 ) {
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
-    val conversations = remember {
-        mutableStateListOf(
-            ConversationSummary(
-                id = "chief-of-staff",
-                title = "Chief of Staff",
-                preview = "I can also pull in email, Slack, or other tools…",
-                time = "02:41",
-                badge = "••",
-            ),
-        )
-    }
+    var selectedConversation by remember { mutableStateOf<ConversationSummary?>(null) }
+    val conversations = remember { mutableStateListOf<ConversationSummary>() }
     val filteredConversations = conversations.filter { conversation ->
         searchQuery.isBlank() ||
             conversation.title.contains(searchQuery, ignoreCase = true) ||
             conversation.preview.contains(searchQuery, ignoreCase = true)
+    }
+
+    if (selectedConversation != null) {
+        ConversationDetail(
+            conversation = selectedConversation!!,
+            onBack = { selectedConversation = null },
+        )
+        return
     }
 
     Scaffold(
@@ -346,68 +340,53 @@ private fun ConversationHome(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ProfileAvatar()
+                    Box {
+                        ProfileAvatar(onClick = { onShowAddMenuChange(true) })
+                        DropdownMenu(
+                            expanded = showAddMenu,
+                            onDismissRequest = { onShowAddMenuChange(false) },
+                            containerColor = homeSurface,
+                        ) {
+                            DropdownMenuItem(
+                                modifier = Modifier.testTag(TestTags.RemoteComputerEntry),
+                                text = { Text("我的电脑", color = homePrimaryText) },
+                                onClick = { onShowAddMenuChange(false); onOpenRemoteComputer() },
+                            )
+                            DropdownMenuItem(
+                                modifier = Modifier.testTag(TestTags.MarketplaceEntry),
+                                text = { Text("插件市场", color = homePrimaryText) },
+                                onClick = { onShowAddMenuChange(false); onOpenMarketplace() },
+                            )
+                            if (updateState.phase != AndroidUpdatePhase.DISABLED) {
+                                DropdownMenuItem(
+                                    text = { Text("检查更新", color = homePrimaryText) },
+                                    onClick = { onShowAddMenuChange(false); onCheckUpdate() },
+                                )
+                            }
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         CircularActionButton(
                             tag = TestTags.HomeSearchButton,
                             description = "搜索对话",
                             onClick = { showSearch = !showSearch },
                         ) { SearchGlyph() }
-                        Box {
-                            CircularActionButton(
-                                tag = TestTags.AddButton,
-                                description = "添加",
-                                onClick = { onShowAddMenuChange(true) },
-                            ) { PlusGlyph() }
-                            DropdownMenu(
-                                expanded = showAddMenu,
-                                onDismissRequest = { onShowAddMenuChange(false) },
-                                containerColor = homeSurface,
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("新建对话", color = homePrimaryText) },
-                                    onClick = {
-                                        onShowAddMenuChange(false)
-                                        val next = conversations.size + 1
-                                        conversations.add(
-                                            0,
-                                            ConversationSummary(
-                                                id = "new-$next",
-                                                title = "新对话 $next",
-                                                preview = "开始一段新的对话",
-                                                time = "现在",
-                                                badge = "+",
-                                            ),
-                                        )
-                                    },
+                        CircularActionButton(
+                            tag = TestTags.AddButton,
+                            description = "新建对话",
+                            onClick = {
+                                val next = conversations.size + 1
+                                val conversation = ConversationSummary(
+                                    id = "new-$next",
+                                    title = "新对话 $next",
+                                    preview = "开始一段新的对话",
+                                    time = "现在",
+                                    badge = "✦",
                                 )
-                                DropdownMenuItem(
-                                    modifier = Modifier.testTag(TestTags.RemoteComputerEntry),
-                                    text = { Text("我的电脑", color = homePrimaryText) },
-                                    onClick = {
-                                        onShowAddMenuChange(false)
-                                        onOpenRemoteComputer()
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    modifier = Modifier.testTag(TestTags.MarketplaceEntry),
-                                    text = { Text("插件市场", color = homePrimaryText) },
-                                    onClick = {
-                                        onShowAddMenuChange(false)
-                                        onOpenMarketplace()
-                                    },
-                                )
-                                if (updateState.phase != AndroidUpdatePhase.DISABLED) {
-                                    DropdownMenuItem(
-                                        text = { Text("检查更新", color = homePrimaryText) },
-                                        onClick = {
-                                            onShowAddMenuChange(false)
-                                            onCheckUpdate()
-                                        },
-                                    )
-                                }
-                            }
-                        }
+                                conversations.add(0, conversation)
+                                selectedConversation = conversation
+                            },
+                        ) { PlusGlyph() }
                     }
                 }
             }
@@ -450,15 +429,18 @@ private fun ConversationHome(
 
             if (filteredConversations.isEmpty()) {
                 item {
-                    Text(
-                        "没有找到匹配的消息",
-                        color = homeSecondaryText,
-                        modifier = Modifier.padding(horizontal = 30.dp, vertical = 28.dp),
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 70.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(if (searchQuery.isBlank()) "还没有对话" else "没有找到匹配的消息", color = homeSecondaryText, fontWeight = FontWeight.SemiBold)
+                        Text(if (searchQuery.isBlank()) "点右上角写消息按钮开始新的对话" else "换个关键词试试", color = homeSecondaryText, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             } else {
                 items(filteredConversations, key = { it.id }) { conversation ->
-                    ConversationRow(conversation)
+                    ConversationRow(conversation, onClick = { selectedConversation = conversation })
                 }
             }
 
@@ -468,13 +450,14 @@ private fun ConversationHome(
 }
 
 @Composable
-private fun ProfileAvatar() {
+private fun ProfileAvatar(onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(56.dp)
             .background(homeSurface, CircleShape)
             .border(1.dp, homeBorder, CircleShape)
             .testTag(TestTags.ProfileAvatar)
+            .clickable(onClick = onClick)
             .semantics { contentDescription = "个人头像" },
         contentAlignment = Alignment.Center,
     ) {
@@ -541,12 +524,47 @@ private fun PlusGlyph() {
     }
 }
 
+
 @Composable
-private fun ConversationRow(conversation: ConversationSummary) {
+private fun ConversationDetail(conversation: ConversationSummary, onBack: () -> Unit) {
+    Scaffold(containerColor = homeBackground) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("‹", color = homePrimaryText, fontSize = 34.sp, modifier = Modifier.clickable(onClick = onBack).padding(8.dp))
+                Text(conversation.title, color = homePrimaryText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "开始与 ${conversation.title} 对话",
+                color = homeSecondaryText,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(24.dp),
+            )
+            Spacer(Modifier.weight(1f))
+            OutlinedTextField(
+                value = "",
+                onValueChange = {},
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                placeholder = { Text("消息", color = homeSecondaryText) },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = homePrimaryText, unfocusedTextColor = homePrimaryText,
+                    focusedContainerColor = homeSurface, unfocusedContainerColor = homeSurface,
+                ),
+                shape = RoundedCornerShape(22.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConversationRow(conversation: ConversationSummary, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { }
+            .clickable(onClick = onClick)
             .padding(start = 30.dp, end = 24.dp, top = 13.dp, bottom = 13.dp)
             .then(if (conversation.id == "chief-of-staff") Modifier.testTag(TestTags.ConversationRow) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
