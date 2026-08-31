@@ -98,3 +98,9 @@
 ## Maintenance rule
 
 This index describes the durable project structure on or intended for the authoritative project path. Task/evidence files created on implementation branches become canonical only after their PRs pass CI, merge through protected `main`, and are verified there.
+
+## 2026-09-01 release-train records
+
+- `management/tasks/M11-MOBILE-001-unified-mobile-ui-release.md`
+- `evidence/M11-MOBILE-001/README.md`
+- `management/changes/2026-09-01-unified-mobile-ui-release.md`
