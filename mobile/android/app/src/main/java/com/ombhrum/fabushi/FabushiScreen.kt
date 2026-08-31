@@ -139,6 +139,7 @@ fun FabushiScreen(
     onLoadBlob: (String, Int, (Result<ByteArray>) -> Unit) -> Unit = { _, _, callback -> callback(Result.failure(IllegalStateException("Blob loader unavailable"))) },
     onSendContact: (String, MessagingContact) -> Unit = { _, _ -> },
     onSendPoll: (String, String, List<String>, Boolean) -> Unit = { _, _, _, _ -> },
+    onVotePoll: (String, String, List<String>) -> Unit = { _, _, _ -> },
     onSendLocation: (String, Double, Double) -> Unit = { _, _, _ -> },
     onEditText: (String, String, String) -> Unit = { _, _, _ -> },
     onDeleteMessage: (String, String) -> Unit = { _, _ -> },
@@ -324,6 +325,7 @@ fun FabushiScreen(
             onLoadBlob = onLoadBlob,
             onSendContact = onSendContact,
             onSendPoll = onSendPoll,
+            onVotePoll = onVotePoll,
             onSendLocation = onSendLocation,
             onEditText = onEditText,
             onDeleteMessage = onDeleteMessage,
@@ -374,6 +376,7 @@ private fun ConversationHome(
     onLoadBlob: (String, Int, (Result<ByteArray>) -> Unit) -> Unit,
     onSendContact: (String, MessagingContact) -> Unit,
     onSendPoll: (String, String, List<String>, Boolean) -> Unit,
+    onVotePoll: (String, String, List<String>) -> Unit,
     onSendLocation: (String, Double, Double) -> Unit,
     onEditText: (String, String, String) -> Unit,
     onDeleteMessage: (String, String) -> Unit,
@@ -453,6 +456,7 @@ private fun ConversationHome(
             shareContacts = messagingState.contacts,
             onSendContact = { contact -> onSendContact(conversation.id, contact) },
             onSendPoll = { question, options, multiple -> onSendPoll(conversation.id, question, options, multiple) },
+            onVotePoll = { messageId, optionIds -> onVotePoll(conversation.id, messageId, optionIds) },
             onSendLocation = { latitude, longitude -> onSendLocation(conversation.id, latitude, longitude) },
             onEdit = { messageId, text -> onEditText(conversation.id, messageId, text) },
             onDelete = { messageId -> onDeleteMessage(conversation.id, messageId) },
@@ -826,6 +830,7 @@ private fun ConversationDetail(
     shareContacts: List<MessagingContact>,
     onSendContact: (MessagingContact) -> Unit,
     onSendPoll: (String, List<String>, Boolean) -> Unit,
+    onVotePoll: (String, List<String>) -> Unit,
     onSendLocation: (Double, Double) -> Unit,
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
@@ -1070,7 +1075,15 @@ private fun ConversationDetail(
                                 }
                                 "poll" -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                     Text(message.pollQuestion ?: "投票", color = homePrimaryText, fontWeight = FontWeight.SemiBold)
-                                    message.pollOptions.forEach { option -> Row(verticalAlignment = Alignment.CenterVertically) { Text("○", color = homeAccent); Text(option, color = homePrimaryText, modifier = Modifier.padding(start = 7.dp)) } }
+                                    message.pollOptions.forEach { option ->
+                                        Row(Modifier.fillMaxWidth().clickable {
+                                            val chosenIds = message.pollOptions.filter { it.chosen }.map { it.id }.toMutableSet()
+                                            val next = if (message.pollMultipleAnswers) { if (option.chosen) chosenIds.remove(option.id) else chosenIds.add(option.id); chosenIds.toList() } else if (option.chosen) emptyList() else listOf(option.id)
+                                            onVotePoll(message.id, next)
+                                        }.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Text(if (option.chosen) "●" else "○", color = homeAccent); Text(option.text, color = homePrimaryText, modifier = Modifier.weight(1f).padding(start = 7.dp)); Text("${option.voterCount}", color = homeSecondaryText, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
                                 }
                                 "voice" -> Row(Modifier.fillMaxWidth().clickable {
                                     val blobId = message.mediaBlobId

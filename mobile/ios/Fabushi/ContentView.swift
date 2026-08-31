@@ -733,9 +733,26 @@ struct ContentView: View {
                                             case "poll":
                                                 VStack(alignment: .leading, spacing: 7) {
                                                     Text(message.pollQuestion ?? "投票").fontWeight(.semibold)
-                                                    ForEach(Array(message.pollOptions.enumerated()), id: \.offset) { index, option in
-                                                        HStack(spacing: 7) { Image(systemName: "circle").font(.caption); Text(option); Spacer(); Text("\(index + 1)").font(.caption2).foregroundStyle(.secondary) }
-                                                            .padding(.vertical, 2)
+                                                    ForEach(message.pollOptions) { option in
+                                                        Button {
+                                                            let chosenIds = Set(message.pollOptions.filter(\.chosen).map(\.id))
+                                                            let next: [String]
+                                                            if message.pollMultipleAnswers {
+                                                                var values = chosenIds
+                                                                if option.chosen { values.remove(option.id) } else { values.insert(option.id) }
+                                                                next = Array(values)
+                                                            } else {
+                                                                next = option.chosen ? [] : [option.id]
+                                                            }
+                                                            Task { await messaging.votePoll(conversationId: conversation.id, messageId: message.id, optionIds: next) }
+                                                        } label: {
+                                                            HStack(spacing: 7) {
+                                                                Image(systemName: option.chosen ? "checkmark.circle.fill" : "circle").foregroundStyle(option.chosen ? Color.accentColor : .secondary)
+                                                                Text(option.text).foregroundStyle(.primary)
+                                                                Spacer()
+                                                                Text("\(option.voterCount)").font(.caption2).foregroundStyle(.secondary)
+                                                            }.padding(.vertical, 3)
+                                                        }.buttonStyle(.plain)
                                                     }
                                                 }.frame(maxWidth: .infinity, alignment: .leading)
                                             case "voice":
