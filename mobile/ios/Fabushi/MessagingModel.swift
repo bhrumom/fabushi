@@ -191,6 +191,28 @@ final class MessagingModel {
         ])
     }
 
+    func sendVoice(conversationId: String, fileName: String, mimeType: String, data: Data, waveform: [UInt8] = []) async throws {
+        guard !data.isEmpty else { throw MahayanaHost.HostError.requestFailed("不能发送空语音") }
+        try await ensureIdentity()
+        let blobId = "voice-\(UUID().uuidString.lowercased())"
+        let createdAt = Int64(Date().timeIntervalSince1970 * 1000)
+        _ = try await execute(command: ["type": "beginBlobUpload", "metadata": ["id": blobId, "fileName": fileName, "mimeType": mimeType, "sizeBytes": data.count, "contentHash": NSNull(), "createdAtMs": createdAt]])
+        let chunkSize = 512 * 1024
+        var offset = 0
+        while offset < data.count {
+            let end = min(data.count, offset + chunkSize)
+            _ = try await execute(command: ["type": "appendBlobChunk", "blobId": blobId, "offset": offset, "dataBase64": data.subdata(in: offset..<end).base64EncodedString()])
+            offset = end
+        }
+        _ = try await execute(command: ["type": "finishBlobUpload", "blobId": blobId])
+        let media: [String: Any] = ["id": blobId, "fileName": fileName, "mimeType": mimeType, "sizeBytes": data.count, "remoteUrl": "fabushi-blob://\(blobId)"]
+        _ = try await execute(command: [
+            "type": "sendMessage", "conversationId": conversationId, "clientMessageId": "ios:\(UUID().uuidString.lowercased())",
+            "content": ["type": "voice", "data": ["media": media, "caption": ["text": "", "entities": []], "waveform": waveform]],
+            "replyToMessageId": NSNull(), "threadRootMessageId": NSNull(), "scheduledAtMs": NSNull(), "silent": false, "protectedContent": false,
+        ])
+    }
+
     func sendAttachment(conversationId: String, fileName: String, mimeType: String, data: Data) async throws {
         guard !data.isEmpty else { throw MahayanaHost.HostError.requestFailed("不能发送空文件") }
         try await ensureIdentity()
@@ -494,6 +516,8 @@ final class MessagingModel {
         case "photo": text = mediaFileName.map { "🖼 \($0)" } ?? "🖼 图片"
         case "video": text = mediaFileName.map { "🎬 \($0)" } ?? "🎬 视频"
         case "document": text = mediaFileName.map { "📎 \($0)" } ?? "📎 文件"
+        case "voice": text = "🎙 语音消息"
+        case "audio": text = mediaFileName.map { "🎵 \($0)" } ?? "🎵 音频"
         case "location": text = "📍 位置"
         case "contact": text = contactName.map { "👤 \($0)" } ?? "👤 联系人"
         case "invoice": text = "🧾 账单"
