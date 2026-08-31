@@ -6,31 +6,6 @@ private enum MobileDestination {
     case remoteComputer
 }
 
-private enum ConversationKind: String, Identifiable {
-    case direct
-    case group
-    case channel
-    case bot
-
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .direct: "私聊"
-        case .group: "群组"
-        case .channel: "频道"
-        case .bot: "Bot"
-        }
-    }
-    var symbol: String {
-        switch self {
-        case .direct: "person.fill"
-        case .group: "person.3.fill"
-        case .channel: "megaphone.fill"
-        case .bot: "sparkles"
-        }
-    }
-}
-
 private enum MobileSection: String, CaseIterable, Identifiable {
     case chats, contacts, bots, groups, channels, calls, saved, archive, folders, miniapps, payments, settings
     var id: String { rawValue }
@@ -68,36 +43,15 @@ private enum MobileSection: String, CaseIterable, Identifiable {
     }
 }
 
-private struct ConversationSummary: Identifiable, Equatable {
-    let id: String
-    var title: String
-    var preview: String
-    var time: String
-    var badge: String
-    var kind: ConversationKind
-    var unreadCount: Int = 0
-    var isPinned: Bool = false
-    var isMuted: Bool = false
-    var isArchived: Bool = false
-}
-
-private struct ChatMessage: Identifiable, Equatable {
-    let id: String
-    let text: String
-    let isOutgoing: Bool
-    let time: String
-}
-
 struct ContentView: View {
     @Bindable var model: MarketplaceModel
+    @Bindable var messaging: MessagingModel
     let appAgentSurface: FabushiAppAgentSurface
     @State private var openedMiniApp: MarketplacePlugin?
     @State private var destination: MobileDestination = .home
     @State private var isSearching = false
     @State private var homeQuery = ""
     @State private var selectedConversation: ConversationSummary?
-    @State private var conversations: [ConversationSummary] = []
-    @State private var messagesByConversation: [String: [ChatMessage]] = [:]
     @State private var messageDraft = ""
     @State private var composeMenuPresented = false
     @State private var composeKind: ConversationKind?
@@ -344,17 +298,17 @@ struct ContentView: View {
                             conversationRow(conversation)
                                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                     Button {
-                                        mutateConversation(conversation.id) { $0.isPinned.toggle() }
+                                        Task { await messaging.setPinned(conversation.id, pinned: !conversation.isPinned) }
                                     } label: { Label(conversation.isPinned ? "取消置顶" : "置顶", systemImage: "pin.fill") }
                                     .tint(.orange)
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button {
-                                        mutateConversation(conversation.id) { $0.isArchived = true }
+                                        Task { await messaging.setArchived(conversation.id, archived: true) }
                                     } label: { Label("归档", systemImage: "archivebox.fill") }
                                     .tint(.blue)
                                     Button {
-                                        mutateConversation(conversation.id) { $0.isMuted.toggle() }
+                                        Task { await messaging.setMuted(conversation.id, muted: !conversation.isMuted) }
                                     } label: { Label(conversation.isMuted ? "取消静音" : "静音", systemImage: "speaker.slash.fill") }
                                     .tint(.gray)
                                 }
@@ -380,18 +334,6 @@ struct ContentView: View {
                 }
                 .accessibilityIdentifier("conversation-list")
 
-                Button { composeMenuPresented = true } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 56, height: 56)
-                        .background(Color.accentColor, in: Circle())
-                        .shadow(radius: 8, y: 4)
-                }
-                .padding(18)
-                .opacity(isSearching ? 0 : 1)
-                .allowsHitTesting(!isSearching)
-                .accessibilityIdentifier("home-add-button")
             }
             .navigationTitle("聊天")
             .navigationBarTitleDisplayMode(.inline)
@@ -416,31 +358,31 @@ struct ContentView: View {
                     } label: { Image(systemName: isSearching ? "xmark" : "magnifyingglass") }
                     .accessibilityIdentifier("home-search-button")
                     Button { composeMenuPresented = true } label: { Image(systemName: "square.and.pencil") }
-                        .accessibilityIdentifier("home-compose-nav")
+                        .accessibilityIdentifier("home-add-button")
                 }
             }
         }
         .confirmationDialog("新建", isPresented: $composeMenuPresented, titleVisibility: .visible) {
-            Button("新建私聊") { startCompose(.direct) }
+            Button("新消息") { activeSection = .contacts }
             Button("新建群组") { startCompose(.group) }
             Button("新建频道") { startCompose(.channel) }
-            Button("新建 Bot") { startCompose(.bot) }
             Button("联系人分组") { contactGroupsPresented = true }
             Button("取消", role: .cancel) {}
         }
         .sheet(item: $composeKind) { kind in composeSheet(kind) }
         .sheet(isPresented: $contactGroupsPresented) { simpleSectionSheet(title: "联系人分组", symbol: "folder.fill") }
-        .sheet(item: $activeSection) { section in simpleSectionSheet(title: section.label, symbol: section.symbol) }
+        .sheet(item: $activeSection) { section in sectionSheet(section) }
         .fullScreenCover(item: $selectedConversation) { conversation in chatView(conversation) }
         .accessibilityIdentifier("app-shell")
+        .task { await messaging.refresh() }
     }
 
     private var visibleConversations: [ConversationSummary] {
-        conversations.filter { !$0.isArchived }
+        messaging.conversations.filter { !$0.isArchived }
             .sorted { lhs, rhs in lhs.isPinned != rhs.isPinned ? lhs.isPinned : lhs.time > rhs.time }
     }
 
-    private var archivedConversations: [ConversationSummary] { conversations.filter(\.isArchived) }
+    private var archivedConversations: [ConversationSummary] { messaging.conversations.filter(\.isArchived) }
 
     private var filteredConversations: [ConversationSummary] {
         let query = homeQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -463,8 +405,8 @@ struct ContentView: View {
                         .accessibilityIdentifier("compose-name")
                     if kind == .channel { TextField("描述", text: $composeDescription, axis: .vertical) }
                 }
-                if kind == .group || kind == .bot {
-                    Section("Fabushi") { Text(kind == .group ? "创建后可从统一 Bot/联系人目录添加成员。" : "创建后进入与桌面端相同的 Bot 配置流程。") }
+                if kind == .group {
+                    Section("Fabushi") { Text("创建后可从统一联系人与 Bot 目录添加成员。") }
                 }
             }
             .navigationTitle("新建\(kind.label)")
@@ -479,17 +421,16 @@ struct ContentView: View {
 
     private func createConversation(kind: ConversationKind) {
         let title = composeName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let id = "\(kind.rawValue)-\(UUID().uuidString.lowercased())"
-        let conversation = ConversationSummary(id: id, title: title, preview: composeDescription.isEmpty ? "开始一段新的对话" : composeDescription, time: "现在", badge: String(title.prefix(1)).uppercased(), kind: kind)
-        conversations.insert(conversation, at: 0)
-        composeKind = nil
-        selectedConversation = conversation
-    }
-
-    private func mutateConversation(_ id: String, mutation: (inout ConversationSummary) -> Void) {
-        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        mutation(&conversations[index])
-        if selectedConversation?.id == id { selectedConversation = conversations[index] }
+        let description = composeDescription
+        Task {
+            do {
+                let created = try await messaging.createConversation(kind: kind, title: title, description: description)
+                composeKind = nil
+                if let created { selectedConversation = created }
+            } catch {
+                model.message = "创建会话失败：\(error.localizedDescription)"
+            }
+        }
     }
 
     private func handleSection(_ section: MobileSection) {
@@ -497,6 +438,68 @@ struct ContentView: View {
         case .chats: activeSection = nil
         case .miniapps: destination = .marketplace
         default: activeSection = section
+        }
+    }
+
+    @ViewBuilder
+    private func sectionSheet(_ section: MobileSection) -> some View {
+        if section == .contacts || section == .bots {
+            NavigationStack {
+                List {
+                    let rows = section == .bots ? messaging.contacts.filter { $0.kind == "bot" || $0.kind == "assistant" } : messaging.contacts
+                    if rows.isEmpty {
+                        ContentUnavailableView(section.label, systemImage: section.symbol, description: Text("暂无可用联系人"))
+                    } else {
+                        ForEach(rows) { contact in
+                            Button {
+                                Task {
+                                    do {
+                                        if let conversation = try await messaging.createDirect(contact: contact) {
+                                            activeSection = nil
+                                            selectedConversation = conversation
+                                        }
+                                    } catch {
+                                        model.message = "创建私聊失败：\(error.localizedDescription)"
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    ZStack {
+                                        Circle().fill(Color.accentColor)
+                                        Text(String(contact.displayName.prefix(1)).uppercased()).foregroundStyle(.white).fontWeight(.bold)
+                                    }.frame(width: 42, height: 42)
+                                    VStack(alignment: .leading) {
+                                        Text(contact.displayName).foregroundStyle(.primary)
+                                        Text(contact.username.map { "@\($0)" } ?? contact.kind).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle(section.label)
+                .toolbar { ToolbarItem(placement: .topBarLeading) { Button("完成") { activeSection = nil } } }
+            }
+        } else if section == .groups || section == .channels || section == .archive || section == .saved {
+            NavigationStack {
+                List {
+                    let rows = messaging.conversations.filter { conversation in
+                        switch section {
+                        case .groups: conversation.kind == .group && !conversation.isArchived
+                        case .channels: conversation.kind == .channel && !conversation.isArchived
+                        case .archive: conversation.isArchived
+                        case .saved: conversation.kind == .savedMessages
+                        default: false
+                        }
+                    }
+                    if rows.isEmpty { ContentUnavailableView(section.label, systemImage: section.symbol) }
+                    ForEach(rows) { conversation in conversationRow(conversation) }
+                }
+                .navigationTitle(section.label)
+                .toolbar { ToolbarItem(placement: .topBarLeading) { Button("完成") { activeSection = nil } } }
+            }
+        } else {
+            simpleSectionSheet(title: section.label, symbol: section.symbol)
         }
     }
 
@@ -511,8 +514,8 @@ struct ContentView: View {
 
     private func conversationRow(_ conversation: ConversationSummary) -> some View {
         Button {
-            mutateConversation(conversation.id) { $0.unreadCount = 0 }
-            selectedConversation = conversations.first(where: { $0.id == conversation.id }) ?? conversation
+            selectedConversation = conversation
+            Task { await messaging.markRead(conversation.id) }
         } label: {
             HStack(spacing: 12) {
                 ZStack {
@@ -552,7 +555,7 @@ struct ContentView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(spacing: 8) {
-                                ForEach(messagesByConversation[conversation.id] ?? []) { message in
+                                ForEach(messaging.messagesByConversation[conversation.id] ?? []) { message in
                                     HStack {
                                         if message.isOutgoing { Spacer(minLength: 56) }
                                         VStack(alignment: .trailing, spacing: 3) {
@@ -569,8 +572,8 @@ struct ContentView: View {
                                 }
                             }.padding(.vertical, 12)
                         }
-                        .onChange(of: messagesByConversation[conversation.id]?.count ?? 0) { _, _ in
-                            if let id = messagesByConversation[conversation.id]?.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+                        .onChange(of: messaging.messagesByConversation[conversation.id]?.count ?? 0) { _, _ in
+                            if let id = messaging.messagesByConversation[conversation.id]?.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
                         }
                     }
                     HStack(alignment: .bottom, spacing: 8) {
@@ -596,9 +599,9 @@ struct ContentView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("搜索", systemImage: "magnifyingglass") {}
-                        Button(conversation.isMuted ? "取消静音" : "静音", systemImage: "speaker.slash") { mutateConversation(conversation.id) { $0.isMuted.toggle() } }
-                        Button(conversation.isPinned ? "取消置顶" : "置顶", systemImage: "pin") { mutateConversation(conversation.id) { $0.isPinned.toggle() } }
-                        Button("归档", systemImage: "archivebox") { mutateConversation(conversation.id) { $0.isArchived = true }; selectedConversation = nil }
+                        Button(conversation.isMuted ? "取消静音" : "静音", systemImage: "speaker.slash") { Task { await messaging.setMuted(conversation.id, muted: !conversation.isMuted) } }
+                        Button(conversation.isPinned ? "取消置顶" : "置顶", systemImage: "pin") { Task { await messaging.setPinned(conversation.id, pinned: !conversation.isPinned) } }
+                        Button("归档", systemImage: "archivebox") { Task { await messaging.setArchived(conversation.id, archived: true) }; selectedConversation = nil }
                     } label: { Image(systemName: "ellipsis.circle") }
                 }
             }
@@ -608,10 +611,11 @@ struct ContentView: View {
     private func sendMessage(in conversation: ConversationSummary) {
         let text = messageDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        let now = Date.now.formatted(date: .omitted, time: .shortened)
-        messagesByConversation[conversation.id, default: []].append(ChatMessage(id: UUID().uuidString, text: text, isOutgoing: true, time: now))
         messageDraft = ""
-        mutateConversation(conversation.id) { item in item.preview = text; item.time = "现在" }
+        Task {
+            do { try await messaging.sendText(conversationId: conversation.id, text: text) }
+            catch { model.message = "发送失败：\(error.localizedDescription)" }
+        }
     }
 
     private var avatar: some View {
