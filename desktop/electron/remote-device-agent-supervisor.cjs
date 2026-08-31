@@ -100,6 +100,7 @@ class RemoteDeviceAgentSupervisor {
     this.child = null;
     this.activeKey = '';
     child?.kill();
+    try { this.fs.rmSync(this.tokenFile, { force: true }); } catch {}
   }
 
   async sync() {
@@ -164,6 +165,7 @@ class RemoteDeviceAgentSupervisor {
         if (this.child !== child) return;
         this.child = null;
         this.activeKey = '';
+        try { this.fs.rmSync(this.tokenFile, { force: true }); } catch {}
         if (!this.closed) {
           console.error(`[fabushi-remote-device] agent exited (${code ?? 'null'}, ${signal ?? 'none'})`);
           this.schedule(RETRY_MS);
@@ -185,7 +187,6 @@ class RemoteDeviceAgentSupervisor {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.stopAgent();
-    try { this.fs.rmSync(this.tokenFile, { force: true }); } catch {}
   }
 }
 
