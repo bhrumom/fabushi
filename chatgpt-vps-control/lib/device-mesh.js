@@ -37,6 +37,23 @@ function base64Url(buffer) {
   return Buffer.from(buffer).toString("base64url");
 }
 
+/** RFC-8785-style deterministic JSON subset used by every platform when
+ * binding a dynamic tool catalog to a signed device registration. */
+export function canonicalMeshJson(value) {
+  if (value === null) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("mesh canonical JSON rejects non-finite numbers");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(canonicalMeshJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalMeshJson(value[key])}`).join(",")}}`;
+  }
+  throw new Error("mesh canonical JSON received an unsupported value");
+} // GBF-412 canonical tool catalog
+
 function safeJwk(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const jwk = {

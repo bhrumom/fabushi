@@ -182,7 +182,7 @@ class FabushiDeviceMeshAgent(
             val generation = randomBytes(24).base64Url()
             currentGeneration = generation
             val catalog = toolCatalog()
-            val schemaVersion = sha256(catalog.toString().toByteArray())
+            val schemaVersion = sha256(canonicalJson(catalog).toByteArray(Charsets.UTF_8)) // GBF-412 Android canonical schema hash
             val registration = signedRegistration(session.deviceId, generation, schemaVersion)
             registration.put("type", "register")
             registration.put("deviceId", session.deviceId)
@@ -406,6 +406,22 @@ class FabushiDeviceMeshAgent(
                 .put("timeoutMs", JSONObject().put("type", "integer").put("minimum", 100).put("maximum", 30_000))))
             .put(descriptor(FabushiAppAgentSurface.AssertTool, "Assert an Android Fabushi semantic condition.", query))
     }
+
+    private fun canonicalJson(value: Any?): String = when (value) {
+        null, JSONObject.NULL -> "null"
+        is String -> JSONObject.quote(value)
+        is Boolean -> if (value) "true" else "false"
+        is Number -> value.toString()
+        is JSONArray -> (0 until value.length()).joinToString(prefix = "[", postfix = "]", separator = ",") { index ->
+            canonicalJson(value.opt(index))
+        }
+        is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(
+            prefix = "{",
+            postfix = "}",
+            separator = ",",
+        ) { key -> "${JSONObject.quote(key)}:${canonicalJson(value.opt(key))}" }
+        else -> error("Unsupported mesh canonical JSON value")
+    } // GBF-412 Android canonical JSON
 
     private fun posture(appState: String): JSONObject = JSONObject()
         .put("appVersion", BuildConfig.VERSION_NAME)

@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import UIKit
 
 /// Account-scoped iOS device agent for the shared `fabushi.app.*` contract.
@@ -475,7 +476,7 @@ final class FabushiDeviceMeshAgent {
         guard state.running, state.applicationActive else { return }
         let exponent = min(reconnectAttempt, 6)
         reconnectAttempt += 1
-        let delay = min(UInt64(1_000_000_000) << UInt64(exponent), Self.maximumReconnectNanoseconds)
+        let delay = min(UInt64(1_000_000_000) << exponent, Self.maximumReconnectNanoseconds)
         scheduleConnect(after: delay)
     }
 
