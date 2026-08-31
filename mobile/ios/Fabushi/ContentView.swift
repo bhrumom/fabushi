@@ -75,6 +75,11 @@ struct ContentView: View {
     @State private var composeParticipantIds: Set<String> = []
     @State private var activeSection: MobileSection?
     @State private var contactGroupsPresented = false
+    @State private var folderEditorPresented = false
+    @State private var folderTitle = ""
+    @State private var folderConversationIds: Set<String> = []
+    @State private var folderIncludeGroups = false
+    @State private var folderIncludeChannels = false
 
     var body: some View {
         Group {
@@ -479,7 +484,31 @@ struct ContentView: View {
 
     @ViewBuilder
     private func sectionSheet(_ section: MobileSection) -> some View {
-        if section == .contacts || section == .bots {
+        if section == .folders {
+            NavigationStack {
+                List {
+                    Section {
+                        Button { folderTitle = ""; folderConversationIds = []; folderIncludeGroups = false; folderIncludeChannels = false; folderEditorPresented = true } label: { Label("新建文件夹", systemImage: "folder.badge.plus") }
+                    }
+                    Section("我的文件夹") {
+                        if messaging.folders.isEmpty { Text("暂无会话文件夹").foregroundStyle(.secondary) }
+                        ForEach(messaging.folders) { folder in
+                            NavigationLink {
+                                List {
+                                    ForEach(folderConversations(folder)) { conversation in conversationRow(conversation) }
+                                }.navigationTitle(folder.title)
+                            } label: {
+                                HStack { Image(systemName: "folder.fill").foregroundStyle(Color.accentColor); Text(folder.title); Spacer(); Text("\(folderConversations(folder).count)").foregroundStyle(.secondary) }
+                            }
+                            .swipeActions { Button("删除", role: .destructive) { Task { await messaging.deleteFolder(folder.id) } } }
+                        }
+                    }
+                }
+                .navigationTitle("文件夹")
+                .toolbar { ToolbarItem(placement: .topBarLeading) { Button("完成") { activeSection = nil } } }
+                .sheet(isPresented: $folderEditorPresented) { folderEditorSheet }
+            }
+        } else if section == .contacts || section == .bots {
             NavigationStack {
                 List {
                     let rows = section == .bots ? messaging.contacts.filter { $0.kind == "bot" || $0.kind == "assistant" } : messaging.contacts
@@ -546,6 +575,51 @@ struct ContentView: View {
         }
     }
 
+    private func folderConversations(_ folder: MessagingFolder) -> [ConversationSummary] {
+        messaging.conversations.filter { conversation in
+            guard !conversation.isArchived || !folder.excludeArchived else { return false }
+            guard !conversation.isMuted || !folder.excludeMuted else { return false }
+            guard conversation.unreadCount > 0 || !folder.excludeRead else { return false }
+            return folder.conversationIds.contains(conversation.id) || (folder.includeGroups && conversation.kind == .group) || (folder.includeChannels && conversation.kind == .channel)
+        }
+    }
+
+    private var folderEditorSheet: some View {
+        NavigationStack {
+            Form {
+                Section("名称") { TextField("文件夹名称", text: $folderTitle) }
+                Section("自动包含") {
+                    Toggle("群组", isOn: $folderIncludeGroups)
+                    Toggle("频道", isOn: $folderIncludeChannels)
+                }
+                Section("选择会话") {
+                    ForEach(messaging.conversations.filter { !$0.isArchived }) { conversation in
+                        Button {
+                            if folderConversationIds.contains(conversation.id) { folderConversationIds.remove(conversation.id) } else { folderConversationIds.insert(conversation.id) }
+                        } label: {
+                            HStack { Text(conversation.title).foregroundStyle(.primary); Spacer(); if folderConversationIds.contains(conversation.id) { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor) } }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("新建文件夹")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { folderEditorPresented = false } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("创建") {
+                        let folder = MessagingFolder(
+                            id: "folder-\(UUID().uuidString.lowercased())", title: folderTitle.trimmingCharacters(in: .whitespacesAndNewlines), icon: "folder",
+                            conversationIds: Array(folderConversationIds), includeContacts: false, includeBots: false, includeGroups: folderIncludeGroups, includeChannels: folderIncludeChannels,
+                            excludeMuted: false, excludeRead: false, excludeArchived: true
+                        )
+                        Task { await messaging.upsertFolder(folder) }
+                        folderEditorPresented = false
+                    }.disabled(folderTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private func simpleSectionSheet(title: String, symbol: String) -> some View {
         NavigationStack {
@@ -607,6 +681,14 @@ struct ContentView: View {
                             if !chatSearchQuery.isEmpty { Button { chatSearchQuery = "" } label: { Image(systemName: "xmark.circle.fill") } }
                         }
                         .padding(.horizontal, 12).frame(height: 40).background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12)).padding(8)
+                    }
+                    if let pinnedId = conversation.pinnedMessageIds.last, let pinned = messaging.messagesByConversation[conversation.id]?.first(where: { $0.id == pinnedId }) {
+                        HStack(spacing: 9) {
+                            Rectangle().fill(Color.accentColor).frame(width: 3, height: 34)
+                            VStack(alignment: .leading, spacing: 2) { Text("置顶消息").font(.caption.bold()).foregroundStyle(Color.accentColor); Text(pinned.text).font(.caption).lineLimit(1) }
+                            Spacer()
+                            Button { Task { await messaging.setMessagePinned(conversationId: conversation.id, messageId: pinned.id, pinned: false) } } label: { Image(systemName: "xmark") }
+                        }.padding(.horizontal, 12).padding(.vertical, 6).background(.ultraThinMaterial)
                     }
                     if let typingName = messaging.typingActorByConversation[conversation.id] {
                         Text("\(typingName) 正在输入…")
@@ -685,6 +767,7 @@ struct ContentView: View {
                                             if message.isOutgoing {
                                                 Button("编辑", systemImage: "pencil") { editingMessage = message; replyTarget = nil; messageDraft = message.text }
                                             }
+                                            Button(message.isPinned ? "取消置顶消息" : "置顶消息", systemImage: "pin") { Task { await messaging.setMessagePinned(conversationId: conversation.id, messageId: message.id, pinned: !message.isPinned) } }
                                             Button("删除", systemImage: "trash", role: .destructive) { Task { await messaging.deleteMessage(conversationId: conversation.id, messageId: message.id) } }
                                         }
                                         if !message.isOutgoing { Spacer(minLength: 56) }
