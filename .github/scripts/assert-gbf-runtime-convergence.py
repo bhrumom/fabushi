@@ -9,6 +9,7 @@ app_host = (root / 'third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.r
 feature_host = (root / 'third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs').read_text(encoding='utf-8')
 runtime = (root / 'third_party/mahayana/mahayana-rs/mahayana-runtime/src/lib.rs').read_text(encoding='utf-8')
 kernel_resilience = (root / 'third_party/mahayana/mahayana-rs/mahayana-kernel/src/resilience.rs').read_text(encoding='utf-8')
+remote_device = (root / 'desktop/electron/remote-device-agent-supervisor.cjs').read_text(encoding='utf-8')
 
 method_block = re.search(r'const methodNames = \[([\s\S]*?)\];', edge)
 if not method_block:
@@ -44,7 +45,18 @@ for legacy in [
     if legacy.exists():
         raise SystemExit(f'GBF runtime convergence: retired Grok runtime path exists: {legacy}')
 
-# Desktop JS may only spawn the single Rust Host and the isolated local ASR provider.
+# Desktop JS may only spawn the Rust Host, isolated local ASR provider, and the
+# installed application's pinned account-scoped remote-device transport.
+for label, needle in {
+    'official packaged device gateway': "const OFFICIAL_DEVICE_GATEWAY_URL = 'wss://fabushi-mcp.ombhrum.com/agent'",
+    'content-addressed embedded device agent': "path.join(root, 'bin', 'fabushi-device-agent.js')",
+    'refresh session excluded from transport': "FABUSHI_ACCOUNT_SESSION_FILE: ''",
+    'access token passed by owner-only file': 'FABUSHI_ACCOUNT_TOKEN_FILE: this.tokenFile',
+    'logout credential cleanup': 'this.fs.rmSync(this.tokenFile, { force: true })',
+}.items():
+    if needle not in remote_device:
+        raise SystemExit(f'GBF runtime convergence: missing {label}: {needle}')
+
 process_hits = []
 for base in [root / 'desktop', root / 'frontend/apps/web/src']:
     for path in base.rglob('*'):
@@ -53,7 +65,12 @@ for base in [root / 'desktop', root / 'frontend/apps/web/src']:
         text = path.read_text(encoding='utf-8', errors='ignore')
         if "node:child_process" in text or re.search(r'\b(?:spawn|execFile|exec)\s*\(', text):
             rel = path.as_posix()
-            if rel not in {'desktop/electron/host-process.cjs', 'desktop/electron/offline-asr.cjs'}:
+            if rel not in {
+                'desktop/electron/host-process.cjs',
+                'desktop/electron/offline-asr.cjs',
+                'desktop/electron/remote-device-agent-supervisor.cjs',
+                'desktop/electron/remote-device-agent-supervisor.test.cjs',
+            }:
                 # Ignore RegExp.exec; only child_process import or known process-call identifiers count.
                 if "node:child_process" in text or re.search(r'\b(?:spawn|execFile)\s*\(', text):
                     process_hits.append(rel)

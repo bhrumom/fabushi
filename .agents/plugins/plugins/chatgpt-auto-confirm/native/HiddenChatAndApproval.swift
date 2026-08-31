@@ -1241,7 +1241,10 @@ func clickChatJS() -> String {
     // Work composer with the real Chat composer.
     if (currentChatGPTMode && surface.workComposer) {
       const newChatButton = candidates().find(candidate =>
-        labelsFor(candidate).some(label => label === 'new chat' || label === '新聊天')
+        labelsFor(candidate).some(label => [
+          'new chat', '新聊天', 'new conversation', '新对话',
+          'new task', '新建任务', '新任务'
+        ].includes(label))
       );
       if (newChatButton) {
         const rect = newChatButton.getBoundingClientRect();
@@ -2144,13 +2147,20 @@ func prepareNewChatTarget(
       let blankConversation = allowBlankConversationReuse &&
         baselineWasBlank &&
         (prepared?["messageCount"] as? Int ?? 1) == 0
+      // Current ChatGPT builds do not allocate a local conversation id until
+      // the first message is dispatched. A verified New Chat click followed
+      // by a stable, empty Chat composer is therefore a fresh conversation
+      // even while both the previous and current portal ids are empty.
+      let unmaterializedBlankConversation = (previous?.isEmpty != false) &&
+        conversationId.isEmpty &&
+        (prepared?["messageCount"] as? Int ?? 1) == 0
       // The desktop renderer intentionally keeps a virtualized fallback turn
       // from the previous Chat in the DOM after switching. The portal id and
       // composer are authoritative; requiring zero message nodes would reject
       // a correctly created blank Chat forever.
       let composerReady = (prepared?["inputTextLength"] as? Int ?? 1) == 0
       let candidateReady = composerReady &&
-        (changed || blankConversation)
+        (changed || blankConversation || unmaterializedBlankConversation)
       if candidateReady && stableConversationId == conversationId {
         stableSamples += 1
       } else if candidateReady {
