@@ -217,20 +217,15 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node .github/scripts/build-offline-asr-engine.mjs
 
-      - name: Assign monotonic desktop version for canonical main delivery
+      - name: Resolve canonical desktop version for main delivery
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: desktop
         shell: bash
-        env:
-          MAIN_DELIVERY_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          base="$(node -p "require('./package.json').version")"
-          major="${base%%.*}"
-          rest="${base#*.}"
-          minor="${rest%%.*}"
-          version="${major}.${minor}.${MAIN_DELIVERY_NUMBER}"
-          npm pkg set "version=$version"
+          version="$(node -p "require('../app-version.json').version")"
+          package_version="$(node -p "require('./package.json').version")"
+          test "$version" = "$package_version"
           echo "FABUSHI_DELIVERY_VERSION=$version" >> "$GITHUB_ENV"
           echo "Canonical main desktop version: $version (source $GITHUB_SHA)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -394,7 +389,7 @@ jobs:
           node .github/scripts/verify-packaged-computer-control.mjs "${args[@]}"
 
       - name: Simulate the complete user journey in packaged Linux Electron
-        if: matrix.target == 'linux'
+        if: github.event_name != 'pull_request' && matrix.target == 'linux'
         working-directory: desktop
         env:
           FABUSHI_FEATURE_HOST_MODE: test
