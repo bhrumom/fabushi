@@ -132,10 +132,16 @@ export async function readMiniAppCloudStorage(miniAppId: string, key?: string): 
   const response = await invokeNativeDesktop<Record<string, unknown>>('getMiniAppCloudStorage', { pluginId: miniAppId, key });
   if (!key || response.item) return response;
 
-  // The account service returns the same list-shaped payload for both full and
-  // keyed CloudStorage reads. The Mini App bridge exposes Telegram-compatible
-  // getItem(), so normalize a keyed list result into the single-item shape the
-  // bridge consumes. This also keeps the native/account wire contract unchanged.
+  // Native test accounts and the production account service historically used
+  // different keyed-read envelopes. Normalize every supported wire shape into
+  // the single `item` contract consumed by the Mini App CloudStorage bridge.
+  if (Object.prototype.hasOwnProperty.call(response, 'value')) {
+    return { ...response, item: { key, value: response.value } };
+  }
+  const values = response.values;
+  if (values && typeof values === 'object' && !Array.isArray(values) && Object.prototype.hasOwnProperty.call(values, key)) {
+    return { ...response, item: { key, value: (values as Record<string, unknown>)[key] } };
+  }
   const items = Array.isArray(response.items) ? response.items : [];
   const item = items.find((candidate) => {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false;
