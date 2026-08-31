@@ -7,6 +7,9 @@ on:
     paths:
       - .github/workflows/device-mesh-ci.yml
       - scripts/apply-device-mesh-integration.mjs
+      - scripts/apply-device-mesh-canonicalization.mjs
+      - scripts/apply-android-device-mesh-canonicalization.mjs
+      - scripts/apply-android-native-compile-fixes.mjs
       - chatgpt-vps-control/lib/device-agent.js
       - chatgpt-vps-control/lib/device-gateway.js
       - chatgpt-vps-control/lib/device-mesh.js
@@ -18,6 +21,9 @@ on:
     paths:
       - .github/workflows/device-mesh-ci.yml
       - scripts/apply-device-mesh-integration.mjs
+      - scripts/apply-device-mesh-canonicalization.mjs
+      - scripts/apply-android-device-mesh-canonicalization.mjs
+      - scripts/apply-android-native-compile-fixes.mjs
       - chatgpt-vps-control/lib/device-agent.js
       - chatgpt-vps-control/lib/device-gateway.js
       - chatgpt-vps-control/lib/device-mesh.js
@@ -50,8 +56,12 @@ jobs:
           cache: npm
           cache-dependency-path: chatgpt-vps-control/package-lock.json
 
-      - name: Apply idempotent integration patch
-        run: node scripts/apply-device-mesh-integration.mjs
+      - name: Apply idempotent cross-platform integration
+        run: |
+          node scripts/apply-device-mesh-integration.mjs
+          node scripts/apply-device-mesh-canonicalization.mjs
+          node scripts/apply-android-device-mesh-canonicalization.mjs
+          node scripts/apply-android-native-compile-fixes.mjs
 
       - name: Reject whitespace and patch damage
         run: git diff --check
@@ -59,36 +69,18 @@ jobs:
       - name: Install remote MCP dependencies
         run: npm ci --prefix chatgpt-vps-control
 
-      - name: Syntax-check mesh sources
+      - name: Syntax-check mesh sources and codemods
         run: |
           node --check chatgpt-vps-control/lib/device-mesh.js
           node --check chatgpt-vps-control/lib/device-agent.js
           node --check chatgpt-vps-control/lib/device-gateway.js
           node --check scripts/apply-device-mesh-integration.mjs
+          node --check scripts/apply-device-mesh-canonicalization.mjs
+          node --check scripts/apply-android-device-mesh-canonicalization.mjs
+          node --check scripts/apply-android-native-compile-fixes.mjs
 
       - name: Run complete remote MCP test suite
         run: npm test --prefix chatgpt-vps-control
-
-      - name: Commit generated integration on task branch
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          if git diff --quiet; then
-            echo "Device mesh integration is already committed."
-            exit 0
-          fi
-          git config user.name "fabushi-ci[bot]"
-          git config user.email "fabushi-ci[bot]@users.noreply.github.com"
-          git add \
-            chatgpt-vps-control/lib/device-agent.js \
-            chatgpt-vps-control/lib/device-gateway.js \
-            desktop/electron/remote-device-agent-supervisor.cjs
-          git commit -m "feat(mesh): integrate signed device mesh into remote control"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
-
-      - name: Require committed integration in pull requests
-        if: github.event_name == 'pull_request'
-        run: git diff --exit-code
 
   android-device-mesh:
     name: Android signed device agent compile
@@ -97,6 +89,17 @@ jobs:
     steps:
       - name: Check out exact source
         uses: actions/checkout@v4
+
+      - name: Set up Node.js for generated native sources
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Apply Android mesh generation and compile fixes
+        run: |
+          node scripts/apply-android-device-mesh-canonicalization.mjs
+          node scripts/apply-android-native-compile-fixes.mjs
+          git diff --check
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -144,3 +147,63 @@ jobs:
       - name: Compile and lint Android mobile mesh
         working-directory: mobile/android
         run: ./gradlew --no-daemon --build-cache :app:compileDebugKotlin :app:lintDebug
+
+  persist-generated-integration:
+    name: Persist verified generated integration
+    needs: [node-device-mesh, android-device-mesh]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out tested branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply all idempotent integrations
+        run: |
+          node scripts/apply-device-mesh-integration.mjs
+          node scripts/apply-device-mesh-canonicalization.mjs
+          node scripts/apply-android-device-mesh-canonicalization.mjs
+          node scripts/apply-android-native-compile-fixes.mjs
+          git diff --check
+
+      - name: Commit verified generated sources
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Device mesh integration is already committed."
+            exit 0
+          fi
+          git config user.name "fabushi-ci[bot]"
+          git config user.email "fabushi-ci[bot]@users.noreply.github.com"
+          git add \
+            chatgpt-vps-control/lib/device-agent.js \
+            chatgpt-vps-control/lib/device-gateway.js \
+            chatgpt-vps-control/lib/device-mesh.js \
+            chatgpt-vps-control/tests/device-mesh-gateway.test.js \
+            desktop/electron/remote-device-agent-supervisor.cjs \
+            mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiDeviceMeshAgent.kt \
+            mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiAppAgentSurface.kt \
+            mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiScreen.kt
+          git commit -m "feat(mesh): persist verified cross-platform integration"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  generated-integration-clean:
+    name: Generated integration is committed
+    needs: [node-device-mesh, android-device-mesh]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out pull request head
+        uses: actions/checkout@v4
+
+      - name: Require generated sources to be committed
+        run: |
+          node scripts/apply-device-mesh-integration.mjs
+          node scripts/apply-device-mesh-canonicalization.mjs
+          node scripts/apply-android-device-mesh-canonicalization.mjs
+          node scripts/apply-android-native-compile-fixes.mjs
+          git diff --check
+          git diff --exit-code
