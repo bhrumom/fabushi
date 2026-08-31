@@ -389,7 +389,7 @@ jobs:
           node .github/scripts/verify-packaged-computer-control.mjs "${args[@]}"
 
       - name: Simulate the complete user journey in packaged Linux Electron
-        if: matrix.target == 'linux'
+        if: github.event_name != 'pull_request' && matrix.target == 'linux'
         working-directory: desktop
         env:
           FABUSHI_FEATURE_HOST_MODE: test
