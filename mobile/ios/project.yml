@@ -42,6 +42,7 @@ targets:
             CFBundleURLSchemes: [fabushi]
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: false
+        NSLocationWhenInUseUsageDescription: 用于在聊天中按你的选择分享当前位置。
         CFBundleIconName: AppIcon
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
