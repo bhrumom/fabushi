@@ -85,7 +85,14 @@ test("node keys derive the same AEAD session key and reject tampering", () => {
   assert.deepEqual(leftKey, rightKey);
   const envelope = sealDirectDatagram({ key: leftKey, context, sequence: 7, payload: { type: "call", requestId: "r1", tool: "fabushi.app.status" } });
   assert.deepEqual(openDirectDatagram({ key: rightKey, context, envelope }), { type: "call", requestId: "r1", tool: "fabushi.app.status" });
-  assert.throws(() => openDirectDatagram({ key: rightKey, context, envelope: { ...envelope, tag: `${envelope.tag.slice(0, -1)}A` } }));
+  const originalTag = Buffer.from(envelope.tag, "base64url");
+  const tamperedTag = Buffer.from(originalTag);
+  tamperedTag[0] ^= 0x80;
+  assert.throws(() => openDirectDatagram({
+    key: rightKey,
+    context,
+    envelope: { ...envelope, tag: tamperedTag.toString("base64url") },
+  }));
 });
 
 test("STUN XOR-MAPPED-ADDRESS parsing yields a server-reflexive IPv4 endpoint", () => {
