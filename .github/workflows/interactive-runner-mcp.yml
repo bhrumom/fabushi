@@ -11,6 +11,14 @@ on:
         description: Optional public wss://.../agent override for the Fabushi remote MCP device gateway
         required: false
         type: string
+      account_binding:
+        description: Fabushi account used for Runner discovery and the packaged application session
+        required: true
+        default: github-actor
+        type: choice
+        options:
+          - github-actor
+          - ci-test-account
       hold_minutes:
         description: Maximum live-control window after Fabushi becomes ready
         required: true
@@ -96,16 +104,19 @@ jobs:
             wss://*/agent) ;;
             *) echo 'FABUSHI_REMOTE_MCP_DEVICE_GATEWAY_URL or gateway_url must be wss://.../agent.' >&2; exit 1 ;;
           esac
-          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || { echo 'GitHub Actions OIDC request URL is unavailable.' >&2; exit 1; }
-          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" || { echo 'GitHub Actions OIDC request token is unavailable.' >&2; exit 1; }
+          if [ '${{ inputs.account_binding }}' = 'github-actor' ]; then
+            test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || { echo 'GitHub Actions OIDC request URL is unavailable.' >&2; exit 1; }
+            test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" || { echo 'GitHub Actions OIDC request token is unavailable.' >&2; exit 1; }
+          fi
           umask 077
           mkdir -p "$FABUSHI_CI_SESSION_DIR"
           cat > "$FABUSHI_COMPUTER_POLICY_FILE" <<'JSON'
           {"localExecution":true,"aiComputerControlEnabled":true,"localToolPermission":"always"}
           JSON
-          node .github/scripts/update-interactive-runner-status.mjs provisioning 'Preparing the temporary GitHub Actions desktop and GitHub-linked Fabushi account agent.'
+          node .github/scripts/update-interactive-runner-status.mjs provisioning 'Preparing the temporary GitHub Actions desktop and Fabushi account agent.'
 
       - name: Bind the Runner to the workflow actor's Fabushi account
+        if: inputs.account_binding == 'github-actor'
         shell: bash
         run: |
           set -euo pipefail
@@ -185,7 +196,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            xvfb xfwm4 x11-utils xdotool wmctrl ffmpeg dbus-x11 at-spi2-core \
+            xvfb xfwm4 x11-utils x11-xserver-utils xdotool wmctrl ffmpeg dbus-x11 at-spi2-core \
             libatk-adaptor python3-pyatspi libgtk-3-0 libnss3 libgbm1 libasound2t64 \
             pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
             libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
@@ -215,6 +226,23 @@ jobs:
         working-directory: chatgpt-vps-control
         run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
 
+      - name: Bind the Runner to the dedicated Fabushi CI test account
+        if: inputs.account_binding == 'ci-test-account'
+        env:
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node chatgpt-vps-control/scripts/login-ci-test-account.mjs
+          node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
+          account_ref="$(jq -er '.userId // .user.id // .username' "$FABUSHI_ACCOUNT_SESSION_FILE" | sha256sum | cut -c1-16)"
+          {
+            echo '- Runner account: dedicated Fabushi CI test account (identity redacted)'
+            echo "- Account reference: \`$account_ref\`"
+            echo '- Connect the `fabushi test` MCP with the same dedicated test account.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Bring the Runner online before the build
         shell: bash
         run: |
@@ -241,7 +269,11 @@ jobs:
             echo "- MCP URL: \`$mcp_url\`"
             echo "- Device ID: \`$DEVICE_ID\`"
             echo "- Runner URL: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            echo '- Connect ChatGPT with the same GitHub-linked Fabushi account, call `list_devices`, then select this device.'
+            if [ '${{ inputs.account_binding }}' = 'ci-test-account' ]; then
+              echo '- Connect the `fabushi test` MCP with the dedicated CI test account, call `list_devices`, then select this device.'
+            else
+              echo '- Connect ChatGPT with the same GitHub-linked Fabushi account, call `list_devices`, then select this device.'
+            fi
             echo '- Call `ci_session_status` while the package is building; after `appReady=true`, run live UI tests and finish with `ci_session_finish`.'
           } >> "$GITHUB_STEP_SUMMARY"
 

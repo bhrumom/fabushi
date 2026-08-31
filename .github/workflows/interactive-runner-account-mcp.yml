@@ -78,11 +78,11 @@ jobs:
           FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
         run: node chatgpt-vps-control/scripts/login-ci-test-account.mjs
 
-      - name: Copy the ordinary account session for the application
+      - name: Export a bounded account session for the application
         shell: bash
         run: |
           set -euo pipefail
-          install -m 600 "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
+          node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
 
       - name: Install private X11 desktop dependencies
         shell: bash
