@@ -372,6 +372,7 @@ struct ContentView: View {
                     Button { profileMenuPresented = true } label: {
                         avatar.frame(width: 34, height: 34)
                     }
+                    .accessibilityElement(children: .ignore)
                     .accessibilityLabel("个人菜单")
                     .accessibilityIdentifier("profile-avatar")
                 }
