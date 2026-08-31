@@ -34,23 +34,41 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
-            manager.requestLocation()
-        } else if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
-            loading = false
-            errorMessage = "请在系统设置中允许位置权限"
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let shouldRequest = manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways
+        let isDenied = manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if shouldRequest {
+                self.manager.requestLocation()
+            } else if isDenied {
+                self.loading = false
+                self.errorMessage = "请在系统设置中允许位置权限"
+            }
         }
     }
 
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        loading = false
-        coordinate = locations.last?.coordinate
-        if coordinate == nil { errorMessage = "暂时无法获取当前位置" }
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        let latitude = locations.last?.coordinate.latitude
+        let longitude = locations.last?.coordinate.longitude
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.loading = false
+            if let latitude, let longitude {
+                self.coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+            } else {
+                self.coordinate = nil
+                self.errorMessage = "暂时无法获取当前位置"
+            }
+        }
     }
 
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        loading = false
-        errorMessage = error.localizedDescription
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let message = error.localizedDescription
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.loading = false
+            self.errorMessage = message
+        }
     }
 }
