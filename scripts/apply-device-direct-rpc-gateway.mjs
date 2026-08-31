@@ -36,4 +36,5 @@ replaceOnce(
 );
 
 if (changed) writeFileSync(path, source);
+await import("./apply-device-direct-forward-gateway.mjs");
 console.log(changed ? "Applied stable invocation ids to gateway calls." : "Direct RPC gateway invocation ids already applied.");
