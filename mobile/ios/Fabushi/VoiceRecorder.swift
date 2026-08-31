@@ -26,7 +26,7 @@ final class VoiceRecorder: NSObject, AVAudioRecorderDelegate {
         }
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetoothHFP])
+            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("fabushi-voice", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
