@@ -21,6 +21,8 @@ export const DIRECT_PATH = "direct-udp";
 
 const DEFAULT_CANDIDATE_TTL_MS = 120_000;
 const DEFAULT_HEALTH_TTL_MS = 45_000;
+const DEFAULT_PROMOTE_SUCCESSES = 2;
+const DEFAULT_DEMOTE_FAILURES = 2; // GBF-412 route hysteresis thresholds
 const MAX_CANDIDATES_PER_DEVICE = 24;
 const MAX_PACKET_BYTES = 60 * 1024;
 
@@ -87,7 +89,9 @@ export function createDirectPathRegistry(options = {}) {
   const now = options.now ?? Date.now;
   const candidateTtlMs = Number(options.candidateTtlMs) || DEFAULT_CANDIDATE_TTL_MS;
   const healthTtlMs = Number(options.healthTtlMs) || DEFAULT_HEALTH_TTL_MS;
-  const devices = new Map();
+  const promoteSuccesses = Math.max(1, Number(options.promoteSuccesses) || DEFAULT_PROMOTE_SUCCESSES);
+  const demoteFailures = Math.max(1, Number(options.demoteFailures) || DEFAULT_DEMOTE_FAILURES);
+  const devices = new Map(); // GBF-412 hysteresis configuration
 
   function key(accountId, deviceId) {
     return `${bounded(accountId, 300)}\0${bounded(deviceId, 128)}`;
@@ -116,6 +120,7 @@ export function createDirectPathRegistry(options = {}) {
     const current = devices.get(key(normalizedAccount, normalizedDevice));
     const sameGeneration = current?.generation === normalizedGeneration;
     const health = sameGeneration ? current.health : new Map();
+    const route = sameGeneration ? (current.route ?? { path: RELAY_PATH, candidateId: null, changedAt: timestamp }) : { path: RELAY_PATH, candidateId: null, changedAt: timestamp };
     const entry = {
       accountId: normalizedAccount,
       deviceId: normalizedDevice,
@@ -123,6 +128,7 @@ export function createDirectPathRegistry(options = {}) {
       nodeKeyFingerprint: bounded(nodeKeyFingerprint, 128),
       candidates: normalizedCandidates,
       health,
+      route, // GBF-412 preserve route hysteresis across heartbeats
       expiresAt: Math.max(timestamp + 30_000, Number(leaseExpiresAt) || timestamp + candidateTtlMs),
     };
     devices.set(key(normalizedAccount, normalizedDevice), entry);
@@ -135,12 +141,16 @@ export function createDirectPathRegistry(options = {}) {
     if (!entry || entry.generation !== generation) return false;
     const candidate = entry.candidates.find((item) => item.id === id);
     if (!candidate) return false;
+    const previous = entry.health.get(id);
+    const isReachable = reachable === true;
     entry.health.set(id, {
-      reachable: reachable === true,
+      reachable: isReachable,
       latencyMs: Math.max(0, Math.min(60_000, Number(latencyMs) || 0)),
       loss: Math.max(0, Math.min(1, Number(loss) || 0)),
       checkedAt: now(),
-    });
+      successStreak: isReachable ? Math.min(1000, (previous?.successStreak || 0) + 1) : 0,
+      failureStreak: isReachable ? 0 : Math.min(1000, (previous?.failureStreak || 0) + 1),
+    }); // GBF-412 track route health streaks
     return true;
   }
 
@@ -164,8 +174,19 @@ export function createDirectPathRegistry(options = {}) {
       const score = candidate.priority - Math.min(50_000, health.latencyMs) - Math.round(health.loss * 100_000);
       return { candidate, health, score };
     }).filter(Boolean).sort((left, right) => right.score - left.score);
-    if (!scored.length) return { path: RELAY_PATH, reason: "no-healthy-direct-candidate", candidate: null };
-    return { path: DIRECT_PATH, reason: "healthy-authenticated-direct-candidate", candidate: scored[0].candidate, health: scored[0].health };
+    if (entry.route?.path === DIRECT_PATH && entry.route.candidateId) {
+      const previousCandidate = entry.candidates.find((candidate) => candidate.id === entry.route.candidateId);
+      const previousHealth = previousCandidate ? entry.health.get(previousCandidate.id) : null;
+      const fresh = previousHealth && previousHealth.checkedAt + healthTtlMs > timestamp;
+      if (previousCandidate && fresh && (previousHealth.failureStreak || 0) < demoteFailures) {
+        return { path: DIRECT_PATH, reason: previousHealth.reachable ? "direct-route-held" : "direct-route-hysteresis-hold", candidate: previousCandidate, health: previousHealth };
+      }
+      entry.route = { path: RELAY_PATH, candidateId: null, changedAt: timestamp };
+    }
+    const promoted = scored.find((item) => (item.health.successStreak || 0) >= promoteSuccesses);
+    if (!promoted) return { path: RELAY_PATH, reason: scored.length ? "direct-route-awaiting-stability" : "no-healthy-direct-candidate", candidate: null };
+    entry.route = { path: DIRECT_PATH, candidateId: promoted.candidate.id, changedAt: timestamp };
+    return { path: DIRECT_PATH, reason: "healthy-authenticated-direct-candidate", candidate: promoted.candidate, health: promoted.health }; // GBF-412 route hysteresis selection
   }
 
   return Object.freeze({ update, reportHealth, peers, select, cleanup });

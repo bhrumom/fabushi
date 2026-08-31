@@ -53,6 +53,41 @@ class FabushiDeviceDirectPath(
         private const val ProbeTimeoutMilliseconds = 1_500L
         private const val RpcTimeoutMilliseconds = 2_500L
         private const val ReplayWindow = 128L
+        private const val StunMagicCookie = 0x2112A442
+        private const val StunServer = "stun.cloudflare.com"
+        private const val StunPort = 3478
+        private const val StunTimeoutMilliseconds = 1_500L
+
+        internal fun stunBindingRequest(transactionId: ByteArray): ByteArray {
+            require(transactionId.size == 12)
+            return byteArrayOf(0x00, 0x01, 0x00, 0x00, 0x21, 0x12, 0xA4.toByte(), 0x42) + transactionId
+        }
+
+        internal fun parseStunMappedAddress(bytes: ByteArray, transactionId: ByteArray): Candidate? {
+            if (transactionId.size != 12 || bytes.size < 20) return null
+            if (bytes[0].toInt() and 0xff != 0x01 || bytes[1].toInt() and 0xff != 0x01) return null
+            if (bytes.copyOfRange(4, 8).contentEquals(byteArrayOf(0x21, 0x12, 0xA4.toByte(), 0x42)).not()) return null
+            if (!bytes.copyOfRange(8, 20).contentEquals(transactionId)) return null
+            val messageLength = ((bytes[2].toInt() and 0xff) shl 8) or (bytes[3].toInt() and 0xff)
+            if (20 + messageLength > bytes.size) return null
+            val cookie = byteArrayOf(0x21, 0x12, 0xA4.toByte(), 0x42)
+            var offset = 20
+            while (offset + 4 <= 20 + messageLength) {
+                val type = ((bytes[offset].toInt() and 0xff) shl 8) or (bytes[offset + 1].toInt() and 0xff)
+                val length = ((bytes[offset + 2].toInt() and 0xff) shl 8) or (bytes[offset + 3].toInt() and 0xff)
+                val value = offset + 4
+                if (value + length > bytes.size) return null
+                if (type == 0x0020 && length >= 8 && (bytes[value + 1].toInt() and 0xff) == 0x01) {
+                    val xorPort = ((bytes[value + 2].toInt() and 0xff) shl 8) or (bytes[value + 3].toInt() and 0xff)
+                    val mappedPort = xorPort xor (StunMagicCookie ushr 16)
+                    val octets = (0 until 4).map { (bytes[value + 4 + it].toInt() xor cookie[it].toInt()) and 0xff }
+                    val host = octets.joinToString(".")
+                    return Candidate("udp:srflx:$host:$mappedPort", host, mappedPort, 120, "srflx")
+                }
+                offset = value + ((length + 3) and 3.inv())
+            }
+            return null
+        }
     }
 
     data class Candidate(val id: String, val host: String, val port: Int, val priority: Int, val scope: String)
@@ -61,6 +96,7 @@ class FabushiDeviceDirectPath(
 
     private data class PendingProbe(val sentAt: Long, val deferred: CompletableDeferred<Long>)
     private data class PendingRpc(val deferred: CompletableDeferred<JSONObject>)
+    private data class PendingStun(val transactionId: ByteArray, val deferred: CompletableDeferred<Candidate>)
     private data class Session(
         val peer: Peer,
         val key: ByteArray,
@@ -79,12 +115,16 @@ class FabushiDeviceDirectPath(
     private val peers = ConcurrentHashMap<String, Peer>()
     private val pendingProbes = ConcurrentHashMap<String, PendingProbe>()
     private val pendingRpc = ConcurrentHashMap<String, PendingRpc>()
+    private val pendingStun = ConcurrentHashMap<String, PendingStun>()
     private val sessions = ConcurrentHashMap<String, Session>()
     private var receiveJob: Job? = null
     private val publicJwk = publicJwk(keyPair.public as ECPublicKey)
     private val fingerprint = fingerprint(publicJwk)
     @Volatile private var accountBinding: String? = null
     @Volatile private var rpcExecutor: (suspend (String, String, JSONObject) -> JSONObject)? = null
+    @Volatile private var serverReflexiveCandidate: Candidate? = null
+    @Volatile private var hostCandidateFingerprint: String = ""
+    private val stunRefreshing = AtomicBoolean(false)
 
     fun configureRpc(binding: String?, executor: suspend (String, String, JSONObject) -> JSONObject) {
         val normalized = binding?.trim()?.take(128).orEmpty()
@@ -113,9 +153,10 @@ class FabushiDeviceDirectPath(
                 }
             }
         }
+        scope.launch { refreshServerReflexiveCandidate() }
     }
 
-    fun candidates(): List<Candidate> {
+    private fun hostCandidates(): List<Candidate> {
         val results = mutableListOf<Candidate>()
         val interfaces = runCatching { Collections.list(NetworkInterface.getNetworkInterfaces()) }.getOrDefault(emptyList())
         for (network in interfaces) {
@@ -127,7 +168,37 @@ class FabushiDeviceDirectPath(
                 results += Candidate("udp:host:$host:${socket.localPort}", host, socket.localPort, if (address is Inet4Address) 200 else 180, "host")
             }
         }
-        return results.distinctBy(Candidate::id).take(24)
+        return results.distinctBy(Candidate::id).take(23)
+    }
+
+    fun candidates(): List<Candidate> {
+        val hosts = hostCandidates()
+        val fingerprint = hosts.map(Candidate::id).sorted().joinToString("|")
+        if (hostCandidateFingerprint.isNotEmpty() && hostCandidateFingerprint != fingerprint) {
+            serverReflexiveCandidate = null
+            sessions.clear()
+            scope.launch { refreshServerReflexiveCandidate() }
+        }
+        hostCandidateFingerprint = fingerprint
+        return (hosts + listOfNotNull(serverReflexiveCandidate)).distinctBy(Candidate::id).take(24)
+    }
+
+    private suspend fun refreshServerReflexiveCandidate() = withContext(Dispatchers.IO) {
+        if (!running.get() || socket.isClosed || !stunRefreshing.compareAndSet(false, true)) return@withContext
+        val transactionId = randomBytes(12)
+        val key = transactionId.base64Url()
+        val deferred = CompletableDeferred<Candidate>()
+        pendingStun[key] = PendingStun(transactionId, deferred)
+        try {
+            val request = stunBindingRequest(transactionId)
+            socket.send(DatagramPacket(request, request.size, InetAddress.getByName(StunServer), StunPort))
+            serverReflexiveCandidate = withTimeout(StunTimeoutMilliseconds) { deferred.await() }
+        } catch (_: Throwable) {
+            serverReflexiveCandidate = null
+        } finally {
+            pendingStun.remove(key)
+            stunRefreshing.set(false)
+        }
     }
 
     fun registrationJson(): JSONObject = JSONObject().put("version", ProtocolVersion).put("candidates", candidatesJson())
@@ -225,6 +296,7 @@ class FabushiDeviceDirectPath(
 
     private fun handlePacket(bytes: ByteArray, address: InetAddress, port: Int) {
         if (bytes.size > MaximumPacketBytes) return
+        if (handleStunResponse(bytes)) return
         val packet = runCatching { JSONObject(bytes.toString(Charsets.UTF_8)) }.getOrNull() ?: return
         val fromDeviceId = packet.optString("fromDeviceId")
         val peer = peers[fromDeviceId] ?: return
@@ -242,6 +314,17 @@ class FabushiDeviceDirectPath(
             }
             RpcPacketType -> handleRpcPacket(packet, peer, address, port)
         }
+    }
+
+    private fun handleStunResponse(bytes: ByteArray): Boolean {
+        if (bytes.size < 20 || (bytes[0].toInt() and 0xff) != 0x01 || (bytes[1].toInt() and 0xff) != 0x01) return false
+        val transactionId = bytes.copyOfRange(8, 20)
+        val key = transactionId.base64Url()
+        val pending = pendingStun[key] ?: return true
+        val candidate = parseStunMappedAddress(bytes, pending.transactionId) ?: return true
+        pendingStun.remove(key)
+        pending.deferred.complete(candidate)
+        return true
     }
 
     private fun establishSession(packet: JSONObject, peer: Peer, address: InetAddress, port: Int) {
@@ -420,8 +503,11 @@ class FabushiDeviceDirectPath(
         if (!running.compareAndSet(true, false)) return
         pendingProbes.values.forEach { it.deferred.cancel() }
         pendingRpc.values.forEach { it.deferred.cancel() }
+        pendingStun.values.forEach { it.deferred.cancel() }
         pendingProbes.clear()
         pendingRpc.clear()
+        pendingStun.clear()
+        serverReflexiveCandidate = null
         sessions.clear()
         receiveJob?.cancel()
         socket.close()

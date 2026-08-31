@@ -111,7 +111,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Compile and lint
         working-directory: mobile/android
-        run: ./gradlew --no-daemon --build-cache :app:compileDebugKotlin :app:lintDebug
+        run: ./gradlew --no-daemon --build-cache :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug
 
   ios:
     name: iOS direct mesh
@@ -176,7 +176,16 @@ jobs:
           -scheme Fabushi
           -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}'
           -derivedDataPath "${{ runner.temp }}/FabushiMeshFinalizeDerivedData"
+          -resultBundlePath "${{ runner.temp }}/FabushiMeshFinalize.xcresult"
           CODE_SIGNING_ALLOWED=NO
+      - name: Upload iOS UI and Swift 6 evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-device-mesh-finalize-xcresult-${{ github.sha }}
+          path: ${{ runner.temp }}/FabushiMeshFinalize.xcresult
+          retention-days: 90
+          if-no-files-found: error
 
   persist:
     name: Persist all verified generated adapters

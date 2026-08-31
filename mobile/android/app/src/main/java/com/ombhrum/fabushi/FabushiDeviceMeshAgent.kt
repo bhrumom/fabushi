@@ -33,6 +33,7 @@ import java.security.Signature
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap // GBF-412 Android invocation dedupe
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
 
@@ -99,6 +100,8 @@ class FabushiDeviceMeshAgent(
     private var heartbeatJob: Job? = null
     @Volatile private var socket: WebSocket? = null
     @Volatile private var currentGeneration: String? = null
+    @Volatile private var directPath: FabushiDeviceDirectPath? = null // GBF-412 Android direct path
+    private val invocationResults = ConcurrentHashMap<String, CompletableDeferred<JSONObject>>() // GBF-412 Android exactly-once calls
 
     fun state(): State = synchronized(stateLock) { state.copy() }
 
@@ -115,6 +118,8 @@ class FabushiDeviceMeshAgent(
         socket?.close(1000, "Fabushi Android device agent stopping")
         socket = null
         currentGeneration = null
+        directPath?.close()
+        directPath = null // GBF-412 Android direct shutdown
         updateState { State(false, false, false, it.deviceId, null) }
         scope.cancel()
         rustHost.close()
@@ -152,6 +157,8 @@ class FabushiDeviceMeshAgent(
         heartbeatJob = null
         socket = null
         currentGeneration = null
+        directPath?.close()
+        directPath = null // GBF-412 Android direct reconnect cleanup
         val exponent = min(reconnectAttempt, 6)
         val delayMilliseconds = min(1_000L shl exponent, MaximumReconnectMilliseconds)
         reconnectAttempt += 1
@@ -181,6 +188,10 @@ class FabushiDeviceMeshAgent(
             updateState { it.copy(connected = true, registered = false, deviceId = session.deviceId, error = null) }
             val generation = randomBytes(24).base64Url()
             currentGeneration = generation
+            directPath?.close()
+            directPath = runCatching {
+                FabushiDeviceDirectPath(session.deviceId, generation, loadOrCreateNodeKey(), scope).also { it.start() }
+            }.getOrNull() // GBF-412 Android direct endpoint start
             val catalog = toolCatalog()
             val schemaVersion = sha256(canonicalJson(catalog).toByteArray(Charsets.UTF_8)) // GBF-412 Android canonical schema hash
             val registration = signedRegistration(session.deviceId, generation, schemaVersion)
@@ -197,6 +208,12 @@ class FabushiDeviceMeshAgent(
                 .put("runnerOs", "Android ${Build.VERSION.RELEASE}")
                 .put("runnerArch", Build.SUPPORTED_ABIS.firstOrNull().orEmpty())
             )
+            directPath?.let { direct ->
+                registration.put("direct", direct.registrationJson())
+                registration.getJSONObject("mesh")
+                    .put("supportedPaths", JSONArray().put("direct-udp").put("relay"))
+                    .put("preferredPath", "direct-udp")
+            } // GBF-412 Android publish direct candidates
             if (!webSocket.send(registration.toString())) {
                 webSocket.close(1011, "registration send failed")
                 return
@@ -215,6 +232,25 @@ class FabushiDeviceMeshAgent(
             }
             when (message.optString("type")) {
                 "registered" -> updateState { it.copy(registered = true, error = null) }
+                "direct_peer_map" -> {
+                    val direct = directPath ?: return
+                    if (message.optString("version") != FabushiDeviceDirectPath.ProtocolVersion) return
+                    direct.updatePeers(message.optJSONArray("peers"))
+                    direct.configureRpc(message.optString("accountBinding")) { invocationId, toolName, arguments ->
+                        executeInvocation(invocationId, toolName, arguments)
+                    } // GBF-412 Android account-bound direct RPC
+                    direct.probeAll { health ->
+                        val report = JSONObject()
+                            .put("type", "direct_path_health")
+                            .put("targetDeviceId", health.targetDeviceId)
+                            .put("candidateId", health.candidateId)
+                            .put("reachable", health.reachable)
+                            .put("latencyMs", health.latencyMs)
+                            .put("loss", health.loss)
+                        if (socket === webSocket) webSocket.send(report.toString())
+                    }
+                } // GBF-412 Android direct peer probing
+                "direct_forward_call" -> handleDirectForward(webSocket, message) // GBF-412 Android direct forwarding
                 "call" -> handleCall(webSocket, message)
             }
         }
@@ -251,36 +287,81 @@ class FabushiDeviceMeshAgent(
                         .put("activePath", "relay")
                         .put("posture", posture(appState))
                     )
+                directPath?.let { message.put("direct", it.heartbeatJson()) } // GBF-412 Android direct heartbeat
                 if (!webSocket.send(message.toString())) break
             }
         }
     }
 
+    private fun handleDirectForward(webSocket: WebSocket, message: JSONObject) {
+        val requestId = message.optString("requestId").take(128)
+        val invocationId = message.optString("invocationId", requestId).take(128)
+        val targetDeviceId = message.optString("targetDeviceId").take(128)
+        val targetGeneration = message.optString("targetGeneration").take(128)
+        val toolName = message.optString("toolName").take(128)
+        val arguments = message.optJSONObject("arguments") ?: JSONObject()
+        val direct = directPath
+        val peer = direct?.peer(targetDeviceId)
+        val candidate = peer?.let(direct::preferredCandidate)
+        if (direct == null || peer == null || candidate == null || peer.generation != targetGeneration) {
+            webSocket.send(JSONObject().put("type", "direct_forward_failed").put("requestId", requestId).put("invocationId", invocationId).put("error", "No authenticated Android direct route is available.").toString())
+            return
+        }
+        scope.launch {
+            runCatching { direct.call(peer, candidate, toolName, arguments, invocationId, message.optLong("timeoutMs", 2_500)) }
+                .onSuccess { payload ->
+                    if (payload.optString("kind") == "error" || !payload.optBoolean("ok", true)) {
+                        webSocket.send(JSONObject().put("type", "direct_forward_failed").put("requestId", requestId).put("invocationId", invocationId).put("error", payload.optString("error", "direct call failed")).toString())
+                    } else {
+                        webSocket.send(JSONObject().put("type", "result").put("requestId", requestId).put("invocationId", invocationId).put("ok", true).put("route", "direct-udp").put("result", payload.optJSONObject("result") ?: JSONObject()).toString())
+                    }
+                }
+                .onFailure { error ->
+                    webSocket.send(JSONObject().put("type", "direct_forward_failed").put("requestId", requestId).put("invocationId", invocationId).put("error", safeError(error)).toString())
+                }
+        }
+    } // GBF-412 Android peer direct call path
+
+    private suspend fun executeInvocation(invocationId: String, toolName: String, arguments: JSONObject): JSONObject {
+        require(invocationId.matches(Regex("[A-Za-z0-9._:-]{16,128}"))) { "invalid invocation id" }
+        require(toolName in ToolNames) { "unsupported Fabushi App MCP tool" }
+        val created = CompletableDeferred<JSONObject>()
+        val existing = invocationResults.putIfAbsent(invocationId, created)
+        if (existing != null) return existing.await()
+        try {
+            val structured = withContext(Dispatchers.Main.immediate) { callSurface(toolName, arguments) }
+            val result = JSONObject().put("structuredContent", structured).put("content", JSONArray().put(JSONObject().put("type", "text").put("text", summary(toolName, structured))))
+            created.complete(result)
+            if (invocationResults.size > 512) invocationResults.entries.firstOrNull { it.value.isCompleted && it.key != invocationId }?.let { invocationResults.remove(it.key, it.value) }
+            return result
+        } catch (error: Throwable) {
+            created.completeExceptionally(error)
+            throw error
+        }
+    } // GBF-412 Android exactly-once execution boundary
+
     private fun handleCall(webSocket: WebSocket, message: JSONObject) {
         val requestId = message.optString("requestId")
+        val invocationId = message.optString("invocationId", requestId).take(128) // GBF-412 Android relay invocation id
         val toolName = message.optString("toolName")
         val arguments = message.optJSONObject("arguments") ?: JSONObject()
         if (!requestId.matches(Regex("[A-Fa-f0-9]{16,64}")) || toolName !in ToolNames) return
         scope.launch {
             val response = runCatching {
-                val result = withContext(Dispatchers.Main.immediate) { callSurface(toolName, arguments) }
+                val result = executeInvocation(invocationId, toolName, arguments)
                 JSONObject()
                     .put("type", "result")
                     .put("requestId", requestId)
+                    .put("invocationId", invocationId)
                     .put("ok", true)
-                    .put("result", JSONObject()
-                        .put("structuredContent", result)
-                        .put("content", JSONArray().put(JSONObject()
-                            .put("type", "text")
-                            .put("text", summary(toolName, result))
-                        ))
-                    )
+                    .put("result", result) // GBF-412 Android relay shares direct dedupe
             }.getOrElse { error ->
                 JSONObject()
                     .put("type", "result")
                     .put("requestId", requestId)
+                    .put("invocationId", invocationId)
                     .put("ok", false)
-                    .put("error", safeError(error))
+                    .put("error", safeError(error)) // GBF-412 Android failed invocation echo
             }
             webSocket.send(response.toString())
         }
@@ -437,7 +518,9 @@ class FabushiDeviceMeshAgent(
         val existingPublic = keyStore.getCertificate(NodeKeyAlias)?.publicKey
         if (existingPrivate != null && existingPublic is ECPublicKey) return KeyPair(existingPublic, existingPrivate)
         val generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore")
-        val specification = KeyGenParameterSpec.Builder(NodeKeyAlias, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY)
+        val keyPurposes = KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY or
+            (if (Build.VERSION.SDK_INT >= 31) KeyProperties.PURPOSE_AGREE_KEY else 0) // GBF-412 Android ECDH-capable fresh keys
+        val specification = KeyGenParameterSpec.Builder(NodeKeyAlias, keyPurposes)
             .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
             .setDigests(KeyProperties.DIGEST_SHA256)
             .setUserAuthenticationRequired(false)

@@ -8,6 +8,7 @@ import {
   publicMeshState,
   verifyAndNormalizeMeshRegistration,
 } from "./device-mesh.js"; // GBF-412 mesh gateway
+import { createDirectPathRegistry } from "./device-direct-path.js"; // GBF-412 direct rendezvous
 
 const DEFAULT_AGENT_PATH = "/agent";
 const DEFAULT_CALL_TIMEOUT_SECONDS = 120;
@@ -154,6 +155,21 @@ function rejectUpgrade(socket, status = 401, reason = "Unauthorized") {
   }
 }
 
+function publishDirectPeerMaps(accountId, directPaths) {
+  if (!directPaths || !accountId) return;
+  for (const device of devices.values()) {
+    if (device.accountId !== accountId || device.central || device.status !== "online" || !device.socket || device.socket.readyState !== 1) continue;
+    try {
+      device.socket.send(JSON.stringify({
+        type: "direct_peer_map",
+        version: "fabushi.direct-path.v1",
+        accountBinding: createHash("sha256").update(String(accountId)).digest("base64url").slice(0, 32), // GBF-412 account-bound direct session
+        peers: directPaths.peers(accountId, device.id),
+      }));
+    } catch {}
+  }
+} // GBF-412 same-account direct peer map
+
 function audit(options, record) {
   try {
     options.audit?.({ at: new Date().toISOString(), ...record });
@@ -283,12 +299,28 @@ async function handleAgentMessage(socket, raw, options) { // GBF-412 serialized 
     });
     socket.deviceId = id;
     socket.registryKey = key;
+    if (mesh && options.directPaths) {
+      const direct = options.directPaths.update({
+        accountId: socket.accountId,
+        deviceId: id,
+        generation,
+        nodeKeyFingerprint: mesh.nodeKeyFingerprint,
+        candidates: message.direct?.candidates,
+        leaseExpiresAt: expiresAt,
+      });
+      if (direct.candidates.length) {
+        mesh.supportedPaths = [...new Set(["direct-udp", ...mesh.supportedPaths])];
+        mesh.preferredPath = "direct-udp";
+      }
+    } // GBF-412 direct candidate enrollment
     socket.send(JSON.stringify({
       type: "registered",
       deviceId: id,
       expiresAt: new Date(expiresAt).toISOString(),
       mesh: publicMeshState(mesh),
+      ...(options.directPaths ? { directPeers: options.directPaths.peers(socket.accountId, id) } : {}),
     }));
+    publishDirectPeerMaps(socket.accountId, options.directPaths); // GBF-412 publish rendezvous after register
     audit(options, {
       type: "device.registered",
       accountId: socket.accountId,
@@ -304,18 +336,88 @@ async function handleAgentMessage(socket, raw, options) { // GBF-412 serialized 
     if (device && device.socket === socket) {
       device.lastSeen = Date.now();
       device.mesh = mergeMeshHeartbeat(device.mesh, message.mesh); // GBF-412 heartbeat posture/path
+      if (device.mesh && options.directPaths && message.direct?.candidates) {
+        const direct = options.directPaths.update({
+          accountId: socket.accountId,
+          deviceId: device.id,
+          generation: device.generation,
+          nodeKeyFingerprint: device.mesh.nodeKeyFingerprint,
+          candidates: message.direct.candidates,
+          leaseExpiresAt: device.expiresAt,
+        });
+        if (direct.candidates.length) {
+          device.mesh.supportedPaths = [...new Set(["direct-udp", ...device.mesh.supportedPaths])];
+          device.mesh.preferredPath = "direct-udp";
+        }
+        publishDirectPeerMaps(socket.accountId, options.directPaths);
+      } // GBF-412 refresh direct candidates
       device.status = device.expiresAt > Date.now() ? "online" : "offline";
       if (device.status === "offline") rejectSocket(socket, 4003, "device lease expired");
     }
     return;
   }
 
+  if (message.type === "direct_path_health") {
+    if (!options.directPaths || !socket.registryKey) return;
+    const reporter = devices.get(socket.registryKey);
+    const targetId = String(message.targetDeviceId || "").trim();
+    const target = devices.get(registryKey(socket.accountId, targetId));
+    if (!reporter || reporter.socket !== socket || !target || target.central || !target.mesh) return;
+    const accepted = options.directPaths.reportHealth({
+      accountId: socket.accountId,
+      deviceId: target.id,
+      generation: target.generation,
+      candidateId: String(message.candidateId || ""),
+      reachable: message.reachable === true,
+      latencyMs: Number(message.latencyMs) || 0,
+      loss: Number(message.loss) || 0,
+    });
+    if (!accepted) return;
+    if (message.reachable === true) target.directRouterId = reporter.id;
+    else if (target.directRouterId === reporter.id) target.directRouterId = null; // GBF-412 remember authenticated direct reporter
+    const selected = options.directPaths.select(socket.accountId, target.id);
+    const nextPath = selected.path === "direct-udp" ? "direct-udp" : "relay";
+    if (target.mesh.activePath !== nextPath) target.mesh.pathChangedAt = Date.now();
+    target.mesh.activePath = nextPath;
+    publishDirectPeerMaps(socket.accountId, options.directPaths);
+    audit(options, { type: "device.direct_path_health", accountId: socket.accountId, reporterDeviceId: reporter.id, targetDeviceId: target.id, activePath: nextPath, latencyMs: Number(message.latencyMs) || 0 });
+    return;
+  } // GBF-412 authenticated direct path health
+
+  if (message.type === "direct_forward_failed") {
+    const requestId = String(message.requestId ?? "");
+    const pending = pendingCalls.get(requestId);
+    if (!pending || pending.socket !== socket || pending.route !== "direct-udp") return;
+    if (String(message.invocationId || "") !== pending.invocationId) return;
+    const target = devices.get(pending.targetRegistryKey);
+    if (!target || target.status !== "online" || !target.socket || target.socket.readyState !== 1) {
+      pendingCalls.delete(requestId);
+      clearTimeout(pending.timer);
+      pending.reject(new Error(`Device ${pending.targetDeviceId} became unavailable during direct fallback.`));
+      return;
+    }
+    pending.socket = target.socket;
+    pending.registryKey = pending.targetRegistryKey;
+    pending.route = "relay";
+    target.socket.send(JSON.stringify({ type: "call", requestId, invocationId: pending.invocationId, toolName: pending.toolName, arguments: pending.arguments }), (error) => {
+      if (!error) return;
+      if (pendingCalls.get(requestId) !== pending) return;
+      pendingCalls.delete(requestId);
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    });
+    audit(options, { type: "device.direct_fallback", accountId: socket.accountId, routerDeviceId: socket.deviceId || "", targetDeviceId: pending.targetDeviceId, invocationId: pending.invocationId, reason: String(message.error || "direct forwarding failed").slice(0, 300) });
+    return;
+  } // GBF-412 direct to relay fallback with same invocation
+
   if (message.type === "result") {
     const requestId = String(message.requestId ?? "");
     const pending = pendingCalls.get(requestId);
     if (!pending || pending.registryKey !== socket.registryKey || pending.socket !== socket) return;
+    if (message.invocationId && String(message.invocationId) !== pending.invocationId) return; // GBF-412 bind result to invocation
     pendingCalls.delete(requestId);
     clearTimeout(pending.timer);
+    message.route = message.route === "direct-udp" ? "direct-udp" : pending.route || "relay"; // GBF-412 route observability
     pending.resolve(message);
   }
 }
@@ -352,6 +454,8 @@ export function attachDeviceGateway(httpServer, options = {}) {
     });
   }
 
+  const directPaths = options.directPaths ?? createDirectPathRegistry(); // GBF-412 direct path coordinator
+  const gatewayOptions = { ...options, directPaths };
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_RESULT_BYTES });
   const onUpgrade = async (req, socket, head) => {
     let pathname = "";
@@ -387,7 +491,7 @@ export function attachDeviceGateway(httpServer, options = {}) {
     });
     socket.on("message", (raw) => {
       socket.messageChain = socket.messageChain
-        .then(() => handleAgentMessage(socket, raw, options))
+        .then(() => handleAgentMessage(socket, raw, gatewayOptions)) // GBF-412 direct-aware message handling
         .catch((error) => {
           audit(options, { type: "device.message_failed", accountId: socket.accountId, deviceId: socket.deviceId || "", error: error instanceof Error ? error.message : String(error) });
           rejectSocket(socket, 1011, "device message handling failed");
@@ -485,19 +589,34 @@ export async function callRegisteredDevice(accountId, deviceId, toolName, args, 
   if (device.status !== "online" || !device.socket || device.socket.readyState !== 1) throw new Error(`Device ${deviceId} is offline.`);
   if (!device.capabilities.includes(toolName)) throw new Error(`Device ${deviceId} does not expose tool ${toolName}.`);
 
-  const pendingForDevice = [...pendingCalls.values()].filter((pending) => pending.registryKey === key).length;
+  const pendingForDevice = [...pendingCalls.values()].filter((pending) => (pending.targetRegistryKey || pending.registryKey) === key).length; // GBF-412 count forwarded calls against target
   if (pendingCalls.size >= MAX_PENDING_CALLS_TOTAL || pendingForDevice >= MAX_PENDING_CALLS_PER_DEVICE) {
     throw new Error(`Device ${deviceId} already has too many pending calls.`);
   }
+  const invocationId = randomBytes(16).toString("hex"); // GBF-412 transport-independent invocation id
   const requestId = randomBytes(16).toString("hex");
   const timeoutMs = Math.min(Math.max(Number(timeoutSeconds) || DEFAULT_CALL_TIMEOUT_SECONDS, 1), MAX_CALL_TIMEOUT_SECONDS) * 1000;
+  const routerKey = device.directRouterId ? registryKey(accountId, device.directRouterId) : "";
+  const router = routerKey ? devices.get(routerKey) : null;
+  const useDirect = device.mesh?.activePath === "direct-udp"
+    && router && router.id !== device.id && router.status === "online" && router.socket?.readyState === 1; // GBF-412 choose healthy peer router
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingCalls.delete(requestId);
       reject(new Error(`Device call timed out after ${timeoutMs / 1000} seconds.`));
     }, timeoutMs);
-    pendingCalls.set(requestId, { registryKey: key, socket: device.socket, resolve, reject, timer });
-    device.socket.send(JSON.stringify({ type: "call", requestId, toolName, arguments: args }), (error) => {
+    const responseSocket = useDirect ? router.socket : device.socket;
+    const responseRegistryKey = useDirect ? routerKey : key;
+    const pending = {
+      registryKey: responseRegistryKey, targetRegistryKey: key, targetDeviceId: deviceId,
+      socket: responseSocket, invocationId, toolName, arguments: args,
+      route: useDirect ? "direct-udp" : "relay", resolve, reject, timer,
+    };
+    pendingCalls.set(requestId, pending);
+    const outbound = useDirect
+      ? { type: "direct_forward_call", requestId, invocationId, targetDeviceId: deviceId, targetGeneration: device.generation, toolName, arguments: args, timeoutMs: Math.min(timeoutMs, 5_000) }
+      : { type: "call", requestId, invocationId, toolName, arguments: args };
+    responseSocket.send(JSON.stringify(outbound), (error) => { // GBF-412 direct-first dispatch
       if (!error) return;
       pendingCalls.delete(requestId);
       clearTimeout(timer);
@@ -564,6 +683,7 @@ export const deviceToolOutputShape = {
   deviceId: z.string(),
   toolName: z.string(),
   status: z.enum(["completed", "failed"]),
+  route: z.enum(["direct-udp", "relay"]).optional(), // GBF-412 device call route output
   resultJson: z.string(),
 };
 
@@ -649,6 +769,7 @@ export function registerDeviceTools(server, options = {}) {
           deviceId,
           toolName,
           status: response.ok === false ? "failed" : "completed",
+          route: response.route === "direct-udp" ? "direct-udp" : "relay", // GBF-412 expose selected route
           resultJson: JSON.stringify(response.result?.structuredContent ?? response.result ?? { error: response.error }),
         };
         const content = Array.isArray(response.result?.content) ? response.result.content : [{ type: "text", text: result.resultJson }];
@@ -738,7 +859,7 @@ export function buildDeviceToolDescriptors(options = {}) {
         type: "object",
         properties: {
           deviceId: { type: "string" }, toolName: { type: "string" },
-          status: { type: "string", enum: ["completed", "failed"] }, resultJson: { type: "string" },
+          status: { type: "string", enum: ["completed", "failed"] }, route: { type: "string", enum: ["direct-udp", "relay"] }, resultJson: { type: "string" }, // GBF-412 route JSON schema
         },
         required: ["deviceId", "toolName", "status", "resultJson"],
         additionalProperties: false,
