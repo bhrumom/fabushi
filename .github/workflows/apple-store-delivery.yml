@@ -2,6 +2,11 @@ name: Apple Store delivery - Electron macOS and native iOS
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Native mobile quality gate
+    types: [completed]
+    branches: [main]
     inputs:
       source_ref:
         description: Git ref to build. Leave as main for the current production source.
@@ -37,6 +42,15 @@ permissions:
 
 jobs:
   resolve:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        contains(github.event.workflow_run.head_commit.message, '[native-mobile-release-20260831]')
+      )
     name: Resolve Apple release identity
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -51,13 +65,14 @@ jobs:
       - name: Checkout requested source
         uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.event.workflow_run.head_sha }}
           fetch-depth: 1
 
       - id: release
         name: Resolve version and selected platforms
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ inputs.app_version }}
           INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
           INPUT_TARGET: ${{ inputs.target }}
@@ -65,7 +80,14 @@ jobs:
           set -euo pipefail
           source_sha="$(git rev-parse HEAD)"
           app_version="${INPUT_VERSION:-$(jq -r '.version' app-version.json)}"
-          build_number="${INPUT_BUILD_NUMBER:-$(date -u +'%Y.%-m.%-d')}"
+          target="${INPUT_TARGET:-ios}"
+          if [ -n "$INPUT_BUILD_NUMBER" ]; then
+            build_number="$INPUT_BUILD_NUMBER"
+          elif [ "$EVENT_NAME" = 'workflow_run' ]; then
+            build_number="$(date -u +'%Y.%-m.')$((3100 + GITHUB_RUN_NUMBER))"
+          else
+            build_number="$(date -u +'%Y.%-m.%-d')"
+          fi
 
           if ! [[ "$app_version" =~ ^[0-9]+([.][0-9]+){1,2}$ ]]; then
             echo "App version must contain two or three numeric components: $app_version" >&2
@@ -78,7 +100,7 @@ jobs:
 
           macos=false
           ios=false
-          case "$INPUT_TARGET" in
+          case "$target" in
             both) macos=true; ios=true ;;
             macos) macos=true ;;
             ios) ios=true ;;
@@ -92,11 +114,12 @@ jobs:
             echo "build_number=$build_number"
             echo "macos=$macos"
             echo "ios=$ios"
+            echo "release_target=$target"
             echo "release_tag=$release_tag"
           } >> "$GITHUB_OUTPUT"
 
           {
-            echo '## Apple Store manual delivery'
+            echo '## Apple Store delivery'
             echo
             echo "- Source: \`$source_sha\`"
             echo "- Version: \`$app_version\`"
@@ -114,7 +137,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
-          RELEASE_TARGET: ${{ inputs.target }}
+          RELEASE_TARGET: ${{ needs.resolve.outputs.release_target }}
         run: bash .github/scripts/require-release-source-gates.sh
 
   macos-electron:
@@ -540,7 +563,7 @@ jobs:
   result:
     name: Apple Store delivery result
     needs: [resolve, macos-electron, ios-native]
-    if: always()
+    if: always() && needs.resolve.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
