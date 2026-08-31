@@ -7,14 +7,10 @@ on:
         description: Optional Electron desktop workflow run ID whose fabushi-electron-linux artifact should be reused
         required: false
         type: string
-      gateway_url:
-        description: Optional public wss://.../agent override for the Fabushi remote MCP device gateway
-        required: false
-        type: string
       account_binding:
         description: Fabushi account used for Runner discovery and the packaged application session
         required: true
-        default: github-actor
+        default: ci-test-account
         type: choice
         options:
           - github-actor
@@ -53,7 +49,7 @@ jobs:
     env:
       DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-interactive
       DEVICE_NAME: Fabushi GitHub Actions ${{ github.run_id }}
-      DEVICE_GATEWAY_URL: ${{ inputs.gateway_url || vars.FABUSHI_REMOTE_MCP_DEVICE_GATEWAY_URL || 'wss://fabushi-mcp.ombhrum.com/agent' }}
+      DEVICE_GATEWAY_URL: wss://fabushi-mcp.ombhrum.com/agent
       DEVICE_LEASE_SECONDS: '14400'
       FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
       MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
@@ -100,10 +96,6 @@ jobs:
             echo "FABUSHI_DEVICE_CALL_TRACE_FILE=$FABUSHI_DEVICE_CALL_TRACE_FILE"
             echo "FABUSHI_APP_AGENT_DISCOVERY_FILE=$FABUSHI_APP_AGENT_DISCOVERY_FILE"
           } >> "$GITHUB_ENV"
-          case "$DEVICE_GATEWAY_URL" in
-            wss://*/agent) ;;
-            *) echo 'FABUSHI_REMOTE_MCP_DEVICE_GATEWAY_URL or gateway_url must be wss://.../agent.' >&2; exit 1 ;;
-          esac
           if [ '${{ inputs.account_binding }}' = 'github-actor' ]; then
             test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || { echo 'GitHub Actions OIDC request URL is unavailable.' >&2; exit 1; }
             test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" || { echo 'GitHub Actions OIDC request token is unavailable.' >&2; exit 1; }
@@ -243,40 +235,6 @@ jobs:
             echo '- Connect the `fabushi test` MCP with the same dedicated test account.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Bring the Runner online before the build
-        shell: bash
-        run: |
-          set -euo pipefail
-          export RUNNER_TRACKING_ID=
-          export DEVICE_LOCAL_MCP_ENTRY="$GITHUB_WORKSPACE/chatgpt-vps-control/bin/fabushi-computer-mcp.js"
-          export DEVICE_LOCAL_MCP_CWD="$GITHUB_WORKSPACE/chatgpt-vps-control"
-          nohup node chatgpt-vps-control/bin/fabushi-device-agent.js \
-            > "$FABUSHI_CI_SESSION_DIR/source-agent.log" 2>&1 &
-          agent_pid=$!
-          echo "$agent_pid" > "$FABUSHI_CI_SESSION_DIR/device-agent.pid"
-          for attempt in $(seq 1 90); do
-            if grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/source-agent.log"; then break; fi
-            kill -0 "$agent_pid"
-            sleep 1
-          done
-          grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/source-agent.log"
-          node .github/scripts/update-interactive-runner-status.mjs runner-online 'The source control MCP is online; the desktop package is now being prepared.'
-          mcp_url="${DEVICE_GATEWAY_URL/wss:/https:}"
-          mcp_url="${mcp_url%/agent}/mcp"
-          {
-            echo '## Interactive Fabushi Runner'
-            echo
-            echo "- MCP URL: \`$mcp_url\`"
-            echo "- Device ID: \`$DEVICE_ID\`"
-            echo "- Runner URL: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            if [ '${{ inputs.account_binding }}' = 'ci-test-account' ]; then
-              echo '- Connect the `fabushi test` MCP with the dedicated CI test account, call `list_devices`, then select this device.'
-            else
-              echo '- Connect ChatGPT with the same GitHub-linked Fabushi account, call `list_devices`, then select this device.'
-            fi
-            echo '- Call `ci_session_status` while the package is building; after `appReady=true`, run live UI tests and finish with `ci_session_finish`.'
-          } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Download an existing Linux desktop package
         if: inputs.artifact_run_id != ''
         uses: actions/download-artifact@v8
@@ -327,12 +285,12 @@ jobs:
         working-directory: desktop
         run: npx electron-builder --linux --dir --publish never
 
-      - name: Verify the packaged application and switch to its MCP runtime
+      - name: Verify the packaged application control runtime
         id: packaged
         shell: bash
         run: |
           set -euo pipefail
-          node .github/scripts/update-interactive-runner-status.mjs package-verification 'Verifying the packaged Computer Use runtime and switching the device agent.'
+          node .github/scripts/update-interactive-runner-status.mjs package-verification 'Verifying that the installed Fabushi application contains its own Computer Use and device-registration runtime.'
           node .github/scripts/verify-packaged-computer-control.mjs \
             --release-root desktop/release \
             --platform linux
@@ -342,28 +300,9 @@ jobs:
           test -x "$app_executable"
           test -f "$packaged_mcp"
           test -f "$packaged_agent"
-          if test -f "$FABUSHI_CI_SESSION_DIR/device-agent.pid"; then
-            kill "$(cat "$FABUSHI_CI_SESSION_DIR/device-agent.pid")" 2>/dev/null || true
-            sleep 2
-          fi
-          export RUNNER_TRACKING_ID=
-          export DEVICE_LOCAL_MCP_COMMAND="$app_executable"
-          export DEVICE_LOCAL_MCP_ENTRY="$packaged_mcp"
-          export DEVICE_LOCAL_MCP_CWD="$(dirname "$(dirname "$packaged_mcp")")"
-          export DEVICE_LOCAL_MCP_ELECTRON_NODE='1'
-          nohup node "$packaged_agent" \
-            > "$FABUSHI_CI_SESSION_DIR/packaged-agent.log" 2>&1 &
-          agent_pid=$!
-          echo "$agent_pid" > "$FABUSHI_CI_SESSION_DIR/device-agent.pid"
-          for attempt in $(seq 1 90); do
-            if grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/packaged-agent.log"; then break; fi
-            kill -0 "$agent_pid"
-            sleep 1
-          done
-          grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/packaged-agent.log"
           echo "app_executable=$app_executable" >> "$GITHUB_OUTPUT"
           echo "packaged_mcp=$packaged_mcp" >> "$GITHUB_OUTPUT"
-          node .github/scripts/update-interactive-runner-status.mjs package-ready 'The same Runner device is now served by the packaged Fabushi MCP runtime.' false "$app_executable"
+          node .github/scripts/update-interactive-runner-status.mjs package-ready 'The Fabushi package owns the complete remote-device runtime and is ready to launch.' false "$app_executable"
 
       - name: Launch packaged Fabushi and begin evidence recording
         shell: bash
@@ -383,16 +322,32 @@ jobs:
           app_pid=$!
           echo "$app_pid" > "$FABUSHI_CI_SESSION_DIR/fabushi-app.pid"
           window_ready='false'
+          device_ready='false'
           for attempt in $(seq 1 120); do
             kill -0 "$app_pid"
             if wmctrl -lx 2>/dev/null | grep -qi 'fabushi'; then
               window_ready='true'
-              break
             fi
+            if grep -q 'controllable device online' "$FABUSHI_CI_SESSION_DIR/fabushi-app.log"; then
+              device_ready='true'
+            fi
+            if [ "$window_ready" = 'true' ] && [ "$device_ready" = 'true' ]; then break; fi
             sleep 1
           done
           test "$window_ready" = 'true'
-          node .github/scripts/update-interactive-runner-status.mjs app-ready 'Packaged Fabushi is running and ready for live ChatGPT MCP testing.' true "$app_executable"
+          test "$device_ready" = 'true'
+          node .github/scripts/update-interactive-runner-status.mjs app-ready 'The installed Fabushi app logged in, registered its own device, and is ready for live plugin testing.' true "$app_executable"
+          mcp_url="${DEVICE_GATEWAY_URL/wss:/https:}"
+          mcp_url="${mcp_url%/agent}/mcp"
+          {
+            echo '## Interactive Fabushi application device'
+            echo
+            echo "- MCP URL: \`$mcp_url\`"
+            echo "- Application device ID: \`$DEVICE_ID\`"
+            echo "- Runner URL: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo '- The installed application owns device registration and every advertised control tool; no standalone CI device agent is running.'
+            echo '- Connect `fabushi test` with the same account, call `list_devices`, test this application device, then call `ci_session_finish`.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the live Runner available for ChatGPT
         shell: bash
@@ -451,7 +406,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          for file in fabushi-app.pid device-agent.pid xfwm4.pid xvfb.pid; do
+          for file in fabushi-app.pid xfwm4.pid xvfb.pid; do
             if test -f "$FABUSHI_CI_SESSION_DIR/$file"; then
               kill -TERM "$(cat "$FABUSHI_CI_SESSION_DIR/$file")" 2>/dev/null || true
             fi
@@ -472,8 +427,6 @@ jobs:
             ${{ runner.temp }}/fabushi-interactive/generated-regression.json
             ${{ runner.temp }}/fabushi-interactive/live-session.mp4
             ${{ runner.temp }}/fabushi-interactive/final-screen.png
-            ${{ runner.temp }}/fabushi-interactive/source-agent.log
-            ${{ runner.temp }}/fabushi-interactive/packaged-agent.log
             ${{ runner.temp }}/fabushi-interactive/fabushi-app.log
             ${{ runner.temp }}/fabushi-interactive/ffmpeg.log
             ${{ runner.temp }}/fabushi-interactive/evidence-files.txt

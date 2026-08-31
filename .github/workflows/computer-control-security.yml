@@ -146,6 +146,7 @@ jobs:
           tests/linux-helper-source.test.js
           tests/macos-helper-source.test.js
           ../desktop/electron/app-agent-surface-server.test.cjs
+          ../desktop/electron/remote-device-agent-supervisor.test.cjs
       - name: Verify shared WebMCP/App MCP contract
         if: runner.os == 'Linux'
         run: >-
