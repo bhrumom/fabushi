@@ -20,9 +20,14 @@ enum class ConversationKind(val wire: String, val label: String) {
     SAVED_MESSAGES("savedMessages", "收藏"), SECRET("secret", "加密聊天"),
 }
 
+data class ConversationParticipant(val actorId: String, val role: String, val joinedAtMs: Long)
+
 data class ConversationSummary(
     val id: String,
     val title: String,
+    val description: String,
+    val ownerId: String? = null,
+    val participants: List<ConversationParticipant> = emptyList(),
     val preview: String,
     val time: String,
     val badge: String,
@@ -100,6 +105,7 @@ internal class MessagingViewModel(application: Application) : AndroidViewModel(a
     private var displayName = "当前用户"
     private val deviceId = "android:native"
     private val sessionId = "account-session:android-native"
+    val currentActorId: String get() = actorId
 
     init { refresh() }
 
@@ -265,6 +271,13 @@ internal class MessagingViewModel(application: Application) : AndroidViewModel(a
         .put("excludeMuted", folder.excludeMuted).put("excludeRead", folder.excludeRead).put("excludeArchived", folder.excludeArchived)))
     fun deleteFolder(folderId: String) = executeAsync(JSONObject().put("type", "deleteFolder").put("folderId", folderId))
 
+    fun updateConversationInfo(conversationId: String, title: String, description: String) = executeAsync(JSONObject().put("type", "updateConversationInfo").put("conversationId", conversationId).put("title", title.trim()).put("description", description.trim().ifBlank { JSONObject.NULL }))
+    fun setConversationParticipant(conversation: ConversationSummary, targetActorId: String, role: String) {
+        val joinedAt = conversation.participants.firstOrNull { it.actorId == targetActorId }?.joinedAtMs ?: System.currentTimeMillis()
+        executeAsync(JSONObject().put("type", "setConversationParticipant").put("conversationId", conversation.id).put("participant", JSONObject().put("actorId", targetActorId).put("role", role).put("joinedAtMs", joinedAt).put("mutedUntilMs", JSONObject.NULL)))
+    }
+    fun removeConversationParticipant(conversationId: String, targetActorId: String) = executeAsync(JSONObject().put("type", "removeConversationParticipant").put("conversationId", conversationId).put("actorId", targetActorId))
+
     fun setMarkedUnread(conversation: ConversationSummary, markedUnread: Boolean) = executeAsync(JSONObject().put("type", "setMarkedUnread").put("conversationId", conversation.id).put("markedUnread", markedUnread))
     fun setDraft(conversationId: String, text: String, replyToMessageId: String?) = executeAsync(JSONObject().put("type", "setDraft").put("conversationId", conversationId).put("text", text).put("replyToMessageId", replyToMessageId ?: JSONObject.NULL))
 
@@ -336,6 +349,12 @@ internal class MessagingViewModel(application: Application) : AndroidViewModel(a
                 "conversationChanged" -> parseConversation(event.optJSONObject("conversation"))?.let { item ->
                     val index = conversations.indexOfFirst { it.id == item.id }; if (index >= 0) conversations[index] = item else conversations.add(item)
                 }
+                "conversationParticipantChanged" -> {
+                    val removedActorId = event.optString("removedActorId")
+                    val item = parseConversation(event.optJSONObject("conversation"))
+                    if (item != null && removedActorId == actorId) { conversations.removeAll { it.id == item.id }; messageMap.remove(item.id); draftMap.remove(item.id) }
+                    else if (item != null) { val index = conversations.indexOfFirst { it.id == item.id }; if (index >= 0) conversations[index] = item else conversations.add(item) }
+                }
                 "markedUnreadChanged" -> {
                     val conversationId = event.optString("conversationId"); val index = conversations.indexOfFirst { it.id == conversationId }; if (index >= 0) conversations[index] = conversations[index].copy(markedUnread = event.optBoolean("markedUnread"))
                 }
@@ -401,10 +420,11 @@ internal class MessagingViewModel(application: Application) : AndroidViewModel(a
         raw ?: return null; val id = raw.optString("id"); val title = raw.optString("title"); if (id.isBlank() || title.isBlank()) return null
         val kind = ConversationKind.entries.firstOrNull { it.wire == raw.optString("kind") } ?: ConversationKind.DIRECT
         val mutedUntil = raw.optJSONObject("notificationSettings")?.optLong("mutedUntilMs", 0L) ?: 0L
+        val participants = buildList { val values = raw.optJSONArray("participants") ?: JSONArray(); for (i in 0 until values.length()) { val participant = values.optJSONObject(i) ?: continue; val actorId = participant.optString("actorId"); val role = participant.optString("role"); if (actorId.isNotBlank() && role.isNotBlank()) add(ConversationParticipant(actorId, role, participant.optLong("joinedAtMs"))) } }
         val pinnedMessageIds = buildList { val ids = raw.optJSONArray("pinnedMessageIds") ?: JSONArray(); for (i in 0 until ids.length()) ids.optString(i).takeIf { it.isNotBlank() }?.let(::add) }
         val folderIds = buildList { val ids = raw.optJSONArray("folderIds") ?: JSONArray(); for (i in 0 until ids.length()) ids.optString(i).takeIf { it.isNotBlank() }?.let(::add) }
-        return ConversationSummary(id, title, raw.optString("description"), timeLabel(raw.optLong("updatedAtMs")), title.take(1).uppercase().ifBlank { "✦" }, kind,
-            raw.optInt("unreadCount"), raw.optBoolean("pinned"), mutedUntil > System.currentTimeMillis(), raw.optBoolean("archived"), raw.optString("lastMessageId").takeIf { it.isNotBlank() }, pinnedMessageIds, folderIds, raw.optBoolean("markedUnread"))
+        return ConversationSummary(id = id, title = title, description = raw.optString("description"), ownerId = raw.optString("ownerId").takeIf { it.isNotBlank() }, participants = participants, preview = raw.optString("description"), time = timeLabel(raw.optLong("updatedAtMs")), badge = title.take(1).uppercase().ifBlank { "✦" }, kind = kind,
+            unreadCount = raw.optInt("unreadCount"), isPinned = raw.optBoolean("pinned"), isMuted = mutedUntil > System.currentTimeMillis(), isArchived = raw.optBoolean("archived"), lastMessageId = raw.optString("lastMessageId").takeIf { it.isNotBlank() }, pinnedMessageIds = pinnedMessageIds, folderIds = folderIds, markedUnread = raw.optBoolean("markedUnread"))
     }
 
     private fun parseMessage(raw: JSONObject?): ChatMessage? {
