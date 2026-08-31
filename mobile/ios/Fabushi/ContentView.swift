@@ -6,12 +6,86 @@ private enum MobileDestination {
     case remoteComputer
 }
 
-private struct ConversationSummary: Identifiable {
+private enum ConversationKind: String, Identifiable {
+    case direct
+    case group
+    case channel
+    case bot
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .direct: "私聊"
+        case .group: "群组"
+        case .channel: "频道"
+        case .bot: "Bot"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .direct: "person.fill"
+        case .group: "person.3.fill"
+        case .channel: "megaphone.fill"
+        case .bot: "sparkles"
+        }
+    }
+}
+
+private enum MobileSection: String, CaseIterable, Identifiable {
+    case chats, contacts, bots, groups, channels, calls, saved, archive, folders, miniapps, payments, settings
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .chats: "聊天"
+        case .contacts: "联系人"
+        case .bots: "Bots"
+        case .groups: "群组"
+        case .channels: "频道"
+        case .calls: "通话"
+        case .saved: "收藏"
+        case .archive: "归档"
+        case .folders: "文件夹"
+        case .miniapps: "Mini Apps"
+        case .payments: "支付"
+        case .settings: "设置"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .chats: "bubble.left.and.bubble.right.fill"
+        case .contacts: "person.2.fill"
+        case .bots: "sparkles"
+        case .groups: "person.3.fill"
+        case .channels: "megaphone.fill"
+        case .calls: "phone.fill"
+        case .saved: "bookmark.fill"
+        case .archive: "archivebox.fill"
+        case .folders: "folder.fill"
+        case .miniapps: "square.grid.2x2.fill"
+        case .payments: "wallet.bifold.fill"
+        case .settings: "gearshape.fill"
+        }
+    }
+}
+
+private struct ConversationSummary: Identifiable, Equatable {
     let id: String
-    let title: String
-    let preview: String
+    var title: String
+    var preview: String
+    var time: String
+    var badge: String
+    var kind: ConversationKind
+    var unreadCount: Int = 0
+    var isPinned: Bool = false
+    var isMuted: Bool = false
+    var isArchived: Bool = false
+}
+
+private struct ChatMessage: Identifiable, Equatable {
+    let id: String
+    let text: String
+    let isOutgoing: Bool
     let time: String
-    let badge: String
 }
 
 struct ContentView: View {
@@ -23,6 +97,14 @@ struct ContentView: View {
     @State private var homeQuery = ""
     @State private var selectedConversation: ConversationSummary?
     @State private var conversations: [ConversationSummary] = []
+    @State private var messagesByConversation: [String: [ChatMessage]] = [:]
+    @State private var messageDraft = ""
+    @State private var composeMenuPresented = false
+    @State private var composeKind: ConversationKind?
+    @State private var composeName = ""
+    @State private var composeDescription = ""
+    @State private var activeSection: MobileSection?
+    @State private var contactGroupsPresented = false
 
     var body: some View {
         Group {
@@ -139,7 +221,7 @@ struct ContentView: View {
                         action: .init(allowed: ["setValue"]) { value in homeQuery = value ?? "" }
                     )
                 }
-                add("home-add-button", role: "button", name: "新建对话", action: .init(allowed: ["invoke"]) { _ in addConversation() })
+                add("home-add-button", role: "button", name: "新建", action: .init(allowed: ["invoke"]) { _ in composeMenuPresented = true })
                 add(
                     "marketplace-entry",
                     role: "menuitem",
@@ -223,181 +305,319 @@ struct ContentView: View {
     }
 
     private var homeView: some View {
-        ZStack {
-            Color(red: 0.043, green: 0.043, blue: 0.047).ignoresSafeArea()
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    HStack(spacing: 12) {
-                        Menu {
-                            Button("我的电脑") { destination = .remoteComputer }
-                                .accessibilityIdentifier("remote-computer-entry")
-                            Button("插件市场") { destination = .marketplace }
-                                .accessibilityIdentifier("marketplace-entry")
-                        } label: { avatar }
-                        Spacer()
-                        circleButton(systemName: "magnifyingglass", identifier: "home-search-button") {
-                            withAnimation(.easeInOut(duration: 0.18)) { isSearching.toggle() }
-                        }
-                        circleButton(systemName: "square.and.pencil", identifier: "home-add-button") {
-                            addConversation()
-                        }
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 10)
-                    .padding(.bottom, 18)
-
-                    if isSearching {
-                        TextField("搜索消息", text: $homeQuery)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .frame(height: 48)
-                            .background(Color(red: 0.082, green: 0.082, blue: 0.086), in: RoundedRectangle(cornerRadius: 16))
-                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.12), lineWidth: 1))
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 10)
+        NavigationStack {
+            ZStack(alignment: .bottomTrailing) {
+                Color(red: 0.043, green: 0.043, blue: 0.047).ignoresSafeArea()
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        if isSearching {
+                            HStack(spacing: 8) {
+                                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                                TextField("搜索", text: $homeQuery)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .foregroundStyle(.white)
+                                if !homeQuery.isEmpty {
+                                    Button { homeQuery = "" } label: { Image(systemName: "xmark.circle.fill") }
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .frame(height: 40)
+                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
                             .accessibilityIdentifier("home-search-field")
-                    }
+                        }
 
-                    VStack(spacing: 0) {
+                        if !archivedConversations.isEmpty && homeQuery.isEmpty {
+                            HStack(spacing: 12) {
+                                Image(systemName: "archivebox.fill").foregroundStyle(.secondary)
+                                Text("已归档").font(.headline)
+                                Spacer()
+                                Text("\(archivedConversations.count)").foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 16).frame(height: 48)
+                        }
+
                         ForEach(filteredConversations) { conversation in
                             conversationRow(conversation)
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button {
+                                        mutateConversation(conversation.id) { $0.isPinned.toggle() }
+                                    } label: { Label(conversation.isPinned ? "取消置顶" : "置顶", systemImage: "pin.fill") }
+                                    .tint(.orange)
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button {
+                                        mutateConversation(conversation.id) { $0.isArchived = true }
+                                    } label: { Label("归档", systemImage: "archivebox.fill") }
+                                    .tint(.blue)
+                                    Button {
+                                        mutateConversation(conversation.id) { $0.isMuted.toggle() }
+                                    } label: { Label(conversation.isMuted ? "取消静音" : "静音", systemImage: "speaker.slash.fill") }
+                                    .tint(.gray)
+                                }
                         }
+
                         if filteredConversations.isEmpty {
                             VStack(spacing: 10) {
-                                Image(systemName: "bubble.left.and.bubble.right")
-                                    .font(.system(size: 34, weight: .regular))
-                                Text(homeQuery.isEmpty ? "还没有对话" : "没有找到匹配的消息")
-                                    .font(.headline)
-                                Text(homeQuery.isEmpty ? "点右上角写消息按钮开始新的对话" : "换个关键词试试")
-                                    .font(.subheadline)
+                                Image(systemName: homeQuery.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
+                                    .font(.system(size: 34))
+                                Text(homeQuery.isEmpty ? "还没有对话" : "没有找到结果").font(.headline)
+                                Text(homeQuery.isEmpty ? "点击写消息按钮开始聊天" : "尝试其他关键词").font(.subheadline)
                             }
-                            .foregroundStyle(Color.white.opacity(0.48))
+                            .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 70)
+                            .padding(.top, 90)
+                        }
+
+                        if let featureHostSmokeStatus = model.featureHostSmokeStatus {
+                            Text(featureHostSmokeStatus).font(.caption2).foregroundStyle(.clear)
+                                .accessibilityIdentifier("feature-host-smoke")
                         }
                     }
-                    .accessibilityIdentifier("conversation-list")
+                }
+                .accessibilityIdentifier("conversation-list")
 
-                    if let featureHostSmokeStatus = model.featureHostSmokeStatus {
-                        Text(featureHostSmokeStatus)
-                            .font(.caption2)
-                            .foregroundStyle(.clear)
-                            .accessibilityIdentifier("feature-host-smoke")
-                    }
+                Button { composeMenuPresented = true } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 56, height: 56)
+                        .background(Color.accentColor, in: Circle())
+                        .shadow(radius: 8, y: 4)
+                }
+                .padding(18)
+                .opacity(isSearching ? 0 : 1)
+                .allowsHitTesting(!isSearching)
+                .accessibilityIdentifier("home-add-button")
+            }
+            .navigationTitle("聊天")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        ForEach(MobileSection.allCases) { section in
+                            Button { handleSection(section) } label: {
+                                Label(section.label, systemImage: section.symbol)
+                            }
+                        }
+                        Divider()
+                        Button { destination = .remoteComputer } label: { Label("我的电脑", systemImage: "desktopcomputer") }
+                        Button { destination = .marketplace } label: { Label("插件市场", systemImage: "shippingbox.fill") }
+                    } label: { avatar.frame(width: 34, height: 34) }
+                    .accessibilityIdentifier("profile-avatar")
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) { isSearching.toggle() }
+                        if !isSearching { homeQuery = "" }
+                    } label: { Image(systemName: isSearching ? "xmark" : "magnifyingglass") }
+                    .accessibilityIdentifier("home-search-button")
+                    Button { composeMenuPresented = true } label: { Image(systemName: "square.and.pencil") }
+                        .accessibilityIdentifier("home-compose-nav")
                 }
             }
         }
+        .confirmationDialog("新建", isPresented: $composeMenuPresented, titleVisibility: .visible) {
+            Button("新建私聊") { startCompose(.direct) }
+            Button("新建群组") { startCompose(.group) }
+            Button("新建频道") { startCompose(.channel) }
+            Button("新建 Bot") { startCompose(.bot) }
+            Button("联系人分组") { contactGroupsPresented = true }
+            Button("取消", role: .cancel) {}
+        }
+        .sheet(item: $composeKind) { kind in composeSheet(kind) }
+        .sheet(isPresented: $contactGroupsPresented) { simpleSectionSheet(title: "联系人分组", symbol: "folder.fill") }
+        .sheet(item: $activeSection) { section in simpleSectionSheet(title: section.label, symbol: section.symbol) }
+        .fullScreenCover(item: $selectedConversation) { conversation in chatView(conversation) }
         .accessibilityIdentifier("app-shell")
-        .fullScreenCover(item: $selectedConversation) { conversation in
-            NavigationStack {
-                VStack(spacing: 0) {
-                    Spacer()
-                    Text("开始与 \(conversation.title) 对话")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    HStack(spacing: 10) {
-                        TextField("消息", text: .constant(""))
-                            .padding(.horizontal, 14)
-                            .frame(height: 44)
-                            .background(Color.secondary.opacity(0.12), in: Capsule())
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 34))
-                    }
-                    .padding()
+    }
+
+    private var visibleConversations: [ConversationSummary] {
+        conversations.filter { !$0.isArchived }
+            .sorted { lhs, rhs in lhs.isPinned != rhs.isPinned ? lhs.isPinned : lhs.time > rhs.time }
+    }
+
+    private var archivedConversations: [ConversationSummary] { conversations.filter(\.isArchived) }
+
+    private var filteredConversations: [ConversationSummary] {
+        let query = homeQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return visibleConversations }
+        return visibleConversations.filter { $0.title.localizedCaseInsensitiveContains(query) || $0.preview.localizedCaseInsensitiveContains(query) }
+    }
+
+    private func startCompose(_ kind: ConversationKind) {
+        composeName = ""
+        composeDescription = ""
+        composeKind = kind
+    }
+
+    @ViewBuilder
+    private func composeSheet(_ kind: ConversationKind) -> some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(kind == .direct ? "联系人名称" : "名称", text: $composeName)
+                    if kind == .channel { TextField("描述", text: $composeDescription, axis: .vertical) }
                 }
-                .navigationTitle(conversation.title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("返回") { selectedConversation = nil }
-                    }
+                if kind == .group || kind == .bot {
+                    Section("Fabushi") { Text(kind == .group ? "创建后可从统一 Bot/联系人目录添加成员。" : "创建后进入与桌面端相同的 Bot 配置流程。") }
+                }
+            }
+            .navigationTitle("新建\(kind.label)")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { composeKind = nil } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("创建") { createConversation(kind: kind) }.disabled(composeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
+    }
+
+    private func createConversation(kind: ConversationKind) {
+        let title = composeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let id = "\(kind.rawValue)-\(UUID().uuidString.lowercased())"
+        let conversation = ConversationSummary(id: id, title: title, preview: composeDescription.isEmpty ? "开始一段新的对话" : composeDescription, time: "现在", badge: String(title.prefix(1)).uppercased(), kind: kind)
+        conversations.insert(conversation, at: 0)
+        composeKind = nil
+        selectedConversation = conversation
+    }
+
+    private func mutateConversation(_ id: String, mutation: (inout ConversationSummary) -> Void) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        mutation(&conversations[index])
+        if selectedConversation?.id == id { selectedConversation = conversations[index] }
+    }
+
+    private func handleSection(_ section: MobileSection) {
+        switch section {
+        case .chats: activeSection = nil
+        case .miniapps: destination = .marketplace
+        default: activeSection = section
+        }
+    }
+
+    @ViewBuilder
+    private func simpleSectionSheet(title: String, symbol: String) -> some View {
+        NavigationStack {
+            ContentUnavailableView(title, systemImage: symbol, description: Text("此入口与桌面端共用同一业务能力；移动端采用 Telegram 式单栈导航。"))
+                .navigationTitle(title)
+                .toolbar { ToolbarItem(placement: .topBarLeading) { Button("完成") { activeSection = nil; contactGroupsPresented = false } } }
+        }
+    }
+
+    private func conversationRow(_ conversation: ConversationSummary) -> some View {
+        Button {
+            mutateConversation(conversation.id) { $0.unreadCount = 0 }
+            selectedConversation = conversations.first(where: { $0.id == conversation.id }) ?? conversation
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(Color.accentColor.opacity(0.85))
+                    Text(conversation.badge.isEmpty ? "✦" : conversation.badge).font(.headline).foregroundStyle(.white)
+                }.frame(width: 54, height: 54)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 5) {
+                        Text(conversation.title).font(.system(size: 17, weight: .semibold)).foregroundStyle(.primary).lineLimit(1)
+                        if conversation.isMuted { Image(systemName: "speaker.slash.fill").font(.caption2).foregroundStyle(.secondary) }
+                        if conversation.isPinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
+                    }
+                    Text(conversation.preview).font(.system(size: 15)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(conversation.time).font(.caption).foregroundStyle(.secondary)
+                    if conversation.unreadCount > 0 {
+                        Text("\(conversation.unreadCount)").font(.caption2.bold()).foregroundStyle(.white)
+                            .padding(.horizontal, 6).frame(minWidth: 20, minHeight: 20).background(Color.accentColor, in: Capsule())
+                    }
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("conversation-\(conversation.id)")
+    }
+
+    @ViewBuilder
+    private func chatView(_ conversation: ConversationSummary) -> some View {
+        NavigationStack {
+            ZStack {
+                Color(red: 0.055, green: 0.06, blue: 0.07).ignoresSafeArea()
+                VStack(spacing: 0) {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 8) {
+                                ForEach(messagesByConversation[conversation.id] ?? []) { message in
+                                    HStack {
+                                        if message.isOutgoing { Spacer(minLength: 56) }
+                                        VStack(alignment: .trailing, spacing: 3) {
+                                            Text(message.text).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
+                                            HStack(spacing: 3) {
+                                                Text(message.time).font(.caption2).foregroundStyle(.secondary)
+                                                if message.isOutgoing { Image(systemName: "checkmark.checkmark").font(.caption2).foregroundStyle(.blue) }
+                                            }
+                                        }
+                                        .padding(.horizontal, 11).padding(.vertical, 7)
+                                        .background(message.isOutgoing ? Color.accentColor.opacity(0.20) : Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+                                        if !message.isOutgoing { Spacer(minLength: 56) }
+                                    }.padding(.horizontal, 10).id(message.id)
+                                }
+                            }.padding(.vertical, 12)
+                        }
+                        .onChange(of: messagesByConversation[conversation.id]?.count ?? 0) { _, _ in
+                            if let id = messagesByConversation[conversation.id]?.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+                        }
+                    }
+                    HStack(alignment: .bottom, spacing: 8) {
+                        Menu {
+                            Button("照片或视频", systemImage: "photo") {}
+                            Button("文件", systemImage: "doc") {}
+                            Button("位置", systemImage: "location") {}
+                            Button("联系人", systemImage: "person.crop.circle") {}
+                        } label: { Image(systemName: "paperclip").font(.title3).frame(width: 36, height: 36) }
+                        TextField("消息", text: $messageDraft, axis: .vertical).lineLimit(1...5)
+                            .padding(.horizontal, 12).padding(.vertical, 9).background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 18))
+                        Button { sendMessage(in: conversation) } label: {
+                            Image(systemName: messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "mic.fill" : "arrow.up")
+                                .font(.system(size: 18, weight: .bold)).foregroundStyle(.white).frame(width: 38, height: 38).background(Color.accentColor, in: Circle())
+                        }
+                    }.padding(.horizontal, 8).padding(.vertical, 7).background(.ultraThinMaterial)
+                }
+            }
+            .navigationTitle(conversation.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button { selectedConversation = nil } label: { Image(systemName: "chevron.left") } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("搜索", systemImage: "magnifyingglass") {}
+                        Button(conversation.isMuted ? "取消静音" : "静音", systemImage: "speaker.slash") { mutateConversation(conversation.id) { $0.isMuted.toggle() } }
+                        Button(conversation.isPinned ? "取消置顶" : "置顶", systemImage: "pin") { mutateConversation(conversation.id) { $0.isPinned.toggle() } }
+                        Button("归档", systemImage: "archivebox") { mutateConversation(conversation.id) { $0.isArchived = true }; selectedConversation = nil }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                }
+            }
+        }
+    }
+
+    private func sendMessage(in conversation: ConversationSummary) {
+        let text = messageDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let now = Date.now.formatted(date: .omitted, time: .shortened)
+        messagesByConversation[conversation.id, default: []].append(ChatMessage(id: UUID().uuidString, text: text, isOutgoing: true, time: now))
+        messageDraft = ""
+        mutateConversation(conversation.id) { item in item.preview = text; item.time = "现在" }
     }
 
     private var avatar: some View {
         ZStack {
-            Circle()
-                .fill(Color(red: 0.082, green: 0.082, blue: 0.086))
-                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
-            Text("✦")
-                .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(Color(red: 1.0, green: 0.70, blue: 0.10))
+            Circle().fill(Color.white.opacity(0.08))
+            Text("✦").font(.system(size: 22, weight: .bold)).foregroundStyle(.orange)
         }
-        .frame(width: 56, height: 56)
-        .accessibilityLabel("个人头像")
-        .accessibilityIdentifier("profile-avatar")
-    }
-
-    private func circleButton(systemName: String, identifier: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(Color(red: 0.063, green: 0.063, blue: 0.067))
-                    .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
-                Image(systemName: systemName)
-                    .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 54, height: 54)
-        }
-        .accessibilityIdentifier(identifier)
-    }
-
-    private func conversationRow(_ conversation: ConversationSummary) -> some View {
-        HStack(spacing: 0) {
-            ZStack {
-                Circle().fill(Color(red: 1.0, green: 0.35, blue: 0.04))
-                Text(conversation.badge)
-                    .font(.system(size: 13, weight: .black))
-                    .foregroundStyle(Color(red: 0.10, green: 0.06, blue: 0.03))
-            }
-            .frame(width: 54, height: 54)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(conversation.title)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.96))
-                    .lineLimit(1)
-                Text(conversation.preview)
-                    .font(.system(size: 16))
-                    .foregroundStyle(Color.white.opacity(0.50))
-                    .lineLimit(1)
-            }
-            .padding(.leading, 18)
-
-            Spacer(minLength: 12)
-
-            Text(conversation.time)
-                .font(.system(size: 14))
-                .foregroundStyle(Color.white.opacity(0.30))
-        }
-        .padding(.leading, 30)
-        .padding(.trailing, 24)
-        .padding(.vertical, 13)
-        .contentShape(Rectangle())
-        .onTapGesture { selectedConversation = conversation }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityIdentifier("conversation-\(conversation.id)")
-    }
-
-    private var filteredConversations: [ConversationSummary] {
-        guard !homeQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return conversations }
-        return conversations.filter {
-            $0.title.localizedCaseInsensitiveContains(homeQuery) || $0.preview.localizedCaseInsensitiveContains(homeQuery)
-        }
-    }
-
-    private func addConversation() {
-        let next = conversations.count + 1
-        let conversation = ConversationSummary(id: "new-\(next)", title: "新对话 \(next)", preview: "开始一段新的对话", time: "现在", badge: "✦")
-        conversations.insert(conversation, at: 0)
-        selectedConversation = conversation
     }
 
     private var marketplaceView: some View {
