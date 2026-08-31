@@ -271,7 +271,22 @@ jobs:
           NATIVE_RUN_ID: ${{ needs.gate.outputs.native_run_id }}
         run: |
           set -euo pipefail
-          tag="desktop-$VERSION"
+          canonical_tag="desktop-$VERSION"
+          tag="$canonical_tag"
+
+          # A same-version published Release is immutable. This can happen when a
+          # prior exact-SHA desktop delivery completed before a follow-up Android/iOS
+          # fix reached the same release train. Keep the old Release untouched and
+          # publish a provenance-scoped recovery Release instead of overwriting it.
+          canonical_existing="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$canonical_tag\")" 2>/dev/null || true)"
+          if [ -n "$canonical_existing" ]; then
+            canonical_target="$(jq -r '.target_commitish' <<<"$canonical_existing")"
+            canonical_draft="$(jq -r '.draft' <<<"$canonical_existing")"
+            if [ "$canonical_draft" != true ] && [ "$canonical_target" != "$SOURCE_SHA" ]; then
+              tag="${canonical_tag}-${SOURCE_SHA:0:12}"
+              echo "Canonical Release $canonical_tag is immutable at $canonical_target; publishing recovery Release $tag."
+            fi
+          fi
           # Only canonical desktop-X.Y.Z releases participate in updater ordering.
           # Legacy desktop-v1.0.1-* tags sort after numeric SemVer under sort -V and
           # previously caused every new desktop Release to be published with make_latest=false.
@@ -289,6 +304,8 @@ jobs:
           Automated Fabushi desktop delivery from canonical main.
 
           - Source SHA: \`$SOURCE_SHA\`
+          - Release tag: \`$tag\`
+          - Canonical desktop tag: \`$canonical_tag\`
           - Electron packaged-user E2E run: \`$ELECTRON_RUN_ID\`
           - Native mobile simulated-user run: \`${NATIVE_RUN_ID:-unknown}\`
           - Desktop version: \`$VERSION\`
