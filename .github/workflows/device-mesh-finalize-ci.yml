@@ -1,0 +1,191 @@
+name: Device mesh finalization
+
+on:
+  push:
+    branches:
+      - codex/tailscale-mobile-device-mesh
+    paths:
+      - .github/workflows/device-mesh-finalize-ci.yml
+      - scripts/apply-device-direct-gateway.mjs
+      - scripts/apply-device-direct-agent.mjs
+      - scripts/apply-android-direct-path.mjs
+      - scripts/apply-ios-direct-path.mjs
+      - scripts/apply-ios-device-mesh-compile-fixes.mjs
+      - chatgpt-vps-control/lib/device-direct-path.js
+      - chatgpt-vps-control/tests/device-direct-path.test.js
+      - mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiDeviceDirectPath.kt
+      - mobile/ios/Fabushi/FabushiDeviceDirectPath.swift
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: device-mesh-finalization-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Desktop and gateway direct mesh
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+      - name: Apply desktop and gateway adapters
+        run: |
+          node scripts/apply-device-direct-gateway.mjs
+          node scripts/apply-device-direct-agent.mjs
+          git diff --check
+      - run: npm ci --prefix chatgpt-vps-control
+      - name: Syntax and direct-path tests
+        run: |
+          node --check chatgpt-vps-control/lib/device-direct-path.js
+          node --check chatgpt-vps-control/lib/device-gateway.js
+          node --check chatgpt-vps-control/lib/device-agent.js
+          node --test chatgpt-vps-control/tests/device-direct-path.test.js
+      - name: Full remote MCP regression
+        run: npm test --prefix chatgpt-vps-control
+
+  android:
+    name: Android direct mesh
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          node scripts/apply-android-direct-path.mjs
+          git diff --check
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '14742923'
+          packages: 'platform-tools'
+      - name: Install Android 17 preview SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          available_packages="$(sdkmanager --list --channel=3)"
+          platform_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/platforms;android-(37([.]0)?|CinnamonBun)/ && !found { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found=1 }')"
+          build_tools_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/build-tools;37[.]/ && !found { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found=1 }')"
+          test -n "$platform_package" && test -n "$build_tools_package"
+          sdkmanager --channel=3 "$platform_package" "$build_tools_package"
+          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            installed_platform="$(find "$ANDROID_HOME/platforms" -maxdepth 1 -type d \( -name 'android-37*' -o -name 'android-CinnamonBun*' \) | head -n 1)"
+            test -n "$installed_platform"
+            ln -s "$installed_platform" "$ANDROID_HOME/platforms/android-37"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile and lint
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon --build-cache :app:compileDebugKotlin :app:lintDebug
+
+  ios:
+    name: iOS direct mesh
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply iOS adapters
+        run: |
+          node scripts/apply-ios-direct-path.mjs
+          node scripts/apply-ios-device-mesh-compile-fixes.mjs
+          git diff --check
+      - id: staticlib-source-key
+        env:
+          SOURCE_HASH: ${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+        run: echo "hash=$SOURCE_HASH" >> "$GITHUB_OUTPUT"
+      - id: staticlib-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: mobile/ios/Frameworks/libmahayana_app_host.a
+          key: native-host-ios-sim-v8-${{ steps.staticlib-source-key.outputs.hash }}
+      - if: steps.staticlib-cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+      - if: steps.staticlib-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: native-mobile-ios-platform-v7
+      - name: Build Rust host on cache miss
+        if: steps.staticlib-cache.outputs.cache-hit != 'true'
+        run: |
+          cargo build --profile ci -p mahayana-app-host-mobile --target aarch64-apple-ios-sim --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          mkdir -p mobile/ios/Frameworks
+          cp third_party/mahayana/mahayana-rs/target/aarch64-apple-ios-sim/ci/libmahayana_app_host.a mobile/ios/Frameworks/
+      - if: steps.staticlib-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: mobile/ios/Frameworks/libmahayana_app_host.a
+          key: native-host-ios-sim-v8-${{ steps.staticlib-source-key.outputs.hash }}
+      - name: Generate project
+        working-directory: mobile/ios
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen generate
+      - id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          udid="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for runtime in d.values() for x in runtime if x.get("isAvailable") and x.get("name", "").startswith("iPhone")))')"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Compile and test
+        working-directory: mobile/ios
+        run: >-
+          xcodebuild test
+          -project Fabushi.xcodeproj
+          -scheme Fabushi
+          -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}'
+          -derivedDataPath "${{ runner.temp }}/FabushiMeshFinalizeDerivedData"
+          CODE_SIGNING_ALLOWED=NO
+
+  persist:
+    name: Persist all verified generated adapters
+    needs: [node, android, ios]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply all verified adapters on latest head
+        run: |
+          node scripts/apply-device-direct-gateway.mjs
+          node scripts/apply-device-direct-agent.mjs
+          node scripts/apply-android-direct-path.mjs
+          node scripts/apply-ios-direct-path.mjs
+          node scripts/apply-ios-device-mesh-compile-fixes.mjs
+          git diff --check
+      - name: Commit atomically
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "All direct-mesh adapters already persisted."
+            exit 0
+          fi
+          git config user.name "fabushi-ci[bot]"
+          git config user.email "fabushi-ci[bot]@users.noreply.github.com"
+          git add \
+            chatgpt-vps-control/lib/device-gateway.js \
+            chatgpt-vps-control/lib/device-agent.js \
+            mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiDeviceMeshAgent.kt \
+            mobile/ios/Fabushi/FabushiDeviceDirectPath.swift \
+            mobile/ios/Fabushi/FabushiDeviceMeshAgent.swift
+          git commit -m "feat(mesh): persist verified direct mesh adapters"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
