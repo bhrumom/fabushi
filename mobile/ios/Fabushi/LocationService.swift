@@ -39,7 +39,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         Task { @MainActor [weak self, status] in
             guard let self else { return }
             if status == .authorizedWhenInUse || status == .authorizedAlways {
-                manager.requestLocation()
+                self.manager.requestLocation()
             } else if status == .denied || status == .restricted {
                 loading = false
                 errorMessage = "请在系统设置中允许位置权限"
