@@ -54,6 +54,8 @@ data class MessagingContact(
 
 data class ChatReaction(val reaction: String, val count: Int, val chosenByMe: Boolean)
 
+data class ChatPollOption(val id: String, val text: String, val voterCount: Int, val chosen: Boolean)
+
 data class ChatMessage(
     val id: String,
     val conversationId: String,
@@ -67,7 +69,8 @@ data class ChatMessage(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val pollQuestion: String? = null,
-    val pollOptions: List<String> = emptyList(),
+    val pollOptions: List<ChatPollOption> = emptyList(),
+    val pollMultipleAnswers: Boolean = false,
     val outgoing: Boolean,
     val time: String,
     val replyToMessageId: String? = null,
@@ -165,6 +168,16 @@ internal class MessagingViewModel(application: Application) : AndroidViewModel(a
             .put("content", JSONObject().put("type", "location").put("data", JSONObject().put("latitude", latitude).put("longitude", longitude).put("liveUntilMs", liveUntilMs ?: JSONObject.NULL)))
             .put("replyToMessageId", JSONObject.NULL).put("threadRootMessageId", JSONObject.NULL).put("scheduledAtMs", JSONObject.NULL).put("silent", false).put("protectedContent", false))
     }
+    fun votePoll(conversationId: String, messageId: String, optionIds: List<String>) {
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) {
+                ensureIdentity()
+                execute(JSONObject().put("type", "votePoll").put("conversationId", conversationId).put("messageId", messageId).put("optionIds", JSONArray(optionIds)))
+                execute(JSONObject().put("type", "sync").put("cursor", JSONObject.NULL).put("limit", 1000))
+            }}.onFailure { mutableState.value = mutableState.value.copy(error = it.message) }
+        }
+    }
+
     fun sendPoll(conversationId: String, question: String, options: List<String>, multipleAnswers: Boolean = false) {
         val cleanOptions = options.map { it.trim() }.filter { it.isNotEmpty() }; if (question.isBlank() || cleanOptions.size < 2) return
         val pollOptions = JSONArray(); cleanOptions.forEachIndexed { index, option -> pollOptions.put(JSONObject().put("id", "option-${index + 1}").put("text", option).put("voterCount", 0).put("chosen", false).put("correct", JSONObject.NULL)) }
@@ -410,8 +423,13 @@ internal class MessagingViewModel(application: Application) : AndroidViewModel(a
         val pollQuestion = data.optJSONObject("question")?.optString("text")?.takeIf { it.isNotBlank() }
         val pollOptions = buildList {
             val options = data.optJSONArray("options") ?: JSONArray()
-            for (i in 0 until options.length()) options.optJSONObject(i)?.optString("text")?.takeIf { it.isNotBlank() }?.let(::add)
+            for (i in 0 until options.length()) {
+                val option = options.optJSONObject(i) ?: continue
+                val id = option.optString("id"); val text = option.optString("text")
+                if (id.isNotBlank() && text.isNotBlank()) add(ChatPollOption(id, text, option.optInt("voterCount"), option.optBoolean("chosen")))
+            }
         }
+        val pollMultipleAnswers = data.optBoolean("multipleAnswers")
         val text = when (contentType) {
             "text" -> data.optJSONObject("text")?.optString("text").orEmpty()
             "photo" -> mediaFileName?.let { "🖼 $it" } ?: "🖼 图片"
@@ -441,7 +459,7 @@ internal class MessagingViewModel(application: Application) : AndroidViewModel(a
         }
         return ChatMessage(
             id = id, conversationId = conversationId, text = text, contentType = contentType, mediaFileName = mediaFileName, mediaBlobId = mediaBlobId, mediaMimeType = mediaMimeType, mediaSizeBytes = mediaSizeBytes, contactName = contactName,
-            latitude = latitude, longitude = longitude, pollQuestion = pollQuestion, pollOptions = pollOptions, outgoing = senderId == actorId,
+            latitude = latitude, longitude = longitude, pollQuestion = pollQuestion, pollOptions = pollOptions, pollMultipleAnswers = pollMultipleAnswers, outgoing = senderId == actorId,
             time = timeLabel(raw.optLong("createdAtMs")), replyToMessageId = raw.optString("replyToMessageId").takeIf { it.isNotBlank() },
             forwardOrigin = raw.optString("forwardOrigin").takeIf { it.isNotBlank() }, reactions = reactions, deliveryState = deliveryState,
             edited = !raw.isNull("editedAtMs"), pinned = raw.optBoolean("pinned")
