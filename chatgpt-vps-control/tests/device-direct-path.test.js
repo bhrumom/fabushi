@@ -119,3 +119,5 @@ test("direct RPC transport and exactly-once dedupe are part of the mesh runtime"
   assert.equal(typeof attachDirectRpcTransport, "function");
   assert.equal(typeof createInvocationDeduper, "function");
 });
+
+// GBF-412: changing this watched test intentionally gates the full generated direct-forwarding stack.
