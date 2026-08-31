@@ -73,11 +73,16 @@ jobs:
             echo "Resolved release is not a desktop release: $tag" | tee "$EVIDENCE_DIR/logs/01-release-metadata.log"
             exit 1
           fi
+          if [[ "$tag" =~ ^desktop-([0-9]+\.[0-9]+\.[0-9]+)(-[0-9a-fA-F]{12})?$ ]]; then
+            current_version="${BASH_REMATCH[1]}"
+          else
+            echo "Resolved desktop release does not contain a supported SemVer: $tag" | tee "$EVIDENCE_DIR/logs/01-release-metadata.log"
+            exit 1
+          fi
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,name,publishedAt,isPrerelease,assets,targetCommitish,url > "$EVIDENCE_DIR/json/release.json"
           jq -r '. | "Release: \(.tagName)\nName: \(.name)\nPublished: \(.publishedAt)\nPrerelease: \(.isPrerelease)\nURL: \(.url)\nAssets:\n" + ([.assets[].name] | map("- " + .) | join("\n"))' "$EVIDENCE_DIR/json/release.json" | tee "$EVIDENCE_DIR/logs/01-release-metadata.log"
 
-          current_version="${tag#desktop-}"
-          highest_version="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | startswith("desktop-"))) | .tagName' | sed 's/^desktop-//' | sort -V | tail -1)"
+          highest_version="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | test("^desktop-[0-9]+[.][0-9]+[.][0-9]+$"))) | .tagName' | sed 's/^desktop-//' | sort -V | tail -1)"
           is_highest=false
           if [ "$current_version" = "$highest_version" ]; then
             is_highest=true
@@ -135,7 +140,7 @@ jobs:
             if [ "$newest" = "$CURRENT_VERSION" ]; then
               previous_version="$candidate"
             fi
-          done < <(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | startswith("desktop-"))) | .tagName' | sed 's/^desktop-//' | sort -V)
+          done < <(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | test("^desktop-[0-9]+[.][0-9]+[.][0-9]+$"))) | .tagName' | sed 's/^desktop-//' | sort -V)
 
           if [ -z "$previous_version" ]; then
             echo "No lower desktop release found; updater compatibility smoke skipped." | tee "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
