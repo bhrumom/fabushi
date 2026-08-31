@@ -51,3 +51,14 @@ governance:
   task_record_required_before_completion: true
   new_independent_workstream_requires_project_folder: true
   protected_merge_queue_required: true
+
+latest_release:
+  version: 1.1.0
+  date: 2026-09-01
+  release_train: M11-MOBILE-001
+  product_source_sha: 82ddb78653ecdc47c95bf1a372389adff9f24d09
+  release_control_sha: 3f7cddc0bc09802d9a3d142cab7f9a56c573c07c
+  desktop_tag: desktop-1.1.0-3f7cddc0bc09
+  android_tag: android-v1.1.0-262432005
+  apple_tag: apple-v1.1.0-2026.8.3133
+  evidence: projects/telegram-fabushi-integration/evidence/M11-MOBILE-001/README.md
