@@ -429,6 +429,8 @@ pub enum EngineError {
     InvalidConversation,
     #[error("conversation {0:?} does not exist")]
     ConversationNotFound(ConversationId),
+    #[error("conversation participant data is invalid")]
+    InvalidConversationParticipant,
     #[error("message {message_id:?} does not exist in conversation {conversation_id:?}")]
     MessageNotFound {
         conversation_id: ConversationId,
