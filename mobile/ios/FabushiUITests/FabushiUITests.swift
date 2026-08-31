@@ -120,7 +120,7 @@ final class FabushiUITests: XCTestCase {
         let profile = app.buttons["profile-avatar"]
         XCTAssertTrue(profile.waitForExistence(timeout: 10))
         profile.tap()
-        let marketplace = app.buttons["插件市场"]
+        let marketplace = app.buttons["marketplace-entry"]
         XCTAssertTrue(marketplace.waitForExistence(timeout: 5))
         marketplace.tap()
     }
@@ -130,7 +130,7 @@ final class FabushiUITests: XCTestCase {
         let profile = app.buttons["profile-avatar"]
         XCTAssertTrue(profile.waitForExistence(timeout: 10))
         profile.tap()
-        let remoteComputer = app.buttons["我的电脑"]
+        let remoteComputer = app.buttons["remote-computer-entry"]
         XCTAssertTrue(remoteComputer.waitForExistence(timeout: 5))
         remoteComputer.tap()
     }
