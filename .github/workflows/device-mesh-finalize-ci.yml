@@ -10,6 +10,7 @@ on:
       - scripts/apply-device-direct-agent.mjs
       - scripts/apply-android-direct-path.mjs
       - scripts/apply-ios-direct-path.mjs
+      - scripts/apply-ios-direct-path-swift6.mjs
       - scripts/apply-ios-device-mesh-compile-fixes.mjs
       - chatgpt-vps-control/lib/device-direct-path.js
       - chatgpt-vps-control/tests/device-direct-path.test.js
@@ -102,6 +103,7 @@ jobs:
       - name: Apply iOS adapters
         run: |
           node scripts/apply-ios-direct-path.mjs
+          node scripts/apply-ios-direct-path-swift6.mjs
           node scripts/apply-ios-device-mesh-compile-fixes.mjs
           git diff --check
       - id: staticlib-source-key
@@ -170,6 +172,7 @@ jobs:
           node scripts/apply-device-direct-agent.mjs
           node scripts/apply-android-direct-path.mjs
           node scripts/apply-ios-direct-path.mjs
+          node scripts/apply-ios-direct-path-swift6.mjs
           node scripts/apply-ios-device-mesh-compile-fixes.mjs
           git diff --check
       - name: Commit atomically
