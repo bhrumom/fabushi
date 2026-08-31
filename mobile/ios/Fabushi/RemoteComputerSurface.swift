@@ -20,7 +20,8 @@ struct RemoteComputerSurface: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Button("返回", action: onClose)
+                Button("返回") { onClose() }
+                    .accessibilityLabel("返回")
                     .accessibilityIdentifier("remote-computer-close")
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -41,6 +42,7 @@ struct RemoteComputerSurface: View {
                 }
             }
             .padding(12)
+            .accessibilityElement(children: .contain)
 
             if let errorMessage {
                 VStack(alignment: .leading, spacing: 10) {
@@ -71,6 +73,7 @@ struct RemoteComputerSurface: View {
             )
         }
         .background(Color(uiColor: .systemBackground))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("remote-computer-surface")
     }
 }
@@ -194,7 +197,5 @@ private struct RemoteComputerWebView: UIViewRepresentable {
                 && url.password == nil
                 && (url.port == nil || url.port == 443)
         }
-
-
     }
 }
