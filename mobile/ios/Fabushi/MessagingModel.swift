@@ -69,6 +69,9 @@ internal struct ChatMessage: Identifiable, Equatable, Sendable {
     let text: String
     let contentType: String
     let mediaFileName: String?
+    let mediaBlobId: String?
+    let mediaMimeType: String?
+    let mediaSizeBytes: Int
     let contactName: String?
     let latitude: Double?
     let longitude: Double?
@@ -189,6 +192,23 @@ final class MessagingModel {
             "content": ["type": "poll", "data": ["question": ["text": question.trimmingCharacters(in: .whitespacesAndNewlines), "entities": []], "options": pollOptions, "anonymous": true, "multipleAnswers": multipleAnswers, "quiz": false]],
             "replyToMessageId": NSNull(), "threadRootMessageId": NSNull(), "scheduledAtMs": NSNull(), "silent": false, "protectedContent": false,
         ])
+    }
+
+    func loadBlob(blobId: String, sizeBytes: Int) async throws -> Data {
+        guard sizeBytes > 0 else { return Data() }
+        var result = Data()
+        var offset = 0
+        let chunkSize = 1024 * 1024
+        while offset < sizeBytes {
+            let requested = min(chunkSize, sizeBytes - offset)
+            let response = try await host.request(method: "feature.messaging.blob.read", params: ["blobId": blobId, "offset": offset, "length": requested])
+            guard let object = response.value as? [String: Any], let encoded = object["dataBase64"] as? String, let chunk = Data(base64Encoded: encoded), !chunk.isEmpty else {
+                throw MahayanaHost.HostError.invalidResponse
+            }
+            result.append(chunk)
+            offset += chunk.count
+        }
+        return result
     }
 
     func sendVoice(conversationId: String, fileName: String, mimeType: String, data: Data, waveform: [UInt8] = []) async throws {
@@ -504,7 +524,11 @@ final class MessagingModel {
         else { return nil }
         let contentType = content["type"] as? String ?? "unknown"
         let data = content["data"] as? [String: Any] ?? [:]
-        let mediaFileName = (data["media"] as? [String: Any])?["fileName"] as? String
+        let media = data["media"] as? [String: Any]
+        let mediaFileName = media?["fileName"] as? String
+        let mediaBlobId = media?["id"] as? String
+        let mediaMimeType = media?["mimeType"] as? String
+        let mediaSizeBytes = (media?["sizeBytes"] as? NSNumber)?.intValue ?? 0
         let contactName = data["displayName"] as? String
         let latitude = (data["latitude"] as? NSNumber)?.doubleValue
         let longitude = (data["longitude"] as? NSNumber)?.doubleValue
@@ -539,7 +563,7 @@ final class MessagingModel {
             return "sent"
         }()
         return ChatMessage(
-            id: id, conversationId: conversationId, text: text, contentType: contentType, mediaFileName: mediaFileName, contactName: contactName, latitude: latitude, longitude: longitude, pollQuestion: pollQuestion, pollOptions: pollOptions, isOutgoing: senderId == actorId, time: Self.timeLabel(createdAt),
+            id: id, conversationId: conversationId, text: text, contentType: contentType, mediaFileName: mediaFileName, mediaBlobId: mediaBlobId, mediaMimeType: mediaMimeType, mediaSizeBytes: mediaSizeBytes, contactName: contactName, latitude: latitude, longitude: longitude, pollQuestion: pollQuestion, pollOptions: pollOptions, isOutgoing: senderId == actorId, time: Self.timeLabel(createdAt),
             replyToMessageId: raw["replyToMessageId"] as? String, forwardOrigin: raw["forwardOrigin"] as? String, reactions: reactions,
             deliveryState: deliveryState, isEdited: raw["editedAtMs"] is NSNumber, isPinned: raw["pinned"] as? Bool ?? false
         )
