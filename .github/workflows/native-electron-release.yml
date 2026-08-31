@@ -79,6 +79,7 @@ jobs:
             'Electron desktop result' \
             'Electron macOS' \
             'Electron Windows' \
+            'Electron Linux' \
             'Native mobile result' \
             'Native iOS' \
             'Computer control security result' \
