@@ -58,6 +58,7 @@ struct ContentView: View {
     @State private var replyTarget: ChatMessage?
     @State private var editingMessage: ChatMessage?
     @State private var forwardMessage: ChatMessage?
+    @State private var mediaViewerMessage: ChatMessage?
     @State private var chatSearchPresented = false
     @State private var chatSearchQuery = ""
     @State private var attachmentPickerPresented = false
@@ -766,11 +767,13 @@ struct ContentView: View {
                                             case "audio":
                                                 HStack(spacing: 10) { Image(systemName: "music.note").font(.title2).foregroundStyle(Color.accentColor); Text(message.mediaFileName ?? "音频"); Spacer() }
                                             case "photo", "video", "document":
-                                                HStack(spacing: 9) {
-                                                    Image(systemName: message.contentType == "photo" ? "photo.fill" : message.contentType == "video" ? "video.fill" : "doc.fill").font(.title2).foregroundStyle(Color.accentColor)
-                                                    VStack(alignment: .leading) { Text(message.mediaFileName ?? message.text).fontWeight(.medium); Text(message.contentType == "photo" ? "图片" : message.contentType == "video" ? "视频" : "文件").font(.caption).foregroundStyle(.secondary) }
-                                                    Spacer()
-                                                }.frame(maxWidth: .infinity)
+                                                Button { mediaViewerMessage = message } label: {
+                                                    HStack(spacing: 9) {
+                                                        Image(systemName: message.contentType == "photo" ? "photo.fill" : message.contentType == "video" ? "video.fill" : "doc.fill").font(.title2).foregroundStyle(Color.accentColor)
+                                                        VStack(alignment: .leading) { Text(message.mediaFileName ?? message.text).fontWeight(.medium).foregroundStyle(.primary); Text(message.contentType == "photo" ? "图片 · 点击查看" : message.contentType == "video" ? "视频 · 点击播放" : "文件 · 点击打开").font(.caption).foregroundStyle(.secondary) }
+                                                        Spacer()
+                                                    }.frame(maxWidth: .infinity)
+                                                }.buttonStyle(.plain)
                                             default:
                                                 Text(message.text).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
                                             }
@@ -906,6 +909,9 @@ struct ContentView: View {
             let draft = messaging.draftsByConversation[conversation.id]
             messageDraft = draft?.text ?? ""
             replyTarget = draft?.replyToMessageId.flatMap { replyId in messaging.messagesByConversation[conversation.id]?.first(where: { $0.id == replyId }) }
+        }
+        .fullScreenCover(item: $mediaViewerMessage) { message in
+            MediaViewer(message: message, messaging: messaging) { mediaViewerMessage = nil }
         }
         .sheet(item: $forwardMessage) { message in
             NavigationStack {

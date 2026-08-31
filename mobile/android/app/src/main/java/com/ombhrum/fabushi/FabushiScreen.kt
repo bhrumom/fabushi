@@ -849,6 +849,7 @@ private fun ConversationDetail(
     var replyTarget by remember(conversation.id, sharedDraft?.replyToMessageId) { mutableStateOf(sharedDraft?.replyToMessageId?.let { replyId -> messages.firstOrNull { it.id == replyId } }) }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var forwardingMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var mediaViewerMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var showChatSearch by remember { mutableStateOf(false) }
     var chatSearchQuery by remember { mutableStateOf("") }
     var showAttachmentMenu by remember { mutableStateOf(false) }
@@ -902,6 +903,11 @@ private fun ConversationDetail(
                 onSendAttachment(name, mime, bytes)
             }
         }
+    }
+
+    mediaViewerMessage?.let { mediaMessage ->
+        AndroidMediaViewer(message = mediaMessage, onLoadBlob = onLoadBlob, onClose = { mediaViewerMessage = null })
+        return
     }
 
     if (showSendModes) {
@@ -1097,9 +1103,9 @@ private fun ConversationDetail(
                                     Column(Modifier.padding(start = 10.dp)) { Text("语音消息", color = homePrimaryText, fontWeight = FontWeight.Medium); Text(if (playingVoiceMessageId == message.id) "正在播放" else (message.mediaFileName ?: "录音"), color = homeSecondaryText, style = MaterialTheme.typography.bodySmall) }
                                 }
                                 "audio" -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("♫", color = homeAccent, fontSize = 24.sp); Text(message.mediaFileName ?: "音频", color = homePrimaryText, modifier = Modifier.padding(start = 10.dp)) }
-                                "photo", "video", "document" -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                "photo", "video", "document" -> Row(Modifier.fillMaxWidth().clickable { mediaViewerMessage = message }, verticalAlignment = Alignment.CenterVertically) {
                                     Text(if (message.contentType == "photo") "🖼" else if (message.contentType == "video") "🎬" else "📎", fontSize = 24.sp)
-                                    Column(Modifier.padding(start = 10.dp)) { Text(message.mediaFileName ?: message.text, color = homePrimaryText, fontWeight = FontWeight.Medium); Text(if (message.contentType == "photo") "图片" else if (message.contentType == "video") "视频" else "文件", color = homeSecondaryText, style = MaterialTheme.typography.bodySmall) }
+                                    Column(Modifier.padding(start = 10.dp)) { Text(message.mediaFileName ?: message.text, color = homePrimaryText, fontWeight = FontWeight.Medium); Text(if (message.contentType == "photo") "图片 · 点击查看" else if (message.contentType == "video") "视频 · 点击播放" else "文件 · 点击打开", color = homeSecondaryText, style = MaterialTheme.typography.bodySmall) }
                                 }
                                 else -> Text(message.text, color = homePrimaryText)
                             }
