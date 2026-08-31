@@ -14,13 +14,14 @@ function replaceOnce(before, after, marker) {
 
 replaceOnce(
   "        try await withCheckedThrowingContinuation { continuation in\n            let box = CheckedContinuationBox<Void>(continuation)\n",
-  "        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in\n            let box = CheckedContinuationBox<Void>(continuation)\n",
+  "        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in\n            let box = VoidContinuationBox(continuation)\n",
   "// GBF-412 Swift 6 start continuation",
 );
 source = source.replace(
   "            connection.start(queue: queue)\n        }\n    }\n\n    private func send(_ object: [String: Any], over connection: NWConnection) async throws {",
   "            connection.start(queue: queue)\n        } // GBF-412 Swift 6 start continuation\n    }\n\n    private func send(_ object: [String: Any], over connection: NWConnection) async throws {",
 );
+source = source.replace("case .ready: box.resume(returning: ())", "case .ready: box.resume() // GBF-412 Swift 6 void continuation");
 
 replaceOnce(
   "        try await withCheckedThrowingContinuation { continuation in\n            connection.send(content: data, completion: .contentProcessed { error in\n",
@@ -82,6 +83,44 @@ replaceOnce(
 `,
   "// GBF-412 Swift 6 Sendable datagram boundary",
 );
+
+const genericBox = `private final class CheckedContinuationBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Error>?
+    init(_ continuation: CheckedContinuation<Value, Error>? = nil) { self.continuation = continuation }
+    func set(_ continuation: CheckedContinuation<Value, Error>) { lock.lock(); defer { lock.unlock() }; self.continuation = continuation }
+    func value() async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in set(continuation) }
+    }
+    func resume(returning value: Value) { lock.lock(); let continuation = self.continuation; self.continuation = nil; lock.unlock(); continuation?.resume(returning: value) }
+    func resume(throwing error: Error) { lock.lock(); let continuation = self.continuation; self.continuation = nil; lock.unlock(); continuation?.resume(throwing: error) }
+}`;
+const voidBox = `private final class VoidContinuationBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+    init(_ continuation: CheckedContinuation<Void, Error>) { self.continuation = continuation }
+    func resume() {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: ())
+    }
+    func resume(throwing error: Error) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(throwing: error)
+    }
+} // GBF-412 Swift 6 void continuation holder`;
+if (!source.includes("// GBF-412 Swift 6 void continuation holder")) {
+  if (!source.includes(genericBox)) throw new Error("Missing generic continuation holder for Swift 6 specialization");
+  source = source.replace(genericBox, voidBox);
+  source = source.replaceAll("CheckedContinuationBox<Void>(continuation)", "VoidContinuationBox(continuation)");
+  source = source.replaceAll("box.resume(returning: ())", "box.resume()");
+  changed = true;
+}
 
 if (changed) writeFileSync(path, source);
 console.log(changed ? "Applied Swift 6 direct-path concurrency fixes." : "Swift 6 direct-path concurrency fixes already applied.");
