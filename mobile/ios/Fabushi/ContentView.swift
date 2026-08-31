@@ -393,16 +393,42 @@ struct ContentView: View {
             Button("联系人分组") { contactGroupsPresented = true }
             Button("取消", role: .cancel) {}
         }
-        .confirmationDialog("导航", isPresented: $profileMenuPresented, titleVisibility: .visible) {
-            ForEach(MobileSection.allCases) { section in
-                Button(section.label) { handleSection(section) }
-                    .accessibilityIdentifier("profile-section-\(section.rawValue)")
+        .sheet(isPresented: $profileMenuPresented) {
+            NavigationStack {
+                List {
+                    Section("导航") {
+                        ForEach(MobileSection.allCases) { section in
+                            Button {
+                                profileMenuPresented = false
+                                handleSection(section)
+                            } label: {
+                                Label(section.label, systemImage: section.symbol)
+                            }
+                            .accessibilityIdentifier("profile-section-\(section.rawValue)")
+                        }
+                        Button {
+                            profileMenuPresented = false
+                            destination = .remoteComputer
+                        } label: {
+                            Label("我的电脑", systemImage: "desktopcomputer")
+                        }
+                        .accessibilityIdentifier("remote-computer-entry")
+                        Button {
+                            profileMenuPresented = false
+                            destination = .marketplace
+                        } label: {
+                            Label("插件市场", systemImage: "puzzlepiece.extension")
+                        }
+                        .accessibilityIdentifier("marketplace-entry")
+                    }
+                }
+                .navigationTitle("导航")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { profileMenuPresented = false }
+                    }
+                }
             }
-            Button("我的电脑") { destination = .remoteComputer }
-                .accessibilityIdentifier("remote-computer-entry")
-            Button("插件市场") { destination = .marketplace }
-                .accessibilityIdentifier("marketplace-entry")
-            Button("取消", role: .cancel) {}
         }
         .sheet(item: $composeKind) { kind in composeSheet(kind) }
         .sheet(isPresented: $contactGroupsPresented) { simpleSectionSheet(title: "联系人分组", symbol: "folder.fill") }
