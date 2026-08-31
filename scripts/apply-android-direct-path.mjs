@@ -94,4 +94,5 @@ replaceOnce(
 );
 
 if (changed) writeFileSync(path, source);
+await import("./apply-android-direct-rpc.mjs");
 console.log(changed ? "Applied Android direct path integration." : "Android direct path integration already applied.");
