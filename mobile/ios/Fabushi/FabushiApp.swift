@@ -2,8 +2,10 @@ import SwiftUI
 
 @main
 struct FabushiApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model: MarketplaceModel
     @State private var appAgentSurface: FabushiAppAgentSurface
+    @State private var deviceMeshAgent: FabushiDeviceMeshAgent
 
     init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -14,10 +16,11 @@ struct FabushiApp: App {
             #else
             let featureHostTest = false
             #endif
-            _model = State(initialValue: MarketplaceModel(
-                host: try MahayanaHost(appDataDirectory: base, featureHostTest: featureHostTest)
-            ))
-            _appAgentSurface = State(initialValue: FabushiAppAgentSurface())
+            let host = try MahayanaHost(appDataDirectory: base, featureHostTest: featureHostTest)
+            let surface = FabushiAppAgentSurface()
+            _model = State(initialValue: MarketplaceModel(host: host))
+            _appAgentSurface = State(initialValue: surface)
+            _deviceMeshAgent = State(initialValue: FabushiDeviceMeshAgent(host: host, surface: surface))
         } catch {
             fatalError("Failed to initialize Mahayana Host: \(error)")
         }
@@ -27,8 +30,12 @@ struct FabushiApp: App {
         WindowGroup {
             ContentView(model: model, appAgentSurface: appAgentSurface)
                 .task {
+                    deviceMeshAgent.start(applicationActive: scenePhase == .active)
                     await model.runFeatureHostSmokeIfRequested()
                     await model.refresh()
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    deviceMeshAgent.setApplicationActive(phase == .active)
                 }
                 .onOpenURL { url in
                     consumeDeepLink(url)
