@@ -15,6 +15,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,8 +58,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -862,6 +866,7 @@ private fun ConversationDetail(
     var pollOption3 by remember { mutableStateOf("") }
     var attachmentMime by remember { mutableStateOf("*/*") }
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val voiceRecorder = remember { NativeVoiceRecorder(context) }
     val voicePlayer = remember { NativeVoicePlayer(context) }
     var playingVoiceMessageId by remember { mutableStateOf<String?>(null) }
@@ -1058,6 +1063,22 @@ private fun ConversationDetail(
                         Column(
                             Modifier.fillMaxWidth(0.78f)
                                 .background(if (message.outgoing) homeAccent.copy(alpha = 0.18f) else homeSurface, RoundedCornerShape(16.dp))
+                                .pointerInput(message.id) {
+                                    var horizontalDrag = 0f
+                                    detectHorizontalDragGestures(
+                                        onDragStart = { horizontalDrag = 0f },
+                                        onHorizontalDrag = { change, dragAmount -> horizontalDrag += dragAmount; change.consume() },
+                                        onDragEnd = {
+                                            if (horizontalDrag > 58.dp.toPx()) {
+                                                replyTarget = message
+                                                editingMessage = null
+                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            }
+                                            horizontalDrag = 0f
+                                        },
+                                        onDragCancel = { horizontalDrag = 0f },
+                                    )
+                                }
                                 .combinedClickable(onClick = {}, onLongClick = { selectedMessage = message })
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
