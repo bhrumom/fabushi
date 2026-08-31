@@ -123,4 +123,5 @@ if (!source.includes("// GBF-412 Swift 6 void continuation holder")) {
 }
 
 if (changed) writeFileSync(path, source);
+await import("./apply-ios-direct-rpc-agent.mjs");
 console.log(changed ? "Applied Swift 6 direct-path concurrency fixes." : "Swift 6 direct-path concurrency fixes already applied.");
