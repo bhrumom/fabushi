@@ -89,7 +89,7 @@ test("gateway routes through a healthy peer then retries the same invocation ove
   router.send(JSON.stringify({
     type: "direct_path_health",
     targetDeviceId: "target",
-    candidateId: "target-candidate",
+    candidateId: "udp:host:127.0.0.1:41002",
     reachable: true,
     latencyMs: 4,
     loss: 0,
