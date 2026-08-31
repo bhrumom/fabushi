@@ -136,4 +136,5 @@ replaceOnce(
 );
 
 if (changed) writeFileSync(path, source);
+await import("./apply-device-direct-rpc-gateway.mjs");
 console.log(changed ? "Applied direct path gateway rendezvous integration." : "Direct path gateway rendezvous integration already applied.");
