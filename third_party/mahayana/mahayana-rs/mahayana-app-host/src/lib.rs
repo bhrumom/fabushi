@@ -277,7 +277,11 @@ impl AppHost {
     fn feature_messaging_blob_read(&self, params: Value) -> Result<Value, AppHostError> {
         let blob_id = string_param(&params, "blobId")?;
         let offset = params.get("offset").and_then(Value::as_u64).unwrap_or(0);
-        let length = params.get("length").and_then(Value::as_u64).unwrap_or(1024 * 1024).clamp(1, 1024 * 1024);
+        let length = params
+            .get("length")
+            .and_then(Value::as_u64)
+            .unwrap_or(1024 * 1024)
+            .clamp(1, 1024 * 1024);
         let (metadata, bytes) = self
             .feature
             .read_messaging_blob_range(blob_id, offset, length)
