@@ -22,7 +22,7 @@ function identity() {
   };
 }
 
-test("direct path candidates are account-scoped and fail closed to relay", () => {
+test("direct path candidates are account-scoped and use route hysteresis", () => {
   let now = 100_000;
   const registry = createDirectPathRegistry({ now: () => now, candidateTtlMs: 30_000, healthTtlMs: 5_000 });
   const candidate = normalizeDirectCandidate({ host: "127.0.0.1", port: 41001, scope: "host", priority: 500 }, now, 30_000);
@@ -32,7 +32,24 @@ test("direct path candidates are account-scoped and fail closed to relay", () =>
   assert.deepEqual(registry.peers("a", "controller").map((peer) => peer.deviceId), ["phone"]);
   assert.equal(registry.select("a", "phone").path, "relay");
   assert.equal(registry.reportHealth({ accountId: "a", deviceId: "phone", generation: "wrong", candidateId: candidate.id, reachable: true, latencyMs: 1 }), false);
+
   assert.equal(registry.reportHealth({ accountId: "a", deviceId: "phone", generation: "g-phone-1234567890", candidateId: candidate.id, reachable: true, latencyMs: 8 }), true);
+  assert.equal(registry.select("a", "phone").path, "relay");
+  assert.equal(registry.select("a", "phone").reason, "direct-route-awaiting-stability");
+
+  assert.equal(registry.reportHealth({ accountId: "a", deviceId: "phone", generation: "g-phone-1234567890", candidateId: candidate.id, reachable: true, latencyMs: 7 }), true);
+  assert.equal(registry.select("a", "phone").path, "direct-udp");
+
+  assert.equal(registry.reportHealth({ accountId: "a", deviceId: "phone", generation: "g-phone-1234567890", candidateId: candidate.id, reachable: false, latencyMs: 1500, loss: 1 }), true);
+  assert.equal(registry.select("a", "phone").path, "direct-udp");
+  assert.equal(registry.select("a", "phone").reason, "direct-route-hysteresis-hold");
+
+  assert.equal(registry.reportHealth({ accountId: "a", deviceId: "phone", generation: "g-phone-1234567890", candidateId: candidate.id, reachable: false, latencyMs: 1500, loss: 1 }), true);
+  assert.equal(registry.select("a", "phone").path, "relay");
+
+  assert.equal(registry.reportHealth({ accountId: "a", deviceId: "phone", generation: "g-phone-1234567890", candidateId: candidate.id, reachable: true, latencyMs: 6 }), true);
+  assert.equal(registry.select("a", "phone").path, "relay");
+  assert.equal(registry.reportHealth({ accountId: "a", deviceId: "phone", generation: "g-phone-1234567890", candidateId: candidate.id, reachable: true, latencyMs: 6 }), true);
   assert.equal(registry.select("a", "phone").path, "direct-udp");
 
   now += 6_000;
@@ -120,4 +137,4 @@ test("direct RPC transport and exactly-once dedupe are part of the mesh runtime"
   assert.equal(typeof createInvocationDeduper, "function");
 });
 
-// GBF-412: changing this watched test intentionally gates the full generated direct-forwarding stack.
+// GBF-412: this watched test gates the generated direct-forwarding stack and hysteresis policy.
