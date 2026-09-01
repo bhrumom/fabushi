@@ -352,6 +352,17 @@ export interface ComputerActionResult {
   snapshot: ComputerSnapshot;
 }
 
+export type RemoteComputerProvider = "fabushi-webrtc" | "rustdesk-sidecar";
+export type RemoteComputerPlatform = "windows" | "macos" | "linux" | "android" | "ios" | "web" | "unknown";
+export type RemoteComputerCapability =
+  | "remote-desktop"
+  | "input"
+  | "clipboard"
+  | "file-transfer"
+  | "display"
+  | "audio"
+  | "session-management";
+
 export interface RemoteComputerRegistration {
   deviceId: string;
   label: string;
@@ -713,7 +724,15 @@ export type RuntimeCommand =
   | (CommandBase & { type: "computer.status" })
   | (CommandBase & { type: "computer.screenshot"; origin?: ComputerControlOrigin; sessionId?: string; target?: ComputerControlTarget })
   | (CommandBase & { type: "computer.action"; origin?: ComputerControlOrigin; agentId?: string; sessionId?: string; target?: ComputerControlTarget; action: ComputerAction; then?: ComputerAction[] })
-  | (CommandBase & { type: "remoteComputer.register"; deviceId: string; label: string })
+  | (CommandBase & {
+      type: "remoteComputer.register";
+      deviceId: string;
+      label: string;
+      provider: RemoteComputerProvider;
+      platform: RemoteComputerPlatform;
+      appVersion: string;
+      capabilities: RemoteComputerCapability[];
+    })
   | (CommandBase & { type: "remoteComputer.heartbeat"; deviceId: string })
   | (CommandBase & { type: "remoteComputer.clients"; deviceId: string })
   | (CommandBase & { type: "remoteComputer.clientRevoke"; deviceId: string; clientId: string })
