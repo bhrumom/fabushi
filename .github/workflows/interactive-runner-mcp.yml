@@ -291,10 +291,14 @@ jobs:
         run: |
           set -euo pipefail
           node .github/scripts/update-interactive-runner-status.mjs package-verification 'Verifying that the installed Fabushi application contains its own Computer Use and device-registration runtime.'
+          app_executable="$(find desktop/release -type f -path '*/linux-unpacked/fabushi' -print -quit)"
+          test -n "$app_executable"
+          # actions/download-artifact transports file contents but does not preserve
+          # the executable bit required to launch the unpacked Electron app.
+          chmod +x "$app_executable"
           node .github/scripts/verify-packaged-computer-control.mjs \
             --release-root desktop/release \
             --platform linux
-          app_executable="$(find desktop/release -type f -path '*/linux-unpacked/fabushi' -print -quit)"
           packaged_mcp="$(find desktop/release -type f -path '*/resources/computer-control/*/bin/fabushi-computer-mcp.js' -print -quit)"
           packaged_agent="$(find desktop/release -type f -path '*/resources/computer-control/*/bin/fabushi-device-agent.js' -print -quit)"
           test -x "$app_executable"
