@@ -17,16 +17,16 @@ use mahayana_core::MODEL_RUNTIME_VERSION;
 use mahayana_core::Message;
 use mahayana_core::MessageId;
 use mahayana_core::MessageRole;
+use mahayana_core::ModelProviderMode;
 use mahayana_core::ModelTokenUsage;
 use mahayana_core::ModelTokenUsageSnapshot;
-use mahayana_core::ModelProviderMode;
 use mahayana_core::OperationId;
 use mahayana_core::PeerKind;
 use mahayana_core::PluginCommandDescriptor;
 use mahayana_core::RUNTIME_ABI_VERSION;
+use mahayana_core::RuntimeActivityStatus;
 use mahayana_core::RuntimeCommand;
 use mahayana_core::RuntimeEvent;
-use mahayana_core::RuntimeActivityStatus;
 use mahayana_core::RuntimeResponse;
 use mahayana_core::RuntimeStatus;
 use mahayana_core::capability::CapabilityRegistry;
@@ -166,7 +166,9 @@ impl MahayanaWebRuntime {
             return Err(JsValue::from_str("Responses endpoint must use HTTPS"));
         }
         if !config.product_base_url.starts_with("https://") {
-            return Err(JsValue::from_str("Mahayana product endpoint must use HTTPS"));
+            return Err(JsValue::from_str(
+                "Mahayana product endpoint must use HTTPS",
+            ));
         }
         let mut state = WebState {
             config,
@@ -896,8 +898,8 @@ async fn web_browser_login_start(
     command: &Value,
 ) -> Result<Value, JsValue> {
     let platform = optional_product_string(command, "platform").unwrap_or_else(|| "web".into());
-    let device_id = optional_product_string(command, "deviceId")
-        .unwrap_or_else(|| "fabushi-web-wasm".into());
+    let device_id =
+        optional_product_string(command, "deviceId").unwrap_or_else(|| "fabushi-web-wasm".into());
     let product_base_url = state.borrow().config.product_base_url.clone();
     let response = raw_product_fetch(
         &product_base_url,
@@ -948,7 +950,10 @@ async fn web_browser_login_poll(
     .await?;
     ensure_product_success(&response)?;
     let mut data = response.data;
-    let status = data.get("status").and_then(Value::as_str).unwrap_or("failed");
+    let status = data
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("failed");
     let terminal = matches!(status, "completed" | "expired" | "cancelled" | "failed");
     if status == "completed" {
         let provider = data
@@ -1322,7 +1327,15 @@ async fn platform_product_request(
         authenticated_product_fetch(Rc::clone(&state), &method, path, &query, body).await?
     } else {
         let product_base_url = state.borrow().config.product_base_url.clone();
-        raw_product_fetch(&product_base_url, &method, path, &query, body.as_ref(), None).await?
+        raw_product_fetch(
+            &product_base_url,
+            &method,
+            path,
+            &query,
+            body.as_ref(),
+            None,
+        )
+        .await?
     };
     let mut data = response.data;
     strip_web_credentials(&mut data);
@@ -1984,7 +1997,9 @@ fn extract_function_calls(
             .or_else(|| item.get("id"))
             .and_then(Value::as_str)
             .map(str::to_owned)
-            .unwrap_or_else(|| format!("{}:call:{}:{}", operation_id.as_str(), turn + 1, index + 1));
+            .unwrap_or_else(|| {
+                format!("{}:call:{}:{}", operation_id.as_str(), turn + 1, index + 1)
+            });
         let arguments = match item
             .get("arguments")
             .or_else(|| item.pointer("/function/arguments"))
@@ -2017,11 +2032,12 @@ fn enqueue_usage(state: &Rc<RefCell<WebState>>, operation_id: &OperationId, payl
     };
     let input_tokens = usage_value(usage, &["input_tokens", "prompt_tokens", "inputTokens"]);
     let cached_input_tokens = usage_value(usage, &["cached_input_tokens", "cachedInputTokens"]);
-    let output_tokens = usage_value(usage, &["output_tokens", "completion_tokens", "outputTokens"]);
-    let reasoning_output_tokens = usage_value(
+    let output_tokens = usage_value(
         usage,
-        &["reasoning_output_tokens", "reasoningOutputTokens"],
+        &["output_tokens", "completion_tokens", "outputTokens"],
     );
+    let reasoning_output_tokens =
+        usage_value(usage, &["reasoning_output_tokens", "reasoningOutputTokens"]);
     let total_tokens = usage_value(usage, &["total_tokens", "totalTokens"])
         .max(input_tokens.saturating_add(output_tokens));
     if total_tokens == 0 {
@@ -2050,10 +2066,12 @@ fn enqueue_usage(state: &Rc<RefCell<WebState>>, operation_id: &OperationId, payl
 fn usage_value(value: &Value, keys: &[&str]) -> i64 {
     keys.iter()
         .find_map(|key| {
-            value
-                .get(*key)
-                .and_then(Value::as_i64)
-                .or_else(|| value.get(*key).and_then(Value::as_u64).map(|value| value as i64))
+            value.get(*key).and_then(Value::as_i64).or_else(|| {
+                value
+                    .get(*key)
+                    .and_then(Value::as_u64)
+                    .map(|value| value as i64)
+            })
         })
         .unwrap_or(0)
 }
