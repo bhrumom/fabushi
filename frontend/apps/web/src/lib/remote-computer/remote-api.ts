@@ -1,3 +1,5 @@
+import type { RemoteComputerCapability, RemoteComputerPlatform, RemoteComputerProvider } from "../mahayana-host/contracts";
+
 const DEFAULT_API_BASE = "https://api.ombhrum.com";
 const SESSION_KEY = "fabushi-remote-auth-v1";
 const MOBILE_DEVICE_KEY = "fabushi-remote-mobile-device-v1";
@@ -21,6 +23,11 @@ export interface RemoteComputerInfo {
   lastSeenAt: number;
   createdAt: number;
   online: boolean;
+  provider: RemoteComputerProvider;
+  platform: RemoteComputerPlatform;
+  appVersion: string;
+  capabilities: RemoteComputerCapability[];
+  activeSessionCount: number;
 }
 
 export interface PairingResult {
@@ -72,6 +79,13 @@ const MAX_AUTH_TOKEN_CHARS = 16 * 1024;
 const ALLOWED_ICE_SCHEMES = new Set(["stun:", "turn:", "turns:"]);
 const MOBILE_SIGNAL_KINDS = new Set<RemoteSignal["kind"]>(["offer", "ice", "ready", "close"]);
 const DESKTOP_SIGNAL_KINDS = new Set<RemoteSignal["kind"]>(["answer", "ice", "ready", "close"]);
+const REMOTE_COMPUTER_PROVIDERS = new Set<RemoteComputerProvider>(["fabushi-webrtc", "rustdesk-sidecar"]);
+const REMOTE_COMPUTER_PLATFORMS = new Set<RemoteComputerPlatform>([
+  "windows", "macos", "linux", "android", "ios", "web", "unknown",
+]);
+const REMOTE_COMPUTER_CAPABILITIES = new Set<RemoteComputerCapability>([
+  "remote-desktop", "input", "clipboard", "file-transfer", "display", "audio", "session-management",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -125,6 +139,38 @@ function validAuthToken(value: unknown): value is string {
 
 function validTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function remoteComputerProvider(value: unknown): RemoteComputerProvider {
+  return typeof value === "string" && REMOTE_COMPUTER_PROVIDERS.has(value as RemoteComputerProvider)
+    ? value as RemoteComputerProvider
+    : "fabushi-webrtc";
+}
+
+function remoteComputerPlatform(value: unknown): RemoteComputerPlatform {
+  return typeof value === "string" && REMOTE_COMPUTER_PLATFORMS.has(value as RemoteComputerPlatform)
+    ? value as RemoteComputerPlatform
+    : "unknown";
+}
+
+function remoteComputerVersion(value: unknown): string {
+  return typeof value === "string" && /^[A-Za-z0-9.+_-]{1,64}$/.test(value) ? value : "unknown";
+}
+
+function remoteComputerCapabilities(value: unknown): RemoteComputerCapability[] {
+  if (!Array.isArray(value)) return [];
+  const normalized: RemoteComputerCapability[] = [];
+  for (const candidate of value.slice(0, 32)) {
+    if (typeof candidate !== "string"
+      || !REMOTE_COMPUTER_CAPABILITIES.has(candidate as RemoteComputerCapability)
+      || normalized.includes(candidate as RemoteComputerCapability)) continue;
+    normalized.push(candidate as RemoteComputerCapability);
+  }
+  return normalized;
+}
+
+function activeSessionCount(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 32 ? value : 0;
 }
 
 function accountIdentity(userId: string | number): string {
@@ -348,6 +394,11 @@ export class RemoteComputerApi {
         lastSeenAt: candidate.lastSeenAt,
         createdAt: candidate.createdAt,
         online: candidate.online,
+        provider: remoteComputerProvider(candidate.provider),
+        platform: remoteComputerPlatform(candidate.platform),
+        appVersion: remoteComputerVersion(candidate.appVersion),
+        capabilities: remoteComputerCapabilities(candidate.capabilities),
+        activeSessionCount: activeSessionCount(candidate.activeSessionCount),
       }];
     });
   }

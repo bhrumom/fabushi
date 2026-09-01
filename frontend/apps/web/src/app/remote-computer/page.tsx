@@ -7,6 +7,33 @@ import { RemoteComputerApi, type PairedClientRecord, type RemoteAuthSession, typ
 import styles from "./remote-computer.module.css";
 
 type PointerMode = "single" | "double" | "right" | "scroll";
+type DeviceStatusFilter = "all" | "online" | "offline";
+type DeviceCapabilityFilter = "all" | RemoteComputerInfo["capabilities"][number];
+
+const CAPABILITY_LABELS: Record<RemoteComputerInfo["capabilities"][number], string> = {
+  "remote-desktop": "远程桌面",
+  input: "输入",
+  clipboard: "剪贴板",
+  "file-transfer": "文件",
+  display: "显示",
+  audio: "音频",
+  "session-management": "会话",
+};
+
+const PLATFORM_LABELS: Record<RemoteComputerInfo["platform"], string> = {
+  windows: "Windows",
+  macos: "macOS",
+  linux: "Linux",
+  android: "Android",
+  ios: "iOS",
+  web: "Web",
+  unknown: "未知平台",
+};
+
+const PROVIDER_LABELS: Record<RemoteComputerInfo["provider"], string> = {
+  "fabushi-webrtc": "Fabushi WebRTC",
+  "rustdesk-sidecar": "RustDesk 兼容层",
+};
 
 interface PointerGesture {
   pointerId: number;
@@ -37,6 +64,9 @@ export default function RemoteComputerPage() {
   const [pairingCode, setPairingCode] = useState("");
   const [phoneLabel, setPhoneLabel] = useState("我的手机");
   const [computers, setComputers] = useState<RemoteComputerInfo[]>([]);
+  const [deviceQuery, setDeviceQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<DeviceStatusFilter>("all");
+  const [capabilityFilter, setCapabilityFilter] = useState<DeviceCapabilityFilter>("all");
   const [paired, setPaired] = useState<Record<string, PairedClientRecord>>(() => api.pairedClients());
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [peerState, setPeerState] = useState<MobilePeerState>({ phase: "idle" });
@@ -53,6 +83,22 @@ export default function RemoteComputerPage() {
   const imageRef = useRef<HTMLImageElement | null>(null);
 
   const selectedComputer = computers.find((computer) => computer.deviceId === selectedDeviceId);
+  const visibleComputers = useMemo(() => {
+    const query = deviceQuery.trim().toLocaleLowerCase();
+    return computers.filter((computer) => {
+      if (statusFilter !== "all" && computer.online !== (statusFilter === "online")) return false;
+      if (capabilityFilter !== "all" && !computer.capabilities.includes(capabilityFilter)) return false;
+      if (!query) return true;
+      return [
+        computer.label,
+        computer.deviceId,
+        computer.provider,
+        computer.platform,
+        computer.appVersion,
+        ...computer.capabilities,
+      ].some((value) => value.toLocaleLowerCase().includes(query));
+    });
+  }, [capabilityFilter, computers, deviceQuery, statusFilter]);
   const connected = peerState.phase === "connected";
 
   const refreshComputers = async () => {
@@ -325,8 +371,25 @@ export default function RemoteComputerPage() {
 
           <section className={styles.card}>
             <div className={styles.cardHeader}><h2>我的电脑</h2><button type="button" onClick={() => void refreshComputers()}>刷新</button></div>
+            <div className={styles.deviceFilters}>
+              <input
+                value={deviceQuery}
+                onChange={(event) => setDeviceQuery(event.target.value)}
+                placeholder="搜索名称、设备 ID、平台或版本"
+                aria-label="搜索电脑"
+              />
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as DeviceStatusFilter)} aria-label="在线状态筛选">
+                <option value="all">全部状态</option>
+                <option value="online">在线</option>
+                <option value="offline">离线</option>
+              </select>
+              <select value={capabilityFilter} onChange={(event) => setCapabilityFilter(event.target.value as DeviceCapabilityFilter)} aria-label="能力筛选">
+                <option value="all">全部能力</option>
+                {Object.entries(CAPABILITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </div>
             <div className={styles.computerList}>
-              {computers.map((computer) => {
+              {visibleComputers.map((computer) => {
                 const authorized = Boolean(paired[computer.deviceId]);
                 return (
                   <button
@@ -339,12 +402,23 @@ export default function RemoteComputerPage() {
                     disabled={!computer.online}
                   >
                     <span className={styles.computerIcon}>⌘</span>
-                    <span><strong>{computer.label}</strong><small data-online={computer.online ? "true" : "false"}>{formatRelativeOnline(computer)}</small></span>
+                    <span className={styles.computerDetails}>
+                      <strong>{computer.label}</strong>
+                      <small data-online={computer.online ? "true" : "false"}>
+                        {formatRelativeOnline(computer)} · {PLATFORM_LABELS[computer.platform]} · v{computer.appVersion}
+                      </small>
+                      <span className={styles.computerMeta}>
+                        <span>{PROVIDER_LABELS[computer.provider]}</span>
+                        {computer.capabilities.slice(0, 4).map((capability) => <span key={capability}>{CAPABILITY_LABELS[capability]}</span>)}
+                        {computer.activeSessionCount > 0 ? <span data-active="true">{computer.activeSessionCount} 个活动会话</span> : null}
+                      </span>
+                    </span>
                     <em>{!computer.online ? "离线" : authorized ? "连接" : "待授权"}</em>
                   </button>
                 );
               })}
               {!computers.length ? <p>尚未发现电脑。请先在电脑上安装并登录 Fabushi。</p> : null}
+              {computers.length > 0 && !visibleComputers.length ? <p>没有符合当前筛选条件的电脑。</p> : null}
             </div>
           </section>
           {error ? <p className={styles.error}>{error}</p> : null}
