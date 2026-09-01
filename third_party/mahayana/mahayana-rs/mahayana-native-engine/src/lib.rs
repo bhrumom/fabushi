@@ -2643,17 +2643,17 @@ mod tests {
             .expect("events")
             .iter()
             .filter_map(|event| match event {
-                KernelEvent::ToolCompleted { tool, success, .. } if *success => Some(tool.as_str()),
+                KernelEvent::ToolCompleted { tool, success, .. } if *success => Some(tool.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>();
         assert_eq!(
             completed_tools,
             vec![
-                "workspace_read",
-                "workspace_search",
-                "workflow_create",
-                "workflow_status"
+                "workspace_read".to_string(),
+                "workspace_search".to_string(),
+                "workflow_create".to_string(),
+                "workflow_status".to_string()
             ]
         );
         assert!(
