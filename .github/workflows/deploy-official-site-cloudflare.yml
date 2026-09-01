@@ -49,6 +49,8 @@ jobs:
             /scripts/build-mahayana-wasm.sh
             /scripts/build-official-miniapp-wasm.sh
             /third_party/mahayana/mahayana-rs/**
+            /third_party/mahayana/codex-rs/**
+            /native/mahayana-messaging/**
 
       - name: Set up Rust for the browser runtime
         uses: dtolnay/rust-toolchain@stable
