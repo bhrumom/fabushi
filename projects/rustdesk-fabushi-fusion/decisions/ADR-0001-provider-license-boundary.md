@@ -6,7 +6,7 @@ Owners: Fabushi product/engineering; license review required for later native pr
 
 ## Decision
 
-Fabushi account identity, device ownership, permission policy, audit and session grants remain authoritative. Existing `fabushi-webrtc` is the initial provider. RustDesk-grade behavior is represented by normalized capabilities. A future RustDesk implementation must be isolated as a separately distributable sidecar/service or use separately licensed code; it may not silently replace Fabushi authorization.
+Fabushi account identity, device ownership, permission policy, audit and session grants remain authoritative. Existing `fabushi-webrtc` is the initial provider. RustDesk-grade behavior is represented by normalized capabilities. A future `rustdesk-sidecar` provider must be isolated as a separately distributable sidecar/service or use separately licensed code; it may not silently replace Fabushi authorization.
 
 ## Reasons
 
