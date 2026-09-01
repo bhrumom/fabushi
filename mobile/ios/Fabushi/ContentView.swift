@@ -481,6 +481,7 @@ struct ContentView: View {
         .sheet(item: $activeSection) { section in sectionSheet(section) }
         .fullScreenCover(item: $selectedConversation) { conversation in chatView(conversation) }
         .fullScreenCover(isPresented: $agentChatPresented) { agentChatView }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("app-shell")
         .task { await messaging.refresh() }
     }
@@ -510,6 +511,7 @@ struct ContentView: View {
             }
             .padding(24)
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mobile-onboarding")
     }
 
@@ -525,6 +527,7 @@ struct ContentView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mobile-auth-loading")
     }
 
@@ -559,6 +562,7 @@ struct ContentView: View {
             }
             .padding(24)
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mobile-login")
     }
 
