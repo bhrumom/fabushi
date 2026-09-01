@@ -1369,7 +1369,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         return { requestId: command.requestId };
       }
       case "remoteComputer.register":
-        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "registered", data: { deviceId: command.deviceId, label: command.label, pairingCode: "AB12CD34", pairingExpiresAt: Math.floor(Date.now() / 1000) + 600 } });
+        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "registered", data: { deviceId: command.deviceId, label: command.label, provider: command.provider, platform: command.platform, appVersion: command.appVersion, capabilities: command.capabilities, pairingCode: "AB12CD34", pairingExpiresAt: Math.floor(Date.now() / 1000) + 600 } });
         return { requestId: command.requestId };
       case "remoteComputer.heartbeat":
         this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "heartbeat", data: { ok: true, lastSeenAt: Math.floor(Date.now() / 1000) } });

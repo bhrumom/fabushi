@@ -3,7 +3,10 @@ import type {
   ComputerActionResult,
   ComputerControlTarget,
   ComputerSnapshot,
+  RemoteComputerCapability,
   RemoteComputerClient,
+  RemoteComputerPlatform,
+  RemoteComputerProvider,
   RemoteComputerRegistration,
   RemoteComputerSession,
   RemoteComputerSignal,
@@ -37,6 +40,28 @@ const MAX_ICE_URLS_PER_SERVER = 16;
 const MAX_ICE_URL_CHARS = 2_048;
 const MAX_SDP_CHARS = 256 * 1024;
 const MAX_ICE_CANDIDATE_CHARS = 16 * 1024;
+const FABUSHI_WEBRTC_CAPABILITIES: RemoteComputerCapability[] = [
+  "remote-desktop",
+  "input",
+  "display",
+  "session-management",
+];
+
+function detectedRemotePlatform(): RemoteComputerPlatform {
+  if (typeof navigator === "undefined") return "unknown";
+  const fingerprint = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
+  if (fingerprint.includes("android")) return "android";
+  if (/iphone|ipad|ipod/.test(fingerprint)) return "ios";
+  if (fingerprint.includes("win")) return "windows";
+  if (fingerprint.includes("mac")) return "macos";
+  if (fingerprint.includes("linux")) return "linux";
+  return "web";
+}
+
+function detectedFabushiVersion(): string {
+  const value = (globalThis as { __FABUSHI_APP_VERSION__?: unknown }).__FABUSHI_APP_VERSION__;
+  return typeof value === "string" && /^[A-Za-z0-9.+_-]{1,64}$/.test(value) ? value : "unknown";
+}
 
 export interface RemoteComputerDesktopState {
   running: boolean;
@@ -72,6 +97,10 @@ interface DesktopPeerOptions {
   label: string;
   identityScope: string;
   controlEnabled?: boolean;
+  provider?: RemoteComputerProvider;
+  platform?: RemoteComputerPlatform;
+  appVersion?: string;
+  capabilities?: RemoteComputerCapability[];
   resolveAgentId?: (requestedAgentId: string) => string | null;
   onState?: (state: RemoteComputerDesktopState) => void;
 }
@@ -608,6 +637,10 @@ export class RemoteComputerDesktopController {
   private readonly transport: MahayanaHostTransport;
   private readonly label: string;
   private readonly deviceId: string;
+  private readonly provider: RemoteComputerProvider;
+  private readonly platform: RemoteComputerPlatform;
+  private readonly appVersion: string;
+  private readonly capabilities: RemoteComputerCapability[];
   private readonly resolveAgentId: (requestedAgentId: string) => string | null;
   private readonly onState?: DesktopPeerOptions["onState"];
   private state: RemoteComputerDesktopState;
@@ -624,6 +657,12 @@ export class RemoteComputerDesktopController {
     this.transport = options.transport;
     this.label = options.label.trim() || "This Mac";
     this.deviceId = remoteDeviceId(options.identityScope);
+    this.provider = options.provider ?? "fabushi-webrtc";
+    this.platform = options.platform ?? detectedRemotePlatform();
+    this.appVersion = options.appVersion && /^[A-Za-z0-9.+_-]{1,64}$/.test(options.appVersion)
+      ? options.appVersion
+      : detectedFabushiVersion();
+    this.capabilities = [...(options.capabilities ?? FABUSHI_WEBRTC_CAPABILITIES)];
     this.resolveAgentId = options.resolveAgentId ?? (() => null);
     this.onState = options.onState;
     this.controlEnabled = options.controlEnabled === true;
@@ -741,6 +780,10 @@ export class RemoteComputerDesktopController {
       requestId: id,
       deviceId: this.deviceId,
       label: this.label,
+      provider: this.provider,
+      platform: this.platform,
+      appVersion: this.appVersion,
+      capabilities: [...this.capabilities],
     });
     const registration = normalizeRegistration(event.data, this.deviceId);
     this.update({ registration, error: undefined });
