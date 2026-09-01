@@ -442,16 +442,7 @@ struct ContentView: View {
                         }
                         .accessibilityIdentifier("mobile-logout")
                     }
-                    Section("导航") {
-                        ForEach(MobileSection.allCases) { section in
-                            Button {
-                                profileMenuPresented = false
-                                handleSection(section)
-                            } label: {
-                                Label(section.label, systemImage: section.symbol)
-                            }
-                            .accessibilityIdentifier("profile-section-\(section.rawValue)")
-                        }
+                    Section("工作台") {
                         Button {
                             profileMenuPresented = false
                             destination = .remoteComputer
@@ -466,6 +457,17 @@ struct ContentView: View {
                             Label("插件市场", systemImage: "puzzlepiece.extension")
                         }
                         .accessibilityIdentifier("marketplace-entry")
+                    }
+                    Section("导航") {
+                        ForEach(MobileSection.allCases) { section in
+                            Button {
+                                profileMenuPresented = false
+                                handleSection(section)
+                            } label: {
+                                Label(section.label, systemImage: section.symbol)
+                            }
+                            .accessibilityIdentifier("profile-section-\(section.rawValue)")
+                        }
                     }
                 }
                 .navigationTitle("导航")
