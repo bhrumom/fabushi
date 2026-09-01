@@ -400,15 +400,24 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
   const screenshotMode = new URLSearchParams(window.location.search).get("screenshot");
   const screenshotHasMiniApp = screenshotMode === "miniapp";
   const screenshotComputerOpen = ["computer", "running", "miniapp"].includes(screenshotMode ?? "");
+  const configuredHostMode =
+    typeof process !== "undefined"
+      ? process.env.NEXT_PUBLIC_MAHAYANA_HOST_MODE
+      : undefined;
+  const hostTestMode = configuredHostMode === "test";
   const transport = useMemo<MahayanaHostTransport>(() => {
     // Screenshot fixtures intentionally stay deterministic, but the real desktop
     // login surface must authenticate the same Electron/Rust Host that the
     // Messenger shell will use after the handoff. Using the mock here makes the
     // browser flow appear successful while the authoritative Host remains signed out.
     if (screenshotMode !== null) return new MockMahayanaHostTransport({ authenticated: true });
+    // The standalone Host journey uses deterministic fixtures for auth and
+    // marketplace contract coverage. Production browser sessions always use
+    // Mahayana WebAssembly below, so this branch cannot hide a real runtime.
+    if (hostTestMode) return new MockMahayanaHostTransport({ authenticated: false });
     if (isElectronMahayanaHostAvailable()) return new ElectronMahayanaHostTransport();
     return new WasmMahayanaHostTransport();
-  }, [screenshotMode]);
+  }, [hostTestMode, screenshotMode]);
   const coordinator = useMemo(() => new MahayanaCoordinator(transport), [transport]);
   const requestSequence = useRef(0);
   const attachmentInput = useRef<HTMLInputElement>(null);
@@ -1783,10 +1792,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
       }
     });
 
-    const configuredMode =
-      typeof process !== "undefined"
-        ? process.env.NEXT_PUBLIC_MAHAYANA_HOST_MODE
-        : undefined;
+    const configuredMode = configuredHostMode;
     const mode =
       configuredMode === "production" || configuredMode === "test"
         ? configuredMode
@@ -1883,6 +1889,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
         }
       })
       .catch((cause: unknown) => {
+        if (!authRef.current?.loggedIn) commitAuth({ loggedIn: false });
         setAuthResolved(true);
         setHostStatus("failed");
         setError(cause instanceof Error ? cause.message : String(cause));
