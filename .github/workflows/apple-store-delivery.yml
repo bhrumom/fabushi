@@ -325,6 +325,7 @@ jobs:
           npx --no-install electron-builder
           --mac mas
           --arm64
+          --publish never
           --config.buildVersion="$RELEASE_BUILD_NUMBER"
 
       - name: Verify packaged Computer Use runtime, helper, and private MCP
