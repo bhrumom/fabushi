@@ -446,10 +446,12 @@ final class MarketplaceModel {
                 case "operation.completed", "operation.interrupted":
                     guard event["operationId"] as? String == operationId else { continue }
                     removeThinking(operationId: operationId)
+                    settleActions(operationId: operationId, status: type == "operation.completed" ? "completed" : "failed")
                     return
                 case "operation.failed":
                     guard event["operationId"] as? String == operationId else { continue }
                     removeThinking(operationId: operationId)
+                    settleActions(operationId: operationId, status: "failed")
                     message = event["message"] as? String ?? "本次任务失败"
                     return
                 default:
@@ -466,6 +468,14 @@ final class MarketplaceModel {
 
     private func removeThinking(operationId: String) {
         chatMessages.removeAll { $0.kind == .thinking && $0.operationId == operationId }
+    }
+
+    private func settleActions(operationId: String, status: String) {
+        for index in chatMessages.indices where chatMessages[index].kind == .action &&
+            chatMessages[index].operationId == operationId &&
+            chatMessages[index].actionStatus == "running" {
+            chatMessages[index].actionStatus = status
+        }
     }
 
     private func upsertAssistantMessage(operationId: String, text: String, append: Bool) {
