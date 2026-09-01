@@ -14,11 +14,13 @@ test("remote sessions persist the registered device provider", () => {
   const migration = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0016_remote_computer_session_provider.sql");
   const inventory = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0015_remote_computer_inventory.sql");
 
-  assert.match(migration, /ADD COLUMN provider TEXT NOT NULL DEFAULT 'fabushi-webrtc'/);
+  assert.match(migration, /ADD COLUMN provider TEXT/);
   assert.match(migration, /CHECK \(provider IN \('fabushi-webrtc', 'rustdesk-sidecar'\)\)/);
+  assert.match(migration, /WHEN NEW\.provider IS NULL/);
   assert.match(migration, /FROM remote_computers AS computer/);
   assert.match(migration, /computer\.device_id = NEW\.device_id/);
   assert.match(migration, /computer\.user_id = NEW\.user_id/);
+  assert.match(migration, /OLD\.provider IS NOT NULL/);
   assert.match(migration, /remote session provider is immutable/);
   assert.match(migration, /remote_computer_sessions_provider_idx/);
   assert.match(inventory, /rustdesk-sidecar/);
