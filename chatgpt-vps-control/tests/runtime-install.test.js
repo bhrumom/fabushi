@@ -34,7 +34,7 @@ async function createRuntimeSource(root) {
   await writeFixture(join(root, "lib", "entry.js"), "export const fixture = true;\n");
   await writeFixture(join(root, "native", "linux", "accessibility-helper.py"), "#!/usr/bin/env python3\n");
   await writeFixture(join(root, "native", "macos", "ComputerHelper.swift"), "import Foundation\n");
-  await writeFixture(join(root, "native", "macos", "Info.plist"), "<plist/>\n");
+  await writeFixture(join(root, "native", "macos", "ComputerHelper-Info.plist"), "<plist/>\n");
   await writeFixture(join(root, "native", "macos", "RequestService-Info.plist"), "<plist/>\n");
   await writeFixture(join(root, "native", "windows", "computer-helper.ps1"), "Write-Output '{}';\n");
   await writeFixture(join(root, "extension", "manifest.json"), "{}\n");
