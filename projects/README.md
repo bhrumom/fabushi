@@ -13,7 +13,7 @@ Identity policy: [`PROJECT_ID_POLICY.md`](./PROJECT_ID_POLICY.md)
 | `FAB-P0006` | `FAM` | Fabushi Always-on Marketing | `projects/fabushi-always-on-marketing/` | `173e7f793987b6d0a9303b55e2060e2584552da9` |
 | `FAB-P0007` | `DHRF` | DeepSeek Harness Rust Fusion | `projects/deepseek-harness-rust-fusion/` | `11fd9d32d5b7edf09882ff5308be55b566e1a6d4` |
 | `FAB-P0008` | `AAC` | Fabushi Account Access Control | `projects/fabushi-account-access-control/` | `52b7c10889e585660b7d2a22a40781c22f31b7a1` |
-| `FAB-P0009` | `RDF` | RustDesk -> Fabushi 核心能力融合 | `projects/rustdesk-fabushi-fusion/` | `d69bf418ed19df6ec7f1d0581646283a49461ba7` |
+| `FAB-P0009` | `RDF` | RustDesk -> Fabushi 核心能力融合 | `projects/rustdesk-fabushi-fusion/` | `9c7d16bf8bf57828adbb0bdb3d32ec0ba26abe6e` |
 
 ## Next Project ID
 
