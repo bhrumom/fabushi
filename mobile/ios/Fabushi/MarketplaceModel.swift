@@ -127,7 +127,7 @@ final class MarketplaceModel {
             browserLoginAttemptId = attemptId
             browserLoginURL = loginURL
             loginBusy = false
-            UIApplication.shared.open(loginURL, options: [:])
+            await UIApplication.shared.open(loginURL, options: [:])
             if loginURLString.hasPrefix("about:blank#fabushi-test-browser-login") {
                 await completeBrowserLogin(attemptId: attemptId)
             }
@@ -148,7 +148,7 @@ final class MarketplaceModel {
                   let loginURL = URL(string: loginURLString)
             else { throw MahayanaHost.HostError.invalidResponse }
             browserLoginURL = loginURL
-            UIApplication.shared.open(loginURL, options: [:])
+            await UIApplication.shared.open(loginURL, options: [:])
         } catch { loginError = error.localizedDescription }
     }
 
