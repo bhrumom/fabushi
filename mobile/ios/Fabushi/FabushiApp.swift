@@ -12,6 +12,7 @@ struct FabushiApp: App {
         do {
             #if DEBUG
             let featureHostTest = ProcessInfo.processInfo.environment["FABUSHI_FEATURE_HOST_SMOKE"] == "1"
+                || ProcessInfo.processInfo.environment["FABUSHI_FEATURE_HOST_TEST"] == "1"
             #else
             let featureHostTest = false
             #endif
@@ -29,8 +30,10 @@ struct FabushiApp: App {
             ContentView(model: model, messaging: messagingModel, appAgentSurface: appAgentSurface)
                 .task {
                     await model.runFeatureHostSmokeIfRequested()
-                    await model.refresh()
-                    await messagingModel.refresh()
+                    await model.initializeApp()
+                    if model.loggedIn {
+                        await messagingModel.refresh()
+                    }
                 }
                 .onOpenURL { url in
                     consumeDeepLink(url)
@@ -50,27 +53,7 @@ struct FabushiApp: App {
         let parts = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
         switch host {
         case "auth":
-            guard parts == ["complete"],
-                  let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            else { return }
-            let allowedNames = Set(["attemptId", "status"])
-            var params: [String: String] = [:]
-            for item in components.queryItems ?? [] {
-                guard allowedNames.contains(item.name),
-                      params[item.name] == nil,
-                      let value = item.value
-                else { return }
-                params[item.name] = value
-            }
-            let attemptId = params["attemptId"] ?? ""
-            let status = (params["status"] ?? "completed").lowercased()
-            guard attemptId.range(of: "^[A-Za-z0-9_-]{8,96}$", options: .regularExpression) != nil,
-                  ["completed", "cancelled", "failed"].contains(status)
-            else { return }
-            model.message = status == "completed" ? "登录授权已完成，正在同步账号状态" : "登录授权状态：\(status)"
-            if status == "completed" {
-                Task { await model.completeBrowserLogin(attemptId: attemptId) }
-            }
+            model.handleDeepLink(url)
         case "agent":
             guard let agentId = parts.first, !agentId.isEmpty, agentId.count <= 200 else { return }
             model.message = "已接收智能体链接：\(agentId)"
