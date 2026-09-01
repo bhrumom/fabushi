@@ -328,14 +328,19 @@ jobs:
           --publish never
           --config.buildVersion="$RELEASE_BUILD_NUMBER"
 
-      - name: Verify packaged Computer Use runtime, helper, and private MCP
+      - name: Verify packaged Computer Use runtime, helper, and private MCP layout
         shell: bash
         run: |
           set -euo pipefail
+          # The MAS sandbox closes stdin when its signed executable is launched
+          # externally with ELECTRON_RUN_AS_NODE. The same source's Developer ID
+          # package runs the full MCP handshake in the Electron desktop gate;
+          # this store-package gate verifies the sealed runtime and signatures.
           node .github/scripts/verify-packaged-computer-control.mjs \
             --release-root desktop/release \
             --platform mac \
-            --expected-mac-team "$MACOS_APP_STORE_TEAM_ID"
+            --expected-mac-team "$MACOS_APP_STORE_TEAM_ID" \
+            --skip-handshake
 
       - id: mac-package
         name: Verify Mac App Store package
