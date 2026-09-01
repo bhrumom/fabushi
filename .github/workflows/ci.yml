@@ -73,6 +73,7 @@ jobs:
                 /^frontend\/apps\/host\//,
                 /^frontend\/apps\/web\/src\/app\/(host|remote-computer)\//,
                 /^frontend\/apps\/web\/src\/lib\/(fabushi-runtime|mahayana-host|remote-computer)\//,
+                /^third_party\/mahayana\/mahayana-rs\/mahayana-web\//,
                 /^third_party\/mahayana\/mahayana-rs\/(mahayana-agent-codex\/|mahayana-app-host\/|mahayana-computer\/|mahayana-feature-host\/|mahayana-host-protocol\/|mahayana-runtime\/)/,
               ],
             };
@@ -219,6 +220,7 @@ jobs:
           sparse-checkout: |
             /frontend/**
             /contracts/automation/cross-platform-journeys.json
+            /fabushi/web/mahayana-wasm/**
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:

@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "predev": "node scripts/prepare-mahayana-wasm.mjs",
     "build": "next build",
+    "prebuild": "node scripts/prepare-mahayana-wasm.mjs",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "echo 'Skipping typecheck due to React 19 migration' && exit 0",

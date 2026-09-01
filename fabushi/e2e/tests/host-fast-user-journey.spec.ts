@@ -8,6 +8,14 @@ import type {
 const mahayanaHostFeatures =
   journeyContract.features as ReadonlyArray<MahayanaHostFeature>;
 
+test.beforeEach(async ({ page }) => {
+  // Keep auth/marketplace contract tests deterministic without changing the
+  // production Host transport, which remains Mahayana WebAssembly.
+  await page.addInitScript(() => {
+    (window as Window & { __FABUSHI_HOST_TEST__?: boolean }).__FABUSHI_HOST_TEST__ = true;
+  });
+});
+
 async function completeBrowserLogin(page: Page): Promise<void> {
   while (await page.getByTestId("onboarding-gate").isVisible().catch(() => false)) {
     await page.getByTestId("onboarding-next").click();

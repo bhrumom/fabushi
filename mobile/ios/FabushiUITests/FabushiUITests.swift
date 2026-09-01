@@ -23,8 +23,7 @@ final class FabushiUITests: XCTestCase {
 
     @MainActor
     func testHomeMatchesConversationLayoutAndMarketplaceRemainsReachable() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launchAuthenticatedApp()
 
         XCTAssertTrue(app.descendants(matching: .any)["app-shell"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["profile-avatar"].exists)
@@ -60,8 +59,7 @@ final class FabushiUITests: XCTestCase {
 
     @MainActor
     func testMiniAppOpensAndClosesDedicatedWebMcpSurface() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launchAuthenticatedApp()
         openMarketplace(in: app)
 
         let open = app.buttons["open-global-dharma"]
@@ -123,6 +121,21 @@ final class FabushiUITests: XCTestCase {
         let marketplace = app.buttons["marketplace-entry"]
         XCTAssertTrue(marketplace.waitForExistence(timeout: 5))
         marketplace.tap()
+    }
+
+    @MainActor
+    private func launchAuthenticatedApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["FABUSHI_FEATURE_HOST_TEST"] = "1"
+        app.launch()
+        let skip = app.buttons["mobile-onboarding-skip"]
+        if skip.waitForExistence(timeout: 5) { skip.tap() }
+        let login = app.buttons["mobile-login-browser"]
+        if login.waitForExistence(timeout: 15) {
+            login.tap()
+        }
+        XCTAssertTrue(app.descendants(matching: .any)["app-shell"].waitForExistence(timeout: 20))
+        return app
     }
 
     @MainActor

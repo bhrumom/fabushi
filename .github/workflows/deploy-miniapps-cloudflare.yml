@@ -34,6 +34,7 @@ jobs:
             frontend/pnpm-workspace.yaml
             frontend/tsconfig.base.json
             contracts/automation/cross-platform-journeys.json
+            fabushi/web/mahayana-wasm/**
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
