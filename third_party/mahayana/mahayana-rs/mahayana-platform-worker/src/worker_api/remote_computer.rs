@@ -435,7 +435,11 @@ pub(super) async fn remote_computer_register(
         return error_response(400, "invalid_platform", "Computer platform is invalid.");
     };
     let Some(app_version) = remote_app_version(&input.app_version) else {
-        return error_response(400, "invalid_app_version", "Computer appVersion is invalid.");
+        return error_response(
+            400,
+            "invalid_app_version",
+            "Computer appVersion is invalid.",
+        );
     };
     let Some(capabilities) = remote_capabilities(&input.capabilities) else {
         return error_response(

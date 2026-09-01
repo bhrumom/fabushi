@@ -1,7 +1,7 @@
 # ADR-0001 — Provider and license boundary
 
-Status: Accepted for RDF-001  
-Date: 2026-09-01  
+Status: Accepted for RDF-001
+Date: 2026-09-01
 Owners: Fabushi product/engineering; license review required for later native provider
 
 ## Decision

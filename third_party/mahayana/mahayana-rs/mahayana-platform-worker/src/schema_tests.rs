@@ -63,15 +63,9 @@ fn remote_computer_inventory_migration_is_additive_and_secret_free() {
             "missing {required}"
         );
     }
-    assert!(
-        !REMOTE_COMPUTER_INVENTORY_SCHEMA_V15.contains("device_secret TEXT")
-    );
-    assert!(
-        !REMOTE_COMPUTER_INVENTORY_SCHEMA_V15.contains("screenshot_data")
-    );
-    assert!(
-        !REMOTE_COMPUTER_INVENTORY_SCHEMA_V15.contains("input_payload")
-    );
+    assert!(!REMOTE_COMPUTER_INVENTORY_SCHEMA_V15.contains("device_secret TEXT"));
+    assert!(!REMOTE_COMPUTER_INVENTORY_SCHEMA_V15.contains("screenshot_data"));
+    assert!(!REMOTE_COMPUTER_INVENTORY_SCHEMA_V15.contains("input_payload"));
 }
 
 #[test]
