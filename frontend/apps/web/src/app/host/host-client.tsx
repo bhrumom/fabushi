@@ -404,7 +404,9 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
     typeof process !== "undefined"
       ? process.env.NEXT_PUBLIC_MAHAYANA_HOST_MODE
       : undefined;
-  const hostTestMode = configuredHostMode === "test";
+  const hostTestMode =
+    configuredHostMode === "test" ||
+    (window as Window & { __FABUSHI_HOST_TEST__?: boolean }).__FABUSHI_HOST_TEST__ === true;
   const transport = useMemo<MahayanaHostTransport>(() => {
     // Screenshot fixtures intentionally stay deterministic, but the real desktop
     // login surface must authenticate the same Electron/Rust Host that the
