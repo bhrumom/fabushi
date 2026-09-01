@@ -5,7 +5,7 @@
   "project_id_regex": "^FAB-P[0-9]{4}$",
   "allocation_policy": "monotonic-no-reuse",
   "ordering_basis": "first-formal-project-folder-commit-on-canonical-main",
-  "next_sequence": 9,
+  "next_sequence": 10,
   "projects": [
     {
       "project_id": "FAB-P0001",
@@ -16,9 +16,7 @@
       "status": "active",
       "registered_at": "2026-08-22",
       "first_canonical_main_commit": "99cd4b227a34b49fc04c3265c1dfdee585344160",
-      "legacy_project_ids": [
-        "FABUSHI-TELEGRAM-FUSION"
-      ]
+      "legacy_project_ids": ["FABUSHI-TELEGRAM-FUSION"]
     },
     {
       "project_id": "FAB-P0002",
@@ -29,9 +27,7 @@
       "status": "active",
       "registered_at": "2026-08-22",
       "first_canonical_main_commit": "eaf273dafc140619b06b46a4d7d234997acde05d",
-      "legacy_project_ids": [
-        "FPG"
-      ]
+      "legacy_project_ids": ["FPG"]
     },
     {
       "project_id": "FAB-P0003",
@@ -42,9 +38,7 @@
       "status": "active",
       "registered_at": "2026-08-22",
       "first_canonical_main_commit": "ac94b40d4a05a0211146c2bb5904aa936a7bc928",
-      "legacy_project_ids": [
-        "FCM"
-      ]
+      "legacy_project_ids": ["FCM"]
     },
     {
       "project_id": "FAB-P0004",
@@ -55,9 +49,7 @@
       "status": "active",
       "registered_at": "2026-08-22",
       "first_canonical_main_commit": "6d1e9cd7a475e8058d5d8512f5c3a0c21da8ed9c",
-      "legacy_project_ids": [
-        "FABUSHI-GROK-BOT-FUSION"
-      ]
+      "legacy_project_ids": ["FABUSHI-GROK-BOT-FUSION"]
     },
     {
       "project_id": "FAB-P0005",
@@ -68,9 +60,7 @@
       "status": "active",
       "registered_at": "2026-08-22",
       "first_canonical_main_commit": "88db63c328c3cba39971f3942509cb0b582502bc",
-      "legacy_project_ids": [
-        "MSR"
-      ]
+      "legacy_project_ids": ["MSR"]
     },
     {
       "project_id": "FAB-P0006",
@@ -92,9 +82,7 @@
       "status": "active",
       "registered_at": "2026-08-23",
       "first_canonical_main_commit": "11fd9d32d5b7edf09882ff5308be55b566e1a6d4",
-      "legacy_project_ids": [
-        "DHRF"
-      ]
+      "legacy_project_ids": ["DHRF"]
     },
     {
       "project_id": "FAB-P0008",
@@ -105,6 +93,17 @@
       "status": "active",
       "registered_at": "2026-08-25",
       "first_canonical_main_commit": "52b7c10889e585660b7d2a22a40781c22f31b7a1",
+      "legacy_project_ids": []
+    },
+    {
+      "project_id": "FAB-P0009",
+      "project_key": "RDF",
+      "slug": "rustdesk-fabushi-fusion",
+      "name": "RustDesk -> Fabushi 核心能力融合",
+      "authoritative_path": "projects/rustdesk-fabushi-fusion",
+      "status": "active",
+      "registered_at": "2026-09-01",
+      "first_canonical_main_commit": "d69bf418ed19df6ec7f1d0581646283a49461ba7",
       "legacy_project_ids": []
     }
   ]
