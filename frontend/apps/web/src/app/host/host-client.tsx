@@ -656,11 +656,17 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
     return true;
   };
 
-  const clearStreamedOperation = (operationId: string) => {
+  const clearStreamedOperation = (operationId: string, terminalStatus: "completed" | "failed" = "completed") => {
     if (streamedOperationIdRef.current !== operationId) return;
     streamedOperationIdRef.current = null;
     agentRequestPendingRef.current = false;
-    setMessages((current) => current.filter((entry) => !(entry.kind === "thinking" && entry.operationId === operationId)));
+    setMessages((current) => current
+      .filter((entry) => !(entry.kind === "thinking" && entry.operationId === operationId))
+      .map((entry) => entry.kind === "action" &&
+        entry.operationId === operationId &&
+        entry.status === "running"
+        ? { ...entry, status: terminalStatus }
+        : entry));
   };
 
   const appendThinkingEntry = (operationId: string, title: string) => {
@@ -1746,7 +1752,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           break;
         }
         case "operation.interrupted": {
-          clearStreamedOperation(event.operationId);
+          clearStreamedOperation(event.operationId, "failed");
           setChatDispatching(false);
           setActiveOperationId(null);
           setOperationState("interrupted");
@@ -1771,7 +1777,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           break;
         }
         case "operation.failed": {
-          clearStreamedOperation(event.operationId);
+          clearStreamedOperation(event.operationId, "failed");
           setChatDispatching(false);
           setActiveOperationId((current) =>
             current === event.operationId ? null : current,
