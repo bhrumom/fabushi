@@ -1,5 +1,11 @@
 # 08 RustDesk 能力映射
 
+## 上游证据基线
+
+- `rustdesk/rustdesk@f28ac38ccfa662fd06639a062e0d06249860b142`
+- `rustdesk/hbb_common@b2b1ac453d1d694046f63be20d792d608dac1c93`
+- `rustdesk/rustdesk-server@a7736be5e40f85bfc141120dce587e836e5d4b80`
+
 | Upstream area | RustDesk evidence | Fabushi target | State |
 |---|---|---|---|
 | Registration/presence | RegisterPeer/RegisterPk, keep-alive | Account-bound device inventory | RDF-001 implementing |
