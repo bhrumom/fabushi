@@ -37,7 +37,7 @@ const REQUIRED_RUNTIME_PATHS = [
   "lib/app-agent-tools.js",
   "native/linux/accessibility-helper.py",
   "native/macos/ComputerHelper.swift",
-  "native/macos/Info.plist",
+  "native/macos/ComputerHelper-Info.plist",
   "native/macos/RequestService-Info.plist",
   "native/windows/computer-helper.ps1",
   "scripts/browser-extension-host.mjs",

@@ -58,7 +58,7 @@ test("the disposable packaging command stages runtime dependencies and native he
     "extension/manifest.json",
     "native/linux/accessibility-helper.py",
     "native/macos/ComputerHelper.swift",
-    "native/macos/Info.plist",
+    "native/macos/ComputerHelper-Info.plist",
     "native/macos/RequestService-Info.plist",
     "native/windows/computer-helper.ps1",
   ]) assert.ok(runtimeInstall.includes(`"${required}"`), `private runtime does not require ${required}`);
