@@ -98,13 +98,19 @@ jobs:
         run: |
           set -euo pipefail
           version="$(jq -r '.version' app-version.json)"
+          android_version_code="$(jq -r '.androidVersionCode' app-version.json)"
+          ios_build_number="$(jq -r '.iosBuildNumber' app-version.json)"
           desktop_version="$(jq -r '.version' desktop/package.json)"
           test -n "$version"
           test "$version" != null
+          test "$android_version_code" != null
+          test "$ios_build_number" != null
           test "$desktop_version" = "$version"
           test "$RELEASE_TAG" = "v$version"
           echo "FABUSHI_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
-          echo "Release version: $version from exact main tag $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "FABUSHI_ANDROID_VERSION_CODE=$android_version_code" >> "$GITHUB_ENV"
+          echo "FABUSHI_IOS_BUILD_NUMBER=$ios_build_number" >> "$GITHUB_ENV"
+          echo "Release version: $version (Android $android_version_code, iOS $ios_build_number) from exact main tag $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Node.js for Electron
         if: matrix.kind == 'electron'
@@ -391,7 +397,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         shell: bash
-        run: ./gradlew --no-daemon --build-cache bundleRelease assembleRelease -PversionName="$FABUSHI_RELEASE_VERSION"
+        run: ./gradlew --no-daemon --build-cache bundleRelease assembleRelease -PversionName="$FABUSHI_RELEASE_VERSION" -PversionCode="$FABUSHI_ANDROID_VERSION_CODE"
 
       - name: Upload Android release
         if: matrix.kind == 'android'

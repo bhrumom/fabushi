@@ -51,6 +51,7 @@ struct ContentView: View {
     let appAgentSurface: FabushiAppAgentSurface
     @State private var openedMiniApp: MarketplacePlugin?
     @State private var destination: MobileDestination = .home
+    @State private var agentChatPresented = false
     @State private var isSearching = false
     @State private var homeQuery = ""
     @State private var selectedConversation: ConversationSummary?
@@ -89,6 +90,20 @@ struct ContentView: View {
     @State private var folderIncludeChannels = false
 
     var body: some View {
+        Group {
+            if model.onboardingStep < 3 {
+                onboardingView
+            } else if !model.authResolved {
+                authLoadingView
+            } else if !model.loggedIn {
+                loginView
+            } else {
+                authenticatedContent
+            }
+        }
+    }
+
+    private var authenticatedContent: some View {
         Group {
             switch destination {
             case .home:
@@ -324,6 +339,23 @@ struct ContentView: View {
                             }.buttonStyle(.plain)
                         }
 
+                        if homeQuery.isEmpty {
+                            Button { agentChatPresented = true } label: {
+                                HStack(spacing: 12) {
+                                    avatar.frame(width: 54, height: 54)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("大乘助手").font(.system(size: 17, weight: .semibold)).foregroundStyle(.primary)
+                                        Text("Mahayana 多步骤智能体 · 实时工作流").font(.system(size: 15)).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 14).padding(.vertical, 8)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("mahayana-agent-entry")
+                        }
+
                         ForEach(filteredConversations) { conversation in
                             conversationRow(conversation)
                                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -396,6 +428,20 @@ struct ContentView: View {
         .sheet(isPresented: $profileMenuPresented) {
             NavigationStack {
                 List {
+                    Section("账号") {
+                        HStack(spacing: 12) {
+                            avatar.frame(width: 42, height: 42)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(model.accountName).font(.headline)
+                                if !model.accountEmail.isEmpty { Text(model.accountEmail).font(.caption).foregroundStyle(.secondary) }
+                            }
+                        }
+                        Button("退出登录", role: .destructive) {
+                            profileMenuPresented = false
+                            Task { await model.logout() }
+                        }
+                        .accessibilityIdentifier("mobile-logout")
+                    }
                     Section("导航") {
                         ForEach(MobileSection.allCases) { section in
                             Button {
@@ -434,8 +480,86 @@ struct ContentView: View {
         .sheet(isPresented: $contactGroupsPresented) { simpleSectionSheet(title: "联系人分组", symbol: "folder.fill") }
         .sheet(item: $activeSection) { section in sectionSheet(section) }
         .fullScreenCover(item: $selectedConversation) { conversation in chatView(conversation) }
+        .fullScreenCover(isPresented: $agentChatPresented) { agentChatView }
         .accessibilityIdentifier("app-shell")
         .task { await messaging.refresh() }
+    }
+
+    private var onboardingView: some View {
+        ZStack {
+            Color(red: 0.043, green: 0.043, blue: 0.047).ignoresSafeArea()
+            VStack(spacing: 22) {
+                Spacer()
+                avatar.frame(width: 92, height: 92)
+                Text("欢迎来到法布施").font(.largeTitle.bold()).foregroundStyle(.white)
+                Text("统一的聊天、插件和 Mahayana 多步骤智能体工作台。每一步工作都会像消息一样实时出现。")
+                    .multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.72)).padding(.horizontal, 32)
+                HStack(spacing: 7) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Capsule().fill(index <= model.onboardingStep ? Color.accentColor : Color.white.opacity(0.18)).frame(width: 24, height: 5)
+                    }
+                }
+                Spacer()
+                Button(model.onboardingStep >= 2 ? "开始使用" : "继续") { model.advanceOnboarding() }
+                    .buttonStyle(.borderedProminent).controlSize(.large).accessibilityIdentifier("mobile-onboarding-continue")
+                Button("跳过介绍") { model.onboardingStep = 3; UserDefaults.standard.set(true, forKey: "fabushi.mobile.onboarding-complete.v1") }
+                    .font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("mobile-onboarding-skip")
+                if let featureHostSmokeStatus = model.featureHostSmokeStatus {
+                    Text(featureHostSmokeStatus).font(.caption2).foregroundStyle(.clear).accessibilityIdentifier("feature-host-smoke")
+                }
+            }
+            .padding(24)
+        }
+        .accessibilityIdentifier("mobile-onboarding")
+    }
+
+    private var authLoadingView: some View {
+        ZStack {
+            Color(red: 0.043, green: 0.043, blue: 0.047).ignoresSafeArea()
+            VStack(spacing: 16) {
+                avatar.frame(width: 70, height: 70)
+                ProgressView().tint(.white)
+                Text("正在连接 Mahayana Rust Host…").foregroundStyle(.white)
+                if let featureHostSmokeStatus = model.featureHostSmokeStatus {
+                    Text(featureHostSmokeStatus).font(.caption2).foregroundStyle(.clear).accessibilityIdentifier("feature-host-smoke")
+                }
+            }
+        }
+        .accessibilityIdentifier("mobile-auth-loading")
+    }
+
+    private var loginView: some View {
+        ZStack {
+            Color(red: 0.043, green: 0.043, blue: 0.047).ignoresSafeArea()
+            VStack(spacing: 18) {
+                Spacer()
+                avatar.frame(width: 86, height: 86)
+                Text("登录 Fabushi").font(.largeTitle.bold()).foregroundStyle(.white)
+                Text("登录后即可使用桌面端与移动端共用的会话、智能体和插件能力。")
+                    .multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.72)).padding(.horizontal, 30)
+                if let attemptId = model.browserLoginAttemptId {
+                    Label("正在等待浏览器完成登录", systemImage: "globe")
+                        .foregroundStyle(.white.opacity(0.78)).font(.subheadline)
+                    Text(attemptId).font(.caption.monospaced()).foregroundStyle(.secondary)
+                    Button("重新打开登录页面") { Task { await model.reopenBrowserLogin() } }
+                        .buttonStyle(.borderedProminent).accessibilityIdentifier("mobile-login-reopen")
+                    Button("取消登录") { Task { await model.cancelBrowserLogin() } }
+                        .buttonStyle(.bordered).accessibilityIdentifier("mobile-login-cancel")
+                } else {
+                    Button(model.loginBusy ? "正在准备…" : "使用浏览器登录") { Task { await model.beginBrowserLogin() } }
+                        .buttonStyle(.borderedProminent).controlSize(.large).disabled(model.loginBusy)
+                        .accessibilityIdentifier("mobile-login-browser")
+                }
+                if let loginError = model.loginError { Text(loginError).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center).padding(.horizontal, 24) }
+                Text(model.message).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 24)
+                if let featureHostSmokeStatus = model.featureHostSmokeStatus {
+                    Text(featureHostSmokeStatus).font(.caption2).foregroundStyle(.clear).accessibilityIdentifier("feature-host-smoke")
+                }
+                Spacer()
+            }
+            .padding(24)
+        }
+        .accessibilityIdentifier("mobile-login")
     }
 
     private var visibleConversations: [ConversationSummary] {
@@ -707,6 +831,109 @@ struct ContentView: View {
             Button(conversation.isArchived ? "恢复" : "归档", systemImage: "archivebox") { Task { await messaging.setArchived(conversation.id, archived: !conversation.isArchived) } }
         }
         .accessibilityIdentifier("conversation-\(conversation.id)")
+    }
+
+    private var agentChatView: some View {
+        NavigationStack {
+            ZStack {
+                Color(red: 0.055, green: 0.06, blue: 0.07).ignoresSafeArea()
+                VStack(spacing: 0) {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 10) {
+                                if model.chatMessages.isEmpty {
+                                    VStack(spacing: 10) {
+                                        avatar.frame(width: 68, height: 68)
+                                        Text("大乘助手").font(.title2.bold()).foregroundStyle(.white)
+                                        Text("这是 Mahayana 多步骤智能体。真实的模型路由、工具调用和每一步工作会逐条显示在这里。")
+                                            .multilineTextAlignment(.center).font(.subheadline).foregroundStyle(.white.opacity(0.65))
+                                    }
+                                    .frame(maxWidth: .infinity).padding(.top, 90).padding(.horizontal, 26)
+                                }
+                                ForEach(model.chatMessages) { entry in
+                                    agentChatEntry(entry)
+                                        .id(entry.id)
+                                }
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 18)
+                        }
+                        .onChange(of: model.chatMessages.count) { _, _ in
+                            if let last = model.chatMessages.last { withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(last.id, anchor: .bottom) } }
+                        }
+                    }
+
+                    HStack(spacing: 9) {
+                        TextField("消息大乘助手", text: $model.chatDraft, axis: .vertical)
+                            .lineLimit(1...5).textFieldStyle(.plain).foregroundStyle(.white)
+                            .padding(.horizontal, 13).padding(.vertical, 10)
+                            .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 18))
+                            .onSubmit { if !model.chatBusy { Task { await model.sendChat() } } }
+                        if model.chatBusy {
+                            Button { Task { await model.stopChat() } } label: {
+                                Image(systemName: "stop.fill").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                                    .frame(width: 38, height: 38).background(Color.red, in: Circle())
+                            }.accessibilityIdentifier("mahayana-stop")
+                        } else {
+                            Button { Task { await model.sendChat() } } label: {
+                                Image(systemName: "arrow.up").font(.system(size: 18, weight: .bold)).foregroundStyle(.white)
+                                    .frame(width: 38, height: 38).background(Color.accentColor, in: Circle())
+                            }.disabled(model.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .accessibilityIdentifier("mahayana-send")
+                        }
+                    }
+                    .padding(.horizontal, 9).padding(.vertical, 8).background(.ultraThinMaterial)
+                }
+            }
+            .navigationTitle("大乘助手")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("关闭") { agentChatPresented = false }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Text(model.chatBusy ? "正在工作" : "Mahayana").font(.caption).foregroundStyle(model.chatBusy ? .orange : .secondary)
+                }
+            }
+        }
+        .accessibilityIdentifier("mahayana-agent-chat")
+    }
+
+    @ViewBuilder
+    private func agentChatEntry(_ entry: MobileChatMessage) -> some View {
+        if entry.kind == .thinking {
+            HStack(spacing: 9) {
+                avatar.frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.actionTitle ?? "正在思考").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    HStack(spacing: 5) { ProgressView().controlSize(.mini).tint(.orange); Text("Mahayana 正在处理…").font(.caption).foregroundStyle(.secondary) }
+                }
+                Spacer()
+            }
+            .padding(10).background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 13))
+            .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color.orange.opacity(0.24)))
+            .accessibilityIdentifier("mahayana-thinking")
+        } else if entry.kind == .action {
+            HStack(spacing: 8) {
+                avatar.frame(width: 25, height: 25)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.actionTitle ?? "助手动作").font(.caption.weight(.semibold)).foregroundStyle(.white)
+                    if let detail = entry.actionDetail, !detail.isEmpty { Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(2) }
+                }
+                Spacer()
+                Text(entry.actionStatus == "failed" ? "失败" : entry.actionStatus == "running" ? "进行中" : "完成")
+                    .font(.caption2).foregroundStyle(entry.actionStatus == "failed" ? .red : entry.actionStatus == "running" ? .orange : .green)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8).background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 11))
+            .accessibilityIdentifier("mahayana-step")
+        } else if entry.role == .user {
+            HStack { Spacer(minLength: 44); Text(entry.text).foregroundStyle(.white).padding(.horizontal, 13).padding(.vertical, 10).background(Color.black, in: RoundedRectangle(cornerRadius: 16)) }
+        } else {
+            HStack(alignment: .top, spacing: 8) {
+                avatar.frame(width: 28, height: 28)
+                Text(entry.text).foregroundStyle(.white).padding(.horizontal, 13).padding(.vertical, 10).background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+                Spacer(minLength: 28)
+            }
+        }
     }
 
     @ViewBuilder

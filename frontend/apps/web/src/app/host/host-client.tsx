@@ -49,6 +49,7 @@ import type {
 } from "../../lib/mahayana-host/contracts";
 import { ElectronMahayanaHostTransport, isElectronMahayanaHostAvailable } from "../../lib/mahayana-host/electron-transport";
 import { MockMahayanaHostTransport } from "../../lib/mahayana-host/mock-transport";
+import { WasmMahayanaHostTransport } from "../../lib/mahayana-host/wasm-transport";
 import type { MahayanaHostTransport } from "../../lib/mahayana-host/transport";
 import { MahayanaCoordinator } from "../../lib/mahayana-host/coordinator";
 import {
@@ -158,6 +159,17 @@ type AgentActivity = {
   title: string;
   detail?: string;
   status: "running" | "completed" | "failed";
+};
+
+type HostTranscriptEntry = {
+  id?: string;
+  kind: "message" | "action" | "thinking";
+  role: "user" | "assistant";
+  text: string;
+  operationId?: string;
+  title?: string;
+  detail?: string;
+  status?: "running" | "completed" | "failed";
 };
 
 type SettingsSection = "general" | "mcp" | "usage" | "updates";
@@ -395,20 +407,14 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
     // browser flow appear successful while the authoritative Host remains signed out.
     if (screenshotMode !== null) return new MockMahayanaHostTransport({ authenticated: true });
     if (isElectronMahayanaHostAvailable()) return new ElectronMahayanaHostTransport();
-    return new MockMahayanaHostTransport({ authenticated: false });
+    return new WasmMahayanaHostTransport();
   }, [screenshotMode]);
   const coordinator = useMemo(() => new MahayanaCoordinator(transport), [transport]);
   const requestSequence = useRef(0);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [hostStatus, setHostStatus] = useState("initializing");
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<
-    Array<{
-      role: "user" | "assistant";
-      text: string;
-      operationId?: string;
-    }>
-  >([]);
+  const [messages, setMessages] = useState<HostTranscriptEntry[]>([]);
   const [installedMiniApps, setInstalledMiniApps] = useState<Set<string>>(
     () => new Set(screenshotHasMiniApp ? [defaultMiniAppId] : []),
   );
@@ -624,9 +630,59 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
   const notificationDeciderRef = useRef(new AgentNotificationPolicy());
   const notificationSnapshotsRef = useRef(new Map<string, AgentNotificationSnapshot>());
   const notificationOperationAgentsRef = useRef(new Map<string, string>());
+  const agentRequestPendingRef = useRef(false);
+  const streamedOperationIdRef = useRef<string | null>(null);
   const notificationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const computerRefreshInFlightRef = useRef(false);
   const remoteDesktopControllerRef = useRef<RemoteComputerDesktopController | null>(null);
+
+  const claimStreamedOperation = (operationId?: string): boolean => {
+    if (!operationId) return false;
+    if (streamedOperationIdRef.current === operationId) return true;
+    if (!agentRequestPendingRef.current) return false;
+    agentRequestPendingRef.current = false;
+    streamedOperationIdRef.current = operationId;
+    return true;
+  };
+
+  const clearStreamedOperation = (operationId: string) => {
+    if (streamedOperationIdRef.current !== operationId) return;
+    streamedOperationIdRef.current = null;
+    agentRequestPendingRef.current = false;
+    setMessages((current) => current.filter((entry) => !(entry.kind === "thinking" && entry.operationId === operationId)));
+  };
+
+  const appendThinkingEntry = (operationId: string, title: string) => {
+    setMessages((current) => [
+      ...current.filter((entry) => !(entry.kind === "thinking" && entry.operationId === operationId)),
+      { kind: "thinking", role: "assistant", text: "", operationId, title: title || "正在思考", status: "running" },
+    ]);
+  };
+
+  const upsertStreamAction = (entry: {
+    id: string;
+    operationId: string;
+    title: string;
+    detail?: string;
+    status: "running" | "completed" | "failed";
+  }) => {
+    setMessages((current) => {
+      const next: HostTranscriptEntry = {
+        id: entry.id,
+        kind: "action",
+        role: "assistant",
+        text: "",
+        operationId: entry.operationId,
+        title: entry.title,
+        detail: entry.detail,
+        status: entry.status,
+      };
+      const index = current.findIndex((candidate) => candidate.kind === "action" && candidate.id === entry.id);
+      return index < 0
+        ? [...current, next]
+        : current.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, ...next } : candidate);
+    });
+  };
 
   useEffect(() => {
     const unsubscribe = subscribeNativeDesktopEvents({
@@ -1054,16 +1110,18 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           pass("runtime.boot");
           break;
         case "chat.message":
-          if (event.role === "assistant") setChatDispatching(false);
+          if (event.role === "assistant" && claimStreamedOperation(event.operationId)) {
+            setMessages((current) => current.filter((entry) => !(entry.kind === "thinking" && entry.operationId === event.operationId)));
+          }
           setMessages((current) => {
             if (event.role === "assistant" && event.operationId) {
               const index = current.findIndex(
-                (message) => message.operationId === event.operationId,
+                (message) => message.kind === "message" && message.operationId === event.operationId,
               );
               if (index >= 0) {
                 return current.map((message, messageIndex) =>
                   messageIndex === index
-                    ? { ...message, text: event.text }
+                    ? { ...message, kind: "message", text: event.text }
                     : message,
                 );
               }
@@ -1071,6 +1129,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
             return [
               ...current,
               {
+                kind: "message",
                 role: event.role,
                 text: event.text,
                 operationId: event.operationId,
@@ -1091,15 +1150,17 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           }
           break;
         case "chat.delta":
-          setChatDispatching(false);
+          claimStreamedOperation(event.operationId);
+          setMessages((current) => current.filter((entry) => !(entry.kind === "thinking" && entry.operationId === event.operationId)));
           setMessages((current) => {
             const index = current.findIndex(
-              (message) => message.operationId === event.operationId,
+              (message) => message.kind === "message" && message.operationId === event.operationId,
             );
             if (index < 0) {
               return [
                 ...current,
                 {
+                  kind: "message",
                   role: "assistant",
                   text: event.delta,
                   operationId: event.operationId,
@@ -1108,7 +1169,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
             }
             return current.map((message, messageIndex) =>
               messageIndex === index
-                ? { ...message, text: `${message.text}${event.delta}` }
+                ? { ...message, kind: "message", text: `${message.text}${event.delta}` }
                 : message,
             );
           });
@@ -1300,7 +1361,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
             setMessages((current) => {
               const index = current.findIndex((message) => message.operationId === event.operationId);
               if (index < 0) {
-                return [...current, { role: "assistant", text: event.delta, operationId: event.operationId }];
+                return [...current, { kind: "message", role: "assistant", text: event.delta, operationId: event.operationId }];
               }
               return current.map((message, messageIndex) => messageIndex === index
                 ? { ...message, text: `${message.text}${event.delta}` }
@@ -1320,7 +1381,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
             setMessages((current) => {
               const index = current.findIndex((message) => message.operationId === event.operationId);
               return index < 0
-                ? [...current, { role: "assistant", text: event.text, operationId: event.operationId }]
+                ? [...current, { kind: "message", role: "assistant", text: event.text, operationId: event.operationId }]
                 : current.map((message, messageIndex) => messageIndex === index ? { ...message, text: event.text } : message);
             });
           }
@@ -1536,12 +1597,22 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           setTranscriptCards([]);
           setMessages(
             event.messages.map((message) => ({
+              kind: "message" as const,
               role: message.role,
               text: message.text,
             })),
           );
           break;
         case "agent.step":
+          if (event.operationId && claimStreamedOperation(event.operationId)) {
+            upsertStreamAction({
+              id: `${event.operationId}:${event.stepId}`,
+              operationId: event.operationId,
+              title: event.title,
+              detail: event.detail,
+              status: event.status,
+            });
+          }
           setActivity((current) => {
             const next: AgentActivity = {
               id: event.stepId,
@@ -1564,6 +1635,15 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           });
           break;
         case "model.routed":
+          if (claimStreamedOperation(event.operationId)) {
+            upsertStreamAction({
+              id: `${event.operationId}:model`,
+              operationId: event.operationId,
+              title: event.model === "auto" ? "选择模型" : `模型：${event.model}`,
+              detail: `${event.provider} · ${event.mode}`,
+              status: "completed",
+            });
+          }
           setUsage((current) => ({
             totalTokens: current?.totalTokens ?? 0,
             contextWindow: current?.contextWindow,
@@ -1639,7 +1719,10 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           pass("capability.approval");
           break;
         case "operation.started": {
-          setChatDispatching(false);
+          if (claimStreamedOperation(event.operationId)) {
+            setChatDispatching(true);
+            appendThinkingEntry(event.operationId, event.label || "正在思考");
+          }
           setOperationState("running");
           if (event.interruptible) {
             setActiveOperationId(event.operationId);
@@ -1652,6 +1735,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           break;
         }
         case "operation.interrupted": {
+          clearStreamedOperation(event.operationId);
           setChatDispatching(false);
           setActiveOperationId(null);
           setOperationState("interrupted");
@@ -1662,6 +1746,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           break;
         }
         case "operation.completed": {
+          clearStreamedOperation(event.operationId);
           setChatDispatching(false);
           setActiveOperationId((current) =>
             current === event.operationId ? null : current,
@@ -1675,6 +1760,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           break;
         }
         case "operation.failed": {
+          clearStreamedOperation(event.operationId);
           setChatDispatching(false);
           setActiveOperationId((current) =>
             current === event.operationId ? null : current,
@@ -1704,9 +1790,7 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
     const mode =
       configuredMode === "production" || configuredMode === "test"
         ? configuredMode
-        : isElectronMahayanaHostAvailable()
-          ? "production"
-          : "test";
+        : "production";
 
     let disposed = false;
     void transport
@@ -1834,11 +1918,12 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
     if (!text) return;
     setInput("");
     setChatDispatching(true);
+    agentRequestPendingRef.current = true;
     const outgoingAttachments = attachments;
     setAttachments([]);
     setError(null);
     try {
-      await execute({
+      const accepted = await execute({
         type: "chat.send",
         requestId: nextRequestId("chat"),
         text,
@@ -1851,10 +1936,16 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
         model: selectedModel === "auto" ? undefined : selectedModel,
         attachments: outgoingAttachments,
       });
+      if (accepted.operationId && claimStreamedOperation(accepted.operationId)) {
+        appendThinkingEntry(accepted.operationId, "正在思考");
+      }
     } catch (cause: unknown) {
+      agentRequestPendingRef.current = false;
+      streamedOperationIdRef.current = null;
       setChatDispatching(false);
       setError(cause instanceof Error ? cause.message : String(cause));
     }
+    if (!streamedOperationIdRef.current) agentRequestPendingRef.current = false;
   };
 
   const attachFiles = async (files: FileList | null) => {
@@ -3443,7 +3534,18 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
             <p>{activeAgent ? "可以在右侧打开应用，也可以通过大乘助手调用它的能力。" : "发送消息、运行任务，或从插件市场为助手添加能力。"}</p>
           </div>
           <div className={styles.messages} data-testid="messages" aria-live="polite">
-            {messages.map((message, index) => (
+            {messages.map((message, index) => message.kind === "thinking" ? (
+              <article key={`${message.operationId ?? "stream"}-${index}`} className={styles.agentThinkingRow} data-testid="agent-thinking" data-operation-id={message.operationId}>
+                <BotMark botId={activeBotMarkId} state="thinking" size={28} shape={activeBotShape} color={activeBotColor} className={styles.messageBotMark} label={activeAgent ? `${activeAgent.title}机器人` : "大乘助手"} />
+                <div><strong>{message.title || "正在思考"}</strong><span>大乘助手正在处理这条消息…</span></div>
+              </article>
+            ) : message.kind === "action" ? (
+              <article key={message.id ?? `${message.operationId ?? "stream"}-${index}`} className={styles.agentActionRow} data-testid="agent-step" data-operation-id={message.operationId} data-status={message.status}>
+                <BotMark botId={activeBotMarkId} state={message.status === "running" ? "working" : message.status === "failed" ? "error" : "result"} size={25} shape={activeBotShape} color={activeBotColor} className={styles.messageBotMark} label={activeAgent ? `${activeAgent.title}机器人` : "大乘助手"} />
+                <div><strong>{message.title}</strong>{message.detail ? <span>{message.detail}</span> : null}</div>
+                <small>{message.status === "running" ? "进行中" : message.status === "failed" ? "失败" : "完成"}</small>
+              </article>
+            ) : (
               <article
                 key={`${message.role}-${index}`}
                 data-testid={`message-${message.role}`}
