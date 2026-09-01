@@ -294,8 +294,17 @@ jobs:
           app_executable="$(find desktop/release -type f -path '*/linux-unpacked/fabushi' -print -quit)"
           test -n "$app_executable"
           # actions/download-artifact transports file contents but does not preserve
-          # the executable bit required to launch the unpacked Electron app.
+          # executable bits required by the unpacked application and its native
+          # sidecars. Restore only the known native launch targets.
           chmod +x "$app_executable"
+          while IFS= read -r native_executable; do
+            chmod +x "$native_executable"
+          done < <(
+            find desktop/release -type f \( \
+              -path '*/linux-unpacked/resources/bin/mahayana-app-host' -o \
+              -path '*/linux-unpacked/resources/asr/*/whisper-cli' \
+            \) -print
+          )
           node .github/scripts/verify-packaged-computer-control.mjs \
             --release-root desktop/release \
             --platform linux
