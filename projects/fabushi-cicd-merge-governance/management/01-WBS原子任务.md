@@ -45,3 +45,4 @@
 
 | FCM-014 | Release Fabushi 1.2.2 across canonical desktop/mobile/web/backend channels | yes | protected merge + exact-main platform gates + immutable releases + store delivery evidence + runtime verification | in-progress |
 | FCM-015 | Release Fabushi 1.2.6 from canonical main and repair false Linux AppImage blockmap gate | yes | all intake PRs dispositioned; protected merge; exact-main required gates; v1.2.6 five-platform assets; supported delivery channels; install/upgrade/runtime verification | in-progress |
+| FCM-016 | Release Fabushi 1.2.7 with canonical automatic store delivery | yes | all intake PRs dispositioned; protected merge; exact-main required gates; immutable five-platform Release; Android GitHub/Google Play + Apple Store delivery; production deploy; install/upgrade/runtime verification | in-progress |
