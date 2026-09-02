@@ -50,6 +50,8 @@ jobs:
           grep -F 'github.event.workflow_run.head_sha' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'Native mobile result' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'Native iOS' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F -- '--paginate --slurp' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'map(.check_runs) | add' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'run-id:' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'needs.gate.outputs.electron_run_id' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'fabushi-delivery-mac.json' .github/workflows/post-main-delivery.yml >/dev/null
@@ -108,7 +110,9 @@ jobs:
           native_run_id=''
           required_checks=('Native mobile result' 'Native iOS')
           while [ "$SECONDS" -lt "$deadline" ]; do
-            checks="$(gh api -H 'Accept: application/vnd.github+json' "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/check-runs?per_page=100")"
+            # A busy main SHA can have more than 100 check-runs. Fetch every page so
+            # release gating cannot miss successful native checks outside page one.
+            checks="$(gh api --paginate --slurp -H 'Accept: application/vnd.github+json' "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/check-runs?per_page=100" | jq '{check_runs: (map(.check_runs) | add)}')"
             all_done=true
             for required in "${required_checks[@]}"; do
               status="$(jq -r --arg required "$required" '[.check_runs[] | select(.name == $required)] | sort_by(.started_at) | last | .status // "missing"' <<<"$checks")"

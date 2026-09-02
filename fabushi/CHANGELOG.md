@@ -1,5 +1,50 @@
 # 更新日志
 
+## [1.2.12] - 2026-09-02
+
+### 生产依赖安全修复与正式重发
+- 将 `chatgpt-vps-control` 生产依赖树中的 `qs` 从受 GHSA-x5fp-wj9c-mxmx / GHSA-4mjr-xmp4-gh2g 影响的 `6.15.2` 更新到 `6.16.0`；`npm audit --omit=dev` 重新达到 0 vulnerabilities。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.12`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `18`，避免复用已经开始验证的 1.2.11 发布身份。
+- 继续使用修复后的 check-runs 全量分页门禁，从受保护 `main` 重新执行桌面 macOS/Windows/Linux、Android/iOS、商店交付、生产部署、不可变 GitHub Release、全新安装与上一正式版本升级验收。
+
+---
+
+## [1.2.11] - 2026-09-02
+
+### 正式发布门禁分页修复
+- 修复 `post-main-delivery` 在同一主线提交拥有超过 100 个 check-runs 时只读取第一页、从而漏掉已成功的 `Native mobile result` / `Native iOS` 并错误等待的问题；现通过 GitHub API 分页聚合全部检查后再执行 exact-SHA 门禁。
+- 将桌面、Android 与 iOS 产品版本统一提升到 `1.2.11`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `17`，避免复用已经启动外部交付的 `1.2.10` 发布身份。
+- 重新从修复后的受保护 `main` 执行桌面 macOS/Windows/Linux、Android/iOS 商店交付、生产部署、不可变 GitHub Release、安装及上一正式版本升级验证；重型构建和测试继续仅由 GitHub Actions 执行。
+
+---
+
+## [1.2.10] - 2026-09-02
+
+### 全新正式版本发布
+- 以受保护 `main@cf41861f7f274af792dc451d62a4a1d0052ebff9` 为唯一发布源，纳入当前主线最新的 iOS 浏览器认证回跳登录门禁修复，并在审阅当前全部开放 PR 后启动新的正式发布列车。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.10`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `16`，不复用已经发布且不可变的 `1.2.9` 身份。
+- 本版本继续通过仓库现有 exact-main GitHub Actions 执行桌面 macOS/Windows/Linux 打包、Android/iOS 商店交付、生产部署、不可变 GitHub Release、安装与上一正式版本升级验证；重型构建和测试仅在 GitHub Actions 执行。
+
+---
+
+## [1.2.9] - 2026-09-02
+
+### 全新正式版本发布
+- 从受保护 `main@868122cfa8ed2490053af5ed99117d93349ec022` 切出新的正式发布列车，完成本轮开放 PR 审阅后，将产品版本统一提升为 `1.2.9`。
+- Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `15`，保证商店与客户端升级身份严格递增，不复用不可变的 `1.2.8` 发布身份。
+- 继续复用仓库现有 exact-main GitHub Actions、桌面签名/公证、移动商店交付、生产部署、不可变 GitHub Release 与安装/升级验证链路；重型构建和测试仅在 GitHub Actions 执行。
+
+---
+
+## [1.2.8] - 2026-09-02
+
+### 全新正式版本发布
+- 从已经完成桌面、Android、iOS、Apple Store、Google Play 与生产部署验收的受保护 `main` 重新切出正式发布，统一桌面与原生移动端产品版本为 `1.2.8`。
+- Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `14`，确保商店与客户端升级比较严格单调递增，不复用已有的 `1.2.7` 发布身份。
+- 继续复用已验证的 exact-main 正式商店编排器、签名/公证、模拟用户 E2E、不可变 GitHub Release、生产部署与安装/升级验证链路；所有重型构建和测试仍只在 GitHub Actions 执行。
+
+---
+
 ## [1.2.7] - 2026-09-02
 
 ### 正式发布渠道闭环
