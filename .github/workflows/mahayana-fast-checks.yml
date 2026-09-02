@@ -171,3 +171,180 @@ jobs:
           --profile ci
           --no-default-features
           --features local-only
+
+  ios-external-miniapp-test-driver:
+    name: iOS external MiniApp test-driver contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: "1"
+      MAHAYANA_TEST_DRIVER_ROOT: ${{ runner.temp }}/mahayana-test-driver
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs
+    steps:
+      - name: Checkout Mahayana test-driver sources
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /native/mahayana-messaging/**
+            /third_party/mahayana/**
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install Mahayana Linux native dependencies
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
+
+      - name: Restore test-driver Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-ios-test-driver-v1
+          cache-all-crates: true
+
+      - name: Verify test-driver formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run versioned protocol contract tests
+        run: cargo test -p mahayana-test-driver-protocol --profile ci
+
+      - name: Run Debug product-backed test-driver unit tests
+        run: cargo test -p mahayana-cli --features test-driver --bin mahayana-test-driver --profile ci
+
+      - name: Prove clean profile, live marketplace install, evidence, and persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$MAHAYANA_TEST_DRIVER_ROOT"
+          mkdir -p "$MAHAYANA_TEST_DRIVER_ROOT"
+          printf '%s\n' stale > "$MAHAYANA_TEST_DRIVER_ROOT/stale-state.txt"
+          cat > /tmp/mahayana-test-driver-live-input.jsonl <<'EOF'
+          {"protocol":"mahayana.test-driver.v1","requestId":"reset-1","correlationId":"corr-reset","method":"resetProfile","params":{}}
+          {"protocol":"mahayana.test-driver.v1","requestId":"pre-list-1","correlationId":"corr-pre-list","method":"plugin.list","params":{}}
+          {"protocol":"mahayana.test-driver.v1","requestId":"market-1","correlationId":"corr-market-global-dharma","method":"marketplace.search","params":{"query":"全球法布施","platform":"ios"}}
+          {"protocol":"mahayana.test-driver.v1","requestId":"install-1","correlationId":"corr-install-global-dharma","method":"plugin.install","params":{"pluginId":"global-dharma","platform":"ios"}}
+          {"protocol":"mahayana.test-driver.v1","requestId":"post-list-1","correlationId":"corr-post-list","method":"plugin.list","params":{}}
+          {"protocol":"mahayana.test-driver.v1","requestId":"logs-install-1","correlationId":"corr-logs-install","method":"logs.query","params":{"correlationId":"corr-install-global-dharma"}}
+          {"protocol":"mahayana.test-driver.v1","requestId":"events-1","correlationId":"corr-events","method":"events.subscribe","params":{"afterSequence":0}}
+          {"protocol":"mahayana.test-driver.v1","requestId":"shutdown-1","correlationId":"corr-shutdown","method":"shutdown","params":{}}
+          EOF
+          cargo run -q -p mahayana-cli --features test-driver --bin mahayana-test-driver < /tmp/mahayana-test-driver-live-input.jsonl > /tmp/mahayana-test-driver-live-output.jsonl
+          test ! -e "$MAHAYANA_TEST_DRIVER_ROOT/stale-state.txt"
+          cat > /tmp/mahayana-test-driver-restart-input.jsonl <<'EOF'
+          {"protocol":"mahayana.test-driver.v1","requestId":"restart-list-1","correlationId":"corr-restart-list","method":"plugin.list","params":{}}
+          {"protocol":"mahayana.test-driver.v1","requestId":"restart-shutdown-1","correlationId":"corr-restart-shutdown","method":"shutdown","params":{}}
+          EOF
+          cargo run -q -p mahayana-cli --features test-driver --bin mahayana-test-driver < /tmp/mahayana-test-driver-restart-input.jsonl > /tmp/mahayana-test-driver-restart-output.jsonl
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          live = [json.loads(line) for line in Path('/tmp/mahayana-test-driver-live-output.jsonl').read_text().splitlines() if line.strip()]
+          assert len(live) == 8, live
+          reset, pre_list, search, install, post_list, logs, events, shutdown = live
+          assert reset['ok'] is True and reset['correlationId'] == 'corr-reset'
+          assert pre_list['ok'] is True, pre_list
+          assert pre_list['result']['source'] == 'mahayana-plugin-runtime-active-receipts'
+          assert pre_list['result']['plugins'] == [], 'global-dharma must not be prebundled in a clean profile'
+
+          assert search['ok'] is True, search
+          assert search['correlationId'] == 'corr-market-global-dharma'
+          search_payload = json.dumps(search['result'], ensure_ascii=False)
+          assert '全球法布施' in search_payload, search_payload
+          assert 'global-dharma' in search_payload, search_payload
+
+          assert install['ok'] is True, install
+          assert install['correlationId'] == 'corr-install-global-dharma'
+          result = install['result']
+          assert result['source'] == 'online-external-marketplace'
+          assert result['installed'] is True
+          assert result['platform'] == 'ios'
+          assert result['releaseVersion'] == result['receipt']['version']
+          receipt = result['receipt']
+          assert receipt['pluginId'] == 'global-dharma'
+          assert receipt['platform'] == 'ios'
+          assert receipt['runtime'] == 'local-web'
+          assert re.fullmatch(r'[0-9a-fA-F]{64}', receipt['sha256']), receipt
+          assert receipt['sourceUrl'].startswith('https://'), receipt
+          release = result['releaseManifest']
+          assert release['protocol'] == 'mahayana.external-release.v1'
+          assert release['pluginId'] == 'global-dharma'
+          assert release['version'] == receipt['version']
+          selected = [a for a in release['artifacts'] if a['runtime'] == receipt['runtime'] and ('ios' in a['platforms'] or 'all' in a['platforms'])]
+          assert selected, release
+          assert selected[0]['sha256'].lower() == receipt['sha256'].lower()
+          source = result['marketplaceSource']
+          assert source['marketplaceHostsPackage'] is False
+          assert source['sourceRef']
+          assert source['repository']
+
+          assert post_list['ok'] is True
+          persisted = post_list['result']['plugins']
+          assert len(persisted) == 1, persisted
+          assert persisted[0]['pluginId'] == 'global-dharma'
+          assert persisted[0]['sha256'] == receipt['sha256']
+          assert persisted[0]['sourceUrl'] == receipt['sourceUrl']
+
+          assert logs['ok'] is True
+          entries = logs['result']['entries']
+          assert entries
+          assert all(entry['correlationId'] == 'corr-install-global-dharma' for entry in entries)
+          assert any(entry['message'] == 'test-driver request started' for entry in entries)
+          assert any(entry['message'] == 'test-driver request completed' for entry in entries)
+
+          assert events['ok'] is True
+          install_events = [e for e in events['result']['events'] if e['correlationId'] == 'corr-install-global-dharma']
+          assert any(e['kind'] == 'request.started' for e in install_events)
+          assert any(e['kind'] == 'request.completed' for e in install_events)
+          assert shutdown['ok'] is True
+
+          restarted = [json.loads(line) for line in Path('/tmp/mahayana-test-driver-restart-output.jsonl').read_text().splitlines() if line.strip()]
+          assert len(restarted) == 2, restarted
+          restart_list, restart_shutdown = restarted
+          assert restart_list['ok'] is True, restart_list
+          restart_plugins = restart_list['result']['plugins']
+          assert len(restart_plugins) == 1, restart_plugins
+          assert restart_plugins[0]['pluginId'] == 'global-dharma'
+          assert restart_plugins[0]['version'] == receipt['version']
+          assert restart_plugins[0]['sha256'] == receipt['sha256']
+          assert restart_plugins[0]['sourceUrl'] == receipt['sourceUrl']
+          assert restart_shutdown['ok'] is True
+          PY
+
+      - name: Prove Release cannot contain the test driver
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          cargo check --release -p mahayana-cli --features test-driver --bin mahayana-test-driver > /tmp/mahayana-test-driver-release-negative.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo 'Release test-driver build unexpectedly succeeded' >&2
+            exit 1
+          fi
+          grep -F 'mahayana-test-driver is forbidden in release builds' /tmp/mahayana-test-driver-release-negative.log
+
+      - name: Upload test-driver evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-ios-test-driver-${{ github.sha }}
+          path: |
+            /tmp/mahayana-test-driver-live-output.jsonl
+            /tmp/mahayana-test-driver-restart-output.jsonl
+            /tmp/mahayana-test-driver-release-negative.log
+          if-no-files-found: ignore
+          retention-days: 90
