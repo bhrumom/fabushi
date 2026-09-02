@@ -35,6 +35,11 @@ const configuredBrowserLeaseMs = Number(configuredBrowserLeaseValue);
 const DEFAULT_BROWSER_LEASE_MS = Number.isFinite(configuredBrowserLeaseMs)
   ? Math.min(6 * 60 * 60 * 1000, Math.max(60_000, configuredBrowserLeaseMs))
   : 6 * 60 * 60 * 1000;
+// A scheduled Chat heartbeat has a finite browser-execution budget. Keep its
+// slice comfortably below that limit so it can persist and release cleanly;
+// the next heartbeat reattaches the same jobs rather than treating the lease
+// rotation as a completed or failed task.
+export const DEFAULT_BROWSER_HEARTBEAT_SLICE_MS = 18_000;
 const DEFAULT_PAGE_REFRESH_COOLDOWN_MS = 5_000;
 const PAGE_REFRESH_WINDOW_MS = 60_000;
 const MAX_PAGE_REFRESHES_PER_WINDOW = 3;
@@ -1496,8 +1501,12 @@ export async function createInAppBrowserCapabilityHost({
   // reaches a terminal state. A lease rotation is an internal recovery event,
   // not a reason to return control to the caller: rebind the same job and keep
   // pumping. Callers should await this method instead of creating the host and
-  // letting the Browser execution turn end.
-  host.runUntilTerminal = async ({ leaseTimeoutMs = DEFAULT_BROWSER_LEASE_MS } = {}) => {
+  // letting the Browser execution turn end. A recurring supervisor with a
+  // hard execution limit may opt into a persisted, bounded slice instead.
+  host.runUntilTerminal = async ({
+    leaseTimeoutMs = DEFAULT_BROWSER_LEASE_MS,
+    returnOnLeaseExpiry = false,
+  } = {}) => {
     const reattachFailures = new Map();
     try {
       while (!host.pumpStopRequested) {
@@ -1510,6 +1519,17 @@ export async function createInAppBrowserCapabilityHost({
         const jobsNeedingReattach = remainingJobs.filter(job => (
           job.status === 'waiting_for_browser_host' || job.status === 'reattaching_browser_host'
         ));
+        // A scheduler can call this method in bounded, awaited Browser turns.
+        // The state has already been persisted by runPump, so deliberately
+        // yield before the host execution itself is forcibly reclaimed. The
+        // next scheduled slice reattaches every affected job independently.
+        if (returnOnLeaseExpiry && jobsNeedingReattach.length > 0) {
+          return {
+            ...publicJob(host.activeJob),
+            reattachRequired: true,
+            leaseSliceComplete: true,
+          };
+        }
         for (const job of jobsNeedingReattach) {
           try {
             await recoverBrowserHostTab(host, job);
@@ -1707,7 +1727,8 @@ export async function createInAppBrowserCapabilityHost({
 /**
  * Bootstrap a fresh trusted Browser execution lease without requiring the
  * caller to retain or guess a previous tab id. The returned host must be kept
- * alive with `await host.runUntilTerminal()`.
+ * alive with `await host.runUntilTerminal()`; a scheduler with a hard runtime
+ * limit may await a returned bounded slice using `returnOnLeaseExpiry`.
  */
 export async function attachPersistentInAppBrowserCapabilityHost({
   browser,

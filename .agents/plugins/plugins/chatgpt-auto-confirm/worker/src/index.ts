@@ -201,7 +201,7 @@ const tools = [
       jobId: { type: 'string', pattern: '^iab_[A-Za-z0-9-]{20,100}$' },
     },
   } },
-  { name: 'browser_watch', description: '启动或恢复插件持久 Browser 监督器；同时轮询最多两个隔离标签页。浏览器列表短暂为空、标签页失效或执行租约结束时自动重试/重新附着各自任务，不重复派发或携带历史进度', annotations: annotations(), inputSchema: {
+  { name: 'browser_watch', description: '启动或恢复插件持久 Browser 监督器；同时轮询最多两个隔离标签页。浏览器列表短暂为空、标签页失效或执行租约结束时自动重试/重新附着各自任务，不重复派发或携带历史进度；受时限的定时监督会收到可等待的短租约参数，以便保存状态后自动在下一轮续租', annotations: annotations(), inputSchema: {
     type: 'object', additionalProperties: false, properties: {},
   } },
   { name: 'browser_stop', description: '停止一个由内置 Browser 派发的长期任务', annotations: annotations(), inputSchema: {

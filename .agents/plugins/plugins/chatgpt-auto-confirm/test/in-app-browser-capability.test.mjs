@@ -765,6 +765,57 @@ test('runUntilTerminal automatically reattaches the same job after a lease rotat
   }
 });
 
+test('a scheduled Browser slice yields persisted recovery state before its execution context expires', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-scheduled-slice-'));
+  const capabilityFile = join(directory, 'capability.json');
+  const jobStateFile = join(directory, 'job.json');
+  const now = new Date().toISOString();
+  const activeJob = {
+    id: 'iab_77777777-3333-4444-8555-666666666666',
+    goal: '持续推进完整目标',
+    status: 'running',
+    phase: 'waiting',
+    attempt: 1,
+    startedAt: now,
+    updatedAt: now,
+  };
+  let runSteps = 0;
+  let recoveries = 0;
+  const host = await createInAppBrowserCapabilityHost({
+    browser: { tabs: {} },
+    tab: { id: 'scheduled-slice', playwright: {} },
+    startUrl: 'https://chatgpt.com/g/fabushi/project',
+    capabilityFile,
+    jobStateFile,
+    recoverTab: async () => {
+      recoveries += 1;
+      return { tab: { id: `unexpected-${recoveries}`, playwright: {} }, method: 'controlled-tab' };
+    },
+  });
+  try {
+    host.activeJob = activeJob;
+    host.policy.pollIntervalMs = 5;
+    host.runStep = async () => {
+      runSteps += 1;
+      host.activeJob.status = 'running';
+      return { ...host.activeJob };
+    };
+    const result = await host.runUntilTerminal({
+      leaseTimeoutMs: 25,
+      returnOnLeaseExpiry: true,
+    });
+    assert.equal(result.leaseSliceComplete, true);
+    assert.equal(result.reattachRequired, true);
+    assert.ok(runSteps > 0);
+    assert.equal(recoveries, 0);
+    assert.equal(host.activeJob.status, 'waiting_for_browser_host');
+    const saved = JSON.parse(await readFile(jobStateFile, 'utf8'));
+    assert.equal(saved.status, 'waiting_for_browser_host');
+  } finally {
+    await host.close();
+  }
+});
+
 test('a Browser lease rotates into recoverable reattachment before its execution expires', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-lease-rotation-'));
   const capabilityFile = join(directory, 'capability.json');
