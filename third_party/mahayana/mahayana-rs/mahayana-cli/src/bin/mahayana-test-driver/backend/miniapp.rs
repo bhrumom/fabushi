@@ -20,9 +20,9 @@ pub(super) fn open_miniapp(
     let marketplace = marketplace_plugin(product, plugin_id, platform)?;
     let bot_endpoint = required_string(&marketplace, "botEndpoint", "marketplace_bot_missing")?;
     let bot = authenticated_mcp_client(bot_endpoint)?;
-    let tool_result = bot.call_tool("home", json!({})).map_err(|error| {
-        mcp_error("miniapp_open_failed", "home", bot_endpoint, error)
-    })?;
+    let tool_result = bot
+        .call_tool("home", json!({}))
+        .map_err(|error| mcp_error("miniapp_open_failed", "home", bot_endpoint, error))?;
     Ok(json!({
         "miniAppId": plugin_id,
         "conversationId": format!("miniapp:{plugin_id}"),
@@ -50,9 +50,9 @@ pub(super) fn chat_miniapp(
     let bot_endpoint = required_string(&marketplace, "botEndpoint", "marketplace_bot_missing")?;
     let bot = authenticated_mcp_client(bot_endpoint)?;
     let bot_arguments = json!({"message": message});
-    let bot_result = bot.call_tool("chat", bot_arguments.clone()).map_err(|error| {
-        mcp_error("miniapp_chat_failed", "chat", bot_endpoint, error)
-    })?;
+    let bot_result = bot
+        .call_tool("chat", bot_arguments.clone())
+        .map_err(|error| mcp_error("miniapp_chat_failed", "chat", bot_endpoint, error))?;
     let dispatch = structured_content(&bot_result)?;
     let mut tool_calls = vec![tool_call_evidence(
         "bot",
@@ -121,30 +121,22 @@ pub(super) fn describe_actions(
     let marketplace = marketplace_plugin(product, plugin_id, platform)?;
     let bot_endpoint = required_string(&marketplace, "botEndpoint", "marketplace_bot_missing")?;
     let bot = authenticated_mcp_client(bot_endpoint)?;
-    let bot_tools = bot.list_tools().map_err(|error| {
-        mcp_error("actions_describe_failed", "tools/list", bot_endpoint, error)
-    })?;
+    let bot_tools = bot
+        .list_tools()
+        .map_err(|error| mcp_error("actions_describe_failed", "tools/list", bot_endpoint, error))?;
 
     let commands = marketplace
         .get("commands")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let runtime_endpoint = commands
-        .iter()
-        .find_map(command_execution_endpoint)
-        .ok_or_else(|| {
-            TestDriverError::new(
-                "miniapp_runtime_missing",
-                format!("{plugin_id} has no discoverable MCP runtime endpoint"),
-            )
-        })?;
-    let runtime = authenticated_mcp_client(&runtime_endpoint)?;
+    let runtime_endpoint = marketplace_runtime_endpoint(&marketplace)?;
+    let runtime = authenticated_mcp_client(runtime_endpoint)?;
     let runtime_tools = runtime.list_tools().map_err(|error| {
         mcp_error(
             "actions_describe_failed",
             "tools/list",
-            &runtime_endpoint,
+            runtime_endpoint,
             error,
         )
     })?;
@@ -157,7 +149,7 @@ pub(super) fn describe_actions(
         "runtimeTools": runtime_tools,
         "toolCalls": [
             tool_call_evidence("bot", bot_endpoint, "tools/list", json!({}), correlation_id),
-            tool_call_evidence("runtime", &runtime_endpoint, "tools/list", json!({}), correlation_id),
+            tool_call_evidence("runtime", runtime_endpoint, "tools/list", json!({}), correlation_id),
         ],
     }))
 }
@@ -187,9 +179,9 @@ pub(super) fn invoke_action(
         .get("commands")
         .and_then(Value::as_array)
         .and_then(|commands| {
-            commands.iter().find(|command| {
-                command.get("name").and_then(Value::as_str) == Some(action)
-            })
+            commands
+                .iter()
+                .find(|command| command.get("name").and_then(Value::as_str) == Some(action))
         })
         .ok_or_else(|| {
             TestDriverError::new(
@@ -218,9 +210,9 @@ pub(super) fn invoke_action(
     let bot_endpoint = required_string(&marketplace, "botEndpoint", "marketplace_bot_missing")?;
     let bot = authenticated_mcp_client(bot_endpoint)?;
     let bot_arguments = json!({"arguments": arguments});
-    let bot_result = bot.call_tool(action, bot_arguments.clone()).map_err(|error| {
-        mcp_error("action_route_failed", action, bot_endpoint, error)
-    })?;
+    let bot_result = bot
+        .call_tool(action, bot_arguments.clone())
+        .map_err(|error| mcp_error("action_route_failed", action, bot_endpoint, error))?;
     let dispatch = structured_content(&bot_result)?;
     let (runtime_endpoint, runtime_tool, runtime_arguments) = dispatch_execution(dispatch)?;
     let runtime = authenticated_mcp_client(runtime_endpoint)?;
@@ -268,15 +260,38 @@ fn marketplace_plugin(
         .get("plugins")
         .and_then(Value::as_array)
         .and_then(|plugins| {
-            plugins.iter().find(|plugin| {
-                plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id)
-            })
+            plugins
+                .iter()
+                .find(|plugin| plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id))
         })
         .cloned()
         .ok_or_else(|| {
             TestDriverError::new(
                 "marketplace_plugin_not_found",
                 format!("approved marketplace plugin {plugin_id} was not found for {platform}"),
+            )
+        })
+}
+
+fn marketplace_runtime_endpoint(marketplace: &Value) -> Result<&str, TestDriverError> {
+    marketplace
+        .get("surfaces")
+        .and_then(Value::as_array)
+        .and_then(|surfaces| {
+            surfaces.iter().find_map(|surface| {
+                let kind = surface.get("kind").and_then(Value::as_str)?;
+                if kind != "mcp-http" {
+                    return None;
+                }
+                surface.get("url").and_then(Value::as_str)
+            })
+        })
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            TestDriverError::new(
+                "miniapp_runtime_missing",
+                "marketplace entry has no discoverable MCP HTTP runtime",
             )
         })
 }
@@ -386,21 +401,6 @@ fn dispatch_execution(dispatch: &Value) -> Result<(&str, &str, Value), TestDrive
     Ok((endpoint, tool, arguments))
 }
 
-fn command_execution_endpoint(command: &Value) -> Option<String> {
-    command
-        .get("surface")
-        .and_then(|surface| surface.get("url"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .or_else(|| {
-            command
-                .get("execution")
-                .and_then(|execution| execution.get("endpoint"))
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-}
-
 fn required_string<'a>(
     value: &'a Value,
     key: &str,
@@ -449,7 +449,8 @@ mod tests {
 
     #[test]
     fn miniapp_identity_defaults_to_ios() {
-        let (plugin_id, platform) = miniapp_identity(&json!({"pluginId": "global-dharma"})).unwrap();
+        let (plugin_id, platform) =
+            miniapp_identity(&json!({"pluginId": "global-dharma"})).unwrap();
         assert_eq!(plugin_id, "global-dharma");
         assert_eq!(platform, "ios");
     }
@@ -458,5 +459,19 @@ mod tests {
     fn remote_mcp_must_use_https() {
         let error = authenticated_mcp_client("http://example.com/mcp").unwrap_err();
         assert_eq!(error.code, "unsafe_mcp_endpoint");
+    }
+
+    #[test]
+    fn runtime_endpoint_comes_from_mcp_http_surface() {
+        let marketplace = json!({
+            "surfaces": [
+                {"kind": "web", "url": "https://example.com/ui"},
+                {"kind": "mcp-http", "url": "https://example.com/mcp"}
+            ]
+        });
+        assert_eq!(
+            marketplace_runtime_endpoint(&marketplace).unwrap(),
+            "https://example.com/mcp"
+        );
     }
 }
