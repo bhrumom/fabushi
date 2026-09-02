@@ -659,7 +659,7 @@ test('authorization falls back to the direct Allow button when no session scope 
   };
   const tab = {
     playwright: {
-      evaluate: async () => ({ pendingAuthorization: allowClicks === 0 }),
+      evaluate: async () => ({ pendingAuthorization: allowClicks === 0, stopAnswer: true }),
       getByRole: (role, options = {}) => (
         role === 'button' && options.name === 'Allow' ? allow : emptyLocator()
       ),
