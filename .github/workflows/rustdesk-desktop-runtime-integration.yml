@@ -1,0 +1,47 @@
+name: RustDesk desktop runtime integration
+
+on:
+  push:
+    branches:
+      - codex/rustdesk-fusion-route-negotiation
+    paths:
+      - '.github/workflows/rustdesk-desktop-runtime-integration.yml'
+      - '.github/scripts/rustdesk-desktop-runtime-integration.py'
+      - 'integrations/rustdesk-sidecar/**'
+      - 'desktop/electron/rustdesk-sidecar-process.cjs'
+      - 'desktop/electron/rustdesk-sidecar-process.test.cjs'
+      - 'desktop/electron/native-edge.cjs'
+      - 'desktop/electron/preload.cjs'
+      - 'desktop/electron/main.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/rustdesk-fusion-route-negotiation
+      - name: Wire sidecar through trusted native edge
+        run: python .github/scripts/rustdesk-desktop-runtime-integration.py
+      - name: Run sidecar process unit tests
+        run: node --test desktop/electron/rustdesk-sidecar-process.test.cjs
+      - name: Run native edge and preload contract tests
+        run: |
+          node --test desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs
+          bash .github/scripts/assert-electron-feature-host-bridge.sh
+      - name: Commit verified desktop runtime wiring
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add desktop/electron/main.cjs desktop/electron/native-edge.cjs desktop/electron/preload.cjs
+          if git diff --cached --quiet; then
+            echo 'RustDesk desktop runtime is already wired and verified.'
+            exit 0
+          fi
+          git commit -m 'feat(remote): wire RustDesk sidecar through desktop native edge'
+          git push origin HEAD:codex/rustdesk-fusion-route-negotiation

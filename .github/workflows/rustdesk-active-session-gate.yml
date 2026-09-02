@@ -1,0 +1,37 @@
+name: RustDesk active session gate
+
+on:
+  push:
+    branches:
+      - codex/rustdesk-fusion-route-negotiation
+    paths:
+      - '.github/scripts/rustdesk-active-session-gate.py'
+      - '.github/workflows/rustdesk-active-session-gate.yml'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs'
+      - 'chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/rustdesk-fusion-route-negotiation
+      - name: Enforce active-session gate
+        run: python .github/scripts/rustdesk-active-session-gate.py
+      - name: Verify consent and grant contracts
+        working-directory: chatgpt-vps-control
+        run: node --test tests/rustdesk-session-permission-enforcement.test.js tests/rustdesk-route-negotiation-contract.test.js tests/rustdesk-session-grants-audit-contract.test.js
+      - name: Commit verified gate
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'fix(remote): block signaling until explicit session approval'
+          git push origin HEAD:codex/rustdesk-fusion-route-negotiation
