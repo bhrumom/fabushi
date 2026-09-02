@@ -438,7 +438,8 @@ mod tests {
 
     #[test]
     fn login_test_account_rejects_inline_token_material() {
-        let error = reject_inline_test_account_token(&json!({"token": "must-not-pass"})).unwrap_err();
+        let error =
+            reject_inline_test_account_token(&json!({"token": "must-not-pass"})).unwrap_err();
         assert_eq!(error.code, "inline_credentials_forbidden");
     }
 
@@ -464,7 +465,10 @@ mod tests {
     #[test]
     fn test_profile_root_accepts_missing_dedicated_absolute_path() {
         let root = std::env::temp_dir()
-            .join(format!("mahayana-test-driver-parent-{}", std::process::id()))
+            .join(format!(
+                "mahayana-test-driver-parent-{}",
+                std::process::id()
+            ))
             .join(TEST_DRIVER_ROOT_BASENAME);
         assert!(ensure_safe_test_root(&root).is_ok());
     }
