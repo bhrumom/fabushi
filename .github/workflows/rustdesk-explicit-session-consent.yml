@@ -37,6 +37,7 @@ jobs:
       - name: Run frontend type check with pinned pnpm lockfile
         run: |
           corepack enable
+          corepack prepare pnpm@10.9.0 --activate
           pnpm --dir frontend/apps/web install --frozen-lockfile --ignore-scripts
           pnpm --dir frontend/apps/web run typecheck
       - name: Run desktop type check
