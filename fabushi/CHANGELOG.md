@@ -1,5 +1,14 @@
 # 更新日志
 
+## [1.2.12] - 2026-09-02
+
+### 生产依赖安全修复与正式重发
+- 将 `chatgpt-vps-control` 生产依赖树中的 `qs` 从受 GHSA-x5fp-wj9c-mxmx / GHSA-4mjr-xmp4-gh2g 影响的 `6.15.2` 更新到 `6.16.0`；`npm audit --omit=dev` 重新达到 0 vulnerabilities。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.12`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `18`，避免复用已经开始验证的 1.2.11 发布身份。
+- 继续使用修复后的 check-runs 全量分页门禁，从受保护 `main` 重新执行桌面 macOS/Windows/Linux、Android/iOS、商店交付、生产部署、不可变 GitHub Release、全新安装与上一正式版本升级验收。
+
+---
+
 ## [1.2.11] - 2026-09-02
 
 ### 正式发布门禁分页修复
