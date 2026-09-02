@@ -67,6 +67,7 @@ function browserReattachMetadata(job) {
     browser: 'iab',
     startUrl: String(job?.currentUrl || '').startsWith('https://chatgpt.com/')
       ? job.currentUrl : 'https://chatgpt.com/',
+    preferredTabId: job?.tabId || null,
     jobId: job?.id || null,
     preservesExistingJob: true,
   };

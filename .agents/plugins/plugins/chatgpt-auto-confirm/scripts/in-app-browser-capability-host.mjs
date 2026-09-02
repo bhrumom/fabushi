@@ -54,6 +54,7 @@ const RECOVERABLE_BROWSER_CONTEXT_PATTERN = /(?:node_repl exec context not found
 const PAGE_LOAD_FAILURE_PATTERN = /(?:无法加载|加载失败|加载出错|页面错误|网络错误|连接错误|空白页面|页面无响应|failed\s+to\s+load|error\s+loading|could\s+not\s+load|network\s+error|connection\s+error|page\s+error|something\s+went\s+wrong)/iu;
 const PAGE_CRASH_PATTERN = /(?:this\s+page\s+crashed|crashed\s+unexpectedly|renderer\s+(?:process|crash)|aw\s*,?\s*snap|tab\s+crashed|页面(?:已)?崩溃|网页(?:已)?崩溃|标签页(?:已)?崩溃|渲染(?:进程)?崩溃)/iu;
 const CRASH_PAGE_URL_PATTERN = /^(?:data:text\/html|chrome-error:|about:crash|chrome:\/\/crash)/iu;
+const OWNED_BROKEN_TAB_URL_PATTERN = /^(?:about:blank|data:text\/html|chrome-error:|about:crash|chrome:\/\/crash)/iu;
 const PAGE_REFRESH_CONTROL_PATTERN = /^(?:reload|refresh|try\s+again|重新加载|刷新|再试一次|重新尝试)$/iu;
 
 export const BROWSER_DISPATCH_POLICY = Object.freeze({
@@ -447,6 +448,7 @@ async function verifyReattachedTab(tab) {
 export async function reattachInAppBrowserTab({
   browser,
   targetUrl,
+  preferredTabId = null,
   fallbackUrl = 'https://chatgpt.com/',
   logger = () => {},
 } = {}) {
@@ -455,12 +457,41 @@ export async function reattachInAppBrowserTab({
   if (!destination) throw new Error('没有可恢复的 ChatGPT 目标 URL');
   const failures = [];
 
+  // The persisted tab id is the strongest ownership signal. Reuse it before
+  // scanning URLs so a project-entry URL cannot accidentally create a third
+  // tab when another parallel job is already in the same project.
+  if (preferredTabId && browser.tabs.get) {
+    try {
+      const tab = await browser.tabs.get(preferredTabId);
+      const url = typeof tab.url === 'function' ? await tab.url() : '';
+      const targetConversation = destination.match(/\/c\/([^/]+)$/u)?.[1] || '';
+      const targetMatches = canonicalChatUrl(url)
+        ? (targetConversation ? sameChatTarget(url, destination) : sameChatProject(url, destination))
+        // A persisted owned tab may be a renderer crash page. Let the job
+        // preflight revive it in place instead of discarding its ownership.
+        : OWNED_BROKEN_TAB_URL_PATTERN.test(url);
+      if (targetMatches) {
+        if (!tab?.playwright) throw new Error('首选任务标签页不可控');
+        try { await tab.markHandoff(); } catch { /* current run may own the handoff */ }
+        logger({ event: 'browser_tab_reattached', method: 'preferred-tab', tabId: preferredTabId, url });
+        return { tab, method: 'preferred-tab', url };
+      }
+    } catch (error) {
+      failures.push(`preferred-tab: ${publicError(error)}`);
+    }
+  }
+
   try {
     const controlledTabs = await listBrowserCollectionWithRetry(
       () => browser.tabs.list(),
       { source: '受控标签页', logger },
     );
-    const match = controlledTabs.find(candidate => sameChatTarget(candidate.url, destination));
+    const targetConversation = destination.match(/\/c\/([^/]+)$/u)?.[1] || '';
+    const match = controlledTabs.find(candidate => (
+      targetConversation
+        ? sameChatTarget(candidate.url, destination)
+        : sameChatProject(candidate.url, destination)
+    ));
     if (match?.id) {
       const tab = await browser.tabs.get(match.id);
       const url = await verifyReattachedTab(tab);
@@ -477,7 +508,12 @@ export async function reattachInAppBrowserTab({
         () => browser.user.openTabs(),
         { source: '用户标签页', logger },
       );
-      const match = userTabs.find(candidate => sameChatTarget(candidate.url, destination));
+      const targetConversation = destination.match(/\/c\/([^/]+)$/u)?.[1] || '';
+      const match = userTabs.find(candidate => (
+        targetConversation
+          ? sameChatTarget(candidate.url, destination)
+          : sameChatProject(candidate.url, destination)
+      ));
       if (match) {
         const tab = await browser.user.claimTab(match);
         const url = await verifyReattachedTab(tab);
@@ -1264,6 +1300,7 @@ async function recoverBrowserHostTab(host, job) {
   const recovery = await host.recoverTab({
     browser: host.browser,
     targetUrl,
+    preferredTabId: job.tabId || null,
     fallbackUrl: host.newChatUrl,
     logger: host.logger,
   });
@@ -1966,6 +2003,7 @@ export async function createInAppBrowserCapabilityHost({
 export async function attachPersistentInAppBrowserCapabilityHost({
   browser,
   startUrl,
+  preferredTabId = null,
   policy = BROWSER_DISPATCH_POLICY,
   capabilityFile = DEFAULT_CAPABILITY_FILE,
   jobStateFile = DEFAULT_JOB_FILE,
@@ -1975,6 +2013,7 @@ export async function attachPersistentInAppBrowserCapabilityHost({
   const recovery = await recoverTab({
     browser,
     targetUrl: startUrl,
+    preferredTabId,
     fallbackUrl: projectNewChatUrl(startUrl),
     logger,
   });

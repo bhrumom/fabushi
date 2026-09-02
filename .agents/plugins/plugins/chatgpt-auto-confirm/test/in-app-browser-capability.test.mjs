@@ -275,6 +275,96 @@ test('Browser reattachment rebinds an exact controlled conversation first', asyn
   assert.equal(created, 0);
 });
 
+test('Browser reattachment prefers the persisted task tab for a project-entry target', async () => {
+  const targetUrl = 'https://chatgpt.com/g/fabushi/project';
+  const preferred = fakeTab(
+    'persisted-release-tab',
+    'https://chatgpt.com/g/fabushi/c/release-conversation',
+  );
+  let listed = false;
+  let created = 0;
+  const browser = {
+    tabs: {
+      get: async id => {
+        assert.equal(id, preferred.id);
+        return preferred;
+      },
+      list: async () => {
+        listed = true;
+        return [];
+      },
+      new: async () => {
+        created += 1;
+        return fakeTab('unexpected-new-tab', 'about:blank');
+      },
+    },
+  };
+  const result = await reattachInAppBrowserTab({
+    browser,
+    targetUrl,
+    preferredTabId: preferred.id,
+  });
+  assert.equal(result.method, 'preferred-tab');
+  assert.equal(result.tab, preferred);
+  assert.equal(preferred.handoff, true);
+  assert.equal(listed, false);
+  assert.equal(created, 0);
+});
+
+test('Browser reattachment does not let a persisted tab cross project ownership', async () => {
+  const targetUrl = 'https://chatgpt.com/g/fabushi/project';
+  const foreign = fakeTab(
+    'persisted-foreign-tab',
+    'https://chatgpt.com/g/another-project/c/foreign-conversation',
+  );
+  const replacement = fakeTab('replacement-tab', targetUrl);
+  let created = 0;
+  const browser = {
+    tabs: {
+      get: async id => {
+        if (id === foreign.id) return foreign;
+        if (id === replacement.id) return replacement;
+        throw new Error(`unexpected tab ${id}`);
+      },
+      list: async () => [],
+      new: async () => {
+        created += 1;
+        return replacement;
+      },
+    },
+  };
+  const result = await reattachInAppBrowserTab({
+    browser,
+    targetUrl,
+    preferredTabId: foreign.id,
+  });
+  assert.equal(result.method, 'new-tab');
+  assert.equal(result.tab, replacement);
+  assert.equal(created, 1);
+  assert.equal(foreign.handoff, false);
+});
+
+test('Browser reattachment does not steal a persisted tab on an unrelated external page', async () => {
+  const targetUrl = 'https://chatgpt.com/g/fabushi/project';
+  const foreign = fakeTab('persisted-external-tab', 'https://example.com/account');
+  const replacement = fakeTab('replacement-external-tab', targetUrl);
+  const browser = {
+    tabs: {
+      get: async id => id === foreign.id ? foreign : replacement,
+      list: async () => [],
+      new: async () => replacement,
+    },
+  };
+  const result = await reattachInAppBrowserTab({
+    browser,
+    targetUrl,
+    preferredTabId: foreign.id,
+  });
+  assert.equal(result.method, 'new-tab');
+  assert.equal(result.tab, replacement);
+  assert.equal(foreign.handoff, false);
+});
+
 test('Browser reattachment retries a transient missing collection and accepts an envelope', async () => {
   const targetUrl = 'https://chatgpt.com/g/fabushi/c/conversation-transient-list';
   const rebound = fakeTab('controlled-transient', targetUrl);

@@ -87,6 +87,7 @@ test('plugin supervisor keeps polling after host loss and follows a rotated host
     updatedAt: new Date().toISOString(),
     currentUrl: 'https://chatgpt.com/g/example/c/conversation',
     conversationId: 'conversation',
+    tabId: 'persisted-tab',
   };
   const host = await startFakeHost([{ status: 'waiting_for_browser_host' }]);
   const replacement = await startFakeHost([{ status: 'completed' }]);
@@ -124,6 +125,7 @@ test('plugin supervisor keeps polling after host loss and follows a rotated host
       returnOnLeaseExpiry: true,
     });
     assert.equal(response.result.structuredContent.reattach.jobId, jobId);
+    assert.equal(response.result.structuredContent.reattach.preferredTabId, 'persisted-tab');
     await new Promise(resolvePromise => setTimeout(resolvePromise, 700));
     assert.ok(host.calls >= 1);
 
