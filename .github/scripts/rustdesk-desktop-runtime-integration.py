@@ -1,3 +1,4 @@
+# Applies the verified RustDesk desktop-native bridge idempotently on the dedicated RDF branch.
 from pathlib import Path
 
 edge = Path('desktop/electron/native-edge.cjs')
