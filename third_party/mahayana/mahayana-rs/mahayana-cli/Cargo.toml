@@ -52,3 +52,4 @@ uuid.workspace = true
 
 [dev-dependencies]
 insta = "1.46.3"
+mahayana-test-driver-protocol = { path = "../mahayana-test-driver-protocol" }
