@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import worker from '../worker/src/index.ts';
+import { DEFAULT_BROWSER_HEARTBEAT_SLICE_MS } from '../scripts/in-app-browser-capability-host.mjs';
 
 const defaultNativeRuntime = fileURLToPath(new URL(
   '../runtime/macos/chatgpt-auto-confirm', import.meta.url));
@@ -30,6 +31,7 @@ const configuredBrowserHostRetryDelayMs = Number(process.env.CHATGPT_AUTO_CONFIR
 const browserHostRetryDelayMs = Number.isFinite(configuredBrowserHostRetryDelayMs)
   ? Math.min(60_000, Math.max(500, configuredBrowserHostRetryDelayMs))
   : 5_000;
+const browserHeartbeatSliceMs = DEFAULT_BROWSER_HEARTBEAT_SLICE_MS;
 const pluginDispatchParams = (goal) => ({
   message: goal,
   browser: 'iab',
@@ -58,6 +60,10 @@ function browserReattachMetadata(job) {
     modulePath: browserCapabilityHostModule,
     factory: 'attachPersistentInAppBrowserCapabilityHost',
     runMethod: 'runUntilTerminal',
+    runOptions: {
+      leaseTimeoutMs: browserHeartbeatSliceMs,
+      returnOnLeaseExpiry: true,
+    },
     browser: 'iab',
     startUrl: String(job?.currentUrl || '').startsWith('https://chatgpt.com/')
       ? job.currentUrl : 'https://chatgpt.com/',

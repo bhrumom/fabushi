@@ -119,6 +119,10 @@ test('plugin supervisor keeps polling after host loss and follows a rotated host
     assert.equal(response.result.structuredContent.reattachRequired, true);
     assert.equal(response.result.structuredContent.reattach.factory, 'attachPersistentInAppBrowserCapabilityHost');
     assert.equal(response.result.structuredContent.reattach.runMethod, 'runUntilTerminal');
+    assert.deepEqual(response.result.structuredContent.reattach.runOptions, {
+      leaseTimeoutMs: 18_000,
+      returnOnLeaseExpiry: true,
+    });
     assert.equal(response.result.structuredContent.reattach.jobId, jobId);
     await new Promise(resolvePromise => setTimeout(resolvePromise, 700));
     assert.ok(host.calls >= 1);
