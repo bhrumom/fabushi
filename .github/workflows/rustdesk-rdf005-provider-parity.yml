@@ -1,0 +1,176 @@
+name: RustDesk RDF-005 provider parity
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/rustdesk-rdf005-provider-parity.yml'
+      - 'integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs'
+      - 'chatgpt-vps-control/tests/rustdesk-sidecar-boundary-contract.test.js'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rustdesk-rdf005-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  implement-and-verify:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/rustdesk-fusion-route-negotiation
+
+      - name: Implement bounded clipboard file and audio commands
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs')
+          text = path.read_text()
+
+          text = text.replace(
+              '    client::QualityStatus,\n',
+              '    client::{Data, FileManager, Interface, QualityStatus},\n',
+          )
+
+          enum_marker = '    Text { session_id: String, text: String },\n'
+          enum_add = '''    Clipboard { session_id: String, text: String },
+    File {
+        session_id: String,
+        action: String,
+        #[serde(default)] job_id: i32,
+        #[serde(default)] transfer_type: i32,
+        #[serde(default)] path: String,
+        #[serde(default)] to: String,
+        #[serde(default)] file_num: i32,
+        #[serde(default)] include_hidden: bool,
+        #[serde(default)] is_remote: bool,
+    },
+    Audio { session_id: String, enabled: bool },
+'''
+          if 'Clipboard { session_id: String, text: String }' not in text:
+              assert enum_marker in text
+              text = text.replace(enum_marker, enum_marker + enum_add, 1)
+
+          helper_marker = '''fn session_for_input(session_id: &str) -> Result<SidecarSession, &'static str> {
+    let session = SESSIONS.lock().unwrap().get(session_id).cloned().ok_or("unknown-session")?;
+    if !session.grant.input { return Err("input-not-granted"); }
+    Ok(session)
+}
+'''
+          helper_add = '''
+fn session_for_clipboard(session_id: &str) -> Result<SidecarSession, &'static str> {
+    let session = SESSIONS.lock().unwrap().get(session_id).cloned().ok_or("unknown-session")?;
+    if !session.grant.clipboard { return Err("clipboard-not-granted"); }
+    Ok(session)
+}
+
+fn session_for_file(session_id: &str) -> Result<SidecarSession, &'static str> {
+    let session = SESSIONS.lock().unwrap().get(session_id).cloned().ok_or("unknown-session")?;
+    if !session.grant.file_transfer { return Err("file-transfer-not-granted"); }
+    Ok(session)
+}
+
+fn session_for_audio(session_id: &str) -> Result<SidecarSession, &'static str> {
+    let session = SESSIONS.lock().unwrap().get(session_id).cloned().ok_or("unknown-session")?;
+    if !session.grant.audio { return Err("audio-not-granted"); }
+    Ok(session)
+}
+
+fn valid_path(value: &str) -> bool {
+    value.len() <= 4096 && !value.contains('\\0') && !value.contains('\\r') && !value.contains('\\n')
+}
+'''
+          if 'fn session_for_clipboard' not in text:
+              assert helper_marker in text
+              text = text.replace(helper_marker, helper_marker + helper_add, 1)
+
+          text = text.replace(
+              '["display", "input", "reconnect"]',
+              '["display", "input", "clipboard", "file-transfer", "audio", "reconnect"]',
+          )
+
+          init_marker = '            session.lc.write().unwrap().initialize(peer_id, ConnType::DEFAULT_CONN, None, force_relay, None, None, None);\n'
+          init_replacement = '''            session.lc.write().unwrap().initialize(peer_id, ConnType::DEFAULT_CONN, None, force_relay, None, None, None);
+            session.lc.write().unwrap().disable_audio.v = !grant.audio;
+'''
+          if 'disable_audio.v = !grant.audio' not in text:
+              assert init_marker in text
+              text = text.replace(init_marker, init_replacement, 1)
+
+          handle_marker = '''        Command::Reconnect { session_id, force_relay } => {
+'''
+          handle_add = '''        Command::Clipboard { session_id, text } => {
+            if text.len() > 1024 * 1024 { return Err("clipboard-too-large".into()); }
+            let entry = session_for_clipboard(&session_id).map_err(str::to_owned)?;
+            let mut clipboard = Clipboard::new();
+            clipboard.content = text.into_bytes().into();
+            clipboard.format = ClipboardFormat::Text.into();
+            let mut message = Message::new();
+            message.set_clipboard(clipboard);
+            entry.session.send(Data::Message(message));
+            Ok(json!({"protocol": PROTOCOL, "type": "accepted", "sessionId": session_id, "operation": "clipboard"}))
+        }
+        Command::File { session_id, action, job_id, transfer_type, path, to, file_num, include_hidden, is_remote } => {
+            if job_id < 0 || file_num < 0 || !valid_path(&path) || !valid_path(&to) { return Err("invalid-file-command".into()); }
+            let entry = session_for_file(&session_id).map_err(str::to_owned)?;
+            match action.as_str() {
+                "list" => entry.session.read_remote_dir(path, include_hidden),
+                "send" => {
+                    if path.is_empty() || to.is_empty() { return Err("invalid-file-command".into()); }
+                    entry.session.send_files(job_id, transfer_type, path, to, file_num, include_hidden, is_remote);
+                }
+                "resume" => entry.session.resume_job(job_id, is_remote),
+                "cancel" => entry.session.cancel_job(job_id),
+                _ => return Err("unsupported-file-action".into()),
+            }
+            Ok(json!({"protocol": PROTOCOL, "type": "accepted", "sessionId": session_id, "operation": "file", "action": action, "jobId": job_id}))
+        }
+        Command::Audio { session_id, enabled } => {
+            let entry = session_for_audio(&session_id).map_err(str::to_owned)?;
+            entry.session.lc.write().unwrap().disable_audio.v = !enabled;
+            Ok(json!({"protocol": PROTOCOL, "type": "accepted", "sessionId": session_id, "operation": "audio", "enabled": enabled}))
+        }
+'''
+          if 'Command::Clipboard { session_id, text } =>' not in text:
+              assert handle_marker in text
+              text = text.replace(handle_marker, handle_add + handle_marker, 1)
+
+          path.write_text(text)
+
+          test_path = Path('chatgpt-vps-control/tests/rustdesk-sidecar-boundary-contract.test.js')
+          tests = test_path.read_text()
+          marker = '  assert.match(sidecar, /server_clipboard_enabled: Arc::new\\(RwLock::new\\(grant\\.clipboard\\)\\)/);\n'
+          additions = '''  assert.match(sidecar, /clipboard-not-granted/);
+  assert.match(sidecar, /file-transfer-not-granted/);
+  assert.match(sidecar, /audio-not-granted/);
+  assert.match(sidecar, /message\\.set_clipboard\\(clipboard\\)/);
+  assert.match(sidecar, /entry\\.session\\.send_files\\(/);
+  assert.match(sidecar, /disable_audio\\.v = !grant\\.audio/);
+  assert.match(sidecar, /disable_audio\\.v = !enabled/);
+'''
+          if 'clipboard-not-granted' not in tests:
+              assert marker in tests
+              tests = tests.replace(marker, marker + additions, 1)
+          test_path.write_text(tests)
+
+      - name: Run source boundary contracts
+        working-directory: chatgpt-vps-control
+        run: node --test tests/rustdesk-sidecar-boundary-contract.test.js tests/rustdesk-session-permission-enforcement.test.js
+
+      - name: Commit verified RDF-005 provider parity
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs chatgpt-vps-control/tests/rustdesk-sidecar-boundary-contract.test.js
+          if git diff --cached --quiet; then
+            echo 'RDF-005 provider parity patch is already applied.'
+            exit 0
+          fi
+          git commit -m 'feat(remote): enforce RustDesk clipboard file and audio grants'
+          git push origin HEAD:codex/rustdesk-fusion-route-negotiation
