@@ -355,6 +355,10 @@ function conversationIdFromState(state) {
   return raw.startsWith('chatgpt:') ? raw.slice('chatgpt:'.length) : raw;
 }
 
+function conversationIdFromUrl(value) {
+  return canonicalChatUrl(value).match(/\/c\/([^/?#]+)$/u)?.[1] || '';
+}
+
 function projectNewChatUrl(url) {
   try {
     const parsed = new URL(url);
@@ -1701,6 +1705,27 @@ export async function createInAppBrowserCapabilityHost({
   if (host.activeJob) {
     host.activeJob.tab = tab;
     host.activeJob.tabId = tab.id || host.activeJob.tabId || null;
+    // A short-lived host can persist the project entry while the actual
+    // conversation tab remains alive (for example during a lease rotation).
+    // Recover the conversation identity from the task-owned tab before the
+    // restored-job preflight, so an authorization card or in-flight reply is
+    // not lost by navigating that tab back to the project home.
+    let boundTabUrl = initialUrl;
+    try {
+      if (typeof tab.url === 'function') boundTabUrl = await tab.url();
+    } catch {
+      // A closed tab is handled by the normal per-job recovery path below.
+    }
+    const boundConversationId = conversationIdFromUrl(boundTabUrl);
+    const savedTarget = host.activeJob.currentUrl || initialUrl;
+    if (host.activeJob.phase === 'waiting'
+        && !conversationIdFromState(host.activeJob)
+        && !conversationIdFromUrl(savedTarget)
+        && boundConversationId
+        && sameChatProject(boundTabUrl, savedTarget)) {
+      host.activeJob.currentUrl = canonicalChatUrl(boundTabUrl);
+      host.activeJob.conversationId = boundConversationId;
+    }
   }
   host.runStep = async ({ jobId = '' } = {}) => {
     if (host.stepActive) return publicJob(jobId ? jobForId(host, jobId) : host.activeJob);
