@@ -2,7 +2,7 @@ use mahayana_mcp_runtime::{McpTransport, NativeMcpClient};
 use mahayana_plugin_runtime::PluginInstaller;
 use mahayana_product::MahayanaProductClient;
 use mahayana_test_driver_protocol::TestDriverError;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::Path;
 use url::Url;
@@ -121,14 +121,9 @@ pub(super) fn describe_actions(
     let marketplace = marketplace_plugin(product, plugin_id, platform)?;
     let bot_endpoint = required_string(&marketplace, "botEndpoint", "marketplace_bot_missing")?;
     let bot = authenticated_mcp_client(bot_endpoint)?;
-    let bot_tools = bot.list_tools().map_err(|error| {
-        mcp_error(
-            "actions_describe_failed",
-            "tools/list",
-            bot_endpoint,
-            error,
-        )
-    })?;
+    let bot_tools = bot
+        .list_tools()
+        .map_err(|error| mcp_error("actions_describe_failed", "tools/list", bot_endpoint, error))?;
 
     let commands = marketplace
         .get("commands")
@@ -184,9 +179,9 @@ pub(super) fn invoke_action(
         .get("commands")
         .and_then(Value::as_array)
         .and_then(|commands| {
-            commands.iter().find(|command| {
-                command.get("name").and_then(Value::as_str) == Some(action)
-            })
+            commands
+                .iter()
+                .find(|command| command.get("name").and_then(Value::as_str) == Some(action))
         })
         .ok_or_else(|| {
             TestDriverError::new(
@@ -198,9 +193,7 @@ pub(super) fn invoke_action(
         .get("approval")
         .and_then(Value::as_str)
         .unwrap_or("none");
-    if approval != "none"
-        && params.get("approval").and_then(Value::as_str) != Some("confirmed")
-    {
+    if approval != "none" && params.get("approval").and_then(Value::as_str) != Some("confirmed") {
         return Err(TestDriverError::new(
             "approval_required",
             format!("{plugin_id}:{action} requires {approval} approval"),
@@ -265,9 +258,9 @@ fn marketplace_plugin(
         .get("plugins")
         .and_then(Value::as_array)
         .and_then(|plugins| {
-            plugins.iter().find(|plugin| {
-                plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id)
-            })
+            plugins
+                .iter()
+                .find(|plugin| plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id))
         })
         .cloned()
         .ok_or_else(|| {
