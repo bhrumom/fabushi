@@ -33,6 +33,7 @@ mahayana-feature-host = { workspace = true, features = ["production"] }
 mahayana-host.workspace = true
 mahayana-host-protocol.workspace = true
 mahayana-ffi = { path = "../mahayana-ffi" }
+mahayana-mcp-runtime.workspace = true
 mahayana-product = { package = "mahayana-platform-client", path = "../mahayana-product" }
 mahayana-miniapp-protocol.workspace = true
 mahayana-platform-core.workspace = true
