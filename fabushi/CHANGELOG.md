@@ -1,5 +1,14 @@
 # 更新日志
 
+## [1.2.11] - 2026-09-02
+
+### 正式发布门禁分页修复
+- 修复 `post-main-delivery` 在同一主线提交拥有超过 100 个 check-runs 时只读取第一页、从而漏掉已成功的 `Native mobile result` / `Native iOS` 并错误等待的问题；现通过 GitHub API 分页聚合全部检查后再执行 exact-SHA 门禁。
+- 将桌面、Android 与 iOS 产品版本统一提升到 `1.2.11`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `17`，避免复用已经启动外部交付的 `1.2.10` 发布身份。
+- 重新从修复后的受保护 `main` 执行桌面 macOS/Windows/Linux、Android/iOS 商店交付、生产部署、不可变 GitHub Release、安装及上一正式版本升级验证；重型构建和测试继续仅由 GitHub Actions 执行。
+
+---
+
 ## [1.2.10] - 2026-09-02
 
 ### 全新正式版本发布
