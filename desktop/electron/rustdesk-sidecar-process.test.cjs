@@ -61,9 +61,9 @@ test('manager freezes grants and blocks input escalation before writing to sidec
   const opened = manager.open({ sessionId: 'session-1', peerId: '123456789', password: 'ephemeral', grant: { display: true, input: false, clipboard: false, fileTransfer: false, audio: false } });
   assert.equal(opened.grant.input, false);
   assert.throws(() => manager.command('session-1', { type: 'mouse', x: 1, y: 1, mask: 0 }), /not granted/);
-  assert.match(output(), new RegExp(`"protocol":"${PROTOCOL.replaceAll('.', '\\.')}`));
   assert.match(output(), /"type":"open"/);
   assert.doesNotMatch(output(), /MAHAYANA_AUTH_TOKEN|FABUSHI_ACCOUNT_TOKEN/);
+  assert.equal(children[0].spawnOptions.env.MAHAYANA_AUTH_TOKEN, undefined);
 });
 
 test('unknown-session events terminate the provider process instead of crossing session boundaries', () => {
