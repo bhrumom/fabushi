@@ -920,6 +920,7 @@ pub(super) async fn remote_computer_sessions(
                 "state": row.state,
                 "createdAt": row.created_at,
                 "expiresAt": row.expires_at,
+                "permissions": {"display": true, "input": true, "clipboard": false, "fileTransfer": false, "audio": false},
             })
         })
         .collect::<Vec<_>>();
@@ -1084,6 +1085,7 @@ pub(super) async fn remote_computer_session_create(
         "createdAt": now,
         "expiresAt": expires_at,
         "state": "pending",
+        "permissions": {"display": true, "input": true, "clipboard": false, "fileTransfer": false, "audio": false},
         "iceServers": remote_ice_servers(&context.env),
     }))?
     .with_headers(auth_headers()))

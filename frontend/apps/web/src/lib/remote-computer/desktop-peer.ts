@@ -255,6 +255,21 @@ function normalizeIceServers(value: unknown): RTCIceServer[] {
   });
 }
 
+function normalizeRemotePermissions(value: unknown): RemoteComputerSession["permissions"] {
+  const permissions = objectValue(value);
+  const names = ["display", "input", "clipboard", "fileTransfer", "audio"] as const;
+  if (names.some((name) => typeof permissions[name] !== "boolean")) {
+    throw new Error("Remote computer session permissions are invalid");
+  }
+  return {
+    display: permissions.display as boolean,
+    input: permissions.input as boolean,
+    clipboard: permissions.clipboard as boolean,
+    fileTransfer: permissions.fileTransfer as boolean,
+    audio: permissions.audio as boolean,
+  };
+}
+
 function normalizeSessionsPayload(value: unknown, expectedDeviceId: string): NormalizedSessionListPayload {
   const data = objectValue(value);
   if (data.deviceId !== expectedDeviceId || !Array.isArray(data.sessions) || data.sessions.length > MAX_REMOTE_SESSIONS) {
@@ -282,6 +297,7 @@ function normalizeSessionsPayload(value: unknown, expectedDeviceId: string): Nor
       state: session.state as RemoteComputerSession["state"],
       ...(session.createdAt === undefined ? {} : { createdAt: session.createdAt }),
       expiresAt: session.expiresAt,
+      permissions: normalizeRemotePermissions(session.permissions),
       ...(session.generation === undefined ? {} : { generation: session.generation }),
     };
   });
@@ -1112,6 +1128,10 @@ export class RemoteComputerDesktopController {
       return;
     }
     if (message.type === "computer.snapshot.request") {
+      if (!entry.session.permissions.display) {
+        await sendJson(channel, { type: "computer.error", message: "Remote session does not grant display permission" });
+        return;
+      }
       const responseId = typeof message.id === "string" && message.id.length > 0 && message.id.length <= 200 ? message.id : "";
       if (!responseId) {
         await sendJson(channel, { type: "computer.error", message: "Snapshot request id is invalid" });
@@ -1197,6 +1217,10 @@ export class RemoteComputerDesktopController {
       return;
     }
     if (message.type === "computer.action") {
+      if (!entry.session.permissions.input) {
+        await sendJson(channel, { type: "computer.error", message: "Remote session does not grant input permission" });
+        return;
+      }
       const responseId = typeof message.id === "string" && message.id.length > 0 && message.id.length <= 200 ? message.id : "";
       const actionChain = Array.isArray(message.then) ? message.then : [];
       if (!responseId || !message.action || typeof message.action !== "object" || actionChain.length > MAX_ACTION_CHAIN) {
