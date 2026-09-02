@@ -1,5 +1,14 @@
 # 更新日志
 
+## [1.2.10] - 2026-09-02
+
+### 全新正式版本发布
+- 以受保护 `main@cf41861f7f274af792dc451d62a4a1d0052ebff9` 为唯一发布源，纳入当前主线最新的 iOS 浏览器认证回跳登录门禁修复，并在审阅当前全部开放 PR 后启动新的正式发布列车。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.10`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `16`，不复用已经发布且不可变的 `1.2.9` 身份。
+- 本版本继续通过仓库现有 exact-main GitHub Actions 执行桌面 macOS/Windows/Linux 打包、Android/iOS 商店交付、生产部署、不可变 GitHub Release、安装与上一正式版本升级验证；重型构建和测试仅在 GitHub Actions 执行。
+
+---
+
 ## [1.2.9] - 2026-09-02
 
 ### 全新正式版本发布
