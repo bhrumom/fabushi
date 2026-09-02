@@ -1,0 +1,364 @@
+name: RustDesk RDF-003 implementation
+
+on:
+  push:
+    branches:
+      - codex/rustdesk-fusion-route-negotiation
+    paths:
+      - '.github/workflows/rustdesk-rdf003-implement.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  implement-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/rustdesk-fusion-route-negotiation
+          fetch-depth: 0
+      - name: Apply provider-neutral route negotiation implementation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          remote = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs')
+          text = remote.read_text()
+
+          needle = '''struct RemoteComputerSessionCloseRequest {
+              role: String,
+              #[serde(default)]
+              device_secret: Option<String>,
+              #[serde(default)]
+              client_id: Option<String>,
+              #[serde(default)]
+              mobile_token: Option<String>,
+          }
+          '''
+          insert = needle + '''
+          #[derive(Debug, Deserialize)]
+          #[serde(rename_all = "camelCase", deny_unknown_fields)]
+          struct RemoteComputerTransportRequest {
+              role: String,
+              #[serde(default)]
+              device_secret: Option<String>,
+              #[serde(default)]
+              client_id: Option<String>,
+              #[serde(default)]
+              mobile_token: Option<String>,
+              #[serde(default)]
+              direct_available: bool,
+              #[serde(default)]
+              relay_region: Option<String>,
+          }
+          '''
+          if 'struct RemoteComputerTransportRequest' not in text:
+              if needle not in text:
+                  raise SystemExit('transport request insertion anchor not found')
+              text = text.replace(needle, insert, 1)
+
+          needle = '''struct RemoteComputerSessionRow {
+              client_id: String,
+              mobile_token_hash: String,
+              state: String,
+              expires_at: i64,
+          }
+          '''
+          insert = needle + '''
+          #[derive(Debug, Deserialize)]
+          struct RemoteComputerTransportRow {
+              client_id: String,
+              mobile_token_hash: String,
+              state: String,
+              expires_at: i64,
+              provider: String,
+              route_policy: String,
+              selected_route: Option<String>,
+              relay_region: Option<String>,
+          }
+          '''
+          if 'struct RemoteComputerTransportRow' not in text:
+              if needle not in text:
+                  raise SystemExit('transport row insertion anchor not found')
+              text = text.replace(needle, insert, 1)
+
+          marker = '''pub(super) async fn remote_computer_session_close(
+          '''
+          function = r'''fn remote_relay_available(env: &Env, provider: &str) -> bool {
+              let binding = match provider {
+                  "fabushi-webrtc" => "REMOTE_TURN_URL",
+                  "rustdesk-sidecar" => "RUSTDESK_RELAY_URL",
+                  _ => return false,
+              };
+              env.var(binding)
+                  .ok()
+                  .is_some_and(|value| !value.to_string().trim().is_empty())
+          }
+
+          fn remote_relay_region(value: Option<&str>) -> Option<Option<String>> {
+              let Some(value) = value else {
+                  return Some(None);
+              };
+              let value = value.trim();
+              if value.is_empty() {
+                  return Some(None);
+              }
+              (value.len() <= 32
+                  && value
+                      .bytes()
+                      .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
+              .then(|| Some(value.to_ascii_lowercase()))
+          }
+
+          pub(super) async fn remote_computer_session_transport(
+              mut request: Request,
+              context: RouteContext<()>,
+          ) -> Result<Response> {
+              let account = match authenticated_account(&request, &context.env) {
+                  Ok(account) => account,
+                  Err(_) => return error_response(401, "unauthorized", "A valid account token is required."),
+              };
+              let device_id = route_identifier(&context, "device_id")?.to_string();
+              let session_id = route_identifier(&context, "session_id")?.to_string();
+              let input: RemoteComputerTransportRequest = match request.json().await {
+                  Ok(input) => input,
+                  Err(_) => {
+                      return error_response(
+                          400,
+                          "invalid_transport_request",
+                          "Transport negotiation request must be valid JSON.",
+                      );
+                  }
+              };
+              if !remote_role(&input.role) {
+                  return error_response(400, "invalid_control_role", "Control role must be desktop or mobile.");
+              }
+              let Some(relay_region) = remote_relay_region(input.relay_region.as_deref()) else {
+                  return error_response(400, "invalid_relay_region", "relayRegion is invalid.");
+              };
+              let database = context.env.d1(DATABASE_BINDING)?;
+              let Some(session) = worker::query!(
+                  &database,
+                  "SELECT s.client_id, s.mobile_token_hash, s.state, s.expires_at,
+                          s.provider, s.route_policy, s.selected_route, s.relay_region
+                   FROM remote_computer_sessions s
+                   JOIN remote_computer_clients c
+                     ON c.client_id = s.client_id AND c.device_id = s.device_id AND c.user_id = s.user_id
+                   JOIN remote_computers d ON d.device_id = s.device_id AND d.user_id = s.user_id
+                   WHERE s.session_id = ?1 AND s.device_id = ?2 AND s.user_id = ?3
+                     AND c.revoked_at IS NULL AND c.client_token_hash IS NOT NULL
+                     AND d.revoked_at IS NULL LIMIT 1",
+                  &session_id,
+                  &device_id,
+                  &account.user_id
+              )?
+              .first::<RemoteComputerTransportRow>(None)
+              .await?
+              else {
+                  return error_response(404, "control_session_not_found", "Control session was not found.");
+              };
+              let now = now_seconds();
+              let desktop_authorized = if input.role == "desktop" {
+                  match input.device_secret.as_deref() {
+                      Some(secret) => remote_desktop_secret_matches(
+                          &database,
+                          &account.user_id,
+                          &device_id,
+                          secret,
+                      )
+                      .await?,
+                      None => false,
+                  }
+              } else {
+                  false
+              };
+              let mobile_authorized = input.role == "mobile"
+                  && input.client_id.as_deref() == Some(session.client_id.as_str())
+                  && input.mobile_token.as_deref().map(remote_secret_hash).is_some_and(|hash| {
+                      constant_time_eq(hash.as_bytes(), session.mobile_token_hash.as_bytes())
+                  });
+              if session.state == "closed"
+                  || session.expires_at <= now
+                  || !(desktop_authorized || mobile_authorized)
+              {
+                  return error_response(
+                      403,
+                      "control_session_forbidden",
+                      "This actor cannot negotiate transport for the control session.",
+                  );
+              }
+
+              let relay_available = remote_relay_available(&context.env, &session.provider);
+              let selected_route = if session.route_policy == "relay-only" {
+                  if !relay_available {
+                      return error_response(
+                          503,
+                          "relay_unavailable",
+                          "The session requires relay transport, but no authenticated relay is configured.",
+                      );
+                  }
+                  "relay"
+              } else if input.direct_available {
+                  "direct"
+              } else if relay_available {
+                  "relay"
+              } else {
+                  return error_response(
+                      503,
+                      "transport_unavailable",
+                      "Direct transport is unavailable and no authenticated relay is configured.",
+                  );
+              };
+              if session.selected_route.as_deref() == Some("relay") && selected_route == "direct" {
+                  return error_response(
+                      409,
+                      "transport_route_locked",
+                      "A session that fell back to relay cannot be upgraded back to direct transport.",
+                  );
+              }
+              let stored_region = if selected_route == "relay" {
+                  relay_region.or(session.relay_region)
+              } else {
+                  None
+              };
+              let updated = worker::query!(
+                  &database,
+                  "UPDATE remote_computer_sessions
+                   SET selected_route = ?1, relay_region = ?2, transport_updated_at = ?3
+                   WHERE session_id = ?4 AND device_id = ?5 AND user_id = ?6
+                     AND state <> 'closed' AND expires_at > ?3
+                     AND (selected_route IS NULL OR selected_route = ?1
+                          OR (selected_route = 'direct' AND ?1 = 'relay'))",
+                  selected_route,
+                  stored_region.as_deref(),
+                  now,
+                  &session_id,
+                  &device_id,
+                  &account.user_id
+              )?
+              .run()
+              .await?;
+              if updated.meta()?.and_then(|meta| meta.changes).unwrap_or(0) == 0 {
+                  return error_response(
+                      409,
+                      "transport_route_conflict",
+                      "Transport route changed concurrently; refresh the session before retrying.",
+                  );
+              }
+              Ok(Response::from_json(&json!({
+                  "sessionId": session_id,
+                  "provider": session.provider,
+                  "routePolicy": session.route_policy,
+                  "selectedRoute": selected_route,
+                  "relayRegion": stored_region,
+                  "transportUpdatedAt": now,
+              }))?
+              .with_headers(auth_headers()))
+          }
+
+          '''
+          if 'remote_computer_session_transport(' not in text:
+              if marker not in text:
+                  raise SystemExit('transport function insertion anchor not found')
+              text = text.replace(marker, function + marker, 1)
+          remote.write_text(text)
+
+          worker = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs')
+          text = worker.read_text()
+          route = '''        .post_async(
+              "/v1/computers/:device_id/sessions/:session_id/transport",
+              remote_computer_session_transport,
+          )
+          '''
+          anchor = '''        .post_async(
+              "/v1/computers/:device_id/sessions/:session_id/close",
+              remote_computer_session_close,
+          )
+          '''
+          if '/sessions/:session_id/transport' not in text:
+              if anchor not in text:
+                  raise SystemExit('worker route insertion anchor not found')
+              text = text.replace(anchor, route + anchor, 1)
+          worker.write_text(text)
+
+          migration = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0018_remote_computer_transport_audit.sql')
+          migration.write_text('''-- RDF-003: monotonic route fallback and auditable remote-session transport decisions.\nCREATE TABLE IF NOT EXISTS remote_computer_transport_audit (\n    audit_id INTEGER PRIMARY KEY AUTOINCREMENT,\n    session_id TEXT NOT NULL,\n    user_id TEXT NOT NULL,\n    device_id TEXT NOT NULL,\n    provider TEXT NOT NULL,\n    previous_route TEXT,\n    selected_route TEXT NOT NULL CHECK (selected_route IN ('direct', 'relay')),\n    relay_region TEXT,\n    created_at INTEGER NOT NULL\n);\n\nCREATE TRIGGER IF NOT EXISTS remote_computer_transport_no_relay_to_direct\nBEFORE UPDATE OF selected_route ON remote_computer_sessions\nFOR EACH ROW\nWHEN OLD.selected_route = 'relay' AND NEW.selected_route = 'direct'\nBEGIN\n    SELECT RAISE(ABORT, 'relay transport cannot be upgraded back to direct');\nEND;\n\nCREATE TRIGGER IF NOT EXISTS remote_computer_transport_audit_update\nAFTER UPDATE OF selected_route ON remote_computer_sessions\nFOR EACH ROW\nWHEN NEW.selected_route IS NOT NULL\n AND (OLD.selected_route IS NOT NEW.selected_route OR OLD.relay_region IS NOT NEW.relay_region)\nBEGIN\n    INSERT INTO remote_computer_transport_audit\n        (session_id, user_id, device_id, provider, previous_route, selected_route, relay_region, created_at)\n    VALUES\n        (NEW.session_id, NEW.user_id, NEW.device_id, NEW.provider, OLD.selected_route, NEW.selected_route, NEW.relay_region, NEW.transport_updated_at);\nEND;\n\nCREATE INDEX IF NOT EXISTS remote_computer_transport_audit_session_idx\n    ON remote_computer_transport_audit(user_id, device_id, session_id, created_at);\n''')
+
+          lib = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/lib.rs')
+          text = lib.read_text()
+          anchor = '''pub const REMOTE_COMPUTER_TRANSPORT_CONTRACT_SCHEMA_V17: &str =
+              include_str!("../migrations/0017_remote_computer_transport_contract.sql");
+          '''
+          addition = anchor + '''pub const REMOTE_COMPUTER_TRANSPORT_AUDIT_SCHEMA_V18: &str =
+              include_str!("../migrations/0018_remote_computer_transport_audit.sql");
+          '''
+          if 'REMOTE_COMPUTER_TRANSPORT_AUDIT_SCHEMA_V18' not in text:
+              if anchor not in text:
+                  raise SystemExit('schema const insertion anchor not found')
+              text = text.replace(anchor, addition, 1)
+          lib.write_text(text)
+
+          test = Path('chatgpt-vps-control/tests/rustdesk-route-negotiation-contract.test.js')
+          test.write_text(r'''import assert from "node:assert/strict";
+          import { readFileSync } from "node:fs";
+          import { dirname, resolve } from "node:path";
+          import test from "node:test";
+          import { fileURLToPath } from "node:url";
+
+          const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+          const source = (path) => readFileSync(resolve(root, path), "utf8");
+
+          test("server owns direct/relay selection behind authenticated session actors", () => {
+            const remote = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs");
+            const worker = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs");
+            assert.match(worker, /sessions\/:session_id\/transport/);
+            assert.match(remote, /remote_computer_session_transport/);
+            assert.match(remote, /remote_desktop_secret_matches/);
+            assert.match(remote, /mobile_token_hash/);
+            assert.match(remote, /route_policy == "relay-only"/);
+            assert.match(remote, /direct_available/);
+            assert.match(remote, /REMOTE_TURN_URL/);
+            assert.match(remote, /RUSTDESK_RELAY_URL/);
+            assert.match(remote, /selected_route = 'direct' AND \?1 = 'relay'/);
+          });
+
+          test("relay fallback is monotonic and audited without storing credentials", () => {
+            const migration = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0018_remote_computer_transport_audit.sql");
+            assert.match(migration, /remote_computer_transport_no_relay_to_direct/);
+            assert.match(migration, /remote_computer_transport_audit/);
+            assert.match(migration, /previous_route/);
+            assert.match(migration, /selected_route/);
+            assert.doesNotMatch(migration, /device_secret|mobile_token|client_token|credential|password/);
+          });
+          ''')
+
+          wbs = Path('projects/rustdesk-fabushi-fusion/management/01-WBS原子任务.md')
+          text = wbs.read_text()
+          text = text.replace(
+              '| RDF-003 | Direct/relay negotiation | RDF-002 | direct-first + authenticated relay fallback | in-progress | durable route policy/selection schema; Worker negotiation API next |',
+              '| RDF-003 | Direct/relay negotiation | RDF-002 | direct-first + authenticated relay fallback | in-progress | Worker negotiation API + monotonic fallback/audit implemented on dedicated PR; CI/merge and real provider execution still required |',
+          )
+          wbs.write_text(text)
+
+      - name: Format Rust
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt --all -- --check
+      - name: Verify RDF-003 source contract
+        run: node --test chatgpt-vps-control/tests/rustdesk-route-negotiation-contract.test.js chatgpt-vps-control/tests/rustdesk-transport-contract.test.js
+      - name: Test platform worker
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test -p mahayana-platform-worker
+      - name: Commit verified RDF-003 implementation
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs \
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs \
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/lib.rs \
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0018_remote_computer_transport_audit.sql \
+                  chatgpt-vps-control/tests/rustdesk-route-negotiation-contract.test.js \
+                  projects/rustdesk-fabushi-fusion/management/01-WBS原子任务.md
+          git commit -m "feat(remote): add authenticated route negotiation and audit" \
+            -m "[skip ci]"
+          git push origin HEAD:codex/rustdesk-fusion-route-negotiation
