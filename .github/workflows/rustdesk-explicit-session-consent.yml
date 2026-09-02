@@ -4,16 +4,18 @@ on:
   push:
     branches:
       - codex/rustdesk-fusion-route-negotiation
-    paths:
-      - '.github/scripts/rustdesk-explicit-session-consent.py'
-      - '.github/workflows/rustdesk-explicit-session-consent.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: rustdesk-explicit-consent-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -32,7 +34,7 @@ jobs:
           grep -q 'denyPendingSession' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           ! grep -q 'if (pending) await this.openPeer(pending, iceServers)' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           grep -q 'data-testid="remote-session-consent"' desktop/src/messaging-shell-v2.tsx
-      - name: Run frontend type and desktop quality checks
+      - name: Run frontend and desktop type checks
         run: |
           npm --prefix frontend/apps/web ci --ignore-scripts
           npm --prefix frontend/apps/web run typecheck
