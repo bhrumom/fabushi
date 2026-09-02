@@ -126,11 +126,10 @@ function isRejectControlLabel(label) {
 }
 
 export function isPendingAuthorizationState(state = {}) {
-  // A live Chat response cannot simultaneously be paused behind an
-  // authorization card. This also prevents historical connector-card text in
-  // the conversation transcript from being mistaken for a newly rendered
-  // confirmation request after the card has already disappeared.
-  if (state.stopAnswer === true) return false;
+  // ChatGPT can keep its "stop generating" control visible while a connector
+  // authorization card is waiting for approval. The card signal is stronger
+  // than the response-running signal: suppressing it here leaves the task
+  // visibly stuck behind an Allow button forever.
   const controls = Array.isArray(state.controls) ? state.controls : [];
   const activeAllow = controls.filter(control => (
     isAllowControlLabel(control?.label) && !control?.disabled
@@ -739,7 +738,9 @@ export async function approveAuthorization(tab) {
   const state = await readPageState(tab);
   const pendingAuthorization = state.pendingAuthorization === true
     || (state.pendingAuthorization === undefined && isPendingAuthorizationState(state));
-  if (!pendingAuthorization || state.stopAnswer === true) return { ok: true, found: false };
+  // Do not suppress a visible authorization card merely because the Chat page
+  // also exposes a stop-generating control (see isPendingAuthorizationState).
+  if (!pendingAuthorization) return { ok: true, found: false };
   if (await clickSessionScope(tab)) {
     const confirmed = await confirmedAuthorizationResult(tab, 'session-scope-visible');
     if (confirmed) return confirmed;

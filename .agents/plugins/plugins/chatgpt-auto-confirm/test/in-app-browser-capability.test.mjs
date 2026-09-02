@@ -111,7 +111,19 @@ test('authorization detector recognizes connector cards without a manual trigger
       { label: '拒绝', disabled: false },
       { label: '允许', disabled: false },
     ],
-  }), false);
+  }), true);
+});
+
+test('authorization remains detectable while ChatGPT exposes stop-generating', () => {
+  assert.equal(isPendingAuthorizationState({
+    bodyText: 'ChatGPT 将使用 GitHub 来帮助处理你的请求。',
+    stopAnswer: true,
+    controls: [
+      { label: '停止回答', disabled: false },
+      { label: '拒绝', disabled: false },
+      { label: '允许', disabled: false },
+    ],
+  }), true);
 });
 
 function fakeTab(id, url) {
