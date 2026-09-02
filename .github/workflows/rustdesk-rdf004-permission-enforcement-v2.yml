@@ -1,0 +1,73 @@
+name: RustDesk RDF-004 permission enforcement v2
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/rustdesk-rdf004-permission-enforcement-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  implement-and-verify:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/rustdesk-fusion-route-negotiation
+          fetch-depth: 1
+
+      - name: Apply canonical RDF-004 permission implementation
+        shell: python
+        run: |
+          from pathlib import Path
+          workflow = Path('.github/workflows/rustdesk-rdf004-permission-enforcement.yml').read_text()
+          marker = '      - name: Enforce session grants in API and desktop control path\n        shell: python\n        run: |\n'
+          start = workflow.index(marker) + len(marker)
+          end = workflow.index('\n      - name: Format Rust', start)
+          block = workflow[start:end]
+          lines = block.splitlines()
+          code = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
+          exec(compile(code, 'rdf004-permission-implementation', 'exec'), {'__name__': '__main__'})
+
+      - name: Format Rust
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt --all
+
+      - name: Verify permission and RustDesk contracts
+        run: |
+          node --test \
+            chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js \
+            chatgpt-vps-control/tests/rustdesk-session-grants-audit-contract.test.js \
+            chatgpt-vps-control/tests/rustdesk-route-negotiation-contract.test.js
+
+      - name: Typecheck shared web remote-control package
+        working-directory: frontend
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm --filter @fabushi/web typecheck
+
+      - name: Test platform worker
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test --locked -p mahayana-platform-worker
+
+      - name: Commit verified permission enforcement
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs \
+            frontend/apps/web/src/lib/mahayana-host/contracts.ts \
+            frontend/apps/web/src/lib/remote-computer/desktop-peer.ts \
+            frontend/apps/web/src/lib/remote-computer/remote-api.ts \
+            chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js \
+            projects/rustdesk-fabushi-fusion/management/01-WBS原子任务.md
+          if git diff --cached --quiet; then
+            echo 'RDF-004 permission enforcement is already committed.'
+            exit 0
+          fi
+          git commit -m 'feat(remote): enforce session grants for display and input'
+          git push origin HEAD:codex/rustdesk-fusion-route-negotiation
