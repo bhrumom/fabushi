@@ -12,6 +12,7 @@ kernel_resilience = (root / 'third_party/mahayana/mahayana-rs/mahayana-kernel/sr
 remote_device = (root / 'desktop/electron/remote-device-agent-supervisor.cjs').read_text(encoding='utf-8')
 rustdesk_sidecar = (root / 'desktop/electron/rustdesk-sidecar-process.cjs').read_text(encoding='utf-8')
 rustdesk_bootstrap = (root / 'desktop/electron/rustdesk-host-bootstrap.cjs').read_text(encoding='utf-8')
+rustdesk_daemon = (root / 'desktop/electron/rustdesk-host-daemon-process.cjs').read_text(encoding='utf-8')
 
 method_block = re.search(r'const methodNames = \[([\s\S]*?)\];', edge)
 if not method_block:
@@ -66,6 +67,8 @@ for label, (text, needle) in {
     'RustDesk sidecar uses child_process only behind dedicated provider boundary': (rustdesk_sidecar, 'node:child_process'),
     'RustDesk sidecar requires pinned packaged executable resolution': (rustdesk_sidecar, 'executablePath'),
     'RustDesk host bootstrap uses child_process only behind dedicated provider boundary': (rustdesk_bootstrap, 'node:child_process'),
+    'RustDesk host daemon uses child_process only behind dedicated provider boundary': (rustdesk_daemon, 'node:child_process'),
+    'RustDesk host daemon requires pinned packaged executable resolution': (rustdesk_daemon, 'executablePath'),
 }.items():
     if needle not in text:
         raise SystemExit(f'GBF runtime convergence: missing {label}: {needle}')
@@ -85,6 +88,8 @@ for base in [root / 'desktop', root / 'frontend/apps/web/src']:
                 'desktop/electron/remote-device-agent-supervisor.test.cjs',
                 'desktop/electron/rustdesk-host-bootstrap.cjs',
                 'desktop/electron/rustdesk-host-bootstrap.test.cjs',
+                'desktop/electron/rustdesk-host-daemon-process.cjs',
+                'desktop/electron/rustdesk-host-daemon-process.test.cjs',
                 'desktop/electron/rustdesk-sidecar-process.cjs',
                 'desktop/electron/rustdesk-sidecar-process.test.cjs',
             }:
