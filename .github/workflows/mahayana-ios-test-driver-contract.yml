@@ -1,0 +1,128 @@
+name: Mahayana iOS test-driver contract
+
+on:
+  pull_request:
+    paths:
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'third_party/mahayana/mahayana-rs/mahayana-cli/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-test-driver-protocol/**'
+      - '.github/workflows/mahayana-ios-test-driver-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mahayana-ios-test-driver-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Test-driver protocol and release boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          toolchain: 1.98.0
+          components: rustfmt
+
+      - name: Cache Mahayana Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          cache-on-failure: true
+
+      - name: Check formatting of new test-driver surface
+        run: |
+          cargo fmt --all -- --check
+
+      - name: Run protocol contract tests
+        run: |
+          cargo test -p mahayana-test-driver-protocol --profile ci
+
+      - name: Check Debug test-driver binary
+        run: |
+          cargo check -p mahayana-cli --features test-driver --bin mahayana-test-driver --profile ci
+
+      - name: Exercise JSONL control plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/mahayana-test-driver-input.jsonl <<'EOF'
+          {"protocol":"mahayana.test-driver.v1","requestId":"health-1","correlationId":"corr-health","method":"health","params":{}}
+          {"protocol":"mahayana.test-driver.v1","requestId":"logs-1","correlationId":"corr-logs","method":"logs.query","params":{"afterSequence":0}}
+          {"protocol":"mahayana.test-driver.v1","requestId":"events-1","correlationId":"corr-events","method":"events.subscribe","params":{"afterSequence":0}}
+          {"protocol":"mahayana.test-driver.v1","requestId":"shutdown-1","correlationId":"corr-shutdown","method":"shutdown","params":{}}
+          EOF
+          cargo run -q -p mahayana-cli --features test-driver --bin mahayana-test-driver < /tmp/mahayana-test-driver-input.jsonl > /tmp/mahayana-test-driver-output.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          lines = [json.loads(line) for line in Path('/tmp/mahayana-test-driver-output.jsonl').read_text().splitlines() if line.strip()]
+          assert len(lines) == 4, lines
+          health, logs, events, shutdown = lines
+          assert health['protocol'] == 'mahayana.test-driver.v1'
+          assert health['ok'] is True
+          assert health['correlationId'] == 'corr-health'
+          assert health['result']['debugOnly'] is True
+          required = {
+              'health', 'resetProfile', 'loginTestAccount', 'marketplace.search',
+              'plugin.install', 'plugin.update', 'plugin.list', 'miniapp.open',
+              'miniapp.chat', 'actions.describe', 'actions.invoke',
+              'events.subscribe', 'logs.query', 'shutdown',
+          }
+          assert set(health['result']['supportedMethods']) == required
+          assert logs['ok'] is True and logs['result']['entries']
+          assert events['ok'] is True and events['result']['events']
+          assert any(event['correlationId'] == 'corr-health' for event in events['result']['events'])
+          assert shutdown['ok'] is True and shutdown['result']['shutdownRequested'] is True
+          PY
+
+      - name: Prove Release build cannot contain test driver
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          cargo check --release -p mahayana-cli --features test-driver --bin mahayana-test-driver > /tmp/release-negative.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo 'Release test-driver build unexpectedly succeeded' >&2
+            exit 1
+          fi
+          grep -F 'mahayana-test-driver is forbidden in release builds' /tmp/release-negative.log
+
+      - name: Record generated lockfile delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Cargo.lock; then
+            echo 'Cargo.lock already current' > /tmp/lock-status.txt
+          else
+            echo 'Cargo.lock requires synchronization from this run' > /tmp/lock-status.txt
+            git diff -- Cargo.lock > /tmp/Cargo.lock.patch
+          fi
+          cat /tmp/lock-status.txt
+
+      - name: Upload contract evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-test-driver-contract-${{ github.sha }}
+          path: |
+            /tmp/mahayana-test-driver-output.jsonl
+            /tmp/release-negative.log
+            /tmp/lock-status.txt
+            /tmp/Cargo.lock.patch
+            third_party/mahayana/mahayana-rs/Cargo.lock
+          if-no-files-found: ignore
+          retention-days: 90
