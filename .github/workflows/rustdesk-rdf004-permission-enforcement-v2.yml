@@ -4,10 +4,19 @@ on:
   pull_request:
     paths:
       - '.github/workflows/rustdesk-rdf004-permission-enforcement-v2.yml'
+      - 'desktop/electron/rustdesk-sidecar-process.cjs'
+      - 'desktop/electron/rustdesk-sidecar-process.test.cjs'
+      - 'desktop/electron/main.cjs'
+      - 'desktop/electron/native-edge.cjs'
+      - 'desktop/electron/preload.cjs'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: rustdesk-rdf004-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   implement-and-verify:
@@ -32,6 +41,72 @@ jobs:
           code = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
           exec(compile(code, 'rdf004-permission-implementation', 'exec'), {'__name__': '__main__'})
 
+      - name: Wire sidecar through trusted native edge
+        shell: python
+        run: |
+          from pathlib import Path
+
+          edge = Path('desktop/electron/native-edge.cjs')
+          text = edge.read_text()
+          marker = "  getDesktopEnvironment: { args: 'none' },\n"
+          additions = "  getRustDeskStatus: { args: 'none' },\n  openRustDeskSession: { args: 'object' },\n  sendRustDeskCommand: { args: 'object' },\n  closeRustDeskSession: { args: 'object' },\n"
+          if 'openRustDeskSession:' not in text:
+              assert marker in text
+              text = text.replace(marker, marker + additions, 1)
+          event_marker = "  'remote-desktop-user-presence',\n"
+          if "'rustdesk-sidecar-event'" not in text:
+              assert event_marker in text
+              text = text.replace(event_marker, event_marker + "  'rustdesk-sidecar-event',\n  'rustdesk-sidecar-exit',\n", 1)
+          edge.write_text(text)
+
+          preload = Path('desktop/electron/preload.cjs')
+          text = preload.read_text()
+          if "'rustdesk-sidecar-event'" not in text:
+              assert event_marker in text
+              text = text.replace(event_marker, event_marker + "  'rustdesk-sidecar-event',\n  'rustdesk-sidecar-exit',\n", 1)
+          preload.write_text(text)
+
+          main = Path('desktop/electron/main.cjs')
+          text = main.read_text()
+          require_marker = "const { RemoteDeviceAgentSupervisor } = require('./remote-device-agent-supervisor.cjs');\n"
+          if "require('./rustdesk-sidecar-process.cjs')" not in text:
+              assert require_marker in text
+              text = text.replace(require_marker, require_marker + "const { RustDeskSidecarProcess } = require('./rustdesk-sidecar-process.cjs');\n", 1)
+          host_marker = "const host = new MahayanaHostProcess({ providerEnvironment });\n"
+          if 'const rustDeskSidecar = new RustDeskSidecarProcess' not in text:
+              assert host_marker in text
+              text = text.replace(host_marker, host_marker + "const rustDeskSidecar = new RustDeskSidecarProcess({ app });\n", 1)
+          state_marker = "let quitting = false;\n"
+          hook = "rustDeskSidecar.on('event', (payload) => broadcastNativeEvent('rustdesk-sidecar-event', payload));\nrustDeskSidecar.on('exit', (payload) => broadcastNativeEvent('rustdesk-sidecar-exit', payload));\n"
+          if "rustDeskSidecar.on('event'" not in text:
+              assert state_marker in text
+              text = text.replace(state_marker, state_marker + hook, 1)
+          handlers_marker = "    getWindowState(_params, event) {\n"
+          handlers = '''    getRustDeskStatus() {
+      return { available: Boolean(rustDeskSidecar.executablePath()), ready: rustDeskSidecar.ready, sessions: rustDeskSidecar.sessions.size };
+    },
+    openRustDeskSession(params) {
+      return rustDeskSidecar.open(params);
+    },
+    sendRustDeskCommand(params) {
+      const sessionId = String(params?.sessionId || '');
+      const command = params?.command;
+      if (!command || typeof command !== 'object' || Array.isArray(command)) throw new Error('RustDesk command is invalid.');
+      return rustDeskSidecar.command(sessionId, command);
+    },
+    closeRustDeskSession(params) {
+      return rustDeskSidecar.closeSession(String(params?.sessionId || ''));
+    },
+'''
+          if 'getRustDeskStatus() {' not in text:
+              assert handlers_marker in text
+              text = text.replace(handlers_marker, handlers + handlers_marker, 1)
+          quit_marker = "function requestApplicationQuit() {\n  quitting = true;\n  app.quit();\n}\n"
+          if 'rustDeskSidecar.close();' not in text:
+              assert quit_marker in text
+              text = text.replace(quit_marker, "function requestApplicationQuit() {\n  quitting = true;\n  rustDeskSidecar.close();\n  app.quit();\n}\n", 1)
+          main.write_text(text)
+
       - name: Format Rust
         working-directory: third_party/mahayana/mahayana-rs
         run: cargo fmt --all
@@ -41,7 +116,10 @@ jobs:
           node --test \
             chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js \
             chatgpt-vps-control/tests/rustdesk-session-grants-audit-contract.test.js \
-            chatgpt-vps-control/tests/rustdesk-route-negotiation-contract.test.js
+            chatgpt-vps-control/tests/rustdesk-route-negotiation-contract.test.js \
+            chatgpt-vps-control/tests/rustdesk-sidecar-boundary-contract.test.js
+          node --test desktop/electron/rustdesk-sidecar-process.test.cjs
+          bash .github/scripts/assert-electron-feature-host-bridge.sh
 
       - name: Typecheck shared web remote-control package
         working-directory: frontend
@@ -54,7 +132,7 @@ jobs:
         working-directory: third_party/mahayana/mahayana-rs
         run: cargo test --locked -p mahayana-platform-worker
 
-      - name: Commit verified permission enforcement
+      - name: Commit verified RDF-004 desktop integration
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
@@ -64,10 +142,13 @@ jobs:
             frontend/apps/web/src/lib/remote-computer/desktop-peer.ts \
             frontend/apps/web/src/lib/remote-computer/remote-api.ts \
             chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js \
-            projects/rustdesk-fabushi-fusion/management/01-WBS原子任务.md
+            projects/rustdesk-fabushi-fusion/management/01-WBS原子任务.md \
+            desktop/electron/main.cjs \
+            desktop/electron/native-edge.cjs \
+            desktop/electron/preload.cjs
           if git diff --cached --quiet; then
-            echo 'RDF-004 permission enforcement is already committed.'
+            echo 'RDF-004 desktop integration is already committed.'
             exit 0
           fi
-          git commit -m 'feat(remote): enforce session grants for display and input'
+          git commit -m 'feat(remote): wire RustDesk sidecar through trusted desktop edge'
           git push origin HEAD:codex/rustdesk-fusion-route-negotiation
