@@ -121,9 +121,14 @@ pub(super) fn describe_actions(
     let marketplace = marketplace_plugin(product, plugin_id, platform)?;
     let bot_endpoint = required_string(&marketplace, "botEndpoint", "marketplace_bot_missing")?;
     let bot = authenticated_mcp_client(bot_endpoint)?;
-    let bot_tools = bot
-        .list_tools()
-        .map_err(|error| mcp_error("actions_describe_failed", "tools/list", bot_endpoint, error))?;
+    let bot_tools = bot.list_tools().map_err(|error| {
+        mcp_error(
+            "actions_describe_failed",
+            "tools/list",
+            bot_endpoint,
+            error,
+        )
+    })?;
 
     let commands = marketplace
         .get("commands")
@@ -179,9 +184,9 @@ pub(super) fn invoke_action(
         .get("commands")
         .and_then(Value::as_array)
         .and_then(|commands| {
-            commands
-                .iter()
-                .find(|command| command.get("name").and_then(Value::as_str) == Some(action))
+            commands.iter().find(|command| {
+                command.get("name").and_then(Value::as_str) == Some(action)
+            })
         })
         .ok_or_else(|| {
             TestDriverError::new(
@@ -260,9 +265,9 @@ fn marketplace_plugin(
         .get("plugins")
         .and_then(Value::as_array)
         .and_then(|plugins| {
-            plugins
-                .iter()
-                .find(|plugin| plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id))
+            plugins.iter().find(|plugin| {
+                plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id)
+            })
         })
         .cloned()
         .ok_or_else(|| {
@@ -368,7 +373,10 @@ fn authenticated_mcp_client(endpoint: &str) -> Result<NativeMcpClient, TestDrive
         ));
     }
     let mut headers = BTreeMap::new();
-    headers.insert("Authorization".into(), format!("Bearer {}", session_token()?));
+    headers.insert(
+        "Authorization".into(),
+        format!("Bearer {}", session_token()?),
+    );
     Ok(NativeMcpClient::new(McpTransport::Http {
         url: endpoint.to_string(),
         headers,
