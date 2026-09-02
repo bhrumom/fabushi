@@ -452,6 +452,7 @@ export async function reattachInAppBrowserTab({
   browser,
   targetUrl,
   preferredTabId = null,
+  excludeTabIds = [],
   fallbackUrl = 'https://chatgpt.com/',
   logger = () => {},
 } = {}) {
@@ -459,11 +460,17 @@ export async function reattachInAppBrowserTab({
   const destination = canonicalChatUrl(targetUrl) || canonicalChatUrl(fallbackUrl);
   if (!destination) throw new Error('没有可恢复的 ChatGPT 目标 URL');
   const failures = [];
+  const excludedTabIds = new Set(
+    (Array.isArray(excludeTabIds) ? excludeTabIds : [excludeTabIds])
+      .map(value => String(value || '').trim())
+      .filter(Boolean),
+  );
+  const isExcluded = tabId => excludedTabIds.has(String(tabId || '').trim());
 
   // The persisted tab id is the strongest ownership signal. Reuse it before
   // scanning URLs so a project-entry URL cannot accidentally create a third
   // tab when another parallel job is already in the same project.
-  if (preferredTabId && browser.tabs.get) {
+  if (preferredTabId && !isExcluded(preferredTabId) && browser.tabs.get) {
     try {
       const tab = await browser.tabs.get(preferredTabId);
       const url = typeof tab.url === 'function' ? await tab.url() : '';
@@ -506,9 +513,12 @@ export async function reattachInAppBrowserTab({
     );
     const targetConversation = destination.match(/\/c\/([^/]+)$/u)?.[1] || '';
     const match = controlledTabs.find(candidate => (
+      !isExcluded(candidate?.id)
+      && (
       targetConversation
         ? sameChatTarget(candidate.url, destination)
         : sameChatProject(candidate.url, destination)
+      )
     ));
     if (match?.id) {
       const tab = await browser.tabs.get(match.id);
@@ -528,9 +538,12 @@ export async function reattachInAppBrowserTab({
       );
       const targetConversation = destination.match(/\/c\/([^/]+)$/u)?.[1] || '';
       const match = userTabs.find(candidate => (
+        !isExcluded(candidate?.id)
+        && (
         targetConversation
           ? sameChatTarget(candidate.url, destination)
           : sameChatProject(candidate.url, destination)
+        )
       ));
       if (match) {
         const tab = await browser.user.claimTab(match);
@@ -1051,6 +1064,102 @@ function hostJobs(host) {
   return [...host.jobs.values()];
 }
 
+function jobTabId(job) {
+  return String(job?.tab?.id || job?.tabId || '').trim();
+}
+
+function otherJobTabIds(host, job) {
+  return hostJobs(host)
+    .filter(other => other?.id !== job?.id && !TERMINAL_JOB_STATUSES.has(other?.status))
+    .map(jobTabId)
+    .filter(Boolean);
+}
+
+function selectRestoredBrowserJob(restoredJobs, {
+  tab,
+  preferredTabId = null,
+  startUrl = '',
+} = {}) {
+  const preferred = String(preferredTabId || tab?.id || '').trim();
+  if (preferred) {
+    const matchingTab = restoredJobs.find(job => jobTabId(job) === preferred);
+    if (matchingTab) return matchingTab;
+  }
+  const target = canonicalChatUrl(startUrl);
+  if (target) {
+    const targetConversation = conversationIdFromUrl(target);
+    const matchingUrl = restoredJobs.find(job => {
+      const saved = canonicalChatUrl(job?.currentUrl);
+      if (!saved) return false;
+      return targetConversation ? sameChatTarget(saved, target) : sameChatProject(saved, target);
+    });
+    if (matchingUrl) return matchingUrl;
+  }
+  return restoredJobs[0] || null;
+}
+
+function resetRestoredJobToFreshChat(host, job, reason) {
+  job.tab = null;
+  job.tabId = null;
+  job.phase = 'accepted';
+  job.status = 'waiting_for_browser_host';
+  job.attempt = Number(job.attempt || 0) + 1;
+  job.currentUrl = host.newChatUrl;
+  job.conversationId = null;
+  job.responseRunning = false;
+  job.beforeAssistantCount = 0;
+  job.beforeUserCount = 0;
+  job.stableSamples = 0;
+  job.lastFingerprint = '';
+  job.lastProgressAt = Date.now();
+  job.latestReply = '';
+  job.authorization = null;
+  job.restorePrepared = false;
+  job.lastOutcome = {
+    kind: 'incomplete',
+    reason: 'duplicate-tab-binding',
+  };
+  job.lastTabFailure = reason;
+  job.lastTabFailureAt = new Date().toISOString();
+  job.error = '内置 Browser 发现重复任务标签页绑定，已自动隔离并在新 Chat 继续同一原始目标。';
+}
+
+function isolateDuplicateRestoredJobBindings(host, restoredJobs, ownerJob, tab, startUrl) {
+  const ownerTabId = String(tab?.id || '').trim();
+  if (!ownerTabId || !ownerJob) return;
+  const ownerUrl = canonicalChatUrl(ownerJob.currentUrl || startUrl);
+  const ownerConversation = ownerJob.conversationId || conversationIdFromUrl(ownerUrl);
+  for (const job of restoredJobs) {
+    if (job === ownerJob || jobTabId(job) !== ownerTabId) continue;
+    const savedUrl = canonicalChatUrl(job.currentUrl);
+    const savedConversation = job.conversationId || conversationIdFromUrl(savedUrl);
+    const hasUniqueConversation = !!savedUrl
+      && !!conversationIdFromUrl(savedUrl)
+      && savedConversation
+      && savedConversation !== ownerConversation
+      && !!chatProjectId(savedUrl);
+    const sameConversation = (savedConversation && savedConversation === ownerConversation)
+      || (savedUrl && ownerUrl && sameChatTarget(savedUrl, ownerUrl));
+    const reason = '检测到与另一并行任务重复的标签页绑定，插件已自动隔离。';
+    if (!hasUniqueConversation || sameConversation) {
+      resetRestoredJobToFreshChat(host, job, reason);
+    } else {
+      job.tab = null;
+      job.tabId = null;
+      job.lastTabFailure = reason;
+      job.lastTabFailureAt = new Date().toISOString();
+      job.error = '内置 Browser 发现重复任务标签页绑定，已自动隔离并恢复该任务自己的会话。';
+    }
+    host.logger({
+      event: 'browser_parallel_tab_binding_conflict_repaired',
+      ownerJobId: ownerJob.id,
+      jobId: job.id,
+      ownerTabId,
+      resetToFreshChat: !hasUniqueConversation || sameConversation,
+    });
+  }
+}
+
 function registerJob(host, job) {
   if (!job?.id) return job;
   if (!(host.jobs instanceof Map)) host.jobs = new Map();
@@ -1197,6 +1306,17 @@ async function bindBrowserJobTab(host, job, tab, {
   url = null,
 } = {}) {
   if (!tab?.playwright) throw new Error('内置 Browser 任务标签页不可控');
+  const incomingTabId = String(tab.id || '').trim();
+  if (incomingTabId) {
+    const conflictingJob = hostJobs(host).find(other => (
+      other?.id !== job?.id
+      && !TERMINAL_JOB_STATUSES.has(other?.status)
+      && String(other?.tab?.id || other?.tabId || '').trim() === incomingTabId
+    ));
+    if (conflictingJob) {
+      throw new Error(`内置 Browser 标签页已绑定到另一并行任务：${conflictingJob.id}`);
+    }
+  }
   job.tab = tab;
   job.tabId = tab.id || job.tabId || null;
   if (url) job.currentUrl = url;
@@ -1339,6 +1459,7 @@ async function recoverBrowserHostTab(host, job) {
     browser: host.browser,
     targetUrl,
     preferredTabId: job.tabId || null,
+    excludeTabIds: otherJobTabIds(host, job),
     fallbackUrl: host.newChatUrl,
     logger: host.logger,
   });
@@ -1704,6 +1825,7 @@ export async function createInAppBrowserCapabilityHost({
   browser,
   tab,
   startUrl,
+  preferredTabId = null,
   policy = BROWSER_DISPATCH_POLICY,
   capabilityFile = DEFAULT_CAPABILITY_FILE,
   jobStateFile = DEFAULT_JOB_FILE,
@@ -1742,11 +1864,17 @@ export async function createInAppBrowserCapabilityHost({
   };
   const restoredJobs = await restoreJobs(host.jobStateFile);
   for (const job of restoredJobs) registerJob(host, job);
-  host.activeJob = restoredJobs[0] || null;
+  host.activeJob = selectRestoredBrowserJob(restoredJobs, {
+    tab,
+    preferredTabId,
+    startUrl: initialUrl,
+  });
   // A legacy single-job state did not persist a tab identifier. Preserve the
-  // supplied controlled tab for that oldest job; every additional restored
-  // job reattaches only to its own saved conversation or a new background tab.
+  // supplied controlled tab for the restored job that owns the preferred tab
+  // or exact target URL. Every additional restored job reattaches only to its
+  // own saved conversation or an isolated new background tab.
   if (host.activeJob) {
+    isolateDuplicateRestoredJobBindings(host, restoredJobs, host.activeJob, tab, initialUrl);
     host.activeJob.tab = tab;
     host.activeJob.tabId = tab.id || host.activeJob.tabId || null;
     // A short-lived host can persist the project entry while the actual
@@ -2084,6 +2212,7 @@ export async function attachPersistentInAppBrowserCapabilityHost({
     browser,
     tab: recovery.tab,
     startUrl: recovery.url || startUrl,
+    preferredTabId,
     policy,
     capabilityFile,
     jobStateFile,

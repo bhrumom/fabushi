@@ -412,6 +412,156 @@ test('the secondary restored job repairs its own delayed conversation URL', asyn
   }
 });
 
+test('restored host binds the supplied tab to the job matching its preferred tab id', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-preferred-job-'));
+  const capabilityFile = join(directory, 'capability.json');
+  const jobStateFile = join(directory, 'jobs.json');
+  const now = new Date().toISOString();
+  const firstId = 'iab_13572468-2468-4246-8462-135724680246';
+  const secondId = 'iab_24681357-1357-4246-8462-135724680357';
+  const firstUrl = 'https://chatgpt.com/g/fabushi/c/first-preferred';
+  const secondUrl = 'https://chatgpt.com/g/fabushi/c/second-preferred';
+  await writeFile(jobStateFile, `${JSON.stringify({
+    schema: 'chatgpt-auto-confirm.browser-jobs.v2',
+    maxConcurrentJobs: 2,
+    jobs: [
+      {
+        id: firstId,
+        goal: '第一项任务',
+        status: 'waiting_for_browser_host',
+        phase: 'waiting',
+        startedAt: now,
+        updatedAt: now,
+        currentUrl: firstUrl,
+        conversationId: 'first-preferred',
+        tabId: 'first-preferred-tab',
+      },
+      {
+        id: secondId,
+        goal: '第二项任务',
+        status: 'waiting_for_browser_host',
+        phase: 'waiting',
+        startedAt: now,
+        updatedAt: now,
+        currentUrl: secondUrl,
+        conversationId: 'second-preferred',
+        tabId: 'second-preferred-tab',
+      },
+    ],
+  })}\n`);
+  const secondTab = {
+    id: 'second-preferred-tab',
+    playwright: {
+      evaluate: async () => ({
+        url: secondUrl,
+        title: '第二项任务',
+        conversationId: 'second-preferred',
+        assistantCount: 0,
+        userCount: 0,
+        latestAssistantText: '',
+        latestUserText: '',
+        bodyText: '第二项任务会话已加载',
+        controls: [],
+        pendingAuthorization: false,
+        stopAnswer: false,
+        retry: false,
+        hasComposer: true,
+        hasWorkComposer: false,
+        chatTabSelected: true,
+        bodyLowerTail: '第二项任务会话已加载',
+      }),
+    },
+    url: async () => secondUrl,
+    markHandoff: async () => {},
+  };
+  const host = await createInAppBrowserCapabilityHost({
+    browser: { tabs: {} },
+    tab: secondTab,
+    startUrl: secondUrl,
+    preferredTabId: secondTab.id,
+    capabilityFile,
+    jobStateFile,
+  });
+  try {
+    assert.equal(host.activeJob.id, secondId);
+    assert.equal(host.activeJob.tab, secondTab);
+    assert.equal(host.jobs.get(firstId).tab, undefined);
+    const result = await host.runStep({ jobId: secondId });
+    assert.equal(result.status, 'starting');
+    assert.equal(result.currentUrl, secondUrl);
+    assert.equal(result.conversationId, 'second-preferred');
+  } finally {
+    await host.close();
+  }
+});
+
+test('restored host isolates duplicate tab bindings and restarts the loser in a fresh Chat', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-duplicate-binding-'));
+  const capabilityFile = join(directory, 'capability.json');
+  const jobStateFile = join(directory, 'jobs.json');
+  const now = new Date().toISOString();
+  const sharedUrl = 'https://chatgpt.com/g/fabushi/c/shared-binding';
+  const firstId = 'iab_11111111-2222-4333-8444-555555555551';
+  const secondId = 'iab_11111111-2222-4333-8444-555555555552';
+  await writeFile(jobStateFile, `${JSON.stringify({
+    schema: 'chatgpt-auto-confirm.browser-jobs.v2',
+    maxConcurrentJobs: 2,
+    jobs: [
+      {
+        id: firstId,
+        goal: '第一项任务',
+        status: 'waiting_for_browser_host',
+        phase: 'waiting',
+        startedAt: now,
+        updatedAt: now,
+        currentUrl: sharedUrl,
+        conversationId: 'shared-binding',
+        tabId: 'shared-tab',
+      },
+      {
+        id: secondId,
+        goal: '第二项任务',
+        status: 'waiting_for_browser_host',
+        phase: 'waiting',
+        startedAt: now,
+        updatedAt: now,
+        currentUrl: sharedUrl,
+        conversationId: 'shared-binding',
+        tabId: 'shared-tab',
+      },
+    ],
+  })}\n`);
+  const events = [];
+  const sharedTab = {
+    id: 'shared-tab',
+    playwright: {},
+    url: async () => sharedUrl,
+    markHandoff: async () => {},
+  };
+  const host = await createInAppBrowserCapabilityHost({
+    browser: { tabs: {} },
+    tab: sharedTab,
+    startUrl: sharedUrl,
+    preferredTabId: sharedTab.id,
+    capabilityFile,
+    jobStateFile,
+    logger: event => events.push(event),
+  });
+  try {
+    const loser = host.jobs.get(secondId);
+    assert.equal(host.activeJob.id, firstId);
+    assert.equal(host.activeJob.tab, sharedTab);
+    assert.equal(loser.tabId, null);
+    assert.equal(loser.tab, null);
+    assert.equal(loser.phase, 'accepted');
+    assert.equal(loser.status, 'waiting_for_browser_host');
+    assert.equal(loser.currentUrl, 'https://chatgpt.com/g/fabushi/project');
+    assert.ok(events.some(event => event.event === 'browser_parallel_tab_binding_conflict_repaired'));
+  } finally {
+    await host.close();
+  }
+});
+
 test('Browser reattachment rebinds an exact controlled conversation first', async () => {
   const targetUrl = 'https://chatgpt.com/g/fabushi/c/conversation-1';
   const rebound = fakeTab('controlled-1', targetUrl);
@@ -542,6 +692,36 @@ test('Browser reattachment does not let a persisted tab cross project ownership'
   assert.equal(result.tab, replacement);
   assert.equal(created, 1);
   assert.equal(foreign.handoff, false);
+});
+
+test('Browser reattachment excludes a tab already owned by another parallel job', async () => {
+  const targetUrl = 'https://chatgpt.com/g/fabushi/c/shared-conversation';
+  const owned = fakeTab('owned-by-first-job', targetUrl);
+  const replacement = fakeTab('isolated-replacement', targetUrl);
+  let created = 0;
+  const browser = {
+    tabs: {
+      get: async id => {
+        assert.equal(id, owned.id);
+        return owned;
+      },
+      list: async () => [{ id: owned.id, url: targetUrl }],
+      new: async () => {
+        created += 1;
+        return replacement;
+      },
+    },
+  };
+  const result = await reattachInAppBrowserTab({
+    browser,
+    targetUrl,
+    preferredTabId: owned.id,
+    excludeTabIds: [owned.id],
+  });
+  assert.equal(result.method, 'new-tab');
+  assert.equal(result.tab, replacement);
+  assert.equal(created, 1);
+  assert.equal(owned.handoff, false);
 });
 
 test('Browser reattachment does not steal a persisted tab on an unrelated external page', async () => {
