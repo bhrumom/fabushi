@@ -86,7 +86,7 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
     ));
     assert!(login.ok, "test-account login failed: {login:?}");
     assert_eq!(login.result["accountKind"], "test");
-    assert_eq!(login.result["tokenSource"], "environment");
+    assert_eq!(login.result["tokenSource"], "[REDACTED]");
 
     let search = session.execute(request(
         "search-1",
