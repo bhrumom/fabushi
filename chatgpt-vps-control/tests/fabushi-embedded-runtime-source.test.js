@@ -384,8 +384,8 @@ test("the exact-main platform deployment is recoverable and smokes remote-contro
   const release = source(".github/workflows/native-electron-release.yml");
   for (const gate of [
     "Computer control security result",
-    "Platform architecture",
-    "Deploy production control plane",
+    "Canonical architecture guardrails",
+    "Resolve Worker source and deployment impact",
   ]) assert.ok(release.includes(gate), `unified release is missing ${gate}`);
   assert.match(release, /git merge-base --is-ancestor/);
   assert.match(release, /test "\$RELEASE_TAG" = "v\$version"/);
