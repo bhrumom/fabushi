@@ -113,17 +113,16 @@ impl ProductBackend {
             .product
             .marketplace_browse(Some(plugin_id), Some(platform))
             .map_err(|error| {
-                TestDriverError::new("product_backend_error", error.to_string()).with_details(
-                    json!({"operation": operation.as_str(), "platform": platform}),
-                )
+                TestDriverError::new("product_backend_error", error.to_string())
+                    .with_details(json!({"operation": operation.as_str(), "platform": platform}))
             })?;
         let plugin = listing
             .get("plugins")
             .and_then(Value::as_array)
             .and_then(|plugins| {
-                plugins
-                    .iter()
-                    .find(|plugin| plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id))
+                plugins.iter().find(|plugin| {
+                    plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id)
+                })
             })
             .ok_or_else(|| {
                 TestDriverError::new(
@@ -353,7 +352,11 @@ fn list_active_plugin_receipts(root: &Path) -> Result<Vec<Value>, TestDriverErro
 }
 
 fn plugin_release_args(params: &Value) -> Result<(&str, Option<&str>, &str), TestDriverError> {
-    let plugin_id = required_trimmed(params, "pluginId", "plugin.install/update requires pluginId")?;
+    let plugin_id = required_trimmed(
+        params,
+        "pluginId",
+        "plugin.install/update requires pluginId",
+    )?;
     let requested_version = params
         .get("version")
         .and_then(Value::as_str)
@@ -422,7 +425,11 @@ fn reject_inline_test_account_token(params: &Value) -> Result<(), TestDriverErro
 }
 
 fn marketplace_search_args(params: &Value) -> Result<(&str, &str), TestDriverError> {
-    let query = required_trimmed(params, "query", "marketplace.search requires a non-empty query")?;
+    let query = required_trimmed(
+        params,
+        "query",
+        "marketplace.search requires a non-empty query",
+    )?;
     let platform = params
         .get("platform")
         .and_then(Value::as_str)
