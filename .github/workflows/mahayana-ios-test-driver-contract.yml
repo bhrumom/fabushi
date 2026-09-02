@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      MAHAYANA_TEST_DRIVER_ROOT: ${{ runner.temp }}/mahayana-test-driver
+      MAHAYANA_TEST_DRIVER_ROOT: /tmp/mahayana-test-driver
     defaults:
       run:
         working-directory: third_party/mahayana/mahayana-rs
