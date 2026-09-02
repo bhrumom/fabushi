@@ -118,6 +118,11 @@ function isRejectControlLabel(label) {
 }
 
 export function isPendingAuthorizationState(state = {}) {
+  // A live Chat response cannot simultaneously be paused behind an
+  // authorization card. This also prevents historical connector-card text in
+  // the conversation transcript from being mistaken for a newly rendered
+  // confirmation request after the card has already disappeared.
+  if (state.stopAnswer === true) return false;
   const controls = Array.isArray(state.controls) ? state.controls : [];
   const activeAllow = controls.filter(control => (
     isAllowControlLabel(control?.label) && !control?.disabled
@@ -583,7 +588,7 @@ export async function approveAuthorization(tab) {
   const state = await readPageState(tab);
   const pendingAuthorization = state.pendingAuthorization === true
     || (state.pendingAuthorization === undefined && isPendingAuthorizationState(state));
-  if (!pendingAuthorization) return { ok: true, found: false };
+  if (!pendingAuthorization || state.stopAnswer === true) return { ok: true, found: false };
   if (await clickSessionScope(tab)) {
     await sleep(350);
     return { ok: true, found: true, method: 'session-scope-visible' };
@@ -609,6 +614,14 @@ export async function approveAuthorization(tab) {
     if (await clickDirectAllow(tab)) {
       await sleep(350);
       return { ok: true, found: true, method: 'arrow-then-direct-allow-fallback' };
+    }
+    // A connector card can disappear while its scope menu is closing. Re-read
+    // the live page before reporting a failure; otherwise a completed approval
+    // race would leave the persisted queue unnecessarily waiting for a card
+    // that no longer exists.
+    const settled = await readPageState(tab);
+    if (settled.stopAnswer === true || settled.pendingAuthorization !== true) {
+      return { ok: true, found: true, method: 'authorization-settled-during-scope-selection' };
     }
     return {
       ok: false,
