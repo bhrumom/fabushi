@@ -32,6 +32,33 @@ test("sidecar protocol is inherited stdio only and enforces immutable grants", (
   assert.doesNotMatch(sidecar, /accountToken|bearerToken|deviceSecret|cookie/i);
 });
 
+test("RustDesk provider executes display input clipboard file and audio through upstream session APIs", () => {
+  const sidecar = source("integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs");
+  assert.match(sidecar, /Session<BridgeHandler>/);
+  assert.match(sidecar, /fn on_rgba\(/);
+  assert.match(sidecar, /entry\.session\.send_mouse\(/);
+  assert.match(sidecar, /entry\.session\.input_key\(/);
+  assert.match(sidecar, /entry\.session\.input_string\(/);
+  assert.match(sidecar, /MultiClipboards \{/);
+  assert.match(sidecar, /ClipboardFormat::Text/);
+  assert.match(sidecar, /entry\.session\.send\(Data::Message\(message\)\)/);
+  assert.match(sidecar, /entry\.session\.send_files\(/);
+  assert.match(sidecar, /entry\.session\.resume_job\(/);
+  assert.match(sidecar, /entry\.session\.cancel_job\(/);
+  assert.match(sidecar, /get_toggle_option\("disable-audio"\.to_owned\(\)\)/);
+  assert.match(sidecar, /toggle_option\("disable-audio"\.to_owned\(\)\)/);
+  assert.match(sidecar, /restore_audio\(&entry\)/);
+});
+
+test("provider capability grants fail closed before RustDesk operations", () => {
+  const sidecar = source("integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs");
+  assert.match(sidecar, /if !entry\.grant\.clipboard \{ return Err\("clipboard-not-granted"\.into\(\)\); \}/);
+  assert.match(sidecar, /if !entry\.grant\.file_transfer \{ return Err\("file-transfer-not-granted"\.into\(\)\); \}/);
+  assert.match(sidecar, /if enabled && !entry\.grant\.audio \{ return Err\("audio-not-granted"\.into\(\)\); \}/);
+  assert.match(sidecar, /MAX_CLIPBOARD_BYTES/);
+  assert.match(sidecar, /MAX_PATH_BYTES/);
+});
+
 test("sidecar source preparation refuses unpinned repositories and preserves corresponding-source metadata", () => {
   const prepare = source("integrations/rustdesk-sidecar/prepare-source.sh");
   assert.match(prepare, /unexpected RustDesk repository/);
