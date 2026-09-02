@@ -9,7 +9,7 @@ const cli = resolve("bin/chatgpt-computer-control.js");
 
 test("macOS helper has a stable named app-bundle identity", async () => {
   const [plist, servicePlist] = await Promise.all([
-    readFile(resolve("native/macos/Info.plist"), "utf8"),
+    readFile(resolve("native/macos/ComputerHelper-Info.plist"), "utf8"),
     readFile(resolve("native/macos/RequestService-Info.plist"), "utf8"),
   ]);
   assert.match(plist, /<key>CFBundleDisplayName<\/key><string>Fabushi Computer Control<\/string>/);

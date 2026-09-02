@@ -93,7 +93,7 @@ async function ensureLinuxDependencies() {
 
 async function ensureMacHelper(codesignIdentity = "", teamIdentifier = "") {
   const source = join(packageRoot, "native", "macos", "ComputerHelper.swift");
-  const plistSource = join(packageRoot, "native", "macos", "Info.plist");
+  const plistSource = join(packageRoot, "native", "macos", "ComputerHelper-Info.plist");
   const requestServicePlistSource = join(packageRoot, "native", "macos", "RequestService-Info.plist");
   const contentsDir = join(macAppDir, "Contents");
   const macOSDir = join(contentsDir, "MacOS");

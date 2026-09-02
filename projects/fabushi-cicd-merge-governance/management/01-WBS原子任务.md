@@ -42,3 +42,5 @@
 
 `implemented` means the implementation exists but canonical protected merge/post-main acceptance may still be pending. `optional` means useful regression evidence that is not a default task-completion gate. FCM-009 must remain `in-progress` until FCM-009.10 has objective GitHub Actions + Release evidence; FCM-009.9 is not required for closure. FCM-009.12 remains `in-progress` until its repair is merged and the exact canonical-main Electron gate is green on all required desktop platforms. FCM-010 remains `in-progress` until its optimized PR is merged and measured on canonical `main`. FCM-012 remains `in-progress` until the production Action and live marketplace search acceptance checks pass.
 | FCM-013 | Release Fabushi 1.2.1 across canonical desktop/mobile/web/backend channels | yes | protected merge + exact-main platform gates + immutable releases + store delivery evidence + runtime verification | in-progress |
+
+| FCM-014 | Release Fabushi 1.2.2 across canonical desktop/mobile/web/backend channels | yes | protected merge + exact-main platform gates + immutable releases + store delivery evidence + runtime verification | in-progress |
