@@ -1,0 +1,179 @@
+name: RustDesk sidecar Linux
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+
+on:
+  pull_request:
+    paths:
+      - 'integrations/rustdesk-sidecar/**'
+      - 'desktop/electron/**'
+      - 'desktop/package.json'
+      - 'frontend/apps/web/src/lib/remote-computer/**'
+      - 'desktop/src/messaging-shell-v2.tsx'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs'
+      - 'chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js'
+      - '.github/scripts/rustdesk-*.py'
+      - '.github/workflows/rustdesk-sidecar-linux.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rustdesk-sidecar-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  materialize-runtime:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/rustdesk-fusion-route-negotiation
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Materialize fail-closed consent and trusted native runtimes
+        run: |
+          python .github/scripts/rustdesk-explicit-session-consent.py
+          python .github/scripts/rustdesk-active-session-gate.py
+          python .github/scripts/rustdesk-desktop-runtime-integration.py
+          python .github/scripts/rustdesk-host-runtime-integration.py
+      - name: Verify consent and isolated native provider boundary
+        run: |
+          grep -q 'pendingAuthorization' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
+          grep -q 'approvePendingSession' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
+          grep -q 'denyPendingSession' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
+          ! grep -q 'if (pending) await this.openPeer(pending, iceServers)' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
+          grep -q 'session.state != "active"' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
+          grep -q 'data-testid="remote-session-consent"' desktop/src/messaging-shell-v2.tsx
+          grep -q 'openRustDeskSession' desktop/electron/native-edge.cjs
+          grep -q 'rustdesk-sidecar-event' desktop/electron/preload.cjs
+          grep -q 'new RustDeskSidecarProcess' desktop/electron/main.cjs
+          grep -q 'new RustDeskHostDaemonProcess' desktop/electron/main.cjs
+          grep -q 'resources/rustdesk-sidecar' desktop/package.json
+          node --test chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js
+          node --test desktop/electron/rustdesk-sidecar-process.test.cjs desktop/electron/rustdesk-host-daemon-process.test.cjs
+          node --test desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs
+          bash .github/scripts/assert-electron-feature-host-bridge.sh
+      - name: Typecheck affected product surfaces
+        run: |
+          corepack enable
+          pnpm --dir frontend/apps/web install --frozen-lockfile --ignore-scripts
+          pnpm --dir frontend/apps/web run typecheck
+          npm --prefix desktop ci --ignore-scripts
+          npm --prefix desktop run typecheck
+      - name: Commit verified product source to dedicated integration branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add frontend/apps/web/src/lib/remote-computer/desktop-peer.ts desktop/src/messaging-shell-v2.tsx desktop/electron/main.cjs desktop/electron/native-edge.cjs desktop/electron/preload.cjs desktop/package.json integrations/rustdesk-sidecar/README.md third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js
+          if git diff --cached --quiet; then
+            echo 'Product source already materialized.'
+            exit 0
+          fi
+          git commit -m 'feat(remote): ship isolated RustDesk host runtime and explicit consent'
+          git push origin HEAD:codex/rustdesk-fusion-route-negotiation
+
+  source-and-build:
+    needs: materialize-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/rustdesk-fusion-route-negotiation
+      - name: Verify license and immutable upstream pin
+        run: |
+          grep -Fx 'repository=https://github.com/rustdesk/rustdesk.git' integrations/rustdesk-sidecar/UPSTREAM.lock
+          grep -Ex 'commit=[0-9a-f]{40}' integrations/rustdesk-sidecar/UPSTREAM.lock
+          grep -Fx 'license=AGPL-3.0-only' integrations/rustdesk-sidecar/UPSTREAM.lock
+          grep -F 'separately built and distributable AGPL-3.0-only derivative' integrations/rustdesk-sidecar/README.md
+          grep -F 'MUST NOT be passed into the RustDesk process' integrations/rustdesk-sidecar/README.md
+          grep -F 'does not depend on a separately installed RustDesk application' integrations/rustdesk-sidecar/README.md
+      - name: Install RustDesk Linux prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake curl gcc git g++ libasound2-dev libunwind-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgtk-3-dev \
+            libpulse-dev libva-dev libvdpau-dev libxcb-randr0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libxdo-dev libxfixes-dev \
+            nasm wget
+      - name: Prepare pinned corresponding source
+        run: bash integrations/rustdesk-sidecar/prepare-source.sh "$RUNNER_TEMP/rustdesk-sidecar"
+      - name: Export Actions cache variables
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: ${{ runner.temp }}/vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+      - name: Install RustDesk vcpkg dependencies
+        working-directory: ${{ runner.temp }}/rustdesk-sidecar
+        run: $VCPKG_ROOT/vcpkg install --x-install-root="$VCPKG_ROOT/installed"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check AGPL RustDesk overlays
+        working-directory: ${{ runner.temp }}/rustdesk-sidecar
+        run: |
+          cargo check --locked --bin fabushi-sidecar
+          cargo check --locked --bin fabushi-host-bootstrap
+          cargo check --locked --bin fabushi-host-daemon
+      - name: Build AGPL RustDesk overlays
+        working-directory: ${{ runner.temp }}/rustdesk-sidecar
+        run: |
+          cargo build --locked --release --bin fabushi-sidecar
+          cargo build --locked --release --bin fabushi-host-bootstrap
+          cargo build --locked --release --bin fabushi-host-daemon
+      - name: Smoke controller protocol and deny unauthenticated input
+        working-directory: ${{ runner.temp }}/rustdesk-sidecar
+        run: |
+          printf '%s\n%s\n' \
+            '{"type":"hello","protocol":"fabushi.rustdesk-sidecar.v1"}' \
+            '{"type":"mouse","sessionId":"missing","mask":0,"x":0,"y":0}' \
+            | timeout 10s target/release/fabushi-sidecar > "$RUNNER_TEMP/sidecar.out"
+          grep -F '"type":"hello"' "$RUNNER_TEMP/sidecar.out"
+          grep -F 'unknown-session' "$RUNNER_TEMP/sidecar.out"
+          ! grep -E 'cookie|bearer|accountToken|deviceToken' "$RUNNER_TEMP/sidecar.out"
+      - name: Smoke host bootstrap protocol without exposing password
+        working-directory: ${{ runner.temp }}/rustdesk-sidecar
+        run: |
+          printf '%s\n' '{"type":"hello","protocol":"fabushi.rustdesk-host-bootstrap.v1"}' \
+            | timeout 10s target/release/fabushi-host-bootstrap > "$RUNNER_TEMP/host-bootstrap.out"
+          grep -F '"type":"hello"' "$RUNNER_TEMP/host-bootstrap.out"
+          ! grep -F 'temporaryPassword' "$RUNNER_TEMP/host-bootstrap.out"
+      - name: Package exact corresponding source
+        working-directory: ${{ runner.temp }}/rustdesk-sidecar
+        run: |
+          tar --exclude=.git --exclude=target -czf "$RUNNER_TEMP/rustdesk-sidecar-corresponding-source.tar.gz" .
+          test -s "$RUNNER_TEMP/rustdesk-sidecar-corresponding-source.tar.gz"
+      - name: Upload corresponding source and binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustdesk-sidecar-linux-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/rustdesk-sidecar/target/release/fabushi-sidecar
+            ${{ runner.temp }}/rustdesk-sidecar/target/release/fabushi-host-bootstrap
+            ${{ runner.temp }}/rustdesk-sidecar/target/release/fabushi-host-daemon
+            ${{ runner.temp }}/rustdesk-sidecar/FABUSHI-SIDECAR-SOURCE.txt
+            ${{ runner.temp }}/rustdesk-sidecar-corresponding-source.tar.gz
+            integrations/rustdesk-sidecar/UPSTREAM.lock
+            integrations/rustdesk-sidecar/README.md
+            integrations/rustdesk-sidecar/prepare-source.sh
+            integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs
+            integrations/rustdesk-sidecar/overlay/src/bin/fabushi_host_bootstrap.rs
+            integrations/rustdesk-sidecar/overlay/src/bin/fabushi_host_daemon.rs
