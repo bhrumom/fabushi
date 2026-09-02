@@ -1,6 +1,12 @@
-import { _electron as electron } from '@playwright/test';
+import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+
+// This script lives outside the desktop package, while the Playwright dependency is
+// intentionally installed from desktop/package.json. Anchor Node's package resolution
+// in that package so release runners can execute the helper after `npm ci` in desktop.
+const requireFromDesktop = createRequire(new URL('../../desktop/package.json', import.meta.url));
+const { _electron: electron } = requireFromDesktop('@playwright/test');
 
 const [executablePath, expectedVersion, evidencePath] = process.argv.slice(2);
 if (!executablePath || !expectedVersion || !evidencePath) {
