@@ -44,6 +44,33 @@ impl TestDriverBackend for ProductBackend {
         _correlation_id: &str,
     ) -> Result<Value, TestDriverError> {
         match method {
+            TestDriverMethod::LoginTestAccount => {
+                reject_inline_test_account_token(&params)?;
+                let token = std::env::var("MAHAYANA_TEST_ACCOUNT_TOKEN")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        TestDriverError::new(
+                            "test_account_token_missing",
+                            "MAHAYANA_TEST_ACCOUNT_TOKEN is required for loginTestAccount",
+                        )
+                    })?;
+                self.product
+                    .store_test_account_session(&token)
+                    .map_err(|error| {
+                        TestDriverError::new("product_backend_error", error.to_string())
+                            .with_details(json!({
+                                "operation": TestDriverMethod::LoginTestAccount.as_str(),
+                                "tokenSource": "environment",
+                            }))
+                    })?;
+                Ok(json!({
+                    "loggedIn": true,
+                    "accountKind": "test",
+                    "tokenSource": "environment",
+                }))
+            }
             TestDriverMethod::MarketplaceSearch => {
                 let (query, platform) = marketplace_search_args(&params)?;
                 self.product
@@ -65,6 +92,20 @@ impl TestDriverBackend for ProductBackend {
             )),
         }
     }
+}
+
+#[cfg(debug_assertions)]
+fn reject_inline_test_account_token(params: &Value) -> Result<(), TestDriverError> {
+    if params.get("token").is_some()
+        || params.get("accessToken").is_some()
+        || params.get("authorization").is_some()
+    {
+        return Err(TestDriverError::new(
+            "inline_credentials_forbidden",
+            "loginTestAccount credentials must come from MAHAYANA_TEST_ACCOUNT_TOKEN, never request params",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(debug_assertions)]
@@ -134,5 +175,16 @@ mod tests {
     fn marketplace_search_rejects_empty_query() {
         let error = marketplace_search_args(&json!({"query": "   "})).unwrap_err();
         assert_eq!(error.code, "invalid_params");
+    }
+
+    #[test]
+    fn login_test_account_rejects_inline_token_material() {
+        let error = reject_inline_test_account_token(&json!({"token": "must-not-pass"})).unwrap_err();
+        assert_eq!(error.code, "inline_credentials_forbidden");
+    }
+
+    #[test]
+    fn login_test_account_accepts_credential_free_params() {
+        reject_inline_test_account_token(&json!({"account": "ci"})).unwrap();
     }
 }
