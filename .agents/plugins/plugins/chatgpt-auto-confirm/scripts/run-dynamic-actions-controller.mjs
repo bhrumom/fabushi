@@ -114,13 +114,11 @@ const reportContract = task => {
   const revision = taskRevision(task);
   const digest = JSON.stringify(task._specDigest || '');
   return `
-MAHAYANA_TASK_REPORT_CONTRACT_V4
-每轮结束只使用下面这一种模板；`completed` 仅表示已完成事项，不代表整个任务完成：
+MAHAYANA_TASK_REPORT_CONTRACT_V5
+下面是唯一允许的完成证书。只有整个仓库项目、全部验收、测试、发布和证据都完成时才输出；未完成、等待、阻塞或本轮提前结束时不要输出任何报告或“下一步”模板，小程序会把同一目标发送到新的 Chat：
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","task_id":${taskId},"applied_task_revision":${revision},"applied_spec_digest":${digest},"status":"incomplete","all_tasks_complete":false,"summary":"本轮实际结果","completed":["本轮已完成项"],"remaining":["整个任务仍未完成项"],"blockers":[],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"下一轮必须继续完成的具体工作"}
+{"protocol":"mahayana.task-report.v1","task_id":${taskId},"applied_task_revision":${revision},"applied_spec_digest":${digest},"status":"complete","all_tasks_complete":true,"summary":"整个项目已完成","completed":["已完成的项目、发布和验收证据"],"remaining":[],"blockers":[],"verification":["可复核的完整验收证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":""}
 MAHAYANA_TASK_REPORT_V1_END
-
-每轮结束都只允许输出上面这一种模板。只有整个任务全部完成才可把同一模板改为 status=complete、all_tasks_complete=true，并清空 remaining、blockers、next_task，且 wait_seconds=0。只完成一项、仍有剩余、外部等待或人工卡点时，all_tasks_complete 必须为 false；等待信息也填写在同一模板中，禁止输出第二套等待格式。
 `;
 };
 
@@ -132,10 +130,9 @@ const taskDocumentBlock = task => {
   const directory = normalizedDirectory(task.documentDirectory);
   if (!directory) {
     return [
-      '本任务没有配置任务文档；这是合法状态，不得因此拒绝、暂停或要求补建文档。',
-      '以本轮消息中的完整任务目标、当前 revision/规范摘要、代码仓库和代码目录为准，直接读取代码并实施。',
-      '共享执行技能：.agents/plugins/plugins/chatgpt-auto-confirm/skills/actions-first-task-queue/SKILL.md。每轮重新读取技能；只有配置了任务文件时才读取任务文件。',
-      `邮件只读与人工介入：每轮可使用 Gmail 按任务 id ${task.id} 检查 1315518325@qq.com 的新增要求。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 [需人工介入][${task.id}] 邮件。`,
+      `仓库中尚未登记任务 ${task.id} 的项目目录。先按稳定任务 id 和标题查找匹配项目。`,
+      `如果找不到，创建 .agents/plugins/plugins/chatgpt-auto-confirm/tasks/${task.id}，写入目标/范围、架构、执行任务、验收标准和证据文档，并把文件登记到仓库任务控制项。`,
+      '共享执行技能：.agents/plugins/plugins/chatgpt-auto-confirm/skills/actions-first-task-queue/SKILL.md。每轮重新读取技能和仓库项目文档。',
     ].join('\n');
   }
   const directoryURL = `https://github.com/${repository}/tree/${controlRef}/${directory}`;
@@ -153,7 +150,6 @@ const taskDocumentBlock = task => {
     `当前规范摘要：${task._specDigest || 'unavailable'}。`,
     `规范文件：${(task._specFiles || []).join('、') || directory}`,
     `共享执行技能：.agents/plugins/plugins/chatgpt-auto-confirm/skills/actions-first-task-queue/SKILL.md。每轮重新读取技能和任务目录全部文件。`,
-    `邮件只读与人工介入：第一轮、续作轮和验收轮开始时使用 Gmail 按任务 id ${task.id} 检查 1315518325@qq.com 的新增要求。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 [需人工介入][${task.id}] 邮件。若已存在人工介入线程，可把 threadId/messageId 记录到 ${directory}/.mahayana-project-email.json；没有线程时不得为了创建记录而发信。`,
   ].join('\n');
 };
 
@@ -173,7 +169,7 @@ const taskPrompt = (control, task) => [
   `本轮必须使用 GitHub 连接器读取和修改仓库 ${task.repository || repository}（https://github.com/${task.repository || repository}）。`,
   normalizedDirectory(task.documentDirectory)
     ? `任务文件在仓库路径 ${normalizedDirectory(task.documentDirectory)}；代码修改位置在仓库路径 ${normalizedDirectory(task.codeDirectory || '.')}。先读已配置的任务文件和现有代码，再直接实现。`
-    : `本任务未配置任务文件；代码修改位置在仓库路径 ${normalizedDirectory(task.codeDirectory || '.')}。直接根据本轮完整目标读取现有代码并实现，不得要求补建任务文档。`,
+    : `仓库中尚未登记本任务的项目文件；先按任务 id 查找，找不到就创建专用项目目录、完整立项文档并登记到任务控制项。代码修改位置在仓库路径 ${normalizedDirectory(task.codeDirectory || '.')}。`,
   `除非正在等待已启动的外部作业或确有人工卡点，本轮必须产生可核验的代码变更并运行相应测试；只阅读、检查、规划、发邮件或汇报结果都不算工作，不得因此结束。`,
   task.prompt,
   taskDocumentBlock(task),

@@ -1,0 +1,1574 @@
+import { createServer } from 'node:http';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import {
+  chmod,
+  mkdir,
+  readFile,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, resolve } from 'node:path';
+
+export const BROWSER_CAPABILITY = 'browser.in-app.dispatch-and-watch';
+export const BROWSER_MODEL = 'GPT-5.6 Sol';
+export const BROWSER_REASONING = 'Extra High';
+export const REPORT_BEGIN = 'MAHAYANA_TASK_REPORT_V1_BEGIN';
+export const REPORT_END = 'MAHAYANA_TASK_REPORT_V1_END';
+
+const DEFAULT_CAPABILITY_FILE = resolve(
+  homedir(), '.codex', 'browser', 'chatgpt-auto-confirm-capability.json',
+);
+const DEFAULT_JOB_FILE = resolve(
+  homedir(), '.codex', 'browser', 'chatgpt-auto-confirm-job.json',
+);
+const MAX_GOAL_LENGTH = 10_000;
+const MAX_ATTEMPTS = 10_000;
+const DEFAULT_TIMEOUT_SECONDS = 21_600;
+const DEFAULT_STAGNATION_SECONDS = 10_800;
+const DEFAULT_POLL_INTERVAL_MS = 500;
+const configuredBrowserLeaseValue = typeof process === 'undefined'
+  ? ''
+  : process.env?.CHATGPT_AUTO_CONFIRM_BROWSER_LEASE_MS;
+const configuredBrowserLeaseMs = Number(configuredBrowserLeaseValue);
+const DEFAULT_BROWSER_LEASE_MS = Number.isFinite(configuredBrowserLeaseMs)
+  ? Math.min(6 * 60 * 60 * 1000, Math.max(60_000, configuredBrowserLeaseMs))
+  : 6 * 60 * 60 * 1000;
+const DEFAULT_PAGE_REFRESH_COOLDOWN_MS = 5_000;
+const PAGE_REFRESH_WINDOW_MS = 60_000;
+const MAX_PAGE_REFRESHES_PER_WINDOW = 3;
+const BROWSER_DISCOVERY_RETRY_ATTEMPTS = 6;
+const BROWSER_DISCOVERY_INITIAL_DELAY_MS = 250;
+const BROWSER_DISCOVERY_MAX_DELAY_MS = 4_000;
+const BROWSER_HOST_REATTACH_INITIAL_DELAY_MS = 500;
+const BROWSER_HOST_REATTACH_MAX_DELAY_MS = 10_000;
+const CAPABILITY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const TERMINAL_JOB_STATUSES = new Set(['completed', 'stopped', 'failed']);
+const RECOVERABLE_BROWSER_CONTEXT_PATTERN = /(?:node_repl exec context not found|execution context[^\n]{0,80}(?:destroyed|not found)|(?:browser\s+)?tab(?:\s+id)?[^\n]{0,80}(?:not found|stale|missing|closed|unavailable)|(?:page|target|frame|browser context)[^\n]{0,80}(?:closed|detached|destroyed|unavailable)|not part of (?:the )?current browser|browser[^\n]{0,40}disconnected|\bcdp\b[^\n]{0,120}(?:timed out|timeout|deadline|exceeded|closed|disconnected|dispatch)|(?:timed out|timeout|deadline|exceeded)[^\n]{0,120}\bcdp\b|(?:available\s+browser\s+(?:array|list)|可用浏览器(?:数组|列表))[^\n]{0,80}(?:unavailable|empty|missing|not found|不可用|为空|缺失|找不到))/iu;
+const PAGE_LOAD_FAILURE_PATTERN = /(?:无法加载|加载失败|加载出错|页面错误|网络错误|连接错误|空白页面|页面无响应|failed\s+to\s+load|error\s+loading|could\s+not\s+load|network\s+error|connection\s+error|page\s+error|something\s+went\s+wrong)/iu;
+const PAGE_REFRESH_CONTROL_PATTERN = /^(?:reload|refresh|try\s+again|重新加载|刷新|再试一次|重新尝试)$/iu;
+
+export const BROWSER_DISPATCH_POLICY = Object.freeze({
+  browser: 'iab',
+  capability: BROWSER_CAPABILITY,
+  connector: null,
+  model: BROWSER_MODEL,
+  reasoning: BROWSER_REASONING,
+  surface: 'chat',
+  newChat: true,
+  resumeExisting: false,
+  goalOnlyDispatch: true,
+  approveAll: true,
+  timeout: DEFAULT_TIMEOUT_SECONDS,
+  stagnationTimeout: DEFAULT_STAGNATION_SECONDS,
+  maxRecoveryAttempts: 5,
+  autoContinueIncomplete: true,
+  maxTaskContinuations: 0,
+  continuationMessage: null,
+  pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+});
+
+export const ONE_SHOT_GOAL_INSTRUCTION = `请一次性完成下面的全部目标。你可以在内部自行拆解工作，但不要把任务交给我再次确认，也不要停在计划、里程碑、部分实现或阶段性总结。请持续执行代码修改、测试、修复、发布和运行验证，直到整个目标的所有要求都完成；完成前不要结束本次工作。`;
+
+export const COMPLETION_CERTIFICATE_INSTRUCTION = `只有整个目标、所有必要验证和发布验收都真实完成时，最终回复才可以声明完成，并且必须在回复末尾输出唯一的结构化完成回执。不要把回执放进 Markdown 代码块，不要省略字段，不要使用占位符：
+MAHAYANA_TASK_REPORT_V1_BEGIN
+{"protocol":"mahayana.task-report.v1","status":"complete","all_tasks_complete":true,"summary":"整个目标已完成","completed":["列出已完成项目和发布证据"],"remaining":[],"blockers":[],"verification":["列出可复核的验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":""}
+MAHAYANA_TASK_REPORT_V1_END
+如果目标尚未全部完成、仍在等待、存在失败或缺少验证，不得输出 status=complete；继续执行当前目标。若本轮回复确实结束而仍未完成，必须如实说明剩余项，但插件会自动开启新的 Chat 继续发送同一个原始目标。`;
+
+const sleep = milliseconds => new Promise(resolvePromise => {
+  setTimeout(resolvePromise, milliseconds);
+});
+
+const normalize = value => String(value ?? '').replace(/[\s\u21b5\u23ce]+/gu, ' ').trim();
+
+const normalizeForCompare = value => normalize(value).replace(/\s+/gu, ' ').trim();
+
+const ALLOW_CONTROL_LABELS = new Set([
+  'allow', 'allow once', 'allow for this conversation', 'allow for this chat',
+  'allow for this session', 'approve', 'approve once', 'confirm', 'confirm once',
+  '允许', '允许一次', '允许本次会话', '允许本次聊天', '同意', '同意一次',
+  '确认', '确认一次', '完全访问', 'full access',
+]);
+
+const REJECT_CONTROL_LABELS = new Set([
+  'deny', 'reject', 'cancel', 'deny once', 'reject once',
+  '拒绝', '拒绝一次', '不允许', '不允许一次', '取消',
+]);
+
+const AUTHORIZATION_HINT_PATTERN = /(?:允许(?:本次会话|本次聊天|在此聊天中)|授权|连接器|请求访问|访问权限|allow\s+chatgpt(?:\s+to\s+use)?|chatgpt\s*(?:将|会)\s*使用|this\s+(?:conversation|chat|session)|grant(?:ing)?\s+(?:access|permission)|outside\s+this\s+project|向[^\n]{0,80}(?:创建|访问|使用)|GitHub\s*允许)/iu;
+
+function isAllowControlLabel(label) {
+  const normalized = normalize(label).toLowerCase();
+  return ALLOW_CONTROL_LABELS.has(normalized)
+    || /^(?:allow|approve|confirm|允许|同意|确认)(?:\s+(?:once|for\s+this\s+(?:conversation|chat|session)|本次会话|本次聊天|一次))?$/iu.test(normalized);
+}
+
+function isRejectControlLabel(label) {
+  const normalized = normalize(label).toLowerCase();
+  return REJECT_CONTROL_LABELS.has(normalized)
+    || /^(?:deny|reject|cancel|拒绝|不允许|取消)(?:\s+(?:once|一次))?$/iu.test(normalized);
+}
+
+export function isPendingAuthorizationState(state = {}) {
+  const controls = Array.isArray(state.controls) ? state.controls : [];
+  const activeAllow = controls.filter(control => (
+    isAllowControlLabel(control?.label) && !control?.disabled
+  ));
+  if (activeAllow.length === 0) return false;
+  const activeReject = controls.filter(control => (
+    isRejectControlLabel(control?.label) && !control?.disabled
+  ));
+  const bodyText = String(state.bodyText || '');
+  return AUTHORIZATION_HINT_PATTERN.test(bodyText) || activeReject.length > 0;
+}
+
+const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const publicError = error => String(error?.message || error || '未知错误').slice(0, 1000);
+
+function normalizeBrowserCollection(value, source) {
+  if (Array.isArray(value)) return value;
+  // Browser providers have returned both a bare array and an envelope during
+  // handoff. Accept the envelope shape as well so a transient provider change
+  // cannot turn a recoverable handoff into a TypeError on `.find()`.
+  if (isRecord(value)) {
+    for (const key of ['tabs', 'browsers', 'items', 'data']) {
+      if (Array.isArray(value[key])) return value[key];
+    }
+  }
+  throw new Error(`内置 Browser ${source} 列表暂时不可用`);
+}
+
+async function listBrowserCollectionWithRetry(
+  readCollection,
+  { source, logger = () => {} } = {},
+) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= BROWSER_DISCOVERY_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const collection = normalizeBrowserCollection(await readCollection(), source);
+      if (attempt > 1) {
+        logger({ event: 'browser_collection_recovered', source, attempt });
+      }
+      return collection;
+    } catch (error) {
+      lastError = error;
+      if (attempt < BROWSER_DISCOVERY_RETRY_ATTEMPTS) {
+        logger({
+          event: 'browser_collection_retry',
+          source,
+          attempt,
+          error: publicError(error),
+        });
+        const delay = Math.min(
+          BROWSER_DISCOVERY_MAX_DELAY_MS,
+          BROWSER_DISCOVERY_INITIAL_DELAY_MS * (2 ** (attempt - 1)),
+        );
+        await sleep(delay);
+      }
+    }
+  }
+  throw new Error(`内置 Browser ${source} 列表在自动重试后仍不可用：${publicError(lastError)}`);
+}
+
+export function isRecoverableBrowserContextError(error) {
+  return RECOVERABLE_BROWSER_CONTEXT_PATTERN.test(publicError(error));
+}
+
+function isResumableBrowserFailure(job) {
+  if (!isRecord(job) || job.status !== 'failed' || job.stopRequested === true) return false;
+  if (job.phase === 'terminal') return false;
+  const outcome = String(job.lastOutcome?.kind || '');
+  return outcome !== 'complete' && outcome !== 'stopped';
+}
+
+export function isPageLoadFailureState(state = {}) {
+  const bodyText = String(state.bodyText || '');
+  const controls = Array.isArray(state.controls) ? state.controls : [];
+  const hasRefreshControl = controls.some(control => (
+    PAGE_REFRESH_CONTROL_PATTERN.test(normalize(control?.label)) && !control?.disabled
+  ));
+  const hasLoadErrorText = PAGE_LOAD_FAILURE_PATTERN.test(bodyText);
+  const missingComposer = state.hasComposer !== true
+    && state.hasWorkComposer !== true
+    && state.pendingAuthorization !== true;
+  return hasRefreshControl || (hasLoadErrorText && missingComposer);
+}
+
+function canonicalChatUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:' || url.hostname !== 'chatgpt.com') return '';
+    return `${url.origin}${url.pathname.replace(/\/$/u, '') || '/'}`;
+  } catch {
+    return '';
+  }
+}
+
+function sameChatTarget(left, right) {
+  const canonicalLeft = canonicalChatUrl(left);
+  const canonicalRight = canonicalChatUrl(right);
+  if (!canonicalLeft || !canonicalRight) return false;
+  if (canonicalLeft === canonicalRight) return true;
+  const leftConversation = canonicalLeft.match(/\/c\/([^/]+)$/u)?.[1];
+  const rightConversation = canonicalRight.match(/\/c\/([^/]+)$/u)?.[1];
+  return !!leftConversation && leftConversation === rightConversation;
+}
+
+export function promptForGoal(goal) {
+  const value = String(goal ?? '').trim();
+  if (!value || value.length > MAX_GOAL_LENGTH) {
+    throw new Error('goal 必须是 1-10000 字符的非空目标文本');
+  }
+  return `${ONE_SHOT_GOAL_INSTRUCTION}\n\n${COMPLETION_CERTIFICATE_INSTRUCTION}\n\n原始目标：\n${value}`;
+}
+
+export function validateBrowserPolicy(policy) {
+  if (!isRecord(policy)) return { ok: false, message: '缺少内置 Browser 授权策略' };
+  const mismatches = Object.entries(BROWSER_DISPATCH_POLICY)
+    .filter(([key, expected]) => policy[key] !== expected)
+    .map(([key, expected]) => `${key}=${JSON.stringify(expected)}`);
+  if (Object.hasOwn(policy, 'previousProgress') || Object.hasOwn(policy, 'continuation')) {
+    mismatches.push('禁止传入历史进度或续作文本');
+  }
+  return mismatches.length > 0
+    ? { ok: false, message: `Browser 派发策略不符合固定安全策略：${mismatches.join(', ')}` }
+    : { ok: true };
+}
+
+export function parseCompletionCertificate(text) {
+  const source = String(text ?? '');
+  const beginIndex = source.lastIndexOf(REPORT_BEGIN);
+  const endIndex = beginIndex === -1 ? -1 : source.indexOf(REPORT_END, beginIndex + REPORT_BEGIN.length);
+  if (beginIndex === -1 || endIndex === -1) {
+    return { valid: false, reason: 'missing-completion-certificate', payload: null };
+  }
+  const raw = source.slice(beginIndex + REPORT_BEGIN.length, endIndex).trim();
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return { valid: false, reason: 'completion-certificate-json-invalid', payload: null };
+  }
+  const valid = isRecord(payload)
+    && payload.protocol === 'mahayana.task-report.v1'
+    && payload.status === 'complete'
+    && payload.all_tasks_complete === true
+    && typeof payload.summary === 'string' && payload.summary.trim().length > 0
+    && Array.isArray(payload.completed) && payload.completed.length > 0
+    && Array.isArray(payload.remaining) && payload.remaining.length === 0
+    && Array.isArray(payload.blockers) && payload.blockers.length === 0
+    && Array.isArray(payload.verification) && payload.verification.length > 0
+    && payload.wait_seconds === 0
+    && payload.wait_reason === ''
+    && typeof payload.next_connector === 'string'
+    && payload.next_task === '';
+  return {
+    valid,
+    reason: valid ? 'complete' : 'completion-certificate-fields-invalid',
+    payload: valid ? payload : null,
+  };
+}
+
+const NATURAL_INCOMPLETE_PATTERN = /(?:尚未(?:完成|实现|通过|验证)|(?:未|没有|尚无|还没).{0,16}(?:完成|实现|通过|验证)|仍(?:需|要|在).{0,16}(?:继续|完成|处理|验证)|还需要|仍需|阻塞|无法.{0,24}(?:完成|验证|实现)|不能.{0,24}(?:声称|报告|返回).{0,12}(?:完成|complete)|not\s+yet|incomplete|still\s+(?:in progress|needs?|has?\s+to)|blocked|pending|remaining|todo|next\s+step)/iu;
+export function classifyCompletion(text) {
+  const source = String(text ?? '').trim();
+  const certificate = parseCompletionCertificate(source);
+  if (certificate.valid) return { valid: true, mode: 'certificate', certificate };
+  if (!source) return { valid: false, mode: 'none', reason: 'empty-final-reply', certificate };
+  if (NATURAL_INCOMPLETE_PATTERN.test(source)) {
+    return { valid: false, mode: 'natural', reason: 'explicit-incomplete', certificate };
+  }
+  return {
+    valid: false,
+    mode: 'natural',
+    reason: certificate.reason === 'completion-certificate-fields-invalid'
+      ? 'invalid-completion-certificate' : 'missing-completion-certificate',
+    certificate,
+  };
+}
+
+function conversationIdFromState(state) {
+  const raw = String(state?.conversationId || '').trim();
+  return raw.startsWith('chatgpt:') ? raw.slice('chatgpt:'.length) : raw;
+}
+
+function projectNewChatUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const match = parsed.pathname.match(/^\/g\/([^/]+)(?:\/project|\/c\/[^/]+)?/u);
+    if (match) return `${parsed.origin}/g/${match[1]}/project`;
+  } catch {
+    // Fall through to the stable ChatGPT entry point.
+  }
+  return 'https://chatgpt.com/';
+}
+
+async function readPageState(tab) {
+  const state = await tab.playwright.evaluate(() => {
+    const visible = element => !!(element && (
+      element.offsetWidth || element.offsetHeight || element.getClientRects().length
+    ));
+    const label = element => (element?.innerText
+      || element?.getAttribute('aria-label')
+      || element?.getAttribute('title')
+      || '').replace(/[\s\u21b5\u23ce]+/gu, ' ').trim();
+    const main = document.querySelector('main') || document;
+    const assistantNodes = [...main.querySelectorAll(
+      '[data-message-author-role="assistant"], [data-local-conversation-final-assistant], '
+        + '[data-content-search-unit-key$=":assistant"], '
+        + '[data-conversation-screenshot-content].agent-turn',
+    )].filter(visible);
+    const userNodes = [...main.querySelectorAll(
+      '[data-message-author-role="user"], [data-user-message-bubble], [data-content-search-unit-key$=":user"]',
+    )].filter(visible);
+    const controls = [...document.querySelectorAll('button, [role="button"]')]
+      .filter(visible)
+      .map(element => ({
+        label: label(element),
+        disabled: !!element.disabled || element.getAttribute('aria-disabled') === 'true',
+        ariaHasPopup: element.getAttribute('aria-haspopup'),
+        ariaExpanded: element.getAttribute('aria-expanded'),
+      }));
+    const bodyText = document.body?.innerText || '';
+    const bodyLower = bodyText.toLowerCase();
+    const stopAnswer = controls.some(control => /停止回答|停止生成|stop generating|stop responding/iu.test(control.label));
+    const retry = controls.some(control => /重试|retry|重新生成|regenerate/iu.test(control.label));
+    const conversationMarker = document.querySelector('[data-above-composer-conversation-id]')
+      ?.getAttribute('data-above-composer-conversation-id') || '';
+    const urlMatch = window.location.href.match(/\/c\/([^/?#]+)/u);
+    const assistantText = assistantNodes.map(node => node.innerText || node.textContent || '').at(-1) || '';
+    return {
+      url: window.location.href || '',
+      title: document.title || '',
+      conversationId: conversationMarker || urlMatch?.[1] || '',
+      assistantCount: assistantNodes.length,
+      userCount: userNodes.length,
+      latestAssistantText: assistantText.slice(-200_000),
+      latestUserText: (userNodes.at(-1)?.innerText || userNodes.at(-1)?.textContent || '').slice(-20_000),
+      bodyText: bodyText.slice(-200_000),
+      controls,
+      stopAnswer,
+      retry,
+      hasComposer: !!document.querySelector('textarea[name="prompt-textarea"], [contenteditable="true"][role="textbox"]'),
+      hasWorkComposer: !!document.querySelector('[data-codex-composer="true"]'),
+      chatTabSelected: [...document.querySelectorAll('[role="tab"]')].some(tab => (
+        (tab.innerText || tab.textContent || '').trim() === '聊天'
+        && tab.getAttribute('aria-selected') === 'true'
+      )),
+      bodyLowerTail: bodyLower.slice(-5000),
+    };
+  });
+  const allowButtonCount = Array.isArray(state.controls)
+    ? state.controls.filter(control => isAllowControlLabel(control?.label)).length : 0;
+  const pendingAuthorization = typeof state.pendingAuthorization === 'boolean'
+    ? state.pendingAuthorization : isPendingAuthorizationState(state);
+  return {
+    ...state,
+    allowButtonCount,
+    pendingAuthorization,
+  };
+}
+
+async function verifyReattachedTab(tab) {
+  if (!tab?.playwright) throw new Error('重新附着的内置 Browser 标签页不可控');
+  const url = await tab.url();
+  if (!canonicalChatUrl(url)) throw new Error('重新附着的标签页不是 ChatGPT 页面');
+  try { await tab.markHandoff(); } catch { /* the current run may already own the handoff */ }
+  return url;
+}
+
+/**
+ * Replace a stale Tab binding without replacing the authorized in-app Browser.
+ * Prefer an already controlled exact target, then an exact user-owned tab,
+ * and create a new background tab only when neither exists.
+ */
+export async function reattachInAppBrowserTab({
+  browser,
+  targetUrl,
+  fallbackUrl = 'https://chatgpt.com/',
+  logger = () => {},
+} = {}) {
+  if (!browser?.tabs) throw new Error('缺少可重新附着的内置 Browser');
+  const destination = canonicalChatUrl(targetUrl) || canonicalChatUrl(fallbackUrl);
+  if (!destination) throw new Error('没有可恢复的 ChatGPT 目标 URL');
+  const failures = [];
+
+  try {
+    const controlledTabs = await listBrowserCollectionWithRetry(
+      () => browser.tabs.list(),
+      { source: '受控标签页', logger },
+    );
+    const match = controlledTabs.find(candidate => sameChatTarget(candidate.url, destination));
+    if (match?.id) {
+      const tab = await browser.tabs.get(match.id);
+      const url = await verifyReattachedTab(tab);
+      logger({ event: 'browser_tab_reattached', method: 'controlled-tab', tabId: match.id, url });
+      return { tab, method: 'controlled-tab', url };
+    }
+  } catch (error) {
+    failures.push(`controlled-tab: ${publicError(error)}`);
+  }
+
+  try {
+    if (browser.user?.openTabs && browser.user?.claimTab) {
+      const userTabs = await listBrowserCollectionWithRetry(
+        () => browser.user.openTabs(),
+        { source: '用户标签页', logger },
+      );
+      const match = userTabs.find(candidate => sameChatTarget(candidate.url, destination));
+      if (match) {
+        const tab = await browser.user.claimTab(match);
+        const url = await verifyReattachedTab(tab);
+        logger({ event: 'browser_tab_reattached', method: 'claimed-user-tab', tabId: tab.id, url });
+        return { tab, method: 'claimed-user-tab', url };
+      }
+    }
+  } catch (error) {
+    failures.push(`claimed-user-tab: ${publicError(error)}`);
+  }
+
+  try {
+    const tab = await browser.tabs.new();
+    await tab.goto(destination);
+    const url = await verifyReattachedTab(tab);
+    logger({ event: 'browser_tab_reattached', method: 'new-tab', tabId: tab.id, url });
+    return { tab, method: 'new-tab', url };
+  } catch (error) {
+    failures.push(`new-tab: ${publicError(error)}`);
+  }
+
+  throw new Error(`内置 Browser 自动重新附着失败：${failures.join(' | ')}`);
+}
+
+async function visibleLocator(locators) {
+  for (const locator of locators) {
+    let count = 0;
+    try { count = await locator.count(); } catch { continue; }
+    for (let index = 0; index < count; index += 1) {
+      const candidate = locator.nth(index);
+      try {
+        if (await candidate.isVisible() && await candidate.isEnabled()) return candidate;
+      } catch {
+        // The React tree may replace the element between attempts.
+      }
+    }
+  }
+  return null;
+}
+
+async function clickSessionScope(tab) {
+  const names = [
+    '允许本次会话', '允许本次聊天', '允许在此聊天中', '允许在本次会话中',
+    'Allow for this conversation', 'Allow for this chat', 'Allow for this session',
+    'Allow in this conversation', 'Allow in this chat',
+  ];
+  const locators = [];
+  for (const name of names) {
+    locators.push(tab.playwright.getByRole('menuitem', { name, exact: true }));
+    locators.push(tab.playwright.getByRole('menuitemradio', { name, exact: true }));
+    locators.push(tab.playwright.getByRole('button', { name, exact: true }));
+    locators.push(tab.playwright.getByText(name, { exact: true }));
+  }
+  const target = await visibleLocator(locators);
+  if (target) {
+    await target.click();
+    return true;
+  }
+  // Connector-specific labels include the connector name, e.g. “Allow
+  // GitHub for this conversation”. Search only inside the open menu so a
+  // generic card-level Allow button can never be mistaken for this choice.
+  const menuItems = tab.playwright.locator(
+    '[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemradio"], '
+      + '[role="menu"] [role="option"], [role="menu"] button, '
+      + '[role="listbox"] [role="option"], [role="listbox"] [role="menuitem"]',
+  );
+  const scopedPattern = /(?:允许|allow)[^\n]{0,120}(?:本次会话|本次聊天|在此聊天中|在本次会话中|this conversation|this chat|this session)/iu;
+  let count = 0;
+  try { count = await menuItems.count(); } catch { return false; }
+  for (let index = 0; index < count; index += 1) {
+    const candidate = menuItems.nth(index);
+    try {
+      if (!(await candidate.isVisible()) || !(await candidate.isEnabled())) continue;
+      const label = await candidate.evaluate(element => (
+        element.innerText || element.textContent || element.getAttribute('aria-label') || ''
+      ).replace(/[\s\u21b5\u23ce]+/gu, ' ').trim());
+      if (!scopedPattern.test(label)) continue;
+      await candidate.click();
+      return true;
+    } catch {
+      // The menu may be replaced after an option is selected.
+    }
+  }
+  return false;
+}
+
+export async function clickDirectAllow(tab) {
+  const names = [
+    'Allow', 'Allow once', 'Approve', 'Approve once', 'Confirm', 'Confirm once',
+    '允许', '允许一次', '允许本次会话', '允许本次聊天', '同意', '同意一次',
+    '确认', '确认一次', '完全访问', 'Full access',
+  ];
+  const locators = [];
+  for (const name of names) {
+    locators.push(tab.playwright.getByRole('button', { name, exact: true }));
+  }
+  const target = await visibleLocator(locators);
+  if (!target) return false;
+  await target.click();
+  return true;
+}
+
+async function authorizationArrow(tab) {
+  const allControls = await tab.playwright.locator('button, [role="button"]').all();
+  const allowControls = [];
+  const controls = [];
+  for (const control of allControls) {
+    try {
+      if (!(await control.isVisible()) || !(await control.isEnabled())) continue;
+      const info = await control.evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return {
+          label: (element.innerText || element.getAttribute('aria-label') || element.getAttribute('title') || '')
+            .replace(/[\s\u21b5\u23ce]+/gu, ' ').trim(),
+          ariaHasPopup: element.getAttribute('aria-haspopup'),
+          ariaExpanded: element.getAttribute('aria-expanded'),
+          dataState: element.getAttribute('data-state'),
+          rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+          disabled: !!element.disabled,
+        };
+      });
+      const lower = info.label.toLowerCase();
+      const isAllow = new Set([
+        'allow', 'allow once', 'approve', 'approve once', 'confirm', 'confirm once',
+        '允许', '允许一次', '同意', '同意一次', '确认', '确认一次', '完全访问', 'full access',
+      ]).has(lower);
+      if (isAllow) allowControls.push({ locator: control, info });
+      controls.push({ locator: control, info });
+    } catch {
+      // Ignore detached controls.
+    }
+  }
+  const allow = allowControls[0];
+  if (!allow) return null;
+  const isTrigger = item => item.info.ariaHasPopup === 'menu'
+    || item.info.ariaHasPopup === 'listbox'
+    || item.info.ariaExpanded !== null
+    || item.info.dataState !== null
+    || /menu|dropdown|chevron|caret|arrow|下拉|箭头|更多|选项/iu.test(item.info.label);
+  const adjacent = controls
+    .filter(item => item.locator !== allow.locator && isTrigger(item))
+    .map(item => {
+      const a = allow.info.rect;
+      const b = item.info.rect;
+      const verticalOverlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      const horizontalGap = Math.max(a.left - b.right, b.left - a.right, 0);
+      const distance = Math.abs((a.left + a.right) - (b.left + b.right))
+        + Math.abs((a.top + a.bottom) - (b.top + b.bottom));
+      return { ...item, score: (verticalOverlap > 0 && horizontalGap <= 16 ? 10_000 : 0) - distance };
+    })
+    .sort((left, right) => right.score - left.score);
+  return adjacent[0]?.locator || null;
+}
+
+export async function approveAuthorization(tab) {
+  const state = await readPageState(tab);
+  const pendingAuthorization = state.pendingAuthorization === true
+    || (state.pendingAuthorization === undefined && isPendingAuthorizationState(state));
+  if (!pendingAuthorization) return { ok: true, found: false };
+  if (await clickSessionScope(tab)) {
+    await sleep(350);
+    return { ok: true, found: true, method: 'session-scope-visible' };
+  }
+  const arrow = await authorizationArrow(tab);
+  if (!arrow) {
+    if (await clickDirectAllow(tab)) {
+      await sleep(350);
+      return { ok: true, found: true, method: 'direct-allow-fallback' };
+    }
+    return {
+      ok: false,
+      found: true,
+      errorCode: 'authorization_allow_control_not_found',
+      message: '检测到授权卡，但没有找到可点击的会话范围或直接允许控件。',
+    };
+  }
+  await arrow.click();
+  await sleep(250);
+  if (!await clickSessionScope(tab)) {
+    try { await tab.playwright.locator('body').press('Escape'); } catch { /* menu already closed */ }
+    await sleep(100);
+    if (await clickDirectAllow(tab)) {
+      await sleep(350);
+      return { ok: true, found: true, method: 'arrow-then-direct-allow-fallback' };
+    }
+    return {
+      ok: false,
+      found: true,
+      errorCode: 'authorization_session_option_not_found',
+      message: '已打开授权范围菜单，但既没有找到“允许本次会话”，也没有找到直接允许控件。',
+    };
+  }
+  await sleep(350);
+  return { ok: true, found: true, method: 'arrow-then-session-scope' };
+}
+
+async function ensureModelAndReasoning(tab) {
+  const modelButton = await visibleLocator([
+    tab.playwright.getByRole('button', { name: '极高', exact: true }),
+    tab.playwright.getByRole('button', { name: '思考强度', exact: true }),
+  ]);
+  if (!modelButton) throw new Error('当前聊天页没有找到思考强度/模型选择器');
+  const solLocator = tab.playwright.getByRole('menuitemradio', {
+    name: BROWSER_MODEL, exact: true,
+  });
+  const modelAlreadyOpen = !!await visibleLocator([solLocator]);
+  if (!modelAlreadyOpen) {
+    await modelButton.click();
+    await sleep(250);
+  }
+  const sol = await visibleLocator([solLocator]);
+  if (!sol) throw new Error('模型选择器没有提供 GPT-5.6 Sol');
+  if (await sol.getAttribute('aria-checked') !== 'true') await sol.click();
+  // The in-app Browser's accessibility tree can lag while the model menu is
+  // re-rendering; the stable DOM role is more reliable than getByRole here.
+  const slider = tab.playwright.locator('[role="slider"]');
+  let visibleSlider = await visibleLocator([slider]);
+  if (!visibleSlider) {
+    const reopenedModelButton = await visibleLocator([
+      tab.playwright.getByRole('button', { name: '极高', exact: true }),
+      tab.playwright.getByRole('button', { name: '思考强度', exact: true }),
+    ]);
+    if (reopenedModelButton) {
+      await reopenedModelButton.click();
+      await sleep(250);
+      visibleSlider = await visibleLocator([slider]);
+    }
+  }
+  if (!visibleSlider) throw new Error('模型选择器没有提供思考强度滑块');
+  const maximum = await visibleSlider.getAttribute('aria-valuemax');
+  if (await visibleSlider.getAttribute('aria-valuenow') !== maximum) {
+    await visibleSlider.press('End');
+  }
+  const checked = await sol.getAttribute('aria-checked');
+  const value = await visibleSlider.getAttribute('aria-valuenow');
+  if (checked !== 'true' || value !== maximum) {
+    throw new Error(`模型或思考强度验证失败：modelChecked=${checked}, reasoning=${value}/${maximum}`);
+  }
+  try { await tab.playwright.locator('body').press('Escape'); } catch { /* already closed */ }
+  return { model: BROWSER_MODEL, reasoning: BROWSER_REASONING, verified: true };
+}
+
+function canRefreshBrowserPage(host) {
+  const now = Date.now();
+  if (!host.pageRefreshWindowStartedAt
+      || now - host.pageRefreshWindowStartedAt >= PAGE_REFRESH_WINDOW_MS) {
+    host.pageRefreshWindowStartedAt = now;
+    host.pageRefreshCount = 0;
+  }
+  if (now - Number(host.lastPageRefreshAt || 0) < DEFAULT_PAGE_REFRESH_COOLDOWN_MS) return false;
+  if (Number(host.pageRefreshCount || 0) >= MAX_PAGE_REFRESHES_PER_WINDOW) {
+    throw new Error('Browser 页面连续加载失败，自动刷新次数已达安全上限');
+  }
+  host.pageRefreshCount = Number(host.pageRefreshCount || 0) + 1;
+  host.lastPageRefreshAt = now;
+  return true;
+}
+
+async function refreshBrowserPage(tab, fallbackUrl, host) {
+  if (!canRefreshBrowserPage(host)) return readPageState(tab);
+  let currentUrl = '';
+  try { currentUrl = await tab.url(); } catch { /* use the stable project URL below */ }
+  if (canonicalChatUrl(currentUrl)) await tab.reload();
+  else await tab.goto(fallbackUrl);
+  await sleep(1_200);
+  const state = await readPageState(tab);
+  if (!isPageLoadFailureState(state)) {
+    host.pageRefreshCount = 0;
+    host.pageRefreshWindowStartedAt = Date.now();
+  }
+  return state;
+}
+
+async function ensureChatPage(tab, newChatUrl, host) {
+  let state = await readPageState(tab);
+  if (!state.url.includes('/g/') || state.hasWorkComposer) {
+    await tab.goto(newChatUrl);
+    await sleep(1200);
+  }
+  let lastError = null;
+  let loadCheckFailures = 0;
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      state = await readPageState(tab);
+      if (isPageLoadFailureState(state)) {
+        state = await refreshBrowserPage(tab, newChatUrl, host);
+        loadCheckFailures = 0;
+        continue;
+      }
+      if (!state.url.includes('/g/') || state.hasWorkComposer) {
+        await tab.goto(newChatUrl);
+        await sleep(900);
+        lastError = new Error('当前页面仍在加载 Chat 页面');
+      } else {
+        const chatTab = tab.playwright.getByRole('tab', { name: '聊天', exact: true });
+        if (await chatTab.count() > 0 && await chatTab.first().getAttribute('aria-selected') !== 'true') {
+          await chatTab.first().click();
+          await sleep(250);
+        }
+        await ensureModelAndReasoning(tab);
+        state = await readPageState(tab);
+        if (isPageLoadFailureState(state)) {
+          state = await refreshBrowserPage(tab, newChatUrl, host);
+          loadCheckFailures = 0;
+          continue;
+        }
+        if (state.hasComposer && !state.hasWorkComposer) return state;
+        lastError = new Error('当前页面不是可发送消息的 Chat 页面');
+      }
+    } catch (error) {
+      lastError = error;
+      if (isRecoverableBrowserContextError(error)) throw error;
+      loadCheckFailures += 1;
+      if (loadCheckFailures >= 3) {
+        state = await refreshBrowserPage(tab, newChatUrl, host);
+        loadCheckFailures = 0;
+      }
+    }
+    await sleep(400);
+  }
+  throw lastError || new Error('当前页面不是可发送消息的 Chat 页面');
+}
+
+async function sendGoal(tab, prompt) {
+  const before = await readPageState(tab);
+  const textarea = tab.playwright.locator('textarea[name="prompt-textarea"]');
+  const composer = await visibleLocator([
+    textarea,
+    tab.playwright.getByRole('textbox', { name: 'fabushi中的新聊天', exact: true }),
+    tab.playwright.getByRole('textbox', { name: 'ChatGPT', exact: true }),
+  ]);
+  if (!composer) throw new Error('没有找到 Chat 输入框');
+  await composer.fill(prompt);
+  const sendButton = await visibleLocator([
+    tab.playwright.getByTestId('send-button'),
+    tab.playwright.getByRole('button', { name: '发送提示', exact: true }),
+    tab.playwright.getByRole('button', { name: 'Send message', exact: true }),
+  ]);
+  if (!sendButton) throw new Error('没有找到 Chat 发送按钮');
+  await sendButton.click();
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    const state = await readPageState(tab);
+    const rendered = normalizeForCompare(state.latestUserText);
+    const expected = normalizeForCompare(prompt);
+    // ChatGPT renders links as visible text (for example, dropping https://),
+    // so confirmation must compare the canonicalized message as well as the
+    // exact text.
+    const canonical = value => value
+      .replace(/https?:\/\/(?:www\.)?[^/\s]+\/?/giu, '')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const sent = state.userCount > before.userCount
+      && (rendered.includes(expected)
+        || canonical(rendered).includes(canonical(expected)));
+    if (sent) {
+      try { await tab.markHandoff(); } catch { /* the host may already own the handoff */ }
+      return { ok: true, before, state };
+    }
+    await sleep(350);
+  }
+  return { ok: false, before, state: await readPageState(tab), errorCode: 'message_send_not_confirmed' };
+}
+
+async function waitForResponse(tab, job, before, policy) {
+  const deadline = Date.now() + Number(policy.timeout || DEFAULT_TIMEOUT_SECONDS) * 1000;
+  const stagnationDeadline = Number(policy.stagnationTimeout || DEFAULT_STAGNATION_SECONDS) * 1000;
+  const pollInterval = Math.min(5000, Math.max(200, Number(policy.pollIntervalMs || DEFAULT_POLL_INTERVAL_MS)));
+  const initialAssistantCount = before.assistantCount;
+  const initialUserCount = before.userCount;
+  let sawResponse = false;
+  let stableSamples = 0;
+  let lastFingerprint = '';
+  let lastProgressAt = Date.now();
+  let authorizationAttempts = 0;
+  let latestState = before;
+  while (Date.now() < deadline) {
+    if (job.stopRequested) return { kind: 'stopped', state: latestState };
+    latestState = await readPageState(tab);
+    job.currentUrl = latestState.url;
+    job.conversationId = conversationIdFromState(latestState);
+    job.latestReply = latestState.latestAssistantText.slice(-4000);
+    job.responseRunning = latestState.stopAnswer;
+    if (latestState.pendingAuthorization) {
+      job.status = 'waiting_for_authorization';
+      const approval = await approveAuthorization(tab);
+      if (!approval.ok) {
+        authorizationAttempts += 1;
+        job.authorization = approval;
+        if (authorizationAttempts >= 5) return { kind: 'blocked', state: latestState, approval };
+      } else if (approval.found) {
+        job.authorization = approval;
+        job.status = 'running';
+        lastProgressAt = Date.now();
+      }
+    }
+    const responseCountChanged = latestState.assistantCount > initialAssistantCount;
+    const userMessageConfirmed = latestState.userCount > initialUserCount
+      && latestState.latestUserText.length > 0;
+    if (responseCountChanged || (latestState.url.includes('/c/') && userMessageConfirmed)) {
+      sawResponse = sawResponse || responseCountChanged;
+    }
+    const fingerprint = `${latestState.assistantCount}:${latestState.latestAssistantText.length}:${latestState.latestAssistantText.slice(-240)}`;
+    if (fingerprint !== lastFingerprint) {
+      lastFingerprint = fingerprint;
+      lastProgressAt = Date.now();
+      stableSamples = 0;
+    } else {
+      stableSamples += 1;
+    }
+    if (!latestState.stopAnswer && sawResponse && stableSamples >= 3) {
+      const completion = classifyCompletion(latestState.latestAssistantText || latestState.bodyText);
+      if (completion.valid) return { kind: 'complete', state: latestState, completion };
+      return { kind: 'incomplete', state: latestState, completion };
+    }
+    if (Date.now() - lastProgressAt >= stagnationDeadline) {
+      return { kind: 'stagnated', state: latestState };
+    }
+    job.status = latestState.stopAnswer ? 'running' : (sawResponse ? 'settling' : 'starting');
+    job.updatedAt = new Date().toISOString();
+    await sleep(pollInterval);
+  }
+  return { kind: 'timed-out', state: latestState };
+}
+
+async function persistJob(host, job = host.activeJob) {
+  if (!job) return;
+  job.updatedAt = new Date().toISOString();
+  const persisted = {
+    id: job.id,
+    goal: job.goal,
+    status: job.status,
+    phase: job.phase || 'accepted',
+    attempt: job.attempt || 0,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    currentUrl: job.currentUrl || null,
+    conversationId: job.conversationId || null,
+    responseRunning: job.responseRunning === true,
+    authorization: job.authorization || null,
+    latestReply: job.latestReply || '',
+    lastOutcome: job.lastOutcome || null,
+    error: job.error || null,
+    beforeAssistantCount: job.beforeAssistantCount || 0,
+    beforeUserCount: job.beforeUserCount || 0,
+    stableSamples: job.stableSamples || 0,
+    lastFingerprint: job.lastFingerprint || '',
+    lastProgressAt: job.lastProgressAt || Date.now(),
+    reattachCount: job.reattachCount || 0,
+    lastReattachedAt: job.lastReattachedAt || null,
+    lastReattachMethod: job.lastReattachMethod || null,
+    lastReattachError: job.lastReattachError || null,
+  };
+  await mkdir(dirname(host.jobStateFile), { recursive: true });
+  await writeFile(host.jobStateFile, `${JSON.stringify(persisted)}\n`, { encoding: 'utf8', mode: 0o600 });
+  await chmod(host.jobStateFile, 0o600);
+}
+
+async function restoreJob(jobStateFile) {
+  try {
+    const saved = JSON.parse(await readFile(jobStateFile, 'utf8'));
+    const recoverableFailure = isResumableBrowserFailure(saved);
+    if (!isRecord(saved) || !saved.id || !saved.goal
+        || (TERMINAL_JOB_STATUSES.has(saved.status) && !recoverableFailure)) return null;
+    return {
+      ...saved,
+      status: recoverableFailure ? 'waiting_for_browser_host' : (saved.status || 'accepted'),
+      phase: saved.phase || 'accepted',
+      error: recoverableFailure ? '内置 Browser/CDP 暂时不可用，插件将自动恢复同一任务。' : saved.error,
+      stopRequested: false,
+      restoredFromDisk: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function prepareRestoredBrowserJob(host, job) {
+  if (!job.restoredFromDisk || job.restorePrepared || job.phase !== 'waiting') return;
+  const target = String(job.currentUrl || '').trim();
+  if (target.startsWith('https://chatgpt.com/')) {
+    let state = await readPageState(host.tab);
+    if (state.url !== target) {
+      await host.tab.goto(target);
+      await sleep(900);
+    }
+    state = await readPageState(host.tab);
+    if (isPageLoadFailureState(state)) {
+      state = await refreshBrowserPage(host.tab, target, host);
+    }
+    if (isPageLoadFailureState(state)) {
+      throw new Error('Browser 页面刷新后仍无法加载当前会话');
+    }
+  }
+  job.restorePrepared = true;
+  job.error = null;
+  if (job.status === 'waiting_for_browser_host') job.status = 'running';
+}
+
+function browserRecoveryTarget(host, job) {
+  const resumeCurrentConversation = (job.phase || 'accepted') === 'waiting'
+    && canonicalChatUrl(job.currentUrl);
+  return resumeCurrentConversation || host.newChatUrl;
+}
+
+async function recoverBrowserHostTab(host, job) {
+  const targetUrl = browserRecoveryTarget(host, job);
+  const recovery = await host.recoverTab({
+    browser: host.browser,
+    targetUrl,
+    fallbackUrl: host.newChatUrl,
+    logger: host.logger,
+  });
+  host.tab = recovery.tab;
+  host.lastBrowserActivityAt = new Date().toISOString();
+  job.reattachCount = Number(job.reattachCount || 0) + 1;
+  job.lastReattachedAt = host.lastBrowserActivityAt;
+  job.lastReattachMethod = recovery.method;
+  job.lastReattachError = null;
+  job.restorePrepared = true;
+  job.error = null;
+  job.status = 'running';
+  host.pageRefreshCount = 0;
+  host.pageRefreshWindowStartedAt = Date.now();
+  host.lastPageRefreshAt = 0;
+  await persistJob(host, job);
+  return recovery;
+}
+
+async function runBrowserStep(host, { allowReattach = true } = {}) {
+  let job = host.pendingJobs.shift() || host.activeJob;
+  if (!job) return null;
+  host.activeJob = job;
+  if (TERMINAL_JOB_STATUSES.has(job.status)) return publicJob(job);
+  if (job.stopRequested || job.status === 'stopped') {
+    job.status = 'stopped';
+    await persistJob(host, job);
+    return publicJob(job);
+  }
+  try {
+    await prepareRestoredBrowserJob(host, job);
+    // A successful step supersedes a stale host-disconnect diagnostic that
+    // was persisted before a new Browser host was attached.
+    job.error = null;
+    host.lastBrowserActivityAt = new Date().toISOString();
+    if ((job.phase || 'accepted') === 'accepted') {
+      let state = await readPageState(host.tab);
+      if ((job.attempt || 0) > 0 || state.url.includes('/c/')) {
+        await host.tab.goto(host.newChatUrl);
+        await sleep(900);
+        state = await readPageState(host.tab);
+      }
+      if (isPageLoadFailureState(state)) {
+        state = await refreshBrowserPage(host.tab, host.newChatUrl, host);
+      }
+      if (isPageLoadFailureState(state)) {
+        throw new Error('Browser 页面刷新后仍无法加载新会话');
+      }
+      if (state.pendingAuthorization) {
+        job.status = 'waiting_for_authorization';
+        const approval = await approveAuthorization(host.tab);
+        job.authorization = approval;
+        if (!approval.ok) {
+          await persistJob(host, job);
+          return publicJob(job);
+        }
+        state = await readPageState(host.tab);
+      }
+      state = await ensureChatPage(host.tab, host.newChatUrl, host);
+      if (state.pendingAuthorization) {
+        job.status = 'waiting_for_authorization';
+        const approval = await approveAuthorization(host.tab);
+        job.authorization = approval;
+        if (!approval.ok) {
+          await persistJob(host, job);
+          return publicJob(job);
+        }
+        state = await readPageState(host.tab);
+      }
+      const sent = await sendGoal(host.tab, promptForGoal(job.goal));
+      if (!sent.ok) throw new Error(sent.errorCode || 'message_send_not_confirmed');
+      job.phase = 'waiting';
+      job.status = 'running';
+      job.beforeAssistantCount = sent.before.assistantCount;
+      job.beforeUserCount = sent.before.userCount;
+      job.currentUrl = sent.state.url;
+      job.conversationId = conversationIdFromState(sent.state);
+      job.responseRunning = true;
+      job.lastProgressAt = Date.now();
+      job.stableSamples = 0;
+      job.lastFingerprint = '';
+      await persistJob(host, job);
+      return publicJob(job);
+    }
+
+    let state = await readPageState(host.tab);
+    if (isPageLoadFailureState(state)) {
+      state = await refreshBrowserPage(host.tab, browserRecoveryTarget(host, job), host);
+    }
+    if (isPageLoadFailureState(state)) {
+      throw new Error('Browser 页面刷新后仍无法加载当前会话');
+    }
+    job.currentUrl = state.url;
+    job.conversationId = conversationIdFromState(state);
+    job.latestReply = state.latestAssistantText.slice(-4000);
+    job.responseRunning = state.stopAnswer;
+    if (state.pendingAuthorization) {
+      job.status = 'waiting_for_authorization';
+      const approval = await approveAuthorization(host.tab);
+      job.authorization = approval;
+      if (approval.ok) job.status = 'running';
+      await persistJob(host, job);
+      return publicJob(job);
+    }
+    // A prior Browser host may have persisted an authorization diagnostic
+    // before the card was dismissed by a replacement host. Do not expose that
+    // stale failure after the page is healthy and the card is gone.
+    job.authorization = null;
+    const responseStarted = state.assistantCount > Number(job.beforeAssistantCount || 0);
+    const fingerprint = `${state.assistantCount}:${state.latestAssistantText.length}:${state.latestAssistantText.slice(-240)}`;
+    if (fingerprint !== job.lastFingerprint) {
+      job.lastFingerprint = fingerprint;
+      job.stableSamples = 0;
+      job.lastProgressAt = Date.now();
+    } else {
+      job.stableSamples = Number(job.stableSamples || 0) + 1;
+    }
+    if (!state.stopAnswer && responseStarted && job.stableSamples >= 3) {
+      const completion = classifyCompletion(state.latestAssistantText || state.bodyText);
+      if (completion.valid) {
+        job.status = 'completed';
+        job.phase = 'terminal';
+        job.lastOutcome = {
+          kind: 'complete', mode: completion.mode, conversationId: conversationIdFromState(state),
+        };
+        if (completion.certificate?.payload) job.certificate = completion.certificate.payload;
+      } else {
+        job.status = 'handoff_to_fresh_chat';
+        job.phase = 'accepted';
+        job.attempt = Number(job.attempt || 0) + 1;
+        job.lastOutcome = {
+          kind: 'incomplete', reason: completion.reason, conversationId: conversationIdFromState(state),
+        };
+        job.beforeAssistantCount = 0;
+        job.beforeUserCount = 0;
+        job.stableSamples = 0;
+        job.lastFingerprint = '';
+      }
+    } else if (Date.now() - Number(job.lastProgressAt || Date.now()) >= DEFAULT_STAGNATION_SECONDS * 1000) {
+      job.status = 'handoff_to_fresh_chat';
+      job.phase = 'accepted';
+      job.attempt = Number(job.attempt || 0) + 1;
+      job.lastOutcome = { kind: 'stagnated', conversationId: conversationIdFromState(state) };
+    } else {
+      job.status = state.stopAnswer ? 'running' : (responseStarted ? 'settling' : 'starting');
+    }
+    await persistJob(host, job);
+    return publicJob(job);
+  } catch (error) {
+    const message = publicError(error);
+    // Every exception here originates from the Browser automation layer, not
+    // from the delegated project itself. Preserve the task and recover the
+    // host instead of turning an incidental UI/CDP failure into a terminal
+    // release failure. Only an explicit user stop may terminate it here.
+    const recoverableHostFailure = !job.stopRequested;
+    if (recoverableHostFailure && allowReattach) {
+      job.status = 'reattaching_browser_host';
+      job.error = '内置 Browser 标签页绑定失效，插件正在自动重新附着同一任务。';
+      await persistJob(host, job);
+      try {
+        await recoverBrowserHostTab(host, job);
+        return await runBrowserStep(host, { allowReattach: false });
+      } catch (recoveryError) {
+        job.status = 'waiting_for_browser_host';
+        job.lastReattachError = publicError(recoveryError);
+        job.error = '内置 Browser 执行租约已结束；需要启动插件长期宿主泵，随后会自动恢复同一任务和会话。';
+      }
+    } else if (recoverableHostFailure) {
+      job.status = 'waiting_for_browser_host';
+      job.lastReattachError = message;
+      job.error = '内置 Browser 自动重新附着后的操作仍不可用；插件将轮换宿主并继续同一任务。';
+    } else {
+      job.status = job.stopRequested ? 'stopped' : 'failed';
+      job.error = message;
+    }
+    await persistJob(host, job);
+    return publicJob(job);
+  }
+}
+
+function publicJob(job) {
+  if (!job) return null;
+  return {
+    id: job.id,
+    goal: job.goal,
+    status: job.status,
+    attempt: job.attempt,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    currentUrl: job.currentUrl || null,
+    conversationId: job.conversationId || null,
+    responseRunning: job.responseRunning === true,
+    authorization: job.authorization || null,
+    latestReply: job.latestReply || '',
+    lastOutcome: job.lastOutcome || null,
+    error: job.error || null,
+    reattachCount: job.reattachCount || 0,
+    lastReattachedAt: job.lastReattachedAt || null,
+    lastReattachMethod: job.lastReattachMethod || null,
+    lastReattachError: job.lastReattachError || null,
+  };
+}
+
+async function runJob(host, job) {
+  job.status = 'running';
+  job.updatedAt = new Date().toISOString();
+  const newChatUrl = host.newChatUrl;
+  try {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      if (job.stopRequested) {
+        job.status = 'stopped';
+        break;
+      }
+      job.attempt = attempt;
+      job.authorization = null;
+      job.updatedAt = new Date().toISOString();
+      let state = await readPageState(host.tab);
+      const mustCreateFreshChat = attempt > 1 || state.url.includes('/c/');
+      if (mustCreateFreshChat) {
+        await host.tab.goto(newChatUrl);
+        await sleep(1200);
+      }
+      state = await ensureChatPage(host.tab, newChatUrl, host);
+      job.currentUrl = state.url;
+      job.conversationId = conversationIdFromState(state);
+      const prompt = promptForGoal(job.goal);
+      const sent = await sendGoal(host.tab, prompt);
+      if (!sent.ok) throw new Error(sent.errorCode || 'message_send_not_confirmed');
+      job.currentUrl = sent.state.url;
+      job.conversationId = conversationIdFromState(sent.state);
+      job.status = 'running';
+      job.updatedAt = new Date().toISOString();
+      const outcome = await waitForResponse(host.tab, job, sent.before, host.policy);
+      job.lastOutcome = { kind: outcome.kind, conversationId: conversationIdFromState(outcome.state) };
+      job.updatedAt = new Date().toISOString();
+      if (outcome.kind === 'complete') {
+        job.status = 'completed';
+        if (outcome.completion?.certificate?.payload) {
+          job.certificate = outcome.completion.certificate.payload;
+        }
+        break;
+      }
+      if (outcome.kind === 'stopped') {
+        job.status = 'stopped';
+        break;
+      }
+      if (outcome.kind === 'blocked') {
+        job.status = 'waiting_for_authorization';
+        job.error = outcome.approval?.message || '等待“允许本次会话”授权';
+        break;
+      }
+      if (outcome.kind === 'incomplete' || outcome.kind === 'stagnated' || outcome.kind === 'timed-out') {
+        job.status = 'handoff_to_fresh_chat';
+        continue;
+      }
+      throw new Error(`未处理的 Chat 结果：${outcome.kind}`);
+    }
+    if (job.status === 'handoff_to_fresh_chat') {
+      job.status = 'failed';
+      job.error = '达到安全的最大新 Chat 续作次数';
+    }
+  } catch (error) {
+    job.status = job.stopRequested ? 'stopped' : 'failed';
+    job.error = publicError(error);
+  } finally {
+    job.updatedAt = new Date().toISOString();
+    if (host.activeJob?.id === job.id && TERMINAL_JOB_STATUSES.has(job.status)) {
+      host.activeJob = job;
+    }
+  }
+}
+
+function safeEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left || ''));
+  const rightBuffer = Buffer.from(String(right || ''));
+  return leftBuffer.length > 0 && leftBuffer.length === rightBuffer.length
+    && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function json(res, status, payload) {
+  const body = JSON.stringify(payload);
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-length': Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+async function requestBody(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > 1_000_000) throw new Error('请求体过大');
+    chunks.push(chunk);
+  }
+  if (chunks.length === 0) return {};
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+}
+
+async function capabilityStatus(host) {
+  const reattachRequired = host.activeJob?.status === 'waiting_for_browser_host';
+  return {
+    ok: true,
+    capability: BROWSER_CAPABILITY,
+    browser: 'iab',
+    model: BROWSER_MODEL,
+    reasoning: BROWSER_REASONING,
+    surface: 'chat',
+    authorizationScope: 'conversation-only',
+    localOnly: true,
+    hostHealth: reattachRequired ? 'reattach_required' : 'attached',
+    reattachRequired,
+    pumpActive: host.pumpActive,
+    lastBrowserActivityAt: host.lastBrowserActivityAt,
+    activeJob: publicJob(host.activeJob),
+    newChatUrl: host.newChatUrl,
+    expiresAt: host.expiresAt,
+  };
+}
+
+export async function createInAppBrowserCapabilityHost({
+  browser,
+  tab,
+  startUrl,
+  policy = BROWSER_DISPATCH_POLICY,
+  capabilityFile = DEFAULT_CAPABILITY_FILE,
+  jobStateFile = DEFAULT_JOB_FILE,
+  logger = () => {},
+  recoverTab = reattachInAppBrowserTab,
+} = {}) {
+  if (!browser || !tab?.playwright) throw new Error('需要已授权的内置 Browser 和可控标签页');
+  const policyCheck = validateBrowserPolicy(policy);
+  if (!policyCheck.ok) throw new Error(policyCheck.message);
+  const token = randomBytes(32).toString('base64url');
+  const resolvedCapabilityFile = resolve(capabilityFile);
+  const initialUrl = startUrl || await tab.playwright.evaluate(() => window.location.href);
+  const host = {
+    browser,
+    tab,
+    logger,
+    recoverTab,
+    policy: { ...BROWSER_DISPATCH_POLICY },
+    newChatUrl: projectNewChatUrl(initialUrl),
+    token,
+    expiresAt: Date.now() + CAPABILITY_TTL_MS,
+    capabilityFile: resolvedCapabilityFile,
+    jobStateFile: resolve(jobStateFile),
+    activeJob: null,
+    pendingJobs: [],
+    jobWaiters: [],
+    pumpActive: false,
+    pumpStopRequested: false,
+    stepActive: false,
+    lastBrowserActivityAt: new Date().toISOString(),
+    pageRefreshCount: 0,
+    pageRefreshWindowStartedAt: Date.now(),
+    lastPageRefreshAt: 0,
+  };
+  host.activeJob = await restoreJob(host.jobStateFile);
+  host.runStep = async () => {
+    if (host.stepActive) return publicJob(host.activeJob);
+    host.stepActive = true;
+    try {
+      return await runBrowserStep(host);
+    } finally {
+      host.stepActive = false;
+    }
+  };
+  host.runPump = async ({ idleTimeoutMs = 0, leaseTimeoutMs = 0 } = {}) => {
+    if (host.pumpActive) throw new Error('内置 Browser capability 泵已在运行');
+    host.pumpActive = true;
+    const leaseDeadline = leaseTimeoutMs > 0 ? Date.now() + leaseTimeoutMs : Number.POSITIVE_INFINITY;
+    try {
+      while (!host.pumpStopRequested) {
+        if (host.activeJob && TERMINAL_JOB_STATUSES.has(host.activeJob.status)) break;
+        if (Date.now() >= leaseDeadline) {
+          if (host.activeJob && !TERMINAL_JOB_STATUSES.has(host.activeJob.status)) {
+            host.activeJob.status = 'waiting_for_browser_host';
+            host.activeJob.error = '内置 Browser 宿主已在执行租约到期前主动轮换；下一轮会自动重新附着同一任务。';
+            await persistJob(host, host.activeJob);
+          }
+          break;
+        }
+        let job = host.pendingJobs[0]
+          || (host.activeJob && !TERMINAL_JOB_STATUSES.has(host.activeJob.status)
+            ? host.activeJob : null);
+        if (!job) {
+          job = await new Promise(resolvePromise => {
+            let timer;
+            const resolveJob = nextJob => {
+              if (timer) clearTimeout(timer);
+              resolvePromise(nextJob);
+            };
+            host.jobWaiters.push(resolveJob);
+            const leaseRemainingMs = Number.isFinite(leaseDeadline)
+              ? Math.max(1, leaseDeadline - Date.now()) : 0;
+            const waitTimeoutMs = idleTimeoutMs > 0 && leaseRemainingMs > 0
+              ? Math.min(idleTimeoutMs, leaseRemainingMs)
+              : (idleTimeoutMs > 0 ? idleTimeoutMs : leaseRemainingMs);
+            if (waitTimeoutMs > 0) timer = setTimeout(() => {
+              const index = host.jobWaiters.indexOf(resolveJob);
+              if (index >= 0) host.jobWaiters.splice(index, 1);
+              resolvePromise(null);
+            }, waitTimeoutMs);
+          });
+        }
+        if (!job) {
+          if (Date.now() >= leaseDeadline || idleTimeoutMs > 0) break;
+          continue;
+        }
+        // Route every pump tick through the same single-flight guard used by
+        // HTTP supervisor ticks. The long-lived Browser lease and the plugin
+        // supervisor can legitimately poll at the same time, but only one of
+        // them may advance the persisted job.
+        const result = await host.runStep();
+        if (result && (TERMINAL_JOB_STATUSES.has(result.status)
+            || result.status === 'waiting_for_browser_host')) break;
+        const pollIntervalMs = Number(host.policy.pollIntervalMs || DEFAULT_POLL_INTERVAL_MS);
+        const remainingMs = Number.isFinite(leaseDeadline)
+          ? Math.max(0, leaseDeadline - Date.now()) : pollIntervalMs;
+        await sleep(Math.min(pollIntervalMs, remainingMs));
+      }
+    } finally {
+      host.pumpActive = false;
+    }
+    return publicJob(host.activeJob);
+  };
+  // Keep the trusted Browser execution lease alive until this persisted job
+  // reaches a terminal state. A lease rotation is an internal recovery event,
+  // not a reason to return control to the caller: rebind the same job and keep
+  // pumping. Callers should await this method instead of creating the host and
+  // letting the Browser execution turn end.
+  host.runUntilTerminal = async ({ leaseTimeoutMs = DEFAULT_BROWSER_LEASE_MS } = {}) => {
+    let reattachFailures = 0;
+    try {
+      while (!host.pumpStopRequested) {
+        const result = await host.runPump({
+          idleTimeoutMs: 0,
+          leaseTimeoutMs,
+        });
+        if (!result || TERMINAL_JOB_STATUSES.has(result.status)) return result;
+        if (result.status !== 'waiting_for_browser_host') return result;
+        const job = host.activeJob;
+        if (!job || TERMINAL_JOB_STATUSES.has(job.status) || job.stopRequested) {
+          return publicJob(job);
+        }
+        try {
+          await recoverBrowserHostTab(host, job);
+          reattachFailures = 0;
+        } catch (error) {
+          reattachFailures += 1;
+          job.status = 'waiting_for_browser_host';
+          job.lastReattachError = publicError(error);
+          job.error = '内置 Browser 暂时不可用，插件会继续自动重试并保留同一任务。';
+          await persistJob(host, job);
+          const delay = Math.min(
+            BROWSER_HOST_REATTACH_MAX_DELAY_MS,
+            BROWSER_HOST_REATTACH_INITIAL_DELAY_MS * (2 ** Math.min(reattachFailures - 1, 6)),
+          );
+          await sleep(delay);
+        }
+      }
+      return publicJob(host.activeJob);
+    } finally {
+      await host.release();
+    }
+  };
+  const server = createServer((req, res) => {
+    void (async () => {
+      const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
+      const suppliedToken = String(req.headers.authorization || '').replace(/^Bearer\s+/iu, '');
+      if (!safeEqual(suppliedToken, host.token)) {
+        json(res, 401, { ok: false, errorCode: 'browser_capability_unauthorized' });
+        return;
+      }
+      if (Date.now() >= host.expiresAt) {
+        json(res, 410, { ok: false, errorCode: 'browser_capability_expired' });
+        return;
+      }
+      if (req.method === 'GET' && requestUrl.pathname === '/v1/capability') {
+        json(res, 200, await capabilityStatus(host));
+        return;
+      }
+      const jobMatch = requestUrl.pathname.match(/^\/v1\/chat\/jobs\/([^/]+)(\/stop)?$/u);
+      if (req.method === 'GET' && jobMatch) {
+        if (!host.activeJob || host.activeJob.id !== jobMatch[1]) {
+          json(res, 404, { ok: false, errorCode: 'browser_job_not_found' });
+          return;
+        }
+        json(res, 200, { ok: true, job: publicJob(host.activeJob) });
+        return;
+      }
+      if (req.method === 'POST' && requestUrl.pathname === '/v1/chat/dispatch') {
+        const body = await requestBody(req);
+        const goal = String(body.goal ?? '').trim();
+        if (!goal || goal.length > MAX_GOAL_LENGTH) {
+          json(res, 400, { ok: false, errorCode: 'invalid_goal', message: 'goal 必须是 1-10000 字符的非空目标文本' });
+          return;
+        }
+        const bodyPolicy = body.policy;
+        const bodyPolicyCheck = validateBrowserPolicy(bodyPolicy);
+        if (!bodyPolicyCheck.ok) {
+          json(res, 400, { ok: false, errorCode: 'browser_policy_rejected', message: bodyPolicyCheck.message });
+          return;
+        }
+        if (host.activeJob && !TERMINAL_JOB_STATUSES.has(host.activeJob.status)) {
+          json(res, 200, { ok: true, accepted: false, alreadyRunning: true, job: publicJob(host.activeJob) });
+          return;
+        }
+        const job = {
+          id: `iab_${randomUUID()}`,
+          goal,
+          status: 'accepted',
+          attempt: 0,
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          stopRequested: false,
+          currentUrl: host.newChatUrl,
+          conversationId: null,
+          latestReply: '',
+          responseRunning: false,
+          authorization: null,
+          lastOutcome: null,
+          error: null,
+          reattachCount: 0,
+          lastReattachedAt: null,
+          lastReattachMethod: null,
+          lastReattachError: null,
+        };
+        host.activeJob = job;
+        host.pendingJobs.push(job);
+        host.jobWaiters.shift()?.(host.pendingJobs.shift());
+        json(res, 202, { ok: true, accepted: true, capability: BROWSER_CAPABILITY, job: publicJob(job) });
+        return;
+      }
+      if (req.method === 'POST' && requestUrl.pathname === '/v1/chat/step') {
+        const body = await requestBody(req);
+        const requestedJobId = String(body.jobId || '').trim();
+        if (requestedJobId && (!host.activeJob || host.activeJob.id !== requestedJobId)) {
+          json(res, 404, { ok: false, errorCode: 'browser_job_not_found' });
+          return;
+        }
+        const job = await host.runStep();
+        json(res, 200, { ok: true, job });
+        return;
+      }
+      if (req.method === 'POST' && jobMatch && jobMatch[2] === '/stop') {
+        if (!host.activeJob || host.activeJob.id !== jobMatch[1]) {
+          json(res, 404, { ok: false, errorCode: 'browser_job_not_found' });
+          return;
+        }
+        host.activeJob.stopRequested = true;
+        host.activeJob.status = 'stopped';
+        host.activeJob.responseRunning = false;
+        host.activeJob.error = host.activeJob.error || '已由用户停止内置 Browser 任务';
+        host.activeJob.lastOutcome = { kind: 'stopped', reason: 'operator' };
+        await persistJob(host, host.activeJob);
+        json(res, 200, { ok: true, job: publicJob(host.activeJob) });
+        return;
+      }
+      json(res, 404, { ok: false, errorCode: 'browser_capability_route_not_found' });
+    })().catch(error => {
+      if (!res.headersSent) json(res, 500, { ok: false, errorCode: 'browser_capability_internal_error', message: publicError(error) });
+      else res.destroy();
+    });
+  });
+  await new Promise((resolvePromise, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolvePromise());
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('内置 Browser capability 没有获得本地端口');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const descriptor = {
+    schema: 'chatgpt-auto-confirm.browser-capability.v1',
+    capability: BROWSER_CAPABILITY,
+    browser: 'iab',
+    baseUrl,
+    token,
+    expiresAt: host.expiresAt,
+  };
+  await mkdir(dirname(resolvedCapabilityFile), { recursive: true });
+  await writeFile(resolvedCapabilityFile, `${JSON.stringify(descriptor)}\n`, { encoding: 'utf8', mode: 0o600 });
+  await chmod(resolvedCapabilityFile, 0o600);
+  host.baseUrl = baseUrl;
+  host.descriptor = { ...descriptor, token: undefined };
+  host.server = server;
+  let released = false;
+  host.release = async () => {
+    if (released) return;
+    released = true;
+    host.pumpStopRequested = true;
+    for (const waiter of host.jobWaiters.splice(0)) waiter(null);
+    await new Promise(resolvePromise => server.close(() => resolvePromise()));
+    try {
+      const current = JSON.parse(await readFile(resolvedCapabilityFile, 'utf8'));
+      if (current.token === token) await unlink(resolvedCapabilityFile);
+    } catch {
+      // The capability file may already have been replaced or removed.
+    }
+  };
+  host.close = async () => {
+    for (const job of [host.activeJob]) if (job && !TERMINAL_JOB_STATUSES.has(job.status)) job.stopRequested = true;
+    await host.release();
+  };
+  return host;
+}
+
+/**
+ * Bootstrap a fresh trusted Browser execution lease without requiring the
+ * caller to retain or guess a previous tab id. The returned host must be kept
+ * alive with `await host.runUntilTerminal()`.
+ */
+export async function attachPersistentInAppBrowserCapabilityHost({
+  browser,
+  startUrl,
+  policy = BROWSER_DISPATCH_POLICY,
+  capabilityFile = DEFAULT_CAPABILITY_FILE,
+  jobStateFile = DEFAULT_JOB_FILE,
+  logger = () => {},
+  recoverTab = reattachInAppBrowserTab,
+} = {}) {
+  const recovery = await recoverTab({
+    browser,
+    targetUrl: startUrl,
+    fallbackUrl: projectNewChatUrl(startUrl),
+    logger,
+  });
+  const host = await createInAppBrowserCapabilityHost({
+    browser,
+    tab: recovery.tab,
+    startUrl: recovery.url || startUrl,
+    policy,
+    capabilityFile,
+    jobStateFile,
+    logger,
+    recoverTab,
+  });
+  host.bootstrapReattachMethod = recovery.method;
+  return host;
+}

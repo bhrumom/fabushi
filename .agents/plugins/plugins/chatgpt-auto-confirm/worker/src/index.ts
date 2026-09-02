@@ -5,6 +5,33 @@ const EMAIL_WORKFLOW_SUFFIX = '【邮件规则：仅人工介入】1. 第一轮�
 const DEFAULT_CHAT_TIMEOUT_SECONDS = 21_600;
 const MAX_CHAT_TIMEOUT_SECONDS = 86_400;
 const CHAT_STAGNATION_TIMEOUT_SECONDS = 10_800;
+const PLUGIN_DISPATCH_BROWSER = 'iab';
+const PLUGIN_DISPATCH_CAPABILITY = 'browser.in-app.dispatch-and-watch';
+const PLUGIN_DISPATCH_MODEL = 'GPT-5.6 Sol';
+const PLUGIN_DISPATCH_REASONING = 'Extra High';
+
+const pluginDispatchParams = (goal: string) => ({
+  // The plugin accepts only a goal. It deliberately does not accept a prior
+  // reply, progress log, or continuation text from the caller.
+  message: goal,
+  browser: PLUGIN_DISPATCH_BROWSER,
+  capability: PLUGIN_DISPATCH_CAPABILITY,
+  connector: null,
+  model: PLUGIN_DISPATCH_MODEL,
+  reasoning: PLUGIN_DISPATCH_REASONING,
+  surface: 'chat',
+  newChat: true,
+  resumeExisting: false,
+  goalOnlyDispatch: true,
+  approveAll: true,
+  timeout: DEFAULT_CHAT_TIMEOUT_SECONDS,
+  stagnationTimeout: CHAT_STAGNATION_TIMEOUT_SECONDS,
+  maxRecoveryAttempts: 5,
+  autoContinueIncomplete: true,
+  maxTaskContinuations: 0,
+  continuationMessage: null,
+  pollIntervalMs: 500,
+});
 
 const taskPromptTemplates = [
   { id: 'implement-and-verify', title: '实现并验证', description: '完成实现并运行相应验证。', promptPrefix: `请在当前 checkout 中完成下面的实现任务，检查现有改动后继续，运行与风险相称的验证，不要覆盖无关改动：\n\n${EMAIL_WORKFLOW_SUFFIX}\n\n` },
@@ -159,7 +186,28 @@ const tools = [
   { name: 'diagnose', description: '只读检查 ChatGPT 已加载的辅助功能结构', annotations: annotations(true), inputSchema: {
     type: 'object', additionalProperties: false, properties: {},
   } },
-  { name: 'send_and_watch', description: '在隐藏的第二个 ChatGPT.app 实例的 Chat 页面中发送指令，自动确认授权卡并实时等待最终回复；绝不使用当前 Work/worker 页面回退', annotations: annotations(), inputSchema: {
+  { name: 'dispatch_goal', description: '由插件通过受授权的内置 Browser 派发一个一次性完整目标：只发送 goal，新建 Chat、固定选择聊天页、GPT-5.6 Sol 和极高，自动批准授权卡（优先会话范围，不可用时直接允许）；只有完整完成回执和验证证据才停止，未完成或回执缺失时自动续作', annotations: annotations(), inputSchema: {
+    type: 'object', additionalProperties: false, required: ['goal'], properties: {
+      goal: { type: 'string', minLength: 1, maxLength: 10000, description: '只填写原始目标；不要传入历史进度、上一轮回复或续作文本' },
+    },
+  } },
+  { name: 'browser_capability_status', description: '只读查看受授权的内置 Browser capability、宿主健康、重新附着要求、当前任务和会话范围', annotations: annotations(true), inputSchema: {
+    type: 'object', additionalProperties: false, properties: {},
+  } },
+  { name: 'browser_job_status', description: '只读查看内置 Browser 派发任务的实时状态', annotations: annotations(true), inputSchema: {
+    type: 'object', additionalProperties: false, required: ['jobId'], properties: {
+      jobId: { type: 'string', pattern: '^iab_[A-Za-z0-9-]{20,100}$' },
+    },
+  } },
+  { name: 'browser_watch', description: '启动或恢复插件持久 Browser 监督器；浏览器列表短暂为空、标签页失效或执行租约结束时自动重试/重新附着同一任务，不重复派发或携带历史进度', annotations: annotations(), inputSchema: {
+    type: 'object', additionalProperties: false, properties: {},
+  } },
+  { name: 'browser_stop', description: '停止一个由内置 Browser 派发的长期任务', annotations: annotations(), inputSchema: {
+    type: 'object', additionalProperties: false, required: ['jobId'], properties: {
+      jobId: { type: 'string', pattern: '^iab_[A-Za-z0-9-]{20,100}$' },
+    },
+  } },
+  { name: 'send_and_watch', description: '在指定 Chat 页面发送目标并等待回复；长期目标优先使用 dispatch_goal 的内置 Browser capability', annotations: annotations(), inputSchema: {
     type: 'object', additionalProperties: false, properties: {
       message: { type: 'string', minLength: 1, maxLength: 10000, description: '要发送给 ChatGPT 的指令文本' },
       connector: { type: 'string', description: '要从 ChatGPT Apps 菜单选择的 MCP connector 名称（如 devspace1）' },
@@ -170,7 +218,7 @@ const tools = [
       accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$', description: '固定此隐藏 Chat 使用的账号' },
       stagnationTimeout: { type: 'integer', minimum: 60, maximum: CHAT_STAGNATION_TIMEOUT_SECONDS, default: CHAT_STAGNATION_TIMEOUT_SECONDS, description: '页面连续无新内容多少秒后直接开启新 Chat；旧 Chat 保持运行，默认 3 小时' },
       maxRecoveryAttempts: { type: 'integer', minimum: 0, maximum: 5, default: 5, description: '页面无进展后在新 Chat 自动发送续作指令的最大次数；超过后截图并报错' },
-      autoContinueIncomplete: { type: 'boolean', default: true, description: '按机器可读最终总结识别未完成任务，并自动在全新 Chat 续作' },
+      autoContinueIncomplete: { type: 'boolean', default: true, description: '回复明确未完成、阻塞、模糊或提前结束时，自动在全新 Chat 续作同一目标' },
       maxTaskContinuations: { type: 'integer', minimum: 0, maximum: 20, default: 0, description: '0 表示持续续作直到完成；正数表示显式上限' },
       continuationMessage: { type: 'string', maxLength: 4000, description: '在新 Chat 中发送的续作指令；旧 Chat 不停止、不关闭' },
       resumeExisting: { type: 'boolean', default: false, description: '仅继续监视已发送的当前 Chat，不重复发送指令' },
@@ -322,6 +370,26 @@ export default {
         rpc.id, 'desktop.chatgpt-approvals.audit', { limit: args.limit ?? 20 }, 'none');
       if (name === 'diagnose') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.diagnose', {}, 'none');
+      if (name === 'dispatch_goal') {
+        const goal = String(args.goal ?? '').trim();
+        if (!goal || goal.length > 10000) {
+          return error(rpc.id, -32602, 'goal 必须是 1-10000 字符的非空目标文本');
+        }
+        return hostResult(
+          rpc.id,
+          PLUGIN_DISPATCH_CAPABILITY,
+          pluginDispatchParams(goal),
+          'required',
+        );
+      }
+      if (name === 'browser_capability_status') return hostResult(
+        rpc.id, 'browser.in-app.capability-status', {}, 'none');
+      if (name === 'browser_job_status') return hostResult(
+        rpc.id, 'browser.in-app.job-status', { jobId: String(args.jobId || '') }, 'none');
+      if (name === 'browser_watch') return hostResult(
+        rpc.id, 'browser.in-app.watch', {}, 'none');
+      if (name === 'browser_stop') return hostResult(
+        rpc.id, 'browser.in-app.stop', { jobId: String(args.jobId || '') }, 'required');
       if (name === 'send_and_watch') {
         const msg = String(args.message ?? '').trim();
         if (!msg || msg.length > 10000) {

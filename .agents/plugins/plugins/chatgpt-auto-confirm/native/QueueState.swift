@@ -520,6 +520,9 @@ func restartAutomationTaskForUpdatedGoal(_ task: inout AutomationTask) {
   task.workerStatePath = nil
   task.workerProfilePath = nil
   task.conversationId = nil
+  task.dispatchMarkerVerifiedAt = nil
+  task.dispatchLocalConversationId = nil
+  task.attachedConversationWithoutDispatchMarker = nil
   task.chatURL = nil
   task.reviewConversationId = nil
   task.reviewStatus = nil
@@ -548,24 +551,23 @@ func automationTaskMessage(_ task: AutomationTask, forceFullGoal: Bool = false) 
   var sections: [String]
   if isContinuation {
     sections = [
-      "继续完成任务 \(task.id)，不要重新规划、不要只检查结果、不要中途总结。",
+      "在新的 Chat 中继续完成同一 GitHub 仓库任务 \(task.id)，不要重新规划、不要只检查结果、不要中途总结。",
       hasTaskDocuments
         ? "先重新读取共享执行技能 `\(sharedTaskExecutionSkillPath)` 和已配置任务目录 `\(directory)` 中的全部文件，确认文件是否更新；再检查同一 checkout 已落盘改动与仍在运行的操作，只做剩余实际工作，持续到全部目标与验证完成。"
-        : "本任务没有配置任务文档，这是合法状态。重新读取共享执行技能 `\(sharedTaskExecutionSkillPath)`，然后依据当前目标检查同一 checkout 已落盘改动与仍在运行的操作，只做剩余实际工作，持续到全部目标与验证完成。",
-      "本轮开始使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 是否有新增要求并纳入工作。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 `[需人工介入][\(task.id)]` 邮件。本轮结束时只输出末尾统一模板；只有整个任务全部完成才设置 all_tasks_complete=true。",
+        : "仓库中还没有登记任务文档。按稳定任务 id `\(task.id)` 查找匹配项目；如果不存在，先在 `\(directory)` 创建目标/范围、架构、执行任务、验收标准和证据文档，并把这些文件登记到仓库任务控制项，再继续实现。",
+      "只有整个仓库项目全部完成时才输出末尾唯一的完成证书。未完成、等待、阻塞或本轮提前结束时不要输出报告或下一步模板；小程序会把同一目标发送到新的 Chat 继续。",
     ]
   } else {
-    let emailInstruction = updatedGoalFirstRound
-      ? "这是更新后的新目标首轮。使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 的新增要求；不要复用旧目标内容，也不要发送新立项邮件。"
-      : "第一件事：完整读取共享执行技能 `\(sharedTaskExecutionSkillPath)` 和所有已配置任务文件（如有），并使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 是否有新增要求。不得发送立项邮件。"
     sections = [
       taskPromptPrefix(task.promptTemplate),
       "目标：\n\(task.prompt)",
       hasTaskDocuments
         ? "任务目录：`\(directory)`"
-        : "任务文件：未配置（允许为零；不得要求补建任务文档）",
-      emailInstruction,
-      "检查邮件要求后直接实现、测试和验证，不要只阅读、评估或汇报计划。只有确实需要人工信息、权限、凭证或决策时才发送 `[需人工介入][\(task.id)]` 邮件，其他情况一律不发邮件。",
+        : "仓库项目目录尚未登记：先按稳定任务 id `\(task.id)` 查找；找不到就创建 `\(directory)`，写入完整立项文档并登记到任务控制项。",
+      updatedGoalFirstRound
+        ? "这是更新后的新目标首轮。只使用当前 GitHub 仓库和当前修订的项目文档，不复用旧目标内容。"
+        : "第一件事：完整读取共享执行技能 `\(sharedTaskExecutionSkillPath)`，并从 GitHub 仓库读取匹配项目的全部当前文档。",
+      "读取仓库项目后直接实现、测试和验证，不要只阅读、评估或汇报计划。",
     ]
   }
   var executionCoordinates = [
@@ -577,7 +579,7 @@ func automationTaskMessage(_ task: AutomationTask, forceFullGoal: Bool = false) 
       let taskDirectoryURL = "\(repositoryURL)/tree/main/\(directory)"
       executionCoordinates.append("GitHub 代码源（每轮都必须明确使用）：使用本轮已选择的 GitHub 连接器打开并操作仓库 `\(repository)`（\(repositoryURL)）。任务文件位于该仓库的 `\(directory)`（\(taskDirectoryURL)）；必须先通过 GitHub 连接器读取这些已配置任务文件，再读取并修改同一仓库中的实际代码。不要在其他仓库、父目录或临时示例里工作。")
     } else {
-      executionCoordinates.append("GitHub 代码源（每轮都必须明确使用）：使用本轮已选择的 GitHub 连接器打开并操作仓库 `\(repository)`（\(repositoryURL)）。本任务未配置任务文件，直接以本轮目标为准读取并修改实际代码；不要在其他仓库、父目录或临时示例里工作。")
+      executionCoordinates.append("GitHub 代码源（每轮都必须明确使用）：使用本轮已选择的 GitHub 连接器打开并操作仓库 `\(repository)`（\(repositoryURL)）。先按稳定任务 id `\(task.id)` 查找匹配项目；如果仓库中不存在，创建 `\(directory)` 及目标/范围、架构、执行任务、验收标准和证据文档，并登记到任务控制项。不要在其他仓库、父目录或临时示例里工作。")
     }
   }
   if !codeDirectory.isEmpty {
@@ -587,8 +589,7 @@ func automationTaskMessage(_ task: AutomationTask, forceFullGoal: Bool = false) 
   sections.insert(contentsOf: executionCoordinates, at: 0)
   sections.append("实际工作只允许在 Chat 页面完成，不进入 Work 页面。")
   sections.append("当前修订：\(revision)；规范指纹：\(digest)；连接器：\(task.connector)。任务发送轮次：\(task.attempts + 1)。")
-  sections.append("每轮开始都必须重新读取任务控制定义，并在存在已配置任务文件时读取这些文件以发现更新。任务文件数量不受限制，也允许为零。未全部完成就继续工作；本轮必须结束时，阶段未完成、等待、阻塞和全部完成都只使用末尾同一个模板。只有整个任务全部完成才设置 all_tasks_complete=true。")
-  sections.append("邮件读取是每轮硬性步骤：第一轮、续作轮和验收轮开始时都必须用 Gmail 按任务 id 只读检查 1315518325@qq.com 的新增要求。禁止发送立项、进展、里程碑、完成或普通等待邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 `[需人工介入][\(task.id)]` 邮件。其他情况一律不发邮件。")
+  sections.append("每轮开始都必须从 GitHub 仓库重新读取任务控制定义和匹配项目文档。项目位置不存在时先完成仓库内立项并登记文件。只有整个项目全部完成时才输出末尾唯一完成证书；未检测到完成证书时，小程序继续把同一目标发送到新的 Chat。")
   if let directive = task.pendingDirective, !directive.isEmpty {
     sections.append("本修订新增要求：\n\(directive)")
   }
@@ -610,8 +611,6 @@ func automationReviewMessage(
 
   本轮发送前小程序必须重新确认 GPT-5.6 Sol 与 Extra High。使用 GitHub 连接器操作仓库 `\(repository)`；任务文件路径是 `\(taskDirectory)`，代码修改路径是 `\(codeDirectory)`。如果验收发现问题，必须直接修改代码并运行测试；只阅读或汇报不算通过。
 
-  验收开始前使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 是否有新增要求。禁止发送立项、进展或完成邮件；只有验收确实需要人工信息、权限、凭证或决策时，才创建或回复 `[需人工介入][\(task.id)]` 邮件。
-
   原始任务目标（不可变）：
   \(task.originalPrompt ?? task.prompt)
 
@@ -632,7 +631,7 @@ func automationReviewMessage(
   已完成项：\(completed)
   被验收 Chat 的验证：\(verification)
 
-  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。云端 GitHub 状态必须通过 GitHub 连接器核验；本地 checkout 仅通过 bhrum2 读取或安全同步。若 Actions、部署、发布审核或网络恢复仍在进行，留在本 Chat 内轮询。验收未通过就直接修复并继续验证；本轮必须结束时使用消息末尾唯一模板。只有全部通过才可同时输出 `status=complete` 和 `all_tasks_complete=true`。`MAHAYANA_REVIEW_ACCEPTED` 只能作为辅助证据。
+  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。云端 GitHub 状态必须通过 GitHub 连接器核验；本地 checkout 仅通过 bhrum2 读取或安全同步。若 Actions、部署、发布审核或网络恢复仍在进行，留在本 Chat 内轮询。验收未通过就直接修复并继续验证，不要输出任何报告模板；只有全部通过才可输出唯一完成证书。`MAHAYANA_REVIEW_ACCEPTED` 只能作为辅助证据。
   """
 }
 
@@ -810,6 +809,9 @@ func taskPublicPayload(_ task: AutomationTask, includeResult: Bool = false) -> [
     "workerTargetId": task.workerTargetId as Any,
     "workerProfilePath": task.workerProfilePath as Any,
     "conversationId": task.conversationId as Any,
+    "dispatchMarkerVerifiedAt": task.dispatchMarkerVerifiedAt as Any,
+    "dispatchLocalConversationId": task.dispatchLocalConversationId as Any,
+    "attachedConversationWithoutDispatchMarker": task.attachedConversationWithoutDispatchMarker ?? false,
     "reviewConversationId": task.reviewConversationId as Any,
     "reviewStatus": task.reviewStatus as Any,
     "chatUrl": task.chatURL as Any,
@@ -980,6 +982,7 @@ func queueStatusPayload(_ state: PluginState) -> [String: Any] {
 }
 
 func startQueueWatcher(_ state: inout PluginState) throws {
+  cleanupOrphanedDedicatedTaskWorkerArtifacts(state)
   if watcherIsAlive(state.queueWatcherPid),
      state.queueRuntimeRevision == currentQueueRuntimeRevision { return }
   if watcherIsAlive(state.queueWatcherPid), let pid = state.queueWatcherPid {

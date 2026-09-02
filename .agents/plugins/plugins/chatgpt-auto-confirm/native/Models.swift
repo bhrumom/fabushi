@@ -168,6 +168,14 @@ struct AutomationTask: Codable {
   var workerProfilePath: String?
   var resultPath: String?
   var conversationId: String?
+  // Queue-owned sends prove their exact per-attempt marker before entering the
+  // running state. Persist that proof plus the local composer identity because
+  // ChatGPT may virtualize the user bubble or expose a durable sidebar id while
+  // the live composer still carries its local id. queue_attach can also bind an
+  // operator-owned existing Chat that intentionally has no queue marker.
+  var dispatchMarkerVerifiedAt: String? = nil
+  var dispatchLocalConversationId: String? = nil
+  var attachedConversationWithoutDispatchMarker: Bool? = nil
   var reviewConversationId: String?
   var reviewStatus: String?
   var reviewReport: AutomationTaskReport?

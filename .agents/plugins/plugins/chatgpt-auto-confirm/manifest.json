@@ -6,6 +6,7 @@
     "mcp.call",
     "storage.local",
     "desktop.accessibility",
-    "desktop.chatgpt.approvals"
+    "desktop.chatgpt.approvals",
+    "browser.in-app.dispatch-and-watch"
   ]
 }

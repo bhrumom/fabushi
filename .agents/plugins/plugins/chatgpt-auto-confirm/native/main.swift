@@ -1005,6 +1005,10 @@ case "stop":
   state.enabled = false
   state.watcherPid = nil
   try? saveState(state)
+  var queueState = loadQueueState()
+  stopQueueWorker(&queueState)
+  cleanupOrphanedDedicatedTaskWorkerArtifacts(queueState)
+  try? saveQueueState(queueState)
   output(statusPayload(state))
 case "watch":
   let activity = beginWatcherActivity(
@@ -1789,9 +1793,8 @@ case "queue_attach":
         )
       }
       let now = isoFormatter.string(from: Date())
-      let reattachingSameConversation = tasks[index].conversationId == conversationId
+      let previousTaskConversationId = tasks[index].conversationId
       tasks[index].status = "running"
-      tasks[index].conversationId = conversationId
       tasks[index].chatURL = params["chatUrl"] as? String
       tasks[index].workerPid = nil
       tasks[index].workerStatePath = nil
@@ -1799,9 +1802,6 @@ case "queue_attach":
       tasks[index].startedAt = tasks[index].startedAt ?? now
       tasks[index].finishedAt = nil
       tasks[index].updatedAt = now
-      if !reattachingSameConversation || tasks[index].lastProgressAt == nil {
-        tasks[index].lastProgressAt = tasks[index].startedAt ?? now
-      }
       tasks[index].lastError = nil
       tasks[index].report = nil
       guard let controller = sharedChatController(&state),
@@ -1836,13 +1836,28 @@ case "queue_attach":
       )
       let attachedAttempt = attachedDispatch?["attempt"] as? Int ?? 0
       let requestedAttempt = params["attempt"] as? Int
-      let identityMatches = normalizedConversationId(
+      let attachedLiveConversationId = normalizedConversationId(
         attachedStatus["conversationId"] as? String
-      ) == conversationId
-      let durableTaskBindingMatches = tasks[index].conversationId == conversationId
+      )
+      let attachedRouteConversationId = normalizedConversationId(
+        attachedStatus["routeConversationId"] as? String
+      )
+      let attachedActiveConversationId = normalizedConversationId(
+        attachedStatus["activeConversationId"] as? String
+      )
+      let identityMatches = attachedLiveConversationId == conversationId
+      let durableTaskBindingMatches = previousTaskConversationId == conversationId
         && attachedDispatch?["hasTaskMarker"] as? Bool == true
         && attachedAttempt > 0
-      guard identityMatches || durableTaskBindingMatches else {
+      // An explicit operator attach may point at the durable sidebar/route id
+      // while the live composer has already moved to a local id. Accept that
+      // only when the current page itself names this task, then persist the
+      // composer id as the runtime identity instead of the stale sidebar id.
+      let operatorTaskBindingMatches = attachedDispatch?["hasTaskMarker"] as? Bool == true
+        && attachedAttempt == 0
+        && (attachedRouteConversationId == conversationId
+          || attachedActiveConversationId == conversationId)
+      guard identityMatches || durableTaskBindingMatches || operatorTaskBindingMatches else {
         throw NSError(
           domain: "chatgpt-auto-confirm",
           code: 36,
@@ -1850,6 +1865,20 @@ case "queue_attach":
             "没有找到与 conversationId 匹配的队列专用 Chat renderer"]
         )
       }
+      // Keep the requested durable id as task identity. The live composer can
+      // temporarily use a local id before ChatGPT promotes it, so retain that
+      // exact local identity as a secondary binding for both verified sends
+      // and explicit markerless attachments.
+      tasks[index].conversationId = conversationId
+      if previousTaskConversationId != conversationId
+          || tasks[index].lastProgressAt == nil {
+        tasks[index].lastProgressAt = tasks[index].startedAt ?? now
+      }
+      let markerlessAttachment = attachedAttempt == 0
+        && (identityMatches || operatorTaskBindingMatches)
+      tasks[index].attachedConversationWithoutDispatchMarker = markerlessAttachment
+      tasks[index].dispatchMarkerVerifiedAt = attachedAttempt > 0 ? now : nil
+      tasks[index].dispatchLocalConversationId = attachedLiveConversationId
       tasks[index].workerPort = controller.port
       tasks[index].workerTargetId = controller.targetId
       tasks[index].workerProfilePath = controller.profilePath
@@ -2138,6 +2167,7 @@ case "queue_watch":
     reason: "ChatGPT 自动确认任务队列后台处理"
   )
   defer { ProcessInfo.processInfo.endActivity(activity) }
+  var queueWatchIteration = 0
   while true {
     autoreleasepool {
       do {
@@ -2151,6 +2181,10 @@ case "queue_watch":
             _ = queueTargetRuntimeState(port: port, targetId: targetId, refreshLifecycle: true)
           }
           runQueueIteration(&state)
+          queueWatchIteration += 1
+          if queueWatchIteration % 60 == 0 {
+            cleanupOrphanedDedicatedTaskWorkerArtifacts(state)
+          }
           return state.queueEnabled == true
         }
         if !shouldContinue { Foundation.exit(0) }
@@ -2360,9 +2394,14 @@ case "send_and_watch":
   )
   let continuationDepth = max(0, params["continuationDepth"] as? Int ?? 0)
   let originalGoal = (params["originalGoal"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? message
+  let goalOnlyDispatch = params["goalOnlyDispatch"] as? Bool ?? false
   let reportFingerprints = params["reportFingerprints"] as? [String] ?? []
-  let defaultContinuationMessage = "上一个 Chat 的 devspace1 或页面已经连续 \(max(1, stagnationTimeout / 60)) 分钟没有新进度。旧 Chat 保持运行，不要停止或关闭它。请在这个新 Chat 中接手原任务：先检查同一 checkout 中最后一个 devspace1 操作是否已返回或落盘，如果该调用超时则只重试对应步骤。不要切换到 Work，不要从头开始，不要覆盖无关改动，完成实现和验证后再返回最终结果。"
-  let continuationMessage = ((params["continuationMessage"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? defaultContinuationMessage
+  let defaultContinuationMessage = goalOnlyDispatch
+    ? messageWithTaskReportContract(originalGoal)
+    : "上一个 Chat 的 devspace1 或页面已经连续 \(max(1, stagnationTimeout / 60)) 分钟没有新进度。旧 Chat 保持运行，不要停止或关闭它。请在这个新 Chat 中接手原任务：先检查同一 checkout 中最后一个 devspace1 操作是否已返回或落盘，如果该调用超时则只重试对应步骤。不要切换到 Work，不要从头开始，不要覆盖无关改动，完成实现和验证后再返回最终结果。"
+  let continuationMessage = goalOnlyDispatch
+    ? defaultContinuationMessage
+    : ((params["continuationMessage"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? defaultContinuationMessage
   let approveAll = params["approveAll"] as? Bool ?? true
   let pollIntervalMs = min(5000, max(200, params["pollIntervalMs"] as? Int ?? 500))
 
@@ -2711,37 +2750,59 @@ case "send_and_watch":
         recoveryAttempts += 1
         // Do not click Stop or close the unchanged Chat. Start the next round
         // directly; the old renderer remains available for a late completion.
-        let continuationPreparation = cdpEvaluateOnChatGPT(
-          continueInNewTaskJS(
-            expectedConversationId: normalizedConversationId(
-              finalReply["conversationId"] as? String
-            )
-          ),
-          timeout: 35.0,
-          preferredURL: activeChatURL
-        ) ?? ["ok": false, "error": "continue_in_new_task_cdp_failed"]
-        let continuationMode = "branch_in_new_chat"
+        let continuationPreparation: [String: Any]
+        let continuationMode: String
         let recoveryResult: [String: Any]
-        if continuationPreparation["ok"] as? Bool == true {
-          recoveryResult = cdpEvaluateOnChatGPT(
+        if goalOnlyDispatch {
+          // The dedicated goal dispatcher must not inherit the previous Chat's
+          // context. Clicking "Continue in a new task" can carry that context
+          // into the branch, so create a genuinely blank Chat and send only
+          // the original goal plus the fixed completion-certificate contract.
+          var freshChatResult = cdpEvaluateOnChatGPT(
             sendMessageJS(
               message: continuationMessage,
               connector: connector,
-              newChat: false,
+              newChat: true
+            ),
+            timeout: 35.0,
+            preferredURL: activeChatURL
+          ) ?? ["ok": false, "error": "fresh_chat_send_cdp_failed"]
+          freshChatResult["continuationMode"] = "fresh_chat_only_goal"
+          continuationPreparation = freshChatResult
+          recoveryResult = freshChatResult
+          continuationMode = "fresh_chat_only_goal"
+        } else {
+          continuationPreparation = cdpEvaluateOnChatGPT(
+            continueInNewTaskJS(
               expectedConversationId: normalizedConversationId(
-                continuationPreparation["conversationId"] as? String
+                finalReply["conversationId"] as? String
               )
             ),
             timeout: 35.0,
             preferredURL: activeChatURL
-          ) ?? ["ok": false, "error": "continuation_send_cdp_failed"]
-        } else {
-          recoveryResult = [
-            "ok": false,
-            "error": continuationPreparation["error"]
-              ?? "same_task_branch_not_confirmed",
-            "failedStage": "branch_in_new_chat",
-          ]
+          ) ?? ["ok": false, "error": "continue_in_new_task_cdp_failed"]
+          continuationMode = "branch_in_new_chat"
+          if continuationPreparation["ok"] as? Bool == true {
+            recoveryResult = cdpEvaluateOnChatGPT(
+              sendMessageJS(
+                message: continuationMessage,
+                connector: connector,
+                newChat: false,
+                expectedConversationId: normalizedConversationId(
+                  continuationPreparation["conversationId"] as? String
+                )
+              ),
+              timeout: 35.0,
+              preferredURL: activeChatURL
+            ) ?? ["ok": false, "error": "continuation_send_cdp_failed"]
+          } else {
+            recoveryResult = [
+              "ok": false,
+              "error": continuationPreparation["error"]
+                ?? "same_task_branch_not_confirmed",
+              "failedStage": "branch_in_new_chat",
+            ]
+          }
         }
         let recoveryEvent: [String: Any] = [
           "attempt": recoveryAttempts,
@@ -2827,6 +2888,12 @@ case "send_and_watch":
   let reportMissing = !resumeExisting && !surfaceDrift && !stalled && !timedOut
     && finalReply["done"] as? Bool == true && taskReport == nil
     && !terminalIncomplete && !explicitlyIncomplete
+  // A finished reply without the certificate is still an unfinished round.
+  // Keep this separate from `reportMissing` so an explicit natural-language
+  // "not finished" answer is classified as incomplete while both cases enter
+  // the same fresh-Chat continuation path below.
+  let completionCertificateMissing = !resumeExisting && !surfaceDrift && !stalled && !timedOut
+    && finalReply["done"] as? Bool == true && taskReport == nil
   resultPayload["ok"] = !stalled && !timedOut && !surfaceDrift && !terminalIncomplete
     && !reportMissing && effectiveTaskStatus == "complete" && (finalReply["done"] as? Bool == true)
   resultPayload["sent"] = resumeExisting ? false : (sendResult["messageConfirmed"] as? Bool ?? false)
@@ -2853,6 +2920,7 @@ case "send_and_watch":
   resultPayload["recoveries"] = recoveryEvents
   resultPayload["taskReport"] = taskReport as Any
   resultPayload["taskStatus"] = effectiveTaskStatus as Any
+  resultPayload["completionCertificateMissing"] = completionCertificateMissing
   resultPayload["taskContinuationDepth"] = continuationDepth
   resultPayload["maxTaskContinuations"] = maxTaskContinuations
   resultPayload["screenshotPath"] = screenshotPath as Any
@@ -2879,17 +2947,40 @@ case "send_and_watch":
 
   if autoContinueIncomplete,
      !surfaceDrift, !stalled, !timedOut,
-     let report = taskReport,
-     taskStatus == "incomplete" || taskStatus == "blocked" {
-    let summary = report["summary"] as? String ?? ""
-    let remaining = (report["remaining"] as? [String] ?? []).joined(separator: "\n")
-    let blockers = (report["blockers"] as? [String] ?? []).joined(separator: "\n")
-    let nextTask = report["next_task"] as? String ?? ""
-    let fingerprint = [summary, remaining, blockers, nextTask]
-      .joined(separator: "|")
-      .lowercased()
-      .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-    let hasNextTask = !nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+     (completionCertificateMissing || taskStatus == "incomplete" || taskStatus == "blocked") {
+    let fingerprint: String
+    let hasNextTask: Bool
+    let continuationPrompt: String
+    if let report = taskReport {
+      let summary = report["summary"] as? String ?? ""
+      let remaining = (report["remaining"] as? [String] ?? []).joined(separator: "\n")
+      let blockers = (report["blockers"] as? [String] ?? []).joined(separator: "\n")
+      let nextTask = report["next_task"] as? String ?? ""
+      fingerprint = [summary, remaining, blockers, nextTask]
+        .joined(separator: "|")
+        .lowercased()
+        .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+      hasNextTask = goalOnlyDispatch || !nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      continuationPrompt = goalOnlyDispatch
+        ? messageWithTaskReportContract(originalGoal)
+        : continuationFromTaskReport(
+          report, originalGoal: originalGoal, iteration: continuationDepth + 1)
+    } else {
+      // A natural-language answer, tool-only answer, or otherwise validly
+      // finished DOM turn is never accepted as completion. Start a new Chat
+      // with the original goal so the next round can inspect the same
+      // checkout and produce the required machine-readable certificate.
+      fingerprint = "missing-completion-certificate:\(continuationDepth)"
+      hasNextTask = true
+      continuationPrompt = goalOnlyDispatch
+        ? messageWithTaskReportContract(originalGoal)
+        : messageWithTaskReportContract("""
+          继续完成下面的原始目标（自动续作第 \(continuationDepth + 1) 轮）。上一轮 Chat 已结束，但没有返回有效的 MAHAYANA_TASK_REPORT_V1 完成证书。请重新检查同一工作区中已经落盘的进度，只补做尚未完成的工作，不要把计划或摘要当成完成。只有整个目标真正完成，并且验证证据齐全时，才在回复末尾输出唯一的结构化完成证书；否则继续工作，不要输出报告模板。
+
+          原始目标：
+          \(originalGoal)
+          """, taskId: nil, appliedRevision: nil, appliedDigest: nil)
+    }
     let continuationAllowed = maxTaskContinuations == 0
       || continuationDepth < maxTaskContinuations
     if !hasNextTask {
@@ -2899,15 +2990,59 @@ case "send_and_watch":
       resultPayload["errorCode"] = "task_continuation_limit_reached"
       resultPayload["message"] = "未完成任务已达到显式配置的自动续作上限。"
     } else {
-      let continuationPreparation = cdpEvaluateOnChatGPT(
-        continueInNewTaskJS(),
-        timeout: 35.0,
-        preferredURL: activeChatURL
-      ) ?? ["ok": false, "error": "continue_in_new_task_cdp_failed"]
-      if continuationPreparation["ok"] as? Bool == true {
+      var continuationPreparation: [String: Any]
+      if goalOnlyDispatch {
+        // Start a blank Chat and send only the original goal. The child
+        // watcher attaches read-only to that already-sent Chat, so it does not
+        // send a second copy of the goal.
+        var freshChatResult = cdpEvaluateOnChatGPT(
+          sendMessageJS(
+            message: continuationPrompt,
+            connector: connector,
+            newChat: true
+          ),
+          timeout: 35.0,
+          preferredURL: activeChatURL
+        ) ?? ["ok": false, "error": "fresh_chat_send_cdp_failed"]
+        freshChatResult["continuationMode"] = "fresh_chat_only_goal"
+        continuationPreparation = freshChatResult
+        if freshChatResult["ok"] as? Bool == true,
+           let freshConversationId = normalizedConversationId(
+             freshChatResult["conversationId"] as? String
+           ) {
+          var childParams = params
+          childParams["message"] = continuationPrompt
+          childParams["originalGoal"] = originalGoal
+          childParams["continuationDepth"] = continuationDepth + 1
+          childParams["reportFingerprints"] = Array((reportFingerprints + [fingerprint]).suffix(100))
+          childParams["resumeExisting"] = true
+          childParams["freshTargetPrepared"] = true
+          childParams["newChat"] = false
+          childParams["conversationId"] = freshConversationId
+          childParams["chatUrl"] = freshChatResult["url"] as? String ?? NSNull()
+          emitProgress([
+            "event": "task_continuation",
+            "status": "started",
+            "errorCode": "task_continuation_started",
+            "reason": taskStatus ?? "missing_completion_certificate",
+            "iteration": continuationDepth + 1,
+            "continuationPreparation": continuationPreparation,
+            "taskReport": taskReport as Any,
+            "backgroundOnly": true,
+            "workerUsed": false,
+          ])
+          relayFreshChatContinuation(childParams)
+        }
+      } else {
+        continuationPreparation = cdpEvaluateOnChatGPT(
+          continueInNewTaskJS(),
+          timeout: 35.0,
+          preferredURL: activeChatURL
+        ) ?? ["ok": false, "error": "continue_in_new_task_cdp_failed"]
+      }
+      if !goalOnlyDispatch && continuationPreparation["ok"] as? Bool == true {
         var childParams = params
-        childParams["message"] = continuationFromTaskReport(
-          report, originalGoal: originalGoal, iteration: continuationDepth + 1)
+        childParams["message"] = continuationPrompt
         childParams["originalGoal"] = originalGoal
         childParams["continuationDepth"] = continuationDepth + 1
         childParams["reportFingerprints"] = Array((reportFingerprints + [fingerprint]).suffix(100))
@@ -2920,10 +3055,10 @@ case "send_and_watch":
           "event": "task_continuation",
           "status": "started",
           "errorCode": "task_continuation_started",
-          "reason": taskStatus as Any,
+          "reason": taskStatus ?? "missing_completion_certificate",
           "iteration": continuationDepth + 1,
           "continuationPreparation": continuationPreparation,
-          "taskReport": report,
+          "taskReport": taskReport as Any,
           "backgroundOnly": true,
           "workerUsed": false,
         ])
@@ -2931,9 +3066,13 @@ case "send_and_watch":
       }
       resultPayload["continuationPreparation"] = continuationPreparation
       resultPayload["errorCode"] =
-        continuationPreparation["error"] ?? "continue_in_new_task_not_confirmed"
+        continuationPreparation["error"] ?? (goalOnlyDispatch
+          ? "fresh_chat_send_not_confirmed"
+          : "continue_in_new_task_not_confirmed")
       resultPayload["message"] =
-        "任务未完成，但没有确认点击上一条回复底部的“在新任务中继续”；小程序已停止，避免丢失上下文。"
+        goalOnlyDispatch
+          ? "任务未完成，但没有确认新 Chat 已创建并只发送目标；小程序已停止。"
+          : "任务未完成，但没有确认点击上一条回复底部的“在新任务中继续”；小程序已停止，避免丢失上下文。"
     }
   }
   output(resultPayload, exitCode: resultPayload["ok"] as? Bool == true ? 0 : 1)

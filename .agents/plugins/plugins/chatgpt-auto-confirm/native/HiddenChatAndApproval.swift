@@ -1684,6 +1684,39 @@ func detectDedicatedAuthorizationJS() -> String {
       '本次会话', '这次会话', '此会话', '当前会话', '在此聊天中', '本次聊天',
       '始终允许', '会话期间'
     ];
+    const isSessionScope = value => !!value && (
+      sessionHints.some(hint => value.includes(hint))
+        || /(?:allow|approve|confirm|允许|同意|确认).*(?:this (?:chat|conversation|session)|本次(?:会话|聊天)|当前会话)/i.test(value)
+    );
+    const isMenuTrigger = button => {
+      if (!button || button.disabled) return false;
+      const attributes = [
+        button.getAttribute('aria-label') || '',
+        button.getAttribute('title') || '',
+        button.getAttribute('data-testid') || '',
+        button.getAttribute('data-slot') || '',
+        button.getAttribute('class') || ''
+      ].join(' ');
+      return button.getAttribute('aria-haspopup') === 'menu'
+        || button.getAttribute('aria-haspopup') === 'listbox'
+        || button.getAttribute('aria-expanded') !== null
+        || button.getAttribute('data-state') !== null
+        || /menu|dropdown|chevron|caret|arrow|下拉|箭头|更多|选项/i.test(normalize(attributes));
+    };
+    const isAdjacentSplitControl = (allowButton, control) => {
+      if (!allowButton || !control || control === allowButton || !isMenuTrigger(control)) return false;
+      const allowRect = allowButton.getBoundingClientRect?.();
+      const controlRect = control.getBoundingClientRect?.();
+      if (!allowRect || !controlRect) return false;
+      const verticalOverlap = Math.min(allowRect.bottom, controlRect.bottom)
+        - Math.max(allowRect.top, controlRect.top);
+      const horizontalGap = Math.max(
+        allowRect.left - controlRect.right,
+        controlRect.left - allowRect.right,
+        0
+      );
+      return verticalOverlap > 0 && horizontalGap <= 12;
+    };
     const buttons = [...document.querySelectorAll('button, a, [role="button"]')]
       .filter(visible);
     const candidates = buttons
@@ -1718,16 +1751,12 @@ func detectDedicatedAuthorizationJS() -> String {
           return !allowLabels.has(value) && !rejectLabels.has(value);
         });
         const menuTriggers = nonDecisionControls.filter(button =>
-          button.getAttribute('aria-haspopup') === 'menu'
-            || button.getAttribute('aria-expanded') !== null
-            || normalize(button.getAttribute('data-state')) === 'open'
-            || /menu|dropdown|chevron|more/.test(normalize(
-              button.getAttribute('data-testid') || button.getAttribute('data-slot')
-                || button.getAttribute('class') || ''
-            ))
+          isSessionScope(label(button))
+            || isMenuTrigger(button)
+            || isAdjacentSplitControl(candidate.button, button)
         );
         const sessionScopeLabels = cardLabels.filter(value =>
-          value && sessionHints.some(hint => value.includes(hint))
+          isSessionScope(value)
         );
         const requestIdentity = approvalRequestIdentity(candidate.button);
         return {
@@ -1740,6 +1769,7 @@ func detectDedicatedAuthorizationJS() -> String {
           sessionScopeLabels,
           menuTriggerLabels: menuTriggers.map(label).filter(Boolean),
           menuTriggerCount: menuTriggers.length,
+          sessionScopeAvailable: sessionScopeLabels.length > 0 || menuTriggers.length > 0,
           cardFingerprint: fingerprint(requestIdentity
             ? `request:${requestIdentity}`
             : `card:${cardText}`),
@@ -1760,6 +1790,7 @@ func detectDedicatedAuthorizationJS() -> String {
       sessionScopeLabels: [],
       menuTriggerLabels: [],
       menuTriggerCount: 0,
+      sessionScopeAvailable: false,
       cardFingerprint: fingerprint(`label:${candidate.label}`),
       requestIdentityAvailable: false,
       unlabeledControlCount: 0
@@ -1807,8 +1838,49 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       button.innerText || button.textContent
         || button.getAttribute('aria-label') || button.getAttribute('title')
     );
-    const isSessionScope = value => !!value
-      && sessionHints.some(hint => value.includes(hint));
+    const isSessionScope = value => !!value && (
+      sessionHints.some(hint => value.includes(hint))
+        || /(?:allow|approve|confirm|\u5141\u8bb8|\u540c\u610f|\u786e\u8ba4).*(?:this (?:chat|conversation|session)|\u672c\u6b21(?:\u4f1a\u8bdd|\u804a\u5929)|\u5f53\u524d\u4f1a\u8bdd)/i.test(value)
+    );
+    const isMenuTrigger = button => {
+      if (!button || button.disabled) return false;
+      const attributes = [
+        button.getAttribute('aria-label') || '',
+        button.getAttribute('title') || '',
+        button.getAttribute('data-testid') || '',
+        button.getAttribute('data-slot') || '',
+        button.getAttribute('class') || ''
+      ].join(' ');
+      return button.getAttribute('aria-haspopup') === 'menu'
+        || button.getAttribute('aria-haspopup') === 'listbox'
+        || button.getAttribute('aria-expanded') !== null
+        || button.getAttribute('data-state') !== null
+        || /menu|dropdown|chevron|caret|arrow|\u4e0b\u62c9|\u7bad\u5934|\u66f4\u591a|\u9009\u9879/i.test(normalize(attributes));
+    };
+    const isAdjacentSplitControl = (allowButton, control) => {
+      if (!allowButton || !control || control === allowButton || !isMenuTrigger(control)) return false;
+      const allowRect = allowButton.getBoundingClientRect?.();
+      const controlRect = control.getBoundingClientRect?.();
+      if (!allowRect || !controlRect) return false;
+      const verticalOverlap = Math.min(allowRect.bottom, controlRect.bottom)
+        - Math.max(allowRect.top, controlRect.top);
+      const horizontalGap = Math.max(
+        allowRect.left - controlRect.right,
+        controlRect.left - allowRect.right,
+        0
+      );
+      return verticalOverlap > 0 && horizontalGap <= 12;
+    };
+    const findSessionControl = (allowButton, controls) => {
+      const direct = controls.find(button => button !== allowButton
+        && isSessionScope(label(button)));
+      if (direct) return direct;
+      const menuTrigger = controls.find(button => button !== allowButton
+        && isMenuTrigger(button)
+        && isAdjacentSplitControl(allowButton, button));
+      if (menuTrigger) return menuTrigger;
+      return controls.find(button => button !== allowButton && isMenuTrigger(button)) || null;
+    };
     const approvalRequestIdentity = element => {
       let domNode = element;
       for (let ancestorIndex = 0; ancestorIndex < 15 && domNode; ancestorIndex += 1) {
@@ -1853,22 +1925,39 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       return '';
     };
     const dispatchPointerClick = candidate => {
-      const rect = candidate.getBoundingClientRect?.();
-      const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
-      const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
-      const pressed = {
-        bubbles: true, cancelable: true, composed: true,
-        button: 0, buttons: 1, clientX, clientY
-      };
-      candidate.dispatchEvent(new PointerEvent('pointerdown', {
-        ...pressed, pointerId: 1, pointerType: 'mouse', isPrimary: true
-      }));
-      candidate.dispatchEvent(new MouseEvent('mousedown', pressed));
-      candidate.dispatchEvent(new PointerEvent('pointerup', {
-        ...pressed, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true
-      }));
-      candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
-      candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+      try {
+        if (typeof PointerEvent !== 'function' || typeof MouseEvent !== 'function') {
+          throw new Error('pointer_events_unavailable');
+        }
+        const rect = candidate.getBoundingClientRect?.();
+        const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
+        const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
+        const pressed = {
+          bubbles: true, cancelable: true, composed: true,
+          button: 0, buttons: 1, clientX, clientY
+        };
+        candidate.dispatchEvent(new PointerEvent('pointerdown', {
+          ...pressed, pointerId: 1, pointerType: 'mouse', isPrimary: true
+        }));
+        candidate.dispatchEvent(new MouseEvent('mousedown', pressed));
+        candidate.dispatchEvent(new PointerEvent('pointerup', {
+          ...pressed, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true
+        }));
+        candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+        candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+      } catch (_) {
+        // The in-app Browser's isolated page context may expose DOM nodes but
+        // not constructible PointerEvent/MouseEvent classes. Native click()
+        // still reaches the page's React/Radix handler and remains scoped to
+        // the already selected authorization-card control.
+        if (typeof candidate.click === 'function') {
+          candidate.click();
+        } else {
+          candidate.dispatchEvent(new Event('click', {
+            bubbles: true, cancelable: true, composed: true
+          }));
+        }
+      }
     };
     const confirmCardClosed = async candidate => {
       const expectedFingerprint = approvalCardFingerprint(candidate);
@@ -1926,20 +2015,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       cardButtons = [];
     }
 
-    const sessionControl = cardButtons.find(button =>
-      button !== candidate.button && isSessionScope(label(button))
-    ) || cardButtons.find(button => {
-      if (button === candidate.button) return false;
-      const value = label(button);
-      return !allowed.has(value) && !rejectLabels.has(value) && (
-        button.getAttribute('aria-haspopup') === 'menu'
-          || button.getAttribute('aria-expanded') !== null
-          || /menu|dropdown|chevron|more/.test(normalize(
-            button.getAttribute('data-testid') || button.getAttribute('data-slot')
-              || button.getAttribute('class') || ''
-          ))
-      );
-    });
+    const sessionControl = findSessionControl(candidate.button, cardButtons);
 
     if (sessionControl) {
       const menuTriggerLabel = label(sessionControl);
@@ -2591,6 +2667,101 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
       return 'dom_event';
     }
 
+    // Split approval buttons have a primary "Allow" action and a small
+    // adjacent arrow.  For the broad, always-on watcher, prefer the arrow's
+    // session menu too; otherwise the generic IPC path could consume the
+    // one-shot Allow action before the dedicated Chat watcher gets a chance
+    // to select "Allow for this conversation".
+    function normalizedLabel(button) {
+      return [
+        button?.innerText || '',
+        button?.getAttribute?.('aria-label') || '',
+        button?.getAttribute?.('title') || '',
+      ].join(' ').replace(/[\\s\\u21b5\\u23ce]+/g, ' ').trim().toLowerCase();
+    }
+    const sessionHints = [
+      'this chat', 'this conversation', 'for this chat', 'for this conversation',
+      'for this session', 'during this chat', 'always allow in this chat',
+      '本次会话', '这次会话', '此会话', '当前会话', '在此聊天中', '本次聊天',
+      '始终允许', '会话期间'
+    ];
+    function isSessionScopeLabel(value) {
+      const normalized = (value || '').toLowerCase();
+      return sessionHints.some(hint => normalized.includes(hint))
+        || /(?:allow|approve|confirm|允许|同意|确认).*(?:this (?:chat|conversation|session)|本次(?:会话|聊天)|当前会话)/i.test(normalized);
+    }
+    function isVisibleControl(button) {
+      return !!(button && !button.disabled
+        && (button.offsetWidth || button.offsetHeight || button.getClientRects?.().length));
+    }
+    function isMenuTrigger(button) {
+      if (!isVisibleControl(button)) return false;
+      const attributes = [
+        button.getAttribute?.('aria-label') || '',
+        button.getAttribute?.('title') || '',
+        button.getAttribute?.('data-testid') || '',
+        button.getAttribute?.('data-slot') || '',
+        button.getAttribute?.('class') || '',
+      ].join(' ');
+      return button.getAttribute?.('aria-haspopup') === 'menu'
+        || button.getAttribute?.('aria-haspopup') === 'listbox'
+        || button.getAttribute?.('aria-expanded') !== null
+        || button.getAttribute?.('data-state') !== null
+        || /menu|dropdown|chevron|caret|arrow|下拉|箭头|更多|选项/i.test(attributes.toLowerCase());
+    }
+    function isAdjacentSplitControl(allowButton, control) {
+      if (!allowButton || !control || control === allowButton || !isMenuTrigger(control)) return false;
+      const allowRect = allowButton.getBoundingClientRect?.();
+      const controlRect = control.getBoundingClientRect?.();
+      if (!allowRect || !controlRect) return false;
+      const verticalOverlap = Math.min(allowRect.bottom, controlRect.bottom)
+        - Math.max(allowRect.top, controlRect.top);
+      const horizontalGap = Math.max(
+        allowRect.left - controlRect.right,
+        controlRect.left - allowRect.right,
+        0
+      );
+      return verticalOverlap > 0 && horizontalGap <= 12;
+    }
+    function visibleMenuItems() {
+      return Array.from(document.querySelectorAll(
+        '[role="menuitem"], [role="menuitemradio"], [role="option"], '
+          + '[role="menu"] button, [role="listbox"] button, '
+          + '[data-radix-menu-content] button, '
+          + '[data-radix-popper-content-wrapper] button'
+      )).filter(isVisibleControl);
+    }
+    function findSessionScopeAction(allowButton, cardButtons) {
+      const sessionOption = visibleMenuItems().find(item =>
+        item !== allowButton && isSessionScopeLabel(normalizedLabel(item))
+      );
+      if (sessionOption) return { type: 'option', button: sessionOption };
+      const direct = cardButtons.find(button => button !== allowButton
+        && isSessionScopeLabel(normalizedLabel(button)));
+      if (direct) return { type: 'trigger', button: direct };
+      const adjacent = cardButtons.find(button => button !== allowButton
+        && isAdjacentSplitControl(allowButton, button));
+      if (adjacent) return { type: 'trigger', button: adjacent };
+      const fallback = cardButtons.find(button => button !== allowButton
+        && isMenuTrigger(button));
+      return fallback ? { type: 'trigger', button: fallback } : null;
+    }
+    function invokeSessionScopeAction(allowButton, cardButtons) {
+      const action = findSessionScopeAction(allowButton, cardButtons);
+      if (!action) return null;
+      if (action.type === 'option') {
+        invokeInternalApproval(action.button);
+        return 'session_scope_option';
+      }
+      const expanded = action.button.getAttribute?.('aria-expanded') === 'true'
+        || (action.button.getAttribute?.('data-state') || '').toLowerCase() === 'open';
+      if (!expanded) {
+        invokeInternalApproval(action.button);
+        return 'session_scope_menu_opened';
+      }
+      return 'session_scope_menu_pending';
+    }
+
     const buttons = [];
     collectButtons(document, buttons, new Set());
     const processedContainers = new Set();
@@ -2632,12 +2803,13 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
       let contextText = "";
       let targetMessageId = null;
       let metadataBody = "";
+      let cardButtons = [];
 
       for (let i = 0; i < 15 && container; i++) {
         if (processedContainers.has(container)) break;
         const cText = container.innerText || "";
-        const childBtns = Array.from(container.querySelectorAll('button, a, [role="button"]'));
-        const hasReject = childBtns.some(b => isRejectTitle(b.innerText || b.getAttribute('aria-label') || b.getAttribute('title') || ""));
+        cardButtons = Array.from(container.querySelectorAll('button, a, [role="button"]'));
+        const hasReject = cardButtons.some(b => isRejectTitle(b.innerText || b.getAttribute('aria-label') || b.getAttribute('title') || ""));
 
         let fiberKey = Object.keys(container).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactProps$'));
         if (fiberKey) {
@@ -2674,7 +2846,27 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
 
         if (matchRes.match) {
           try {
-            const internalMode = invokeInternalApproval(btn);
+            const scopedMode = approveAll
+              ? invokeSessionScopeAction(btn, cardButtons)
+              : null;
+            if (scopedMode === 'session_scope_menu_opened'
+                || scopedMode === 'session_scope_menu_pending') {
+              results.pending++;
+              results.audits.push({
+                buttonTitle: title,
+                decision: 'session_scope_pending',
+                reason: scopedMode === 'session_scope_menu_opened'
+                  ? '已打开允许范围菜单，等待选择本次会话'
+                  : '允许范围菜单已打开，等待本次会话选项',
+                clicked: scopedMode === 'session_scope_menu_opened',
+                ruleId: matchRes.ruleId,
+                promptText: auditPrompt,
+              });
+              break;
+            }
+            const internalMode = scopedMode === 'session_scope_option'
+              ? scopedMode
+              : invokeInternalApproval(btn);
             if (internalMode === 'react_handler') results.internalActions++;
             else results.domEvents++;
             results.approved++;

@@ -91,16 +91,16 @@ test('unchanged terminal tasks preserve the child controller recovery budget', (
   );
 });
 
-test('every dispatched work Chat receives one machine report contract', () => {
-  assert.match(controller, /MAHAYANA_TASK_REPORT_CONTRACT_V4/);
-  assert.match(controller, /"status":"incomplete"/);
-  assert.match(controller, /"all_tasks_complete":false/);
+test('every dispatched work Chat receives only the final completion certificate', () => {
+  assert.match(controller, /MAHAYANA_TASK_REPORT_CONTRACT_V5/);
+  assert.match(controller, /"status":"complete"/);
+  assert.match(controller, /"all_tasks_complete":true/);
+  assert.doesNotMatch(controller, /"status":"incomplete"/);
+  assert.doesNotMatch(controller, /"all_tasks_complete":false/);
   assert.doesNotMatch(controller, /MAHAYANA_TASK_WAIT_V1/);
   assert.match(controller, /"task_id":\$\{taskId\}/);
-  assert.match(controller, /\.mahayana-project-email\.json/);
-  assert.match(controller, /第一轮、续作轮和验收轮开始时使用 Gmail 按任务 id/);
-  assert.match(controller, /禁止发送立项、进展或完成邮件/);
-  assert.match(controller, /只有确实需要人工提供信息、权限、凭证或决策时/);
+  assert.doesNotMatch(controller, /Gmail|项目邮件|立项邮件/);
+  assert.match(controller, /小程序会把同一目标发送到新的 Chat/);
 });
 
 test('every round names the model, repository, task path, code path, and code-change gate', () => {
@@ -112,16 +112,21 @@ test('every round names the model, repository, task path, code path, and code-ch
   assert.match(controller, /必须产生可核验的代码变更/);
 });
 
-test('task documents are optional and document bodies stay out of prompts', () => {
+test('missing task projects are created in the repository and document bodies stay out of prompts', () => {
   assert.match(controller, /task\.documentDirectory/);
   assert.match(controller, /\/tree\/\$\{controlRef\}\/\$\{directory\}/);
   assert.match(controller, /只在消息中提供目录路径和文件夹链接/);
-  assert.match(controller, /本任务没有配置任务文档/);
+  assert.match(controller, /仓库中尚未登记任务/);
+  assert.match(controller, /写入目标\/范围、架构、执行任务、验收标准和证据文档/);
   assert.match(controller, /documentDirectory[\s\S]*\? directoryEntries\(documentDirectory\)[\s\S]*: \[\]/);
   assert.doesNotMatch(controller, /specificationFiles|specificationURLs/);
   assert.doesNotMatch(controller, /documentDirectory_and_codeDirectory_are_required/);
 });
 
-test('no standard task document names are required', () => {
-  assert.doesNotMatch(controller, /README\.md|PRD\.md|TECHNICAL_DESIGN\.md|UI_UX\.md/);
+test('repository-backed task retains its project documents', () => {
+  const task = inbox.tasks.find(item => item.id === 'ios-external-miniapp-e2e-20260810');
+  assert.equal(task.connector, 'GitHub');
+  assert.equal(task.repository, 'bhrumom/fabushi');
+  assert.ok(task.documentDirectory);
+  assert.ok(task.specSources.length >= 4);
 });
