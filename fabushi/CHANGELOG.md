@@ -1,5 +1,14 @@
 # 更新日志
 
+## [1.2.5] - 2026-09-02
+
+### 发布门禁修复
+- 修复原生全平台正式发布工作流中的过期检查名称，改为验证当前主线实际存在且成功的 `Canonical architecture guardrails` 与 `Resolve Worker source and deployment impact` 门禁。
+- 统一桌面、Android、iOS 正式版本为 `1.2.5`，Android/iOS 构建号提升至 `11`，避免复用已冻结的 `1.2.4` 发布源。
+- 保留 1.2.4 安装升级 E2E 修复，并要求最终 Release 继续从受保护主线的 exact SHA 构建。
+
+---
+
 ## [1.2.4] - 2026-09-02
 
 ### 发布与升级验证
