@@ -471,14 +471,29 @@ export async function reattachInAppBrowserTab({
       const targetConversation = destination.match(/\/c\/([^/]+)$/u)?.[1] || '';
       const targetMatches = canonicalChatUrl(url)
         ? (targetConversation ? sameChatTarget(url, destination) : sameChatProject(url, destination))
-        // A persisted owned tab may be a renderer crash page. Let the job
-        // preflight revive it in place instead of discarding its ownership.
+        // A persisted owned tab may be a renderer crash page. It is handled
+        // below as a stale recovery hint rather than a usable Browser handle.
         : OWNED_BROKEN_TAB_URL_PATTERN.test(url);
-      if (targetMatches) {
+      if (targetMatches && !OWNED_BROKEN_TAB_URL_PATTERN.test(url)) {
         if (!tab?.playwright) throw new Error('首选任务标签页不可控');
         try { await tab.markHandoff(); } catch { /* current run may own the handoff */ }
         logger({ event: 'browser_tab_reattached', method: 'preferred-tab', tabId: preferredTabId, url });
         return { tab, method: 'preferred-tab', url };
+      }
+      if (targetMatches && OWNED_BROKEN_TAB_URL_PATTERN.test(url)) {
+        // A renderer-crash document can keep goto/reload pending forever in
+        // some in-app Browser hosts. Do not bind the new trusted host to
+        // that dead handle: discard the agent-owned tab and let the normal
+        // exact-conversation/new-tab recovery path select a live tab. This
+        // keeps recovery automatic and prevents the supervisor from
+        // blocking until the enclosing Browser execution times out.
+        try { await tab.close?.(); } catch { /* the crashed tab may be gone */ }
+        logger({
+          event: 'browser_broken_preferred_tab_discarded',
+          method: 'preferred-tab-crash-fallback',
+          tabId: preferredTabId,
+          url,
+        });
       }
     } catch (error) {
       failures.push(`preferred-tab: ${publicError(error)}`);
