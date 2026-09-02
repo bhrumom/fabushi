@@ -253,6 +253,70 @@ test('a restored conversation refreshes itself when the Browser page cannot load
   }
 });
 
+test('a restored job repairs a lost conversation id from its task-owned tab', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-repair-target-'));
+  const capabilityFile = join(directory, 'capability.json');
+  const jobStateFile = join(directory, 'job.json');
+  const projectUrl = 'https://chatgpt.com/g/fabushi/project';
+  const conversationUrl = 'https://chatgpt.com/g/fabushi/c/conversation-repaired';
+  await writeFile(jobStateFile, `${JSON.stringify({
+    id: 'iab_24681357-2468-4246-8462-135724680246',
+    goal: '继续完整目标',
+    status: 'waiting_for_browser_host',
+    phase: 'waiting',
+    attempt: 1,
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    currentUrl: projectUrl,
+    conversationId: null,
+    responseRunning: true,
+    beforeAssistantCount: 0,
+    beforeUserCount: 0,
+  })}\n`);
+  let gotoCount = 0;
+  const pageState = {
+    url: conversationUrl,
+    title: '目标会话',
+    conversationId: 'conversation-repaired',
+    assistantCount: 0,
+    userCount: 0,
+    latestAssistantText: '',
+    latestUserText: '',
+    bodyText: '目标会话已加载',
+    controls: [],
+    pendingAuthorization: false,
+    stopAnswer: false,
+    retry: false,
+    hasComposer: true,
+    hasWorkComposer: false,
+    chatTabSelected: true,
+    bodyLowerTail: '目标会话已加载',
+  };
+  const tab = {
+    id: 'repaired-target-tab',
+    playwright: { evaluate: async () => pageState },
+    url: async () => conversationUrl,
+    goto: async () => { gotoCount += 1; },
+    markHandoff: async () => {},
+  };
+  const host = await createInAppBrowserCapabilityHost({
+    browser: { tabs: {} },
+    tab,
+    startUrl: projectUrl,
+    capabilityFile,
+    jobStateFile,
+  });
+  try {
+    const result = await host.runStep();
+    assert.equal(result.status, 'starting');
+    assert.equal(result.currentUrl, conversationUrl);
+    assert.equal(result.conversationId, 'conversation-repaired');
+    assert.equal(gotoCount, 0);
+  } finally {
+    await host.close();
+  }
+});
+
 test('Browser reattachment rebinds an exact controlled conversation first', async () => {
   const targetUrl = 'https://chatgpt.com/g/fabushi/c/conversation-1';
   const rebound = fakeTab('controlled-1', targetUrl);
