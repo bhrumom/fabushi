@@ -451,13 +451,7 @@ impl<B: TestDriverBackend> TestDriverSession<B> {
         }
     }
 
-    fn push_log(
-        &mut self,
-        correlation_id: &str,
-        level: &str,
-        message: &str,
-        fields: Value,
-    ) {
+    fn push_log(&mut self, correlation_id: &str, level: &str, message: &str, fields: Value) {
         let entry = TestDriverLogEntry {
             protocol: TEST_DRIVER_PROTOCOL.into(),
             sequence: self.next_log_sequence,
@@ -603,7 +597,10 @@ mod tests {
         assert!(response.ok);
         assert_eq!(response.correlation_id, "corr-1");
         assert_eq!(session.backend().calls.len(), 1);
-        assert_eq!(session.backend().calls[0].0, TestDriverMethod::MarketplaceSearch);
+        assert_eq!(
+            session.backend().calls[0].0,
+            TestDriverMethod::MarketplaceSearch
+        );
         assert_eq!(session.backend().calls[0].1, "corr-1");
     }
 
