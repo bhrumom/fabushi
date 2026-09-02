@@ -1,18 +1,23 @@
 name: RustDesk RDF-004 permission enforcement
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - codex/rustdesk-fusion-route-negotiation
+  pull_request:
     paths:
       - '.github/workflows/rustdesk-rdf004-permission-enforcement.yml'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs'
+      - 'frontend/apps/web/src/lib/mahayana-host/contracts.ts'
+      - 'frontend/apps/web/src/lib/remote-computer/desktop-peer.ts'
+      - 'frontend/apps/web/src/lib/remote-computer/remote-api.ts'
+      - 'chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js'
+      - 'projects/rustdesk-fabushi-fusion/management/01-WBS原子任务.md'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   implement-and-verify:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,21 +25,97 @@ jobs:
           ref: codex/rustdesk-fusion-route-negotiation
           fetch-depth: 2
 
-      - name: Execute persisted RDF-004 implementation recipe
+      - name: Enforce session grants in API and desktop control path
         shell: python
         run: |
           from pathlib import Path
-          import subprocess
 
-          workflow = '.github/workflows/rustdesk-rdf004-permission-enforcement.yml'
-          previous = subprocess.check_output(['git', 'show', f'HEAD^:{workflow}'], text=True)
-          marker = '      - name: Enforce session grants in API and desktop control path\n        shell: python\n        run: |\n'
-          start = previous.index(marker) + len(marker)
-          end = previous.index('\n      - name: Format Rust', start)
-          block = previous[start:end]
-          lines = block.splitlines()
-          code = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
-          exec(compile(code, workflow, 'exec'), {'__name__': '__main__'})
+          remote = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs')
+          text = remote.read_text()
+          permissions_json = '"permissions": {"display": true, "input": true, "clipboard": false, "fileTransfer": false, "audio": false},'
+          if permissions_json not in text:
+              session_list_marker = '''                "expiresAt": row.expires_at,\n            })'''
+              assert session_list_marker in text
+              text = text.replace(
+                  session_list_marker,
+                  '''                "expiresAt": row.expires_at,\n                "permissions": {"display": true, "input": true, "clipboard": false, "fileTransfer": false, "audio": false},\n            })''',
+                  1,
+              )
+              create_marker = '''        "state": "pending",\n        "iceServers": remote_ice_servers(&context.env),'''
+              assert create_marker in text
+              text = text.replace(
+                  create_marker,
+                  '''        "state": "pending",\n        "permissions": {"display": true, "input": true, "clipboard": false, "fileTransfer": false, "audio": false},\n        "iceServers": remote_ice_servers(&context.env),''',
+                  1,
+              )
+          remote.write_text(text)
+
+          contracts = Path('frontend/apps/web/src/lib/mahayana-host/contracts.ts')
+          text = contracts.read_text()
+          if 'export interface RemoteComputerPermissions {' not in text:
+              marker = 'export interface RemoteComputerSession {'
+              assert marker in text
+              text = text.replace(marker, '''export interface RemoteComputerPermissions {\n  display: boolean;\n  input: boolean;\n  clipboard: boolean;\n  fileTransfer: boolean;\n  audio: boolean;\n}\n\n''' + marker, 1)
+              start = text.index(marker)
+              end = text.index('\n}', start)
+              block = text[start:end]
+              assert 'permissions:' not in block
+              text = text[:end] + '\n  permissions: RemoteComputerPermissions;' + text[end:]
+          contracts.write_text(text)
+
+          desktop = Path('frontend/apps/web/src/lib/remote-computer/desktop-peer.ts')
+          text = desktop.read_text()
+          if 'function normalizeRemotePermissions(' not in text:
+              insert_at = text.index('function normalizeSessionsPayload(')
+              helper = '''function normalizeRemotePermissions(value: unknown): RemoteComputerSession["permissions"] {\n  const permissions = objectValue(value);\n  const names = ["display", "input", "clipboard", "fileTransfer", "audio"] as const;\n  if (names.some((name) => typeof permissions[name] !== "boolean")) {\n    throw new Error("Remote computer session permissions are invalid");\n  }\n  return {\n    display: permissions.display as boolean,\n    input: permissions.input as boolean,\n    clipboard: permissions.clipboard as boolean,\n    fileTransfer: permissions.fileTransfer as boolean,\n    audio: permissions.audio as boolean,\n  };\n}\n\n'''
+              text = text[:insert_at] + helper + text[insert_at:]
+              return_marker = '''      expiresAt: session.expiresAt,\n      ...(session.generation === undefined ? {} : { generation: session.generation }),'''
+              assert return_marker in text
+              text = text.replace(return_marker, '''      expiresAt: session.expiresAt,\n      permissions: normalizeRemotePermissions(session.permissions),\n      ...(session.generation === undefined ? {} : { generation: session.generation }),''', 1)
+
+          if 'Remote session does not grant display permission' not in text:
+              snapshot_marker = '''    if (message.type === "computer.snapshot.request") {\n      const responseId = typeof message.id === "string"'''
+              assert snapshot_marker in text
+              text = text.replace(snapshot_marker, '''    if (message.type === "computer.snapshot.request") {\n      if (!entry.session.permissions.display) {\n        await sendJson(channel, { type: "computer.error", message: "Remote session does not grant display permission" });\n        return;\n      }\n      const responseId = typeof message.id === "string"''', 1)
+
+          if 'Remote session does not grant input permission' not in text:
+              action_marker = '''    if (message.type === "computer.action") {\n      const responseId = typeof message.id === "string"'''
+              assert action_marker in text
+              text = text.replace(action_marker, '''    if (message.type === "computer.action") {\n      if (!entry.session.permissions.input) {\n        await sendJson(channel, { type: "computer.error", message: "Remote session does not grant input permission" });\n        return;\n      }\n      const responseId = typeof message.id === "string"''', 1)
+          desktop.write_text(text)
+
+          api = Path('frontend/apps/web/src/lib/remote-computer/remote-api.ts')
+          text = api.read_text()
+          if 'export interface RemoteControlPermissions {' not in text:
+              marker = 'export interface MobileControlSession {'
+              assert marker in text
+              text = text.replace(marker, '''export interface RemoteControlPermissions {\n  display: boolean;\n  input: boolean;\n  clipboard: boolean;\n  fileTransfer: boolean;\n  audio: boolean;\n}\n\n''' + marker, 1)
+              start = text.index(marker)
+              end = text.index('\n}', start)
+              block = text[start:end]
+              assert 'permissions:' not in block
+              text = text[:end] + '\n  permissions: RemoteControlPermissions;' + text[end:]
+              helper_at = text.index('function normalizeIceServers(')
+              helper = '''function normalizeRemoteControlPermissions(value: unknown): RemoteControlPermissions | null {\n  if (!isRecord(value)) return null;\n  const names = ["display", "input", "clipboard", "fileTransfer", "audio"] as const;\n  if (names.some((name) => typeof value[name] !== "boolean")) return null;\n  return {\n    display: value.display as boolean,\n    input: value.input as boolean,\n    clipboard: value.clipboard as boolean,\n    fileTransfer: value.fileTransfer as boolean,\n    audio: value.audio as boolean,\n  };\n}\n\n'''
+              text = text[:helper_at] + helper + text[helper_at:]
+              validate_marker = '''      || !validTimestamp(raw.expiresAt)\n      || raw.expiresAt <= raw.createdAt) {'''
+              assert validate_marker in text
+              text = text.replace(validate_marker, '''      || !validTimestamp(raw.expiresAt)\n      || raw.expiresAt <= raw.createdAt\n      || !normalizeRemoteControlPermissions(raw.permissions)) {''', 1)
+              return_marker = '''      state: "pending",\n      iceServers: normalizeIceServers(raw.iceServers),'''
+              assert return_marker in text
+              text = text.replace(return_marker, '''      state: "pending",\n      permissions: normalizeRemoteControlPermissions(raw.permissions)!,\n      iceServers: normalizeIceServers(raw.iceServers),''', 1)
+          api.write_text(text)
+
+          test = Path('chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js')
+          test.write_text(r'''import assert from "node:assert/strict";\nimport { readFileSync } from "node:fs";\nimport { dirname, resolve } from "node:path";\nimport test from "node:test";\nimport { fileURLToPath } from "node:url";\n\nconst root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");\nconst source = (path) => readFileSync(resolve(root, path), "utf8");\n\ntest("session grant defaults are returned to desktop and mobile clients", () => {\n  const worker = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs");\n  assert.match(worker, /"permissions": \{"display": true, "input": true, "clipboard": false, "fileTransfer": false, "audio": false\}/);\n  const api = source("frontend/apps/web/src/lib/remote-computer/remote-api.ts");\n  assert.match(api, /normalizeRemoteControlPermissions/);\n  assert.match(api, /permissions: normalizeRemoteControlPermissions\(raw\.permissions\)!/);\n});\n\ntest("desktop transport enforces display and input grants before host actions", () => {\n  const desktop = source("frontend/apps/web/src/lib/remote-computer/desktop-peer.ts");\n  assert.match(desktop, /!entry\.session\.permissions\.display/);\n  assert.match(desktop, /Remote session does not grant display permission/);\n  assert.match(desktop, /!entry\.session\.permissions\.input/);\n  assert.match(desktop, /Remote session does not grant input permission/);\n  assert.match(desktop, /normalizeRemotePermissions\(session\.permissions\)/);\n});\n\ntest("session permission contract remains least privilege for unsupported channels", () => {\n  const migration = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0019_remote_computer_audit_grants.sql");\n  assert.match(migration, /allow_clipboard INTEGER NOT NULL DEFAULT 0/);\n  assert.match(migration, /allow_file_transfer INTEGER NOT NULL DEFAULT 0/);\n  assert.match(migration, /allow_audio INTEGER NOT NULL DEFAULT 0/);\n});\n''')
+
+          p = Path('projects/rustdesk-fabushi-fusion/management/01-WBS原子任务.md')
+          text = p.read_text()
+          text = text.replace(
+              '| RDF-004 | Desktop/display/input provider parity | RDF-003 | cross-platform conformance | planned | capability inventory |',
+              '| RDF-004 | Desktop/display/input provider parity | RDF-003 | cross-platform conformance | in-progress | session grants now reach clients and gate display/input host actions; provider runtime parity remains |',
+          )
+          p.write_text(text)
 
       - name: Format Rust
         working-directory: third_party/mahayana/mahayana-rs
@@ -56,35 +137,22 @@ jobs:
 
       - name: Test platform worker
         working-directory: third_party/mahayana/mahayana-rs
-        run: cargo test -p mahayana-platform-worker
-
-      - name: Record RDF-004 permission slice and restore canonical workflow
-        shell: python
-        run: |
-          from pathlib import Path
-          import subprocess
-
-          p = Path('projects/rustdesk-fabushi-fusion/management/01-WBS原子任务.md')
-          text = p.read_text()
-          text = text.replace(
-              '| RDF-004 | Desktop/display/input provider parity | RDF-003 | cross-platform conformance | planned | capability inventory |',
-              '| RDF-004 | Desktop/display/input provider parity | RDF-003 | cross-platform conformance | in-progress | session grants now reach clients and gate display/input host actions; provider runtime parity remains |',
-          )
-          p.write_text(text)
-          workflow = '.github/workflows/rustdesk-rdf004-permission-enforcement.yml'
-          Path(workflow).write_text(subprocess.check_output(['git', 'show', f'HEAD^:{workflow}'], text=True))
+        run: cargo test --locked -p mahayana-platform-worker
 
       - name: Commit verified permission enforcement
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add \
-            .github/workflows/rustdesk-rdf004-permission-enforcement.yml \
             third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs \
             frontend/apps/web/src/lib/mahayana-host/contracts.ts \
             frontend/apps/web/src/lib/remote-computer/desktop-peer.ts \
             frontend/apps/web/src/lib/remote-computer/remote-api.ts \
             chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js \
             projects/rustdesk-fabushi-fusion/management/01-WBS原子任务.md
+          if git diff --cached --quiet; then
+            echo 'RDF-004 permission enforcement is already committed.'
+            exit 0
+          fi
           git commit -m 'feat(remote): enforce session grants for display and input'
           git push origin HEAD:codex/rustdesk-fusion-route-negotiation
