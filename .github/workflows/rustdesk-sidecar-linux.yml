@@ -68,6 +68,7 @@ jobs:
       - name: Typecheck affected product surfaces
         run: |
           corepack enable
+          corepack prepare pnpm@10.9.0 --activate
           pnpm --dir frontend/apps/web install --frozen-lockfile --ignore-scripts
           pnpm --dir frontend/apps/web run typecheck
           npm --prefix desktop ci --ignore-scripts
