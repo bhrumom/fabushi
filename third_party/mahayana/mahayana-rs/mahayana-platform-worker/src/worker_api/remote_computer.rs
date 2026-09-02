@@ -1204,7 +1204,10 @@ fn remote_session_actor_allowed(
     desktop_authorized: bool,
     now: i64,
 ) -> bool {
-    if session.state == "closed" || session.expires_at <= now {
+    // Pending sessions are only consent requests. Neither controller nor target may
+    // negotiate transport or exchange signaling until the target device explicitly
+    // activates the session with its device secret.
+    if session.state != "active" || session.expires_at <= now {
         return false;
     }
     match role {

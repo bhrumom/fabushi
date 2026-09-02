@@ -15,6 +15,13 @@ test("session grant defaults are returned to desktop and mobile clients", () => 
   assert.match(api, /permissions: normalizeRemoteControlPermissions\(raw\.permissions\)!/);
 });
 
+test("pending consent cannot negotiate transport or signaling", () => {
+  const worker = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs");
+  assert.match(worker, /session\.state != "active" \|\| session\.expires_at <= now/);
+  assert.match(worker, /remote_computer_session_activate/);
+  assert.match(worker, /state = 'pending'/);
+});
+
 test("desktop transport enforces display and input grants before host actions", () => {
   const desktop = source("frontend/apps/web/src/lib/remote-computer/desktop-peer.ts");
   assert.match(desktop, /!entry\.session\.permissions\.display/);
