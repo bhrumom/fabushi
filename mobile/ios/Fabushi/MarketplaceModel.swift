@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Foundation
 import Observation
 import UIKit
@@ -47,6 +48,19 @@ struct PluginPermissionRequest: Identifiable, Equatable {
     var id: String { pluginId }
 }
 
+private final class BrowserAuthPresentationContext: NSObject, ASWebAuthenticationPresentationContextProviding {
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        if let keyWindow = scenes.flatMap(\.windows).first(where: \.isKeyWindow) {
+            return keyWindow
+        }
+        if let window = scenes.flatMap(\.windows).first {
+            return window
+        }
+        return ASPresentationAnchor()
+    }
+}
+
 @MainActor
 @Observable
 final class MarketplaceModel {
@@ -73,6 +87,8 @@ final class MarketplaceModel {
 
     private let host: MahayanaHost
     private let onboardingKey = "fabushi.mobile.onboarding-complete.v1"
+    @ObservationIgnored private let browserAuthPresentationContext = BrowserAuthPresentationContext()
+    @ObservationIgnored private var webAuthenticationSession: ASWebAuthenticationSession?
 
     init(host: MahayanaHost) {
         self.host = host
@@ -127,9 +143,10 @@ final class MarketplaceModel {
             browserLoginAttemptId = attemptId
             browserLoginURL = loginURL
             loginBusy = false
-            await UIApplication.shared.open(loginURL, options: [:])
             if loginURLString.hasPrefix("about:blank#fabushi-test-browser-login") {
                 await completeBrowserLogin(attemptId: attemptId)
+            } else {
+                presentBrowserLogin(loginURL)
             }
         } catch {
             browserLoginAttemptId = nil
@@ -148,11 +165,21 @@ final class MarketplaceModel {
                   let loginURL = URL(string: loginURLString)
             else { throw MahayanaHost.HostError.invalidResponse }
             browserLoginURL = loginURL
-            await UIApplication.shared.open(loginURL, options: [:])
+            if loginURLString.hasPrefix("about:blank#fabushi-test-browser-login") {
+                await completeBrowserLogin(attemptId: attemptId)
+            } else {
+                presentBrowserLogin(loginURL)
+            }
         } catch { loginError = error.localizedDescription }
     }
 
     func cancelBrowserLogin() async {
+        webAuthenticationSession?.cancel()
+        webAuthenticationSession = nil
+        await cancelBrowserLoginAttempt()
+    }
+
+    private func cancelBrowserLoginAttempt() async {
         guard let attemptId = browserLoginAttemptId else { return }
         do {
             _ = try await host.request(method: "feature.auth.browserCancel", params: ["attemptId": attemptId])
@@ -161,6 +188,39 @@ final class MarketplaceModel {
         browserLoginURL = nil
         loginBusy = false
         message = "登录授权已取消"
+    }
+
+    private func presentBrowserLogin(_ loginURL: URL) {
+        webAuthenticationSession?.cancel()
+        let session = ASWebAuthenticationSession(
+            url: loginURL,
+            callbackURLScheme: "fabushi"
+        ) { [weak self] callbackURL, error in
+            Task { @MainActor in
+                guard let self else { return }
+                self.webAuthenticationSession = nil
+                if let callbackURL {
+                    self.handleDeepLink(callbackURL)
+                    return
+                }
+                if let authError = error as? ASWebAuthenticationSessionError, authError.code == .canceledLogin {
+                    await self.cancelBrowserLoginAttempt()
+                    return
+                }
+                if let error {
+                    self.loginError = error.localizedDescription
+                    self.message = "登录页面未能完成，请重试"
+                }
+            }
+        }
+        session.presentationContextProvider = browserAuthPresentationContext
+        session.prefersEphemeralWebBrowserSession = false
+        webAuthenticationSession = session
+        if !session.start() {
+            webAuthenticationSession = nil
+            loginError = "无法打开应用内登录页面"
+            message = "登录页面未能打开，请重试"
+        }
     }
 
     func runFeatureHostSmokeIfRequested() async {
@@ -335,6 +395,7 @@ final class MarketplaceModel {
                 if let auth = object["auth"] as? [String: Any] { applyAuth(auth) } else { loggedIn = true }
                 browserLoginAttemptId = nil
                 browserLoginURL = nil
+                webAuthenticationSession = nil
                 loginError = nil
                 await refresh()
                 message = "登录成功，账号状态已同步"
