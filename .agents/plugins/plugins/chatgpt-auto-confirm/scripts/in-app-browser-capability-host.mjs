@@ -52,6 +52,8 @@ const CAPABILITY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const TERMINAL_JOB_STATUSES = new Set(['completed', 'stopped', 'failed']);
 const RECOVERABLE_BROWSER_CONTEXT_PATTERN = /(?:node_repl exec context not found|execution context[^\n]{0,80}(?:destroyed|not found)|(?:browser\s+)?tab(?:\s+id)?[^\n]{0,80}(?:not found|stale|missing|closed|unavailable)|(?:page|target|frame|browser context)[^\n]{0,80}(?:closed|detached|destroyed|unavailable)|not part of (?:the )?current browser|browser[^\n]{0,40}disconnected|\bcdp\b[^\n]{0,120}(?:timed out|timeout|deadline|exceeded|closed|disconnected|dispatch)|(?:timed out|timeout|deadline|exceeded)[^\n]{0,120}\bcdp\b|(?:available\s+browser\s+(?:array|list)|可用浏览器(?:数组|列表))[^\n]{0,80}(?:unavailable|empty|missing|not found|不可用|为空|缺失|找不到))/iu;
 const PAGE_LOAD_FAILURE_PATTERN = /(?:无法加载|加载失败|加载出错|页面错误|网络错误|连接错误|空白页面|页面无响应|failed\s+to\s+load|error\s+loading|could\s+not\s+load|network\s+error|connection\s+error|page\s+error|something\s+went\s+wrong)/iu;
+const PAGE_CRASH_PATTERN = /(?:this\s+page\s+crashed|crashed\s+unexpectedly|renderer\s+(?:process|crash)|aw\s*,?\s*snap|tab\s+crashed|页面(?:已)?崩溃|网页(?:已)?崩溃|标签页(?:已)?崩溃|渲染(?:进程)?崩溃)/iu;
+const CRASH_PAGE_URL_PATTERN = /^(?:data:text\/html|chrome-error:|about:crash|chrome:\/\/crash)/iu;
 const PAGE_REFRESH_CONTROL_PATTERN = /^(?:reload|refresh|try\s+again|重新加载|刷新|再试一次|重新尝试)$/iu;
 
 export const BROWSER_DISPATCH_POLICY = Object.freeze({
@@ -103,12 +105,17 @@ const REJECT_CONTROL_LABELS = new Set([
   '拒绝', '拒绝一次', '不允许', '不允许一次', '取消',
 ]);
 
-const AUTHORIZATION_HINT_PATTERN = /(?:允许(?:本次会话|本次聊天|在此聊天中)|授权|连接器|请求访问|访问权限|allow\s+chatgpt(?:\s+to\s+use)?|chatgpt\s*(?:将|会)\s*使用|this\s+(?:conversation|chat|session)|grant(?:ing)?\s+(?:access|permission)|outside\s+this\s+project|向[^\n]{0,80}(?:创建|访问|使用)|GitHub\s*允许)/iu;
+const AUTHORIZATION_HINT_PATTERN = /(?:允许(?:本次会话|本次聊天|在此聊天中)|授权|连接器|请求访问|访问权限|权限(?:请求|要求|确认)|allow\s+chatgpt(?:\s+to\s+use)?|chatgpt\s*(?:将|会)\s*使用|chatgpt\s+(?:wants?|would\s+like|needs?|requests?|is\s+requesting)\s+(?:to\s+)?(?:use|access)|(?:requires?|requesting)\s+(?:your\s+)?(?:permission|approval|access)|permission\s+required|tool\s+access|this\s+(?:conversation|chat|session)|grant(?:ing)?\s+(?:access|permission)|outside\s+this\s+project|向[^\n]{0,80}(?:创建|访问|使用)|GitHub\s*允许)/iu;
 
 function isAllowControlLabel(label) {
   const normalized = normalize(label).toLowerCase();
   return ALLOW_CONTROL_LABELS.has(normalized)
-    || /^(?:allow|approve|confirm|允许|同意|确认)(?:\s+(?:once|for\s+this\s+(?:conversation|chat|session)|本次会话|本次聊天|一次))?$/iu.test(normalized);
+    // Connector cards frequently include the connector or requested scope in
+    // the button label (for example, “Allow GitHub access”).  The caller
+    // still requires the surrounding authorization-card signal, so accepting
+    // these bounded labels does not turn ordinary transcript text into an
+    // approval action.
+    || /^(?:allow|approve|confirm|grant|允许|同意|确认|授权)(?:\s+(?:once|for\s+this\s+(?:conversation|chat|session)|in\s+this\s+(?:conversation|chat|session)|this\s+(?:conversation|chat|session)|access|permission|本次会话|本次聊天|在此聊天中|一次|访问|权限|chatgpt|github|[\p{L}\p{N}_.:-]{1,48})){0,3}$/iu.test(normalized);
 }
 
 function isRejectControlLabel(label) {
@@ -197,15 +204,21 @@ function isResumableBrowserFailure(job) {
 
 export function isPageLoadFailureState(state = {}) {
   const bodyText = String(state.bodyText || '');
+  const title = String(state.title || '');
+  const url = String(state.url || '');
   const controls = Array.isArray(state.controls) ? state.controls : [];
   const hasRefreshControl = controls.some(control => (
     PAGE_REFRESH_CONTROL_PATTERN.test(normalize(control?.label)) && !control?.disabled
   ));
   const hasLoadErrorText = PAGE_LOAD_FAILURE_PATTERN.test(bodyText);
+  const hasCrashDocument = PAGE_CRASH_PATTERN.test(`${title}\n${bodyText}`);
+  const hasCrashUrl = CRASH_PAGE_URL_PATTERN.test(url);
   const missingComposer = state.hasComposer !== true
     && state.hasWorkComposer !== true
     && state.pendingAuthorization !== true;
-  return hasRefreshControl || (hasLoadErrorText && missingComposer);
+  return hasRefreshControl
+    || (hasLoadErrorText && missingComposer)
+    || ((hasCrashUrl || hasCrashDocument) && missingComposer);
 }
 
 function canonicalChatUrl(value) {
@@ -226,6 +239,41 @@ function sameChatTarget(left, right) {
   const leftConversation = canonicalLeft.match(/\/c\/([^/]+)$/u)?.[1];
   const rightConversation = canonicalRight.match(/\/c\/([^/]+)$/u)?.[1];
   return !!leftConversation && leftConversation === rightConversation;
+}
+
+function chatProjectId(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:' || url.hostname !== 'chatgpt.com') return '';
+    return url.pathname.match(/^\/g\/([^/]+)/u)?.[1] || '';
+  } catch {
+    return '';
+  }
+}
+
+function sameChatProject(left, right) {
+  const leftProject = chatProjectId(left);
+  const rightProject = chatProjectId(right);
+  return !!leftProject && !!rightProject && leftProject === rightProject;
+}
+
+function isReusableBrowserJobUrl(job, currentUrl, targetUrl) {
+  if (!canonicalChatUrl(currentUrl)) return false;
+  const targetConversation = canonicalChatUrl(targetUrl).match(/\/c\/([^/]+)$/u)?.[1] || '';
+  // Once a response is deemed incomplete, the job reuses its own project tab
+  // to start a fresh Chat.  Requiring the old conversation URL in that phase
+  // would unnecessarily open another tab and could disturb the other job.
+  if ((job.phase || 'accepted') === 'accepted' || !targetConversation) {
+    return sameChatProject(currentUrl, targetUrl);
+  }
+  return sameChatTarget(currentUrl, targetUrl);
+}
+
+function browserTabFailureReason(currentUrl) {
+  const url = String(currentUrl || '');
+  if (CRASH_PAGE_URL_PATTERN.test(url)) return '检测到内置 Browser 崩溃页面';
+  if (!canonicalChatUrl(url)) return '标签页已离开 ChatGPT 或显示故障页面';
+  return '标签页不再属于该任务的受控会话';
 }
 
 export function promptForGoal(goal) {
@@ -519,7 +567,8 @@ async function clickSessionScope(tab) {
 export async function clickDirectAllow(tab) {
   const names = [
     'Allow', 'Allow once', 'Approve', 'Approve once', 'Confirm', 'Confirm once',
-    '允许', '允许一次', '允许本次会话', '允许本次聊天', '同意', '同意一次',
+    'Allow access', 'Grant access', 'Allow permission', '允许', '允许一次',
+    '允许本次会话', '允许本次聊天', '允许访问', '授权访问', '同意', '同意一次',
     '确认', '确认一次', '完全访问', 'Full access',
   ];
   const locators = [];
@@ -527,9 +576,59 @@ export async function clickDirectAllow(tab) {
     locators.push(tab.playwright.getByRole('button', { name, exact: true }));
   }
   const target = await visibleLocator(locators);
-  if (!target) return false;
-  await target.click();
-  return true;
+  if (target) {
+    await target.click();
+    return true;
+  }
+  // An authorization button can be localized as “Allow <connector> access”.
+  // The exact role lookup above intentionally covers common labels first;
+  // this bounded fallback handles connector-specific labels without relying on
+  // a brittle list of connector names.
+  const controls = tab.playwright.locator('button, [role="button"]');
+  let count = 0;
+  try { count = await controls.count(); } catch { return false; }
+  for (let index = 0; index < count; index += 1) {
+    const candidate = controls.nth(index);
+    try {
+      if (!(await candidate.isVisible()) || !(await candidate.isEnabled())) continue;
+      const info = await candidate.evaluate(element => ({
+        label: (element.innerText || element.textContent || element.getAttribute('aria-label') || '')
+          .replace(/[\s\u21b5\u23ce]+/gu, ' ').trim(),
+        ariaHasPopup: element.getAttribute('aria-haspopup'),
+      }));
+      if (!isAllowControlLabel(info.label)) continue;
+      // A split-button menu trigger is handled by authorizationArrow so that
+      // its session-scoped choice is preferred over a broad permission.
+      if (info.ariaHasPopup === 'menu' || info.ariaHasPopup === 'listbox') continue;
+      await candidate.click();
+      return true;
+    } catch {
+      // React may replace a control while the card is being rendered.
+    }
+  }
+  return false;
+}
+
+async function waitForAuthorizationSettlement(tab, {
+  timeoutMs = 1_500,
+  pollIntervalMs = 150,
+} = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let lastState = null;
+  while (Date.now() <= deadline) {
+    lastState = await readPageState(tab);
+    if (lastState.stopAnswer === true || lastState.pendingAuthorization !== true) return lastState;
+    if (Date.now() >= deadline) break;
+    await sleep(pollIntervalMs);
+  }
+  return null;
+}
+
+async function confirmedAuthorizationResult(tab, method) {
+  const settled = await waitForAuthorizationSettlement(tab);
+  return settled
+    ? { ok: true, found: true, method }
+    : null;
 }
 
 async function authorizationArrow(tab) {
@@ -552,10 +651,7 @@ async function authorizationArrow(tab) {
         };
       });
       const lower = info.label.toLowerCase();
-      const isAllow = new Set([
-        'allow', 'allow once', 'approve', 'approve once', 'confirm', 'confirm once',
-        '允许', '允许一次', '同意', '同意一次', '确认', '确认一次', '完全访问', 'full access',
-      ]).has(lower);
+      const isAllow = isAllowControlLabel(lower);
       if (isAllow) allowControls.push({ locator: control, info });
       controls.push({ locator: control, info });
     } catch {
@@ -590,14 +686,33 @@ export async function approveAuthorization(tab) {
     || (state.pendingAuthorization === undefined && isPendingAuthorizationState(state));
   if (!pendingAuthorization || state.stopAnswer === true) return { ok: true, found: false };
   if (await clickSessionScope(tab)) {
-    await sleep(350);
-    return { ok: true, found: true, method: 'session-scope-visible' };
+    const confirmed = await confirmedAuthorizationResult(tab, 'session-scope-visible');
+    if (confirmed) return confirmed;
+    return {
+      ok: false,
+      found: true,
+      errorCode: 'authorization_session_scope_not_confirmed',
+      message: '已点击“允许本次会话”，但授权卡仍未消失；插件将自动重试。',
+    };
   }
   const arrow = await authorizationArrow(tab);
   if (!arrow) {
     if (await clickDirectAllow(tab)) {
-      await sleep(350);
-      return { ok: true, found: true, method: 'direct-allow-fallback' };
+      const confirmed = await confirmedAuthorizationResult(tab, 'direct-allow-fallback');
+      if (confirmed) return confirmed;
+      // Some split controls expose their menu only after the main Allow
+      // surface is pressed. Try the now-visible session-scoped option before
+      // reporting the card as still pending.
+      if (await clickSessionScope(tab)) {
+        const sessionConfirmed = await confirmedAuthorizationResult(tab, 'direct-allow-then-session-scope');
+        if (sessionConfirmed) return sessionConfirmed;
+      }
+      return {
+        ok: false,
+        found: true,
+        errorCode: 'authorization_action_not_confirmed',
+        message: '已尝试允许授权，但授权卡仍在显示；插件将自动重试。',
+      };
     }
     return {
       ok: false,
@@ -608,12 +723,22 @@ export async function approveAuthorization(tab) {
   }
   await arrow.click();
   await sleep(250);
-  if (!await clickSessionScope(tab)) {
+  if (await clickSessionScope(tab)) {
+    const confirmed = await confirmedAuthorizationResult(tab, 'arrow-then-session-scope');
+    if (confirmed) return confirmed;
+    return {
+      ok: false,
+      found: true,
+      errorCode: 'authorization_session_scope_not_confirmed',
+      message: '已点击“允许本次会话”，但授权卡仍未消失；插件将自动重试。',
+    };
+  }
+  {
     try { await tab.playwright.locator('body').press('Escape'); } catch { /* menu already closed */ }
     await sleep(100);
     if (await clickDirectAllow(tab)) {
-      await sleep(350);
-      return { ok: true, found: true, method: 'arrow-then-direct-allow-fallback' };
+      const confirmed = await confirmedAuthorizationResult(tab, 'arrow-then-direct-allow-fallback');
+      if (confirmed) return confirmed;
     }
     // A connector card can disappear while its scope menu is closing. Re-read
     // the live page before reporting a failure; otherwise a completed approval
@@ -630,8 +755,6 @@ export async function approveAuthorization(tab) {
       message: '已打开授权范围菜单，但既没有找到“允许本次会话”，也没有找到直接允许控件。',
     };
   }
-  await sleep(350);
-  return { ok: true, found: true, method: 'arrow-then-session-scope' };
 }
 
 async function ensureModelAndReasoning(tab) {
@@ -918,6 +1041,8 @@ function persistedJob(job) {
     lastReattachedAt: job.lastReattachedAt || null,
     lastReattachMethod: job.lastReattachMethod || null,
     lastReattachError: job.lastReattachError || null,
+    lastTabFailure: job.lastTabFailure || null,
+    lastTabFailureAt: job.lastTabFailureAt || null,
   };
 }
 
@@ -1012,6 +1137,64 @@ async function bindBrowserJobTab(host, job, tab, {
   return tab;
 }
 
+async function reviveBrokenBrowserJobTab(host, job, tab, targetUrl) {
+  let currentUrl = '';
+  try {
+    currentUrl = typeof tab.url === 'function' ? await tab.url() : '';
+  } catch (error) {
+    job.lastTabFailure = `标签页状态读取失败：${publicError(error)}`;
+    job.lastTabFailureAt = new Date().toISOString();
+  }
+  // A healthy ChatGPT URL that belongs to another job must never be
+  // overwritten. Only the clearly broken/non-ChatGPT page is safe to revive
+  // in place; otherwise the exact-conversation recovery path below selects or
+  // creates an isolated tab.
+  if (canonicalChatUrl(currentUrl)) return null;
+  const destination = canonicalChatUrl(targetUrl) || host.newChatUrl;
+  if (!destination || typeof tab.goto !== 'function') return null;
+  try {
+    await tab.goto(destination);
+    await sleep(900);
+    currentUrl = typeof tab.url === 'function' ? await tab.url() : destination;
+    if (!isReusableBrowserJobUrl(job, currentUrl, destination)) return null;
+    await bindBrowserJobTab(host, job, tab, {
+      method: 'reloaded-broken-tab',
+      url: currentUrl,
+    });
+    job.reattachCount = Number(job.reattachCount || 0) + 1;
+    job.lastTabFailure = null;
+    job.lastTabFailureAt = null;
+    job.lastReattachError = null;
+    job.error = null;
+    job.status = 'running';
+    await persistJob(host, job);
+    host.logger({
+      event: 'browser_tab_recovered_in_place',
+      tabId: tab.id || null,
+      url: currentUrl,
+    });
+    return tab;
+  } catch (error) {
+    job.lastTabFailure = `标签页重载失败：${publicError(error)}`;
+    job.lastTabFailureAt = new Date().toISOString();
+    return null;
+  }
+}
+
+async function forgetBrokenBrowserJobTab(job, tab, reason) {
+  job.lastTabFailure = reason;
+  job.lastTabFailureAt = new Date().toISOString();
+  // Closing is best effort. The in-app Browser may already have discarded a
+  // crashed renderer, and its short-lived Tab handle may not expose close().
+  // Never close a healthy ChatGPT tab here because it may belong to the other
+  // parallel job.
+  if (typeof tab?.close === 'function') {
+    try { await tab.close(); } catch { /* the crashed tab is already gone */ }
+  }
+  job.tab = null;
+  job.tabId = null;
+}
+
 async function createBrowserJobTab(host, job) {
   if (!host.browser?.tabs?.new) throw new Error('内置 Browser 不支持创建任务标签页');
   const tab = await host.browser.tabs.new();
@@ -1022,18 +1205,53 @@ async function createBrowserJobTab(host, job) {
 }
 
 async function ensureBrowserJobTab(host, job) {
-  if (job.tab?.playwright) return bindBrowserJobTab(host, job, job.tab);
+  if (job.tab?.playwright) {
+    const target = browserRecoveryTarget(host, job);
+    // Older Browser adapters did not expose url() on an already-bound Tab.
+    // Keep that binding and let the normal page-state probe below validate it;
+    // requiring a URL accessor here would turn a healthy legacy handle into a
+    // false crash and starve the parallel pump.
+    if (typeof job.tab.url !== 'function') return bindBrowserJobTab(host, job, job.tab);
+    let currentUrl = '';
+    try {
+      currentUrl = typeof job.tab.url === 'function' ? await job.tab.url() : '';
+      if (isReusableBrowserJobUrl(job, currentUrl, target)) {
+        return bindBrowserJobTab(host, job, job.tab, { url: currentUrl });
+      }
+      const revived = await reviveBrokenBrowserJobTab(host, job, job.tab, target);
+      if (revived) return revived;
+      const reason = browserTabFailureReason(currentUrl);
+      if (!canonicalChatUrl(currentUrl)) await forgetBrokenBrowserJobTab(job, job.tab, reason);
+      else {
+        job.lastTabFailure = reason;
+        job.lastTabFailureAt = new Date().toISOString();
+        job.tab = null;
+        job.tabId = null;
+      }
+    } catch (error) {
+      await forgetBrokenBrowserJobTab(job, job.tab, `标签页控制句柄失效：${publicError(error)}`);
+    }
+  }
   if (job.tabId && host.browser?.tabs?.get) {
     try {
       const tab = await host.browser.tabs.get(job.tabId);
       const target = browserRecoveryTarget(host, job);
       const currentUrl = typeof tab.url === 'function' ? await tab.url() : target;
-      if (!canonicalChatUrl(target) || sameChatTarget(currentUrl, target)) {
+      if (isReusableBrowserJobUrl(job, currentUrl, target)) {
         return bindBrowserJobTab(host, job, tab, { method: 'controlled-tab', url: currentUrl });
+      }
+      const revived = await reviveBrokenBrowserJobTab(host, job, tab, target);
+      if (revived) return revived;
+      if (!canonicalChatUrl(currentUrl)) await forgetBrokenBrowserJobTab(job, tab, browserTabFailureReason(currentUrl));
+      else {
+        job.lastTabFailure = browserTabFailureReason(currentUrl);
+        job.lastTabFailureAt = new Date().toISOString();
+        job.tabId = null;
       }
     } catch {
       // The saved tab id is only an optimization. The normal recovery path
       // below finds the exact conversation or creates an isolated new tab.
+      job.tabId = null;
     }
   }
   if ((job.phase || 'accepted') === 'accepted') return createBrowserJobTab(host, job);
@@ -1268,6 +1486,8 @@ function publicJob(job) {
     lastReattachedAt: job.lastReattachedAt || null,
     lastReattachMethod: job.lastReattachMethod || null,
     lastReattachError: job.lastReattachError || null,
+    lastTabFailure: job.lastTabFailure || null,
+    lastTabFailureAt: job.lastTabFailureAt || null,
   };
 }
 
