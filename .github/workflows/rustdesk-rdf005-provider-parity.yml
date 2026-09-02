@@ -1,40 +1,27 @@
 name: RustDesk RDF-005 provider parity
 
 on:
-  push:
-    branches:
-      - codex/rustdesk-fusion-route-negotiation
+  pull_request:
     paths:
       - '.github/workflows/rustdesk-rdf005-provider-parity.yml'
-      - '.github/scripts/rustdesk-rdf005-provider-parity.py'
-      - 'integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs'
+      - 'integrations/rustdesk-sidecar/**'
+      - 'desktop/electron/rustdesk-sidecar-process.cjs'
+      - 'desktop/electron/rustdesk-sidecar-process.test.cjs'
       - 'chatgpt-vps-control/tests/rustdesk-sidecar-boundary-contract.test.js'
+      - 'chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  implement-and-verify:
+  verify-provider-parity:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: codex/rustdesk-fusion-route-negotiation
-      - name: Apply RDF-005 provider parity patch
-        run: python .github/scripts/rustdesk-rdf005-provider-parity.py
-      - name: Run source boundary contracts
+      - name: Verify sidecar boundary and permission contracts
         working-directory: chatgpt-vps-control
         run: node --test tests/rustdesk-sidecar-boundary-contract.test.js tests/rustdesk-session-permission-enforcement.test.js
-      - name: Commit verified provider parity
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs chatgpt-vps-control/tests/rustdesk-sidecar-boundary-contract.test.js
-          if git diff --cached --quiet; then
-            echo 'RDF-005 provider parity patch is already applied.'
-            exit 0
-          fi
-          git commit -m 'feat(remote): enforce RustDesk clipboard file and audio grants'
-          git push origin HEAD:codex/rustdesk-fusion-route-negotiation
+      - name: Verify desktop sidecar process contract
+        run: node --test desktop/electron/rustdesk-sidecar-process.test.cjs
