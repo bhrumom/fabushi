@@ -1,0 +1,27 @@
+name: RustDesk RDF-005 provider parity
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/rustdesk-rdf005-provider-parity.yml'
+      - 'integrations/rustdesk-sidecar/**'
+      - 'desktop/electron/rustdesk-sidecar-process.cjs'
+      - 'desktop/electron/rustdesk-sidecar-process.test.cjs'
+      - 'chatgpt-vps-control/tests/rustdesk-sidecar-boundary-contract.test.js'
+      - 'chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-provider-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify sidecar boundary and permission contracts
+        working-directory: chatgpt-vps-control
+        run: node --test tests/rustdesk-sidecar-boundary-contract.test.js tests/rustdesk-session-permission-enforcement.test.js
+      - name: Verify desktop sidecar process contract
+        run: node --test desktop/electron/rustdesk-sidecar-process.test.cjs
