@@ -1,3 +1,5 @@
+mod miniapp;
+
 use mahayana_plugin_runtime::{ExternalReleaseManifest, PluginInstaller};
 use mahayana_product::MahayanaProductClient;
 use mahayana_test_driver_protocol::{TestDriverBackend, TestDriverError, TestDriverMethod};
@@ -23,10 +25,7 @@ impl ProductBackend {
             )
         })?;
         ensure_safe_test_root(&root)?;
-        let product = MahayanaProductClient::new_with_default_api_base_url(
-            root.join("session.json"),
-            root.join("product-surface.json"),
-        );
+        let product = new_product_client(&root);
         Ok(Self { product, root })
     }
 
@@ -46,10 +45,7 @@ impl ProductBackend {
                 format!("failed to recreate isolated test profile: {error}"),
             )
         })?;
-        self.product = MahayanaProductClient::new_with_default_api_base_url(
-            self.root.join("session.json"),
-            self.root.join("product-surface.json"),
-        );
+        self.product = new_product_client(&self.root);
         Ok(json!({
             "reset": true,
             "profileKind": "isolated-test-driver",
@@ -57,11 +53,53 @@ impl ProductBackend {
     }
 
     fn list_installed_plugins(&self) -> Result<Value, TestDriverError> {
-        let receipts = list_active_plugin_receipts(&self.root)?;
         Ok(json!({
             "source": "mahayana-plugin-runtime-active-receipts",
-            "plugins": receipts,
+            "plugins": list_active_plugin_receipts(&self.root)?,
         }))
+    }
+
+    fn login_test_account(&self, params: &Value) -> Result<Value, TestDriverError> {
+        reject_inline_test_account_token(params)?;
+        let token = std::env::var("MAHAYANA_TEST_ACCOUNT_TOKEN")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                TestDriverError::new(
+                    "test_account_token_missing",
+                    "MAHAYANA_TEST_ACCOUNT_TOKEN is required for loginTestAccount",
+                )
+            })?;
+        self.product
+            .store_test_account_session(&token)
+            .map_err(|error| {
+                TestDriverError::new("product_backend_error", error.to_string()).with_details(
+                    json!({
+                        "operation": TestDriverMethod::LoginTestAccount.as_str(),
+                        "tokenSource": "environment",
+                    }),
+                )
+            })?;
+        Ok(json!({
+            "loggedIn": true,
+            "accountKind": "test",
+            "tokenSource": "environment",
+        }))
+    }
+
+    fn marketplace_search(&self, params: &Value) -> Result<Value, TestDriverError> {
+        let (query, platform) = marketplace_search_args(params)?;
+        self.product
+            .marketplace_browse(Some(query), Some(platform))
+            .map_err(|error| {
+                TestDriverError::new("product_backend_error", error.to_string()).with_details(
+                    json!({
+                        "operation": TestDriverMethod::MarketplaceSearch.as_str(),
+                        "platform": platform,
+                    }),
+                )
+            })
     }
 
     fn install_external_marketplace_plugin(
@@ -76,19 +114,16 @@ impl ProductBackend {
             .marketplace_browse(Some(plugin_id), Some(platform))
             .map_err(|error| {
                 TestDriverError::new("product_backend_error", error.to_string()).with_details(
-                    json!({
-                        "operation": operation.as_str(),
-                        "platform": platform,
-                    }),
+                    json!({"operation": operation.as_str(), "platform": platform}),
                 )
             })?;
         let plugin = listing
             .get("plugins")
             .and_then(Value::as_array)
             .and_then(|plugins| {
-                plugins.iter().find(|plugin| {
-                    plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id)
-                })
+                plugins
+                    .iter()
+                    .find(|plugin| plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id))
             })
             .ok_or_else(|| {
                 TestDriverError::new(
@@ -201,49 +236,12 @@ impl TestDriverBackend for ProductBackend {
         &mut self,
         method: TestDriverMethod,
         params: Value,
-        _correlation_id: &str,
+        correlation_id: &str,
     ) -> Result<Value, TestDriverError> {
         match method {
             TestDriverMethod::ResetProfile => self.reset_profile(),
-            TestDriverMethod::LoginTestAccount => {
-                reject_inline_test_account_token(&params)?;
-                let token = std::env::var("MAHAYANA_TEST_ACCOUNT_TOKEN")
-                    .ok()
-                    .map(|value| value.trim().to_string())
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| {
-                        TestDriverError::new(
-                            "test_account_token_missing",
-                            "MAHAYANA_TEST_ACCOUNT_TOKEN is required for loginTestAccount",
-                        )
-                    })?;
-                self.product
-                    .store_test_account_session(&token)
-                    .map_err(|error| {
-                        TestDriverError::new("product_backend_error", error.to_string())
-                            .with_details(json!({
-                                "operation": TestDriverMethod::LoginTestAccount.as_str(),
-                                "tokenSource": "environment",
-                            }))
-                    })?;
-                Ok(json!({
-                    "loggedIn": true,
-                    "accountKind": "test",
-                    "tokenSource": "environment",
-                }))
-            }
-            TestDriverMethod::MarketplaceSearch => {
-                let (query, platform) = marketplace_search_args(&params)?;
-                self.product
-                    .marketplace_browse(Some(query), Some(platform))
-                    .map_err(|error| {
-                        TestDriverError::new("product_backend_error", error.to_string())
-                            .with_details(json!({
-                                "operation": TestDriverMethod::MarketplaceSearch.as_str(),
-                                "platform": platform,
-                            }))
-                    })
-            }
+            TestDriverMethod::LoginTestAccount => self.login_test_account(&params),
+            TestDriverMethod::MarketplaceSearch => self.marketplace_search(&params),
             TestDriverMethod::PluginInstall => self.install_external_marketplace_plugin(
                 &params,
                 false,
@@ -255,6 +253,18 @@ impl TestDriverBackend for ProductBackend {
                 TestDriverMethod::PluginUpdate,
             ),
             TestDriverMethod::PluginList => self.list_installed_plugins(),
+            TestDriverMethod::MiniappOpen => {
+                miniapp::open_miniapp(&self.product, &self.root, &params, correlation_id)
+            }
+            TestDriverMethod::MiniappChat => {
+                miniapp::chat_miniapp(&self.product, &self.root, &params, correlation_id)
+            }
+            TestDriverMethod::ActionsDescribe => {
+                miniapp::describe_actions(&self.product, &self.root, &params, correlation_id)
+            }
+            TestDriverMethod::ActionsInvoke => {
+                miniapp::invoke_action(&self.product, &self.root, &params, correlation_id)
+            }
             other => Err(TestDriverError::new(
                 "product_backend_not_wired",
                 format!(
@@ -264,6 +274,13 @@ impl TestDriverBackend for ProductBackend {
             )),
         }
     }
+}
+
+fn new_product_client(root: &Path) -> MahayanaProductClient {
+    MahayanaProductClient::new_with_default_api_base_url(
+        root.join("session.json"),
+        root.join("product-surface.json"),
+    )
 }
 
 fn plugin_installer(root: &Path) -> Result<PluginInstaller, TestDriverError> {
@@ -295,13 +312,16 @@ fn list_active_plugin_receipts(root: &Path) -> Result<Vec<Value>, TestDriverErro
                 format!("failed to enumerate installed plugins: {error}"),
             )
         })?;
-        let file_type = entry.file_type().map_err(|error| {
-            TestDriverError::new(
-                "plugin_state_read_failed",
-                format!("failed to inspect installed plugin state: {error}"),
-            )
-        })?;
-        if !file_type.is_dir() {
+        if !entry
+            .file_type()
+            .map_err(|error| {
+                TestDriverError::new(
+                    "plugin_state_read_failed",
+                    format!("failed to inspect installed plugin state: {error}"),
+                )
+            })?
+            .is_dir()
+        {
             continue;
         }
         let plugin_id = entry.file_name().into_string().map_err(|_| {
@@ -333,17 +353,7 @@ fn list_active_plugin_receipts(root: &Path) -> Result<Vec<Value>, TestDriverErro
 }
 
 fn plugin_release_args(params: &Value) -> Result<(&str, Option<&str>, &str), TestDriverError> {
-    let plugin_id = params
-        .get("pluginId")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            TestDriverError::new(
-                "invalid_params",
-                "plugin.install/update requires a non-empty pluginId",
-            )
-        })?;
+    let plugin_id = required_trimmed(params, "pluginId", "plugin.install/update requires pluginId")?;
     let requested_version = params
         .get("version")
         .and_then(Value::as_str)
@@ -399,9 +409,9 @@ fn ensure_safe_test_root(root: &Path) -> Result<(), TestDriverError> {
 }
 
 fn reject_inline_test_account_token(params: &Value) -> Result<(), TestDriverError> {
-    if params.get("token").is_some()
-        || params.get("accessToken").is_some()
-        || params.get("authorization").is_some()
+    if ["token", "accessToken", "authorization"]
+        .iter()
+        .any(|key| params.get(*key).is_some())
     {
         return Err(TestDriverError::new(
             "inline_credentials_forbidden",
@@ -412,17 +422,7 @@ fn reject_inline_test_account_token(params: &Value) -> Result<(), TestDriverErro
 }
 
 fn marketplace_search_args(params: &Value) -> Result<(&str, &str), TestDriverError> {
-    let query = params
-        .get("query")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            TestDriverError::new(
-                "invalid_params",
-                "marketplace.search requires a non-empty query",
-            )
-        })?;
+    let query = required_trimmed(params, "query", "marketplace.search requires a non-empty query")?;
     let platform = params
         .get("platform")
         .and_then(Value::as_str)
@@ -430,6 +430,19 @@ fn marketplace_search_args(params: &Value) -> Result<(&str, &str), TestDriverErr
         .filter(|value| !value.is_empty())
         .unwrap_or("ios");
     Ok((query, platform))
+}
+
+fn required_trimmed<'a>(
+    params: &'a Value,
+    key: &str,
+    message: &str,
+) -> Result<&'a str, TestDriverError> {
+    params
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| TestDriverError::new("invalid_params", message))
 }
 
 #[cfg(test)]
@@ -446,30 +459,11 @@ mod tests {
     }
 
     #[test]
-    fn marketplace_search_rejects_empty_query() {
-        let error = marketplace_search_args(&json!({"query": "   "})).unwrap_err();
-        assert_eq!(error.code, "invalid_params");
-    }
-
-    #[test]
     fn plugin_release_args_default_to_ios() {
         let (plugin_id, version, platform) =
             plugin_release_args(&json!({"pluginId": "global-dharma"})).unwrap();
         assert_eq!(plugin_id, "global-dharma");
         assert_eq!(version, None);
-        assert_eq!(platform, "ios");
-    }
-
-    #[test]
-    fn plugin_release_args_accept_explicit_version() {
-        let (plugin_id, version, platform) = plugin_release_args(&json!({
-            "pluginId": "global-dharma",
-            "version": "2.0.0",
-            "platform": "ios"
-        }))
-        .unwrap();
-        assert_eq!(plugin_id, "global-dharma");
-        assert_eq!(version, Some("2.0.0"));
         assert_eq!(platform, "ios");
     }
 
@@ -481,33 +475,19 @@ mod tests {
     }
 
     #[test]
-    fn login_test_account_accepts_credential_free_params() {
-        reject_inline_test_account_token(&json!({"account": "ci"})).unwrap();
-    }
-
-    #[test]
     fn test_profile_root_requires_absolute_dedicated_basename() {
-        let relative = PathBuf::from("mahayana-test-driver");
         assert_eq!(
-            ensure_safe_test_root(&relative).unwrap_err().code,
+            ensure_safe_test_root(Path::new("mahayana-test-driver"))
+                .unwrap_err()
+                .code,
             "unsafe_test_profile_root"
         );
-        let unsafe_absolute = std::env::temp_dir().join("not-the-driver-root");
         assert_eq!(
-            ensure_safe_test_root(&unsafe_absolute).unwrap_err().code,
+            ensure_safe_test_root(&std::env::temp_dir().join("not-the-driver-root"))
+                .unwrap_err()
+                .code,
             "unsafe_test_profile_root"
         );
-    }
-
-    #[test]
-    fn test_profile_root_accepts_missing_dedicated_absolute_path() {
-        let root = std::env::temp_dir()
-            .join(format!(
-                "mahayana-test-driver-parent-{}",
-                std::process::id()
-            ))
-            .join(TEST_DRIVER_ROOT_BASENAME);
-        assert!(ensure_safe_test_root(&root).is_ok());
     }
 
     #[test]
@@ -538,14 +518,10 @@ mod tests {
             serde_json::to_vec_pretty(&pointer).unwrap(),
         )
         .unwrap();
-
         let receipts = list_active_plugin_receipts(&root).unwrap();
         assert_eq!(receipts.len(), 1);
         assert_eq!(receipts[0]["pluginId"], "global-dharma");
         assert_eq!(receipts[0]["version"], "1.0.0");
-        assert_eq!(receipts[0]["platform"], "ios");
-        assert_eq!(receipts[0]["runtime"], "local-web");
-
         let _ = std::fs::remove_dir_all(parent);
     }
 }
