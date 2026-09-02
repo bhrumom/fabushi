@@ -1,0 +1,345 @@
+name: RustDesk RDF-003 client wire
+
+on:
+  push:
+    branches: [codex/rustdesk-fusion-route-negotiation]
+    paths: ['.github/workflows/rustdesk-rdf003-client-wire.yml']
+permissions:
+  contents: write
+
+jobs:
+  implement-client-wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/rustdesk-fusion-route-negotiation
+          fetch-depth: 0
+      - name: Wire transport negotiation end-to-end
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def must_replace(text, old, new, label):
+              if new in text:
+                  return text
+              if old not in text:
+                  raise SystemExit(f'missing anchor: {label}')
+              return text.replace(old, new, 1)
+
+          # React/host protocol contract.
+          p = Path('frontend/apps/web/src/lib/mahayana-host/contracts.ts')
+          t = p.read_text()
+          old = '  | (CommandBase & { type: "remoteComputer.sessionActivate"; deviceId: string; sessionId: string })\n  | (CommandBase & { type: "remoteComputer.sessionClose"; deviceId: string; sessionId: string })'
+          new = '  | (CommandBase & { type: "remoteComputer.sessionActivate"; deviceId: string; sessionId: string })\n  | (CommandBase & { type: "remoteComputer.transportNegotiate"; deviceId: string; sessionId: string; directAvailable: boolean; relayRegion?: string })\n  | (CommandBase & { type: "remoteComputer.sessionClose"; deviceId: string; sessionId: string })'
+          t = must_replace(t, old, new, 'TS transport command')
+          p.write_text(t)
+
+          # Rust host protocol enum and request-id accessor.
+          p = Path('third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs')
+          t = p.read_text()
+          marker = '    #[serde(rename = "remoteComputer.sessionClose")]\n    RemoteComputerSessionClose {'
+          block = '''    #[serde(rename = "remoteComputer.transportNegotiate")]
+          RemoteComputerTransportNegotiate {
+              #[serde(rename = "requestId")]
+              request_id: String,
+              #[serde(rename = "deviceId")]
+              device_id: String,
+              #[serde(rename = "sessionId")]
+              session_id: String,
+              #[serde(rename = "directAvailable")]
+              direct_available: bool,
+              #[serde(default, rename = "relayRegion", skip_serializing_if = "Option::is_none")]
+              relay_region: Option<String>,
+          },
+          '''
+          if 'RemoteComputerTransportNegotiate {' not in t:
+              if marker not in t: raise SystemExit('missing Rust command insertion anchor')
+              t = t.replace(marker, block + marker, 1)
+          old = '            | Self::RemoteComputerSessionActivate { request_id, .. }\n            | Self::RemoteComputerSessionClose { request_id, .. }'
+          new = '            | Self::RemoteComputerSessionActivate { request_id, .. }\n            | Self::RemoteComputerTransportNegotiate { request_id, .. }\n            | Self::RemoteComputerSessionClose { request_id, .. }'
+          t = must_replace(t, old, new, 'Rust request_id arm')
+          p.write_text(t)
+
+          # Feature Host: dispatch remote command and bind desktop possession secret.
+          p = Path('third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs')
+          t = p.read_text()
+          old = '                | FeatureCommand::RemoteComputerSessionActivate { .. }\n                | FeatureCommand::RemoteComputerSessionClose { .. }'
+          new = '                | FeatureCommand::RemoteComputerSessionActivate { .. }\n                | FeatureCommand::RemoteComputerTransportNegotiate { .. }\n                | FeatureCommand::RemoteComputerSessionClose { .. }'
+          t = must_replace(t, old, new, 'feature remote dispatch')
+          marker = '            FeatureCommand::RemoteComputerSessionClose {'
+          branch = '''            FeatureCommand::RemoteComputerTransportNegotiate {
+              device_id,
+              session_id,
+              direct_available,
+              relay_region,
+              ..
+          } => {
+              if !remote_enabled {
+                  return Err(FeatureHostError::Contract(
+                      "remote computer control is disabled".into(),
+                  ));
+              }
+              let device_secret = self.remote_device_secret(&device_id, false)?;
+              (
+                  "mahayana.remote.computer.transport.negotiate",
+                  "transportNegotiated",
+                  json!({
+                      "deviceId": device_id,
+                      "sessionId": session_id,
+                      "deviceSecret": device_secret,
+                      "directAvailable": direct_available,
+                      "relayRegion": relay_region,
+                  }),
+                  None,
+              )
+          }
+          '''
+          if 'FeatureCommand::RemoteComputerTransportNegotiate {' not in t[t.find('fn execute_remote_computer'):]:
+              if marker not in t: raise SystemExit('missing feature transport insertion anchor')
+              t = t.replace(marker, branch + marker, 1)
+          # Test backend response so deterministic host tests exercise the shape.
+          old = '                "sessionActivated" => json!({'
+          if '"transportNegotiated" => json!({' not in t:
+              idx = t.find(old)
+              if idx < 0: raise SystemExit('missing test backend transport anchor')
+              block = '''                "transportNegotiated" => json!({
+                      "sessionId": payload.get("sessionId"),
+                      "provider": "fabushi-webrtc",
+                      "routePolicy": "direct-first",
+                      "selectedRoute": if payload.get("directAvailable").and_then(Value::as_bool).unwrap_or(false) { "direct" } else { "relay" },
+                      "relayRegion": payload.get("relayRegion"),
+                      "transportUpdatedAt": now_millis() / 1000,
+                  }),
+          '''
+              t = t[:idx] + block + t[idx:]
+          p.write_text(t)
+
+          # Product client maps command to authenticated Worker route.
+          p = Path('third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs')
+          t = p.read_text()
+          marker = '            "mahayana.remote.computer.session.close" => {'
+          branch = '''            "mahayana.remote.computer.transport.negotiate" => {
+              let device_id = required_identifier(request, "deviceId")?;
+              let session_id = required_identifier(request, "sessionId")?;
+              let device_secret = required_string(request, "deviceSecret")?;
+              let direct_available = request
+                  .get("directAvailable")
+                  .and_then(Value::as_bool)
+                  .unwrap_or(false);
+              let relay_region = optional_string(request, "relayRegion");
+              self.authorized_post(
+                  request,
+                  &format!("/v1/computers/{device_id}/sessions/{session_id}/transport"),
+                  json!({
+                      "role": "desktop",
+                      "deviceSecret": device_secret,
+                      "directAvailable": direct_available,
+                      "relayRegion": relay_region,
+                  }),
+              )
+          }
+          '''
+          if '"mahayana.remote.computer.transport.negotiate" => {' not in t:
+              if marker not in t: raise SystemExit('missing product client insertion anchor')
+              t = t.replace(marker, branch + marker, 1)
+          p.write_text(t)
+
+          # Desktop peer: infer direct vs relay from the selected ICE pair and report it.
+          p = Path('frontend/apps/web/src/lib/remote-computer/desktop-peer.ts')
+          t = p.read_text()
+          old = '  | "remoteComputer.sessionActivate"\n  | "remoteComputer.sessionClose"'
+          new = '  | "remoteComputer.sessionActivate"\n  | "remoteComputer.transportNegotiate"\n  | "remoteComputer.sessionClose"'
+          t = must_replace(t, old, new, 'desktop remote command union')
+          old = '    case "remoteComputer.sessionActivate": return "sessionActivated";\n    case "remoteComputer.sessionClose": return "sessionClosed";'
+          new = '    case "remoteComputer.sessionActivate": return "sessionActivated";\n    case "remoteComputer.transportNegotiate": return "transportNegotiated";\n    case "remoteComputer.sessionClose": return "sessionClosed";'
+          t = must_replace(t, old, new, 'desktop expected action')
+          helper_anchor = 'function serializedLength(value: unknown): number {'
+          helper = '''async function selectedIceRoute(peer: RTCPeerConnection): Promise<"direct" | "relay" | null> {
+              const reports = await peer.getStats();
+              let selected: RTCStats | undefined;
+              reports.forEach((report) => {
+                if (report.type === "transport" && report.selectedCandidatePairId) {
+                  selected = reports.get(report.selectedCandidatePairId);
+                }
+                if (!selected && report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) selected = report;
+              });
+              if (!selected) return null;
+              const candidateId = (selected as RTCStats & { localCandidateId?: string }).localCandidateId;
+              const local = candidateId ? reports.get(candidateId) : undefined;
+              const candidateType = (local as RTCStats & { candidateType?: string } | undefined)?.candidateType;
+              return candidateType === "relay" ? "relay" : candidateType ? "direct" : null;
+          }
+
+          '''
+          if 'async function selectedIceRoute(' not in t:
+              if helper_anchor not in t: raise SystemExit('missing desktop ICE helper anchor')
+              t = t.replace(helper_anchor, helper + helper_anchor, 1)
+          # Add per-peer guard.
+          old = '  pendingRemoteCandidates: RTCIceCandidateInit[];\n}'
+          new = '  pendingRemoteCandidates: RTCIceCandidateInit[];\n  routeReported: boolean;\n}'
+          t = must_replace(t, old, new, 'desktop route guard interface')
+          old = '      pendingRemoteCandidates: [],\n    };'
+          new = '      pendingRemoteCandidates: [],\n      routeReported: false,\n    };'
+          t = must_replace(t, old, new, 'desktop route guard init')
+          old = '''    peer.onconnectionstatechange = () => {
+              this.update({ connectionState: peer.connectionState });
+              if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
+                void this.closePeer(entry, peer.connectionState !== "closed");
+              }
+            };'''
+          new = '''    peer.onconnectionstatechange = () => {
+              this.update({ connectionState: peer.connectionState });
+              if (peer.connectionState === "connected" && !entry.routeReported) {
+                entry.routeReported = true;
+                void selectedIceRoute(peer).then((route) => {
+                  if (!route || entry.closing) return;
+                  return remoteRequest(this.transport, {
+                    type: "remoteComputer.transportNegotiate",
+                    requestId: requestId("remote-transport"),
+                    deviceId: this.deviceId,
+                    sessionId: session.sessionId,
+                    directAvailable: route === "direct",
+                  });
+                }).catch((cause) => this.update({ error: cause instanceof Error ? cause.message : String(cause) }));
+              }
+              if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
+                void this.closePeer(entry, peer.connectionState !== "closed");
+              }
+            };'''
+          t = must_replace(t, old, new, 'desktop candidate route reporting')
+          p.write_text(t)
+
+          # Browser/mobile API and peer report the same selected ICE pair with mobile possession token.
+          p = Path('frontend/apps/web/src/lib/remote-computer/remote-api.ts')
+          t = p.read_text()
+          marker = '  async closeSession(session: MobileControlSession): Promise<void> {'
+          method = '''  async negotiateTransport(session: MobileControlSession, directAvailable: boolean, relayRegion?: string): Promise<void> {
+              const response = await this.authorizedFetch(
+                `/v1/computers/${encodeURIComponent(session.deviceId)}/sessions/${encodeURIComponent(session.sessionId)}/transport`,
+                {
+                  method: "POST",
+                  body: JSON.stringify({
+                    role: "mobile",
+                    clientId: session.clientId,
+                    mobileToken: session.mobileToken,
+                    directAvailable,
+                    ...(relayRegion ? { relayRegion } : {}),
+                  }),
+                },
+              );
+              const raw = await parseResponse<unknown>(response);
+              if (!isRecord(raw) || raw.sessionId !== session.sessionId || !["direct", "relay"].includes(String(raw.selectedRoute))) {
+                throw new Error("远程控制传输路由响应与当前会话不匹配");
+              }
+            }
+
+          '''
+          if 'async negotiateTransport(' not in t:
+              if marker not in t: raise SystemExit('missing mobile API insertion anchor')
+              t = t.replace(marker, method + marker, 1)
+          p.write_text(t)
+
+          p = Path('frontend/apps/web/src/lib/remote-computer/mobile-peer.ts')
+          t = p.read_text()
+          helper_anchor = 'function messageId(prefix: string): string {'
+          helper = '''async function selectedIceRoute(peer: RTCPeerConnection): Promise<"direct" | "relay" | null> {
+              const reports = await peer.getStats();
+              let selected: RTCStats | undefined;
+              reports.forEach((report) => {
+                if (report.type === "transport" && report.selectedCandidatePairId) selected = reports.get(report.selectedCandidatePairId);
+                if (!selected && report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) selected = report;
+              });
+              if (!selected) return null;
+              const candidateId = (selected as RTCStats & { localCandidateId?: string }).localCandidateId;
+              const local = candidateId ? reports.get(candidateId) : undefined;
+              const candidateType = (local as RTCStats & { candidateType?: string } | undefined)?.candidateType;
+              return candidateType === "relay" ? "relay" : candidateType ? "direct" : null;
+          }
+
+          '''
+          if 'async function selectedIceRoute(' not in t:
+              if helper_anchor not in t: raise SystemExit('missing mobile ICE helper anchor')
+              t = t.replace(helper_anchor, helper + helper_anchor, 1)
+          old = '  private serverReady = false;\n  private snapshotPending = false;'
+          new = '  private serverReady = false;\n  private routeReported = false;\n  private snapshotPending = false;'
+          t = must_replace(t, old, new, 'mobile route guard')
+          old = '    this.serverReady = false;\n    this.snapshotPending = false;\n    this.signalCursor = 0;'
+          new = '    this.serverReady = false;\n    this.routeReported = false;\n    this.snapshotPending = false;\n    this.signalCursor = 0;'
+          t = must_replace(t, old, new, 'mobile route reset')
+          old = '''      peer.onconnectionstatechange = () => {
+                this.update({ peerState: peer.connectionState });
+                if (["failed", "disconnected"].includes(peer.connectionState)) this.fail(new Error("WebRTC 连接失败"));
+                if (peer.connectionState === "closed" && !this.closed) this.fail(new Error("WebRTC 连接已关闭"));
+              };'''
+          new = '''      peer.onconnectionstatechange = () => {
+                this.update({ peerState: peer.connectionState });
+                if (peer.connectionState === "connected" && !this.routeReported && this.session) {
+                  this.routeReported = true;
+                  const activeSession = this.session;
+                  void selectedIceRoute(peer).then((route) => route
+                    ? this.api.negotiateTransport(activeSession, route === "direct")
+                    : undefined).catch((cause) => this.fail(cause));
+                }
+                if (["failed", "disconnected"].includes(peer.connectionState)) this.fail(new Error("WebRTC 连接失败"));
+                if (peer.connectionState === "closed" && !this.closed) this.fail(new Error("WebRTC 连接已关闭"));
+              };'''
+          t = must_replace(t, old, new, 'mobile candidate route reporting')
+          p.write_text(t)
+
+          # Contract test for the full client/native wire.
+          p = Path('chatgpt-vps-control/tests/rustdesk-route-client-wire.test.js')
+          p.write_text(r'''import assert from "node:assert/strict";
+          import { readFileSync } from "node:fs";
+          import { dirname, resolve } from "node:path";
+          import test from "node:test";
+          import { fileURLToPath } from "node:url";
+          const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+          const source = (path) => readFileSync(resolve(root, path), "utf8");
+          test("native host and product client preserve possession-bound transport negotiation", () => {
+            const protocol = source("third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs");
+            const feature = source("third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs");
+            const product = source("third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs");
+            assert.match(protocol, /RemoteComputerTransportNegotiate/);
+            assert.match(feature, /remote_device_secret\(&device_id, false\)/);
+            assert.match(feature, /mahayana\.remote\.computer\.transport\.negotiate/);
+            assert.match(product, /sessions\/\{session_id\}\/transport/);
+            assert.match(product, /"role": "desktop"/);
+            assert.match(product, /"deviceSecret": device_secret/);
+          });
+          test("both WebRTC peers report the selected ICE route rather than trusting UI input", () => {
+            const desktop = source("frontend/apps/web/src/lib/remote-computer/desktop-peer.ts");
+            const mobile = source("frontend/apps/web/src/lib/remote-computer/mobile-peer.ts");
+            const api = source("frontend/apps/web/src/lib/remote-computer/remote-api.ts");
+            for (const peer of [desktop, mobile]) {
+              assert.match(peer, /getStats\(\)/);
+              assert.match(peer, /selectedCandidatePairId/);
+              assert.match(peer, /candidateType === "relay"/);
+            }
+            assert.match(desktop, /remoteComputer\.transportNegotiate/);
+            assert.match(api, /mobileToken: session\.mobileToken/);
+            assert.match(api, /sessions\/\$\{encodeURIComponent\(session\.sessionId\)\}\/transport/);
+          });
+          ''')
+      - name: Format Rust
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt --all
+      - name: Test client wire contracts
+        run: node --test chatgpt-vps-control/tests/rustdesk-route-client-wire.test.js chatgpt-vps-control/tests/rustdesk-route-negotiation-contract.test.js chatgpt-vps-control/tests/fabushi-embedded-runtime-source.test.js
+      - name: Test Rust host protocol, product, feature host and worker
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test -p mahayana-host-protocol -p mahayana-product -p mahayana-feature-host -p mahayana-platform-worker
+      - name: Commit verified client wire
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add frontend/apps/web/src/lib/mahayana-host/contracts.ts \
+            frontend/apps/web/src/lib/remote-computer/desktop-peer.ts \
+            frontend/apps/web/src/lib/remote-computer/mobile-peer.ts \
+            frontend/apps/web/src/lib/remote-computer/remote-api.ts \
+            third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs \
+            third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs \
+            third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs \
+            chatgpt-vps-control/tests/rustdesk-route-client-wire.test.js
+          git commit -m "feat(remote): report authenticated selected transport route" -m "[skip ci]"
+          git push origin HEAD:codex/rustdesk-fusion-route-negotiation
