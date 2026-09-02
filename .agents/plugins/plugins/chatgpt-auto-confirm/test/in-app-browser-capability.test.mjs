@@ -160,6 +160,27 @@ test('page-load failures are detected without refreshing normal response errors'
   }), false);
 });
 
+test('renderer crash pages are recognized as recoverable tab failures', () => {
+  assert.equal(isPageLoadFailureState({
+    url: 'data:text/html;charset=utf-8,This%20page%20crashed',
+    title: 'This page crashed',
+    bodyText: 'This page crashed chatgpt.com crashed unexpectedly',
+    controls: [],
+    hasComposer: false,
+    hasWorkComposer: false,
+    pendingAuthorization: false,
+  }), true);
+  assert.equal(isPageLoadFailureState({
+    url: 'https://chatgpt.com/g/fabushi/c/healthy',
+    title: '目标会话',
+    bodyText: '用户讨论了页面崩溃这个词，但会话正常。',
+    controls: [],
+    hasComposer: true,
+    hasWorkComposer: false,
+    pendingAuthorization: false,
+  }), false);
+});
+
 test('a restored conversation refreshes itself when the Browser page cannot load', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-refresh-'));
   const capabilityFile = join(directory, 'capability.json');
@@ -348,7 +369,7 @@ test('authorization falls back to the direct Allow button when no session scope 
   };
   const tab = {
     playwright: {
-      evaluate: async () => ({ pendingAuthorization: true }),
+      evaluate: async () => ({ pendingAuthorization: allowClicks === 0 }),
       getByRole: (role, options = {}) => (
         role === 'button' && options.name === 'Allow' ? allow : emptyLocator()
       ),
@@ -387,7 +408,7 @@ test('authorization closes an unusable scope menu and directly approves the card
   };
   const tab = {
     playwright: {
-      evaluate: async () => ({ pendingAuthorization: true }),
+      evaluate: async () => ({ pendingAuthorization: allowClicks === 0 }),
       getByRole: (role, options = {}) => (
         role === 'button' && options.name === 'Allow' ? allow : emptyLocator()
       ),
@@ -540,6 +561,148 @@ test('a persisted job automatically retries the same step after its tab binding 
     assert.equal(result.lastReattachMethod, 'controlled-tab');
     assert.equal(result.lastReattachError, null);
     assert.equal(result.error, null);
+  } finally {
+    await host.close();
+  }
+});
+
+test('a crashed bound tab is reloaded in place before the queue creates another tab', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-crashed-tab-'));
+  const capabilityFile = join(directory, 'capability.json');
+  const jobStateFile = join(directory, 'job.json');
+  const targetUrl = 'https://chatgpt.com/g/fabushi/c/conversation-crashed';
+  await writeFile(jobStateFile, `${JSON.stringify({
+    id: 'iab_44444444-5555-4666-8777-888888888888',
+    goal: '完成完整目标',
+    status: 'waiting_for_browser_host',
+    phase: 'waiting',
+    attempt: 1,
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    currentUrl: targetUrl,
+    conversationId: 'conversation-crashed',
+    responseRunning: false,
+    beforeAssistantCount: 0,
+    beforeUserCount: 0,
+  })}\n`);
+  let currentUrl = 'data:text/html;charset=utf-8,This%20page%20crashed';
+  let gotoCount = 0;
+  const healthyState = {
+    url: targetUrl,
+    title: '目标会话',
+    conversationId: 'conversation-crashed',
+    assistantCount: 0,
+    userCount: 0,
+    latestAssistantText: '',
+    latestUserText: '',
+    bodyText: '目标会话已加载',
+    controls: [],
+    pendingAuthorization: false,
+    stopAnswer: false,
+    retry: false,
+    hasComposer: true,
+    hasWorkComposer: false,
+    chatTabSelected: true,
+    bodyLowerTail: '目标会话已加载',
+  };
+  const tab = {
+    id: 'crashed-bound-tab',
+    playwright: { evaluate: async () => ({ ...healthyState, url: currentUrl }) },
+    url: async () => currentUrl,
+    goto: async value => { gotoCount += 1; currentUrl = value; },
+    markHandoff: async () => {},
+  };
+  let fallbackRecoveries = 0;
+  const host = await createInAppBrowserCapabilityHost({
+    browser: { tabs: {} },
+    tab,
+    startUrl: targetUrl,
+    capabilityFile,
+    jobStateFile,
+    recoverTab: async () => {
+      fallbackRecoveries += 1;
+      throw new Error('不应在原标签页重载成功时走外部恢复');
+    },
+  });
+  try {
+    const result = await host.runStep();
+    assert.equal(result.status, 'starting');
+    assert.equal(result.lastReattachMethod, 'reloaded-broken-tab');
+    assert.equal(result.reattachCount, 1);
+    assert.equal(gotoCount, 1);
+    assert.equal(fallbackRecoveries, 0);
+    assert.equal(result.lastTabFailure, null);
+  } finally {
+    await host.close();
+  }
+});
+
+test('a closed bound tab is detected and reattached to the same conversation', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-closed-tab-'));
+  const capabilityFile = join(directory, 'capability.json');
+  const jobStateFile = join(directory, 'job.json');
+  const targetUrl = 'https://chatgpt.com/g/fabushi/c/conversation-closed';
+  await writeFile(jobStateFile, `${JSON.stringify({
+    id: 'iab_55555555-6666-4777-8888-999999999999',
+    goal: '完成完整目标',
+    status: 'waiting_for_browser_host',
+    phase: 'waiting',
+    attempt: 1,
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    currentUrl: targetUrl,
+    conversationId: 'conversation-closed',
+    responseRunning: false,
+  })}\n`);
+  const closedTab = {
+    id: 'closed-bound-tab',
+    playwright: { evaluate: async () => { throw new Error('tab closed'); } },
+    url: async () => { throw new Error('tab closed'); },
+  };
+  const pageState = {
+    url: targetUrl,
+    title: '目标会话',
+    conversationId: 'conversation-closed',
+    assistantCount: 0,
+    userCount: 0,
+    latestAssistantText: '',
+    latestUserText: '',
+    bodyText: '目标会话已加载',
+    controls: [],
+    pendingAuthorization: false,
+    stopAnswer: false,
+    retry: false,
+    hasComposer: true,
+    hasWorkComposer: false,
+    chatTabSelected: true,
+    bodyLowerTail: '目标会话已加载',
+  };
+  const healthyTab = {
+    id: 'reattached-closed-tab',
+    playwright: { evaluate: async () => pageState },
+    url: async () => targetUrl,
+    markHandoff: async () => {},
+  };
+  let recoveries = 0;
+  const host = await createInAppBrowserCapabilityHost({
+    browser: { tabs: {} },
+    tab: closedTab,
+    startUrl: targetUrl,
+    capabilityFile,
+    jobStateFile,
+    recoverTab: async ({ targetUrl: requestedTarget }) => {
+      recoveries += 1;
+      assert.equal(requestedTarget, targetUrl);
+      return { tab: healthyTab, method: 'new-tab', url: targetUrl };
+    },
+  });
+  try {
+    const result = await host.runStep();
+    assert.equal(result.status, 'starting');
+    assert.equal(result.lastReattachMethod, 'new-tab');
+    assert.equal(result.reattachCount, 1);
+    assert.equal(recoveries, 1);
+    assert.match(result.lastTabFailure, /控制句柄失效/);
   } finally {
     await host.close();
   }
