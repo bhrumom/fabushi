@@ -1,0 +1,5 @@
+repository=https://github.com/rustdesk/rustdesk.git
+commit=f28ac38ccfa662fd06639a062e0d06249860b142
+license=AGPL-3.0-only
+package=rustdesk
+version=1.5.0
