@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   ensure-ci-result:
-    name: Ensure merge queue CI result
+    name: CI result
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -49,14 +49,43 @@ jobs:
 
             if (existing) {
               core.info(`CI already exists for queue SHA ${sha}: run ${existing.id} (${existing.event}/${existing.status}).`);
-              return;
+            } else {
+              core.warning(`No merge_group CI was delivered for queue SHA ${sha}; dispatching the canonical CI workflow on ${queueRef}.`);
+              await github.rest.actions.createWorkflowDispatch({
+                owner,
+                repo,
+                workflow_id: workflowId,
+                ref: queueRef,
+              });
             }
 
-            core.warning(`No merge_group CI was delivered for queue SHA ${sha}; dispatching the canonical CI workflow on ${queueRef}.`);
-            await github.rest.actions.createWorkflowDispatch({
-              owner,
-              repo,
-              workflow_id: workflowId,
-              ref: queueRef,
-            });
-            core.info(`Dispatched canonical CI for queue SHA ${sha}. The CI workflow's own 'CI result' job remains the required gate.`);
+            // The branch ruleset requires a check named `CI result`. GitHub may
+            // occasionally omit the merge_group delivery; a workflow_dispatch
+            // run can validate the exact queue SHA, but merge queue does not
+            // reliably wake on that run's aggregate check. Keep this fallback
+            // job in progress until the canonical CI run completes, then mirror
+            // its conclusion through this push-triggered `CI result` check.
+            const deadline = Date.now() + 5 * 60 * 1000;
+            while (Date.now() < deadline) {
+              const { data: currentRuns } = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: workflowId,
+                head_sha: sha,
+                per_page: 30,
+              });
+              const current = currentRuns.workflow_runs.find((run) =>
+                ['merge_group', 'workflow_dispatch'].includes(run.event) &&
+                ['queued', 'in_progress', 'completed'].includes(run.status),
+              );
+              if (current?.status === 'completed') {
+                if (current.conclusion !== 'success') {
+                  core.setFailed(`Canonical CI run ${current.id} concluded ${current.conclusion} for queue SHA ${sha}.`);
+                  return;
+                }
+                core.info(`Canonical CI run ${current.id} succeeded for queue SHA ${sha}; publishing fallback CI result success.`);
+                return;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 5_000));
+            }
+            core.setFailed(`Timed out waiting for canonical CI on queue SHA ${sha}.`);
