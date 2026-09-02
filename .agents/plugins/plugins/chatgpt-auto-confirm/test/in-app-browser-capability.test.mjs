@@ -458,6 +458,47 @@ test('Browser reattachment prefers the persisted task tab for a project-entry ta
   assert.equal(created, 0);
 });
 
+test('Browser reattachment discards a persisted renderer-crash tab before opening a live tab', async () => {
+  const targetUrl = 'https://chatgpt.com/g/fabushi/c/recover-after-crash';
+  let closed = false;
+  let created = 0;
+  const broken = {
+    id: 'persisted-crash-tab',
+    playwright: {},
+    url: async () => 'data:text/html;charset=utf-8,This%20page%20crashed',
+    close: async () => { closed = true; },
+    markHandoff: async () => {},
+  };
+  const live = {
+    id: 'fresh-live-tab',
+    playwright: {},
+    goto: async value => { live.currentUrl = value; },
+    url: async () => live.currentUrl,
+    markHandoff: async () => {},
+    currentUrl: 'about:blank',
+  };
+  const browser = {
+    tabs: {
+      get: async id => {
+        assert.equal(id, broken.id);
+        return broken;
+      },
+      list: async () => [],
+      new: async () => { created += 1; return live; },
+    },
+  };
+  const result = await reattachInAppBrowserTab({
+    browser,
+    targetUrl,
+    preferredTabId: broken.id,
+  });
+  assert.equal(result.method, 'new-tab');
+  assert.equal(result.tab, live);
+  assert.equal(closed, true);
+  assert.equal(created, 1);
+  assert.equal(result.url, targetUrl);
+});
+
 test('Browser reattachment does not let a persisted tab cross project ownership', async () => {
   const targetUrl = 'https://chatgpt.com/g/fabushi/project';
   const foreign = fakeTab(
