@@ -317,6 +317,89 @@ test('a restored job repairs a lost conversation id from its task-owned tab', as
   }
 });
 
+test('the secondary restored job repairs its own delayed conversation URL', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-secondary-repair-'));
+  const capabilityFile = join(directory, 'capability.json');
+  const jobStateFile = join(directory, 'jobs.json');
+  const now = new Date().toISOString();
+  const firstUrl = 'https://chatgpt.com/g/fabushi/c/first-conversation';
+  const secondUrl = 'https://chatgpt.com/g/fabushi/c/second-conversation';
+  const secondId = 'iab_24681357-8642-4246-8462-135724680246';
+  await writeFile(jobStateFile, `${JSON.stringify({
+    schema: 'chatgpt-auto-confirm.browser-jobs.v2',
+    maxConcurrentJobs: 2,
+    jobs: [
+      {
+        id: 'iab_13572468-1357-4246-8462-246813572468',
+        goal: '继续第一项任务',
+        status: 'running',
+        phase: 'waiting',
+        startedAt: now,
+        updatedAt: now,
+        currentUrl: firstUrl,
+        conversationId: 'first-conversation',
+      },
+      {
+        id: secondId,
+        goal: '继续第二项任务',
+        status: 'waiting_for_browser_host',
+        phase: 'waiting',
+        startedAt: now,
+        updatedAt: now,
+        currentUrl: 'https://chatgpt.com/g/fabushi/project',
+        conversationId: null,
+        tabId: 'secondary-task-tab',
+      },
+    ],
+  })}\n`);
+  const pageState = {
+    url: secondUrl,
+    title: '第二项任务',
+    conversationId: 'second-conversation',
+    assistantCount: 0,
+    userCount: 0,
+    latestAssistantText: '',
+    latestUserText: '',
+    bodyText: '第二项任务会话已加载',
+    controls: [],
+    pendingAuthorization: false,
+    stopAnswer: false,
+    retry: false,
+    hasComposer: true,
+    hasWorkComposer: false,
+    chatTabSelected: true,
+    bodyLowerTail: '第二项任务会话已加载',
+  };
+  let gotoCount = 0;
+  const secondTab = {
+    id: 'secondary-task-tab',
+    playwright: { evaluate: async () => pageState },
+    url: async () => secondUrl,
+    goto: async () => { gotoCount += 1; },
+    markHandoff: async () => {},
+  };
+  const firstTab = fakeTab('first-task-tab', firstUrl);
+  const host = await createInAppBrowserCapabilityHost({
+    browser: { tabs: { get: async id => {
+      assert.equal(id, secondTab.id);
+      return secondTab;
+    } } },
+    tab: firstTab,
+    startUrl: firstUrl,
+    capabilityFile,
+    jobStateFile,
+  });
+  try {
+    const result = await host.runStep({ jobId: secondId });
+    assert.equal(result.status, 'starting');
+    assert.equal(result.currentUrl, secondUrl);
+    assert.equal(result.conversationId, 'second-conversation');
+    assert.equal(gotoCount, 0);
+  } finally {
+    await host.close();
+  }
+});
+
 test('Browser reattachment rebinds an exact controlled conversation first', async () => {
   const targetUrl = 'https://chatgpt.com/g/fabushi/c/conversation-1';
   const rebound = fakeTab('controlled-1', targetUrl);

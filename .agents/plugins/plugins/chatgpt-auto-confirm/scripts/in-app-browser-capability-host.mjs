@@ -1130,7 +1130,25 @@ async function restoreJobs(jobStateFile) {
   }
 }
 
+async function repairRestoredBrowserJobConversation(host, job, tab = host.tab) {
+  if (!job || job.phase !== 'waiting'
+      || conversationIdFromState(job)
+      || conversationIdFromUrl(job.currentUrl)) return;
+  let boundTabUrl = '';
+  try {
+    if (typeof tab?.url === 'function') boundTabUrl = await tab.url();
+  } catch {
+    return;
+  }
+  const boundConversationId = conversationIdFromUrl(boundTabUrl);
+  const savedTarget = job.currentUrl || host.newChatUrl;
+  if (!boundConversationId || !sameChatProject(boundTabUrl, savedTarget)) return;
+  job.currentUrl = canonicalChatUrl(boundTabUrl);
+  job.conversationId = boundConversationId;
+}
+
 async function prepareRestoredBrowserJob(host, job) {
+  await repairRestoredBrowserJobConversation(host, job);
   if (!job.restoredFromDisk || job.restorePrepared || job.phase !== 'waiting') return;
   const target = String(job.currentUrl || '').trim();
   if (target.startsWith('https://chatgpt.com/')) {
@@ -1707,25 +1725,8 @@ export async function createInAppBrowserCapabilityHost({
     host.activeJob.tabId = tab.id || host.activeJob.tabId || null;
     // A short-lived host can persist the project entry while the actual
     // conversation tab remains alive (for example during a lease rotation).
-    // Recover the conversation identity from the task-owned tab before the
-    // restored-job preflight, so an authorization card or in-flight reply is
-    // not lost by navigating that tab back to the project home.
-    let boundTabUrl = initialUrl;
-    try {
-      if (typeof tab.url === 'function') boundTabUrl = await tab.url();
-    } catch {
-      // A closed tab is handled by the normal per-job recovery path below.
-    }
-    const boundConversationId = conversationIdFromUrl(boundTabUrl);
-    const savedTarget = host.activeJob.currentUrl || initialUrl;
-    if (host.activeJob.phase === 'waiting'
-        && !conversationIdFromState(host.activeJob)
-        && !conversationIdFromUrl(savedTarget)
-        && boundConversationId
-        && sameChatProject(boundTabUrl, savedTarget)) {
-      host.activeJob.currentUrl = canonicalChatUrl(boundTabUrl);
-      host.activeJob.conversationId = boundConversationId;
-    }
+    // Recover the conversation identity before restored-job preflight.
+    await repairRestoredBrowserJobConversation(host, host.activeJob, tab);
   }
   host.runStep = async ({ jobId = '' } = {}) => {
     if (host.stepActive) return publicJob(jobId ? jobForId(host, jobId) : host.activeJob);
