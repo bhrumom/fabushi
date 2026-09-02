@@ -1,0 +1,59 @@
+name: RustDesk RDF-003 repair
+
+on:
+  push:
+    branches:
+      - codex/rustdesk-fusion-route-negotiation
+    paths:
+      - '.github/workflows/rustdesk-rdf003-repair.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/rustdesk-fusion-route-negotiation
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: rustfmt
+          targets: wasm32-unknown-unknown
+      - name: Restore missing transport request type
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs')
+          text = path.read_text()
+          if 'struct RemoteComputerTransportRequest {' not in text:
+              marker = '''#[derive(Debug, Deserialize)]\nstruct RemoteComputerRow {'''
+              addition = '''#[derive(Debug, Deserialize)]\n#[serde(rename_all = "camelCase", deny_unknown_fields)]\nstruct RemoteComputerTransportRequest {\n    role: String,\n    #[serde(default)]\n    device_secret: Option<String>,\n    #[serde(default)]\n    client_id: Option<String>,\n    #[serde(default)]\n    mobile_token: Option<String>,\n    #[serde(default)]\n    direct_available: bool,\n    #[serde(default)]\n    relay_region: Option<String>,\n}\n\n'''
+              if marker not in text:
+                  raise SystemExit('RemoteComputerRow marker missing')
+              text = text.replace(marker, addition + marker, 1)
+              path.write_text(text)
+      - name: Format Worker source
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt -p mahayana-platform-worker
+      - name: Commit repair before heavy validation
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'Transport request type already present.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
+          git commit -m 'fix(remote): restore transport negotiation request type'
+          git push origin HEAD:codex/rustdesk-fusion-route-negotiation
+      - name: Worker unit tests
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test --locked -p mahayana-platform-worker
+      - name: Worker Wasm compile
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo check --locked --target wasm32-unknown-unknown -p mahayana-platform-worker
