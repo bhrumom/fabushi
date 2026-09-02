@@ -450,8 +450,8 @@ mod tests {
 
     #[test]
     fn miniapp_identity_defaults_to_ios() {
-        let (plugin_id, platform) =
-            miniapp_identity(&json!({"pluginId": "global-dharma"})).unwrap();
+        let params = json!({"pluginId": "global-dharma"});
+        let (plugin_id, platform) = miniapp_identity(&params).unwrap();
         assert_eq!(plugin_id, "global-dharma");
         assert_eq!(platform, "ios");
     }
