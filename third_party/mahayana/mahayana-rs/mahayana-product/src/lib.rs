@@ -3476,13 +3476,17 @@ mod tests {
             Err(ProductError::InvalidParameter("packageSha256"))
         );
         assert_eq!(safe_marketplace_platform("desktop"), Ok("desktop"));
+        assert_eq!(safe_marketplace_platform("ios"), Ok("ios"));
+        assert_eq!(safe_marketplace_platform("android"), Ok("android"));
         assert_eq!(
-            safe_marketplace_platform("android"),
-            Err(ProductError::InvalidParameter("platform"))
-        );
-        assert_eq!(
-            safe_marketplace_platforms(&["desktop".into(), "desktop".into(), "cli".into()]),
-            Ok(vec!["desktop", "cli"])
+            safe_marketplace_platforms(&[
+                "desktop".into(),
+                "ios".into(),
+                "android".into(),
+                "desktop".into(),
+                "cli".into(),
+            ]),
+            Ok(vec!["desktop", "ios", "android", "cli"])
         );
     }
 
