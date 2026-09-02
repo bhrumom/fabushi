@@ -6,6 +6,7 @@ This directory is the license and runtime boundary for RustDesk-derived remote-c
 
 - Fabushi remains authoritative for account identity, same-account device membership, session creation, user authorization, least-privilege grants, revocation, expiry and audit.
 - The sidecar is a separately built and distributable AGPL-3.0-only derivative of the pinned RustDesk upstream source in `UPSTREAM.lock`.
+- Fabushi packages a dedicated `fabushi-host-daemon` from the same pinned corresponding source, so remote hosting does not depend on a separately installed RustDesk application. Electron owns its lifetime and launches it with Fabushi account credentials stripped from the environment.
 - Fabushi account tokens, cookies and long-lived device credentials MUST NOT be passed into the RustDesk process. A controller may pass only an already-authorized session identifier, an ephemeral transport credential, target RustDesk peer id, route policy and the immutable per-session capability grant.
 - Sidecar control is inherited stdin/stdout only. It MUST NOT open an unauthenticated TCP/HTTP control listener.
 - Permission escalation is forbidden after session creation. A new Fabushi session is required for broader capabilities.

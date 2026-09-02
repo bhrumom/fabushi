@@ -15,6 +15,7 @@ const { MessagingSignalingClient } = require('./messaging-signaling-client.cjs')
 const { createAppAgentSurfaceServer } = require('./app-agent-surface-server.cjs');
 const { RemoteDeviceAgentSupervisor } = require('./remote-device-agent-supervisor.cjs');
 const { RustDeskSidecarProcess } = require('./rustdesk-sidecar-process.cjs');
+const { RustDeskHostDaemonProcess } = require('./rustdesk-host-daemon-process.cjs');
 
 const appDataOverride = process.env.FABUSHI_APP_DATA?.trim();
 if (appDataOverride) app.setPath('userData', path.resolve(appDataOverride));
@@ -118,6 +119,7 @@ function providerEnvironment(inferenceProvider) {
 
 const host = new MahayanaHostProcess({ providerEnvironment });
 const rustDeskSidecar = new RustDeskSidecarProcess({ app });
+const rustDeskHostDaemon = new RustDeskHostDaemonProcess({ app });
 let mahayanaEdgeServer = null;
 let nativeEdgeServer = null;
 let appAgentSurfaceServer = null;
@@ -282,6 +284,7 @@ function focusMainWindow() {
 function requestApplicationQuit() {
   quitting = true;
   rustDeskSidecar.close();
+  rustDeskHostDaemon.close();
   app.quit();
 }
 
@@ -688,7 +691,7 @@ function installNativeEdge() {
       };
     },
     getRustDeskStatus() {
-      return { available: Boolean(rustDeskSidecar.executablePath()), ready: rustDeskSidecar.ready, sessions: rustDeskSidecar.sessions.size };
+      return { available: Boolean(rustDeskSidecar.executablePath()), ready: rustDeskSidecar.ready, sessions: rustDeskSidecar.sessions.size, host: rustDeskHostDaemon.status() };
     },
     openRustDeskSession(params) {
       return rustDeskSidecar.open(params);
@@ -1331,6 +1334,8 @@ function installAppProtocol() {
 applyStartupNativePreferences();
 
 app.whenReady().then(async () => {
+  const rustDeskHostStatus = rustDeskHostDaemon.start();
+  if (rustDeskHostStatus.available) console.info(JSON.stringify({ type: 'fabushi.rustdesk-host.started', ...rustDeskHostStatus }));
   installAppProtocol();
   installApplicationMenu();
   installAutoUpdaterEvents();
