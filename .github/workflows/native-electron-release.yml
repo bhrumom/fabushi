@@ -581,7 +581,6 @@ jobs:
           require_asset 'fabushi-*-setup.exe.blockmap'
           require_asset 'latest.yml'
           require_asset 'fabushi-*.AppImage'
-          require_asset 'fabushi-*.AppImage.blockmap'
           require_asset 'fabushi-*.deb'
           require_asset 'latest-linux.yml'
           require_asset '*.apk'
