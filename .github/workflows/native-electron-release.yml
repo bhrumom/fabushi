@@ -83,8 +83,8 @@ jobs:
             'Native mobile result' \
             'Native iOS' \
             'Computer control security result' \
-            'Platform architecture' \
-            'Deploy production control plane'; do
+            'Canonical architecture guardrails' \
+            'Resolve Worker source and deployment impact'; do
             conclusion="$(printf '%s' "$checks_json" | jq -r --arg required "$required" '[.[].check_runs[] | select(.name == $required)] | sort_by(.started_at // .created_at // "") | last | .conclusion // "missing"')"
             if [ "$conclusion" != success ]; then
               echo "Required release gate '$required' is $conclusion for $tagged_sha." >&2
