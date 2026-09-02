@@ -81,6 +81,21 @@ test('manager blocks clipboard file and audio escalation before provider executi
   assert.throws(() => manager.command('session-1', { type: 'clipboard', text: 'secret' }), /clipboard is not granted/i);
   assert.throws(() => manager.command('session-1', { type: 'file', action: 'readRemoteDir', path: '/' }), /file transfer is not granted/i);
   assert.throws(() => manager.command('session-1', { type: 'audio', enabled: true }), /audio is not granted/i);
+  assert.throws(() => manager.command('session-1', { type: 'audio', enabled: 'false' }), /audio command is invalid/i);
+});
+
+test('manager permits fail-safe audio disable even when audio was not granted', async () => {
+  const { manager, children } = harness();
+  manager.start();
+  const output = readWritten(children[0].stdin);
+  manager.open({ sessionId: 'session-audio-off', peerId: '123456789', password: 'ephemeral', grant: grant() });
+  assert.equal(manager.command('session-audio-off', { type: 'audio', enabled: false }), true);
+  await flushWrites();
+  const lines = output().trim().split('\n').map((line) => JSON.parse(line));
+  const audio = lines.at(-1);
+  assert.equal(audio.type, 'audio');
+  assert.equal(audio.enabled, false);
+  assert.equal(audio.sessionId, 'session-audio-off');
 });
 
 test('manager forwards only granted provider commands with immutable session id', async () => {
