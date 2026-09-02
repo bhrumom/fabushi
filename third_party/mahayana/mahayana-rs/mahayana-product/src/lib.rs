@@ -2737,6 +2737,8 @@ fn safe_marketplace_platform(value: &str) -> Result<&str, ProductError> {
         "desktop" => Ok("desktop"),
         "mobile" => Ok("mobile"),
         "web" => Ok("web"),
+        "ios" => Ok("ios"),
+        "android" => Ok("android"),
         _ => Err(ProductError::InvalidParameter("platform")),
     }
 }
