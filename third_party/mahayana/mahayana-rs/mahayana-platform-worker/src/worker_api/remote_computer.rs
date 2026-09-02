@@ -96,6 +96,22 @@ struct RemoteComputerSessionCloseRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerTransportRequest {
+    role: String,
+    #[serde(default)]
+    device_secret: Option<String>,
+    #[serde(default)]
+    client_id: Option<String>,
+    #[serde(default)]
+    mobile_token: Option<String>,
+    #[serde(default)]
+    direct_available: bool,
+    #[serde(default)]
+    relay_region: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct RemoteComputerRow {
     device_id: String,
     label: String,
