@@ -1,6 +1,7 @@
 name: RustDesk RDF-004 permission enforcement
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - codex/rustdesk-fusion-route-negotiation
