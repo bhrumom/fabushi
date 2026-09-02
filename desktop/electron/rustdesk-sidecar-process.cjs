@@ -142,7 +142,10 @@ class RustDeskSidecarProcess extends EventEmitter {
     if (['mouse', 'key', 'text'].includes(type) && grant.input !== true) throw new Error('RustDesk input is not granted.');
     if (type === 'clipboard' && grant.clipboard !== true) throw new Error('RustDesk clipboard is not granted.');
     if (type === 'file' && grant.fileTransfer !== true) throw new Error('RustDesk file transfer is not granted.');
-    if (type === 'audio' && grant.audio !== true) throw new Error('RustDesk audio is not granted.');
+    if (type === 'audio') {
+      if (typeof command?.enabled !== 'boolean') throw new Error('RustDesk audio command is invalid.');
+      if (command.enabled === true && grant.audio !== true) throw new Error('RustDesk audio is not granted.');
+    }
     if (!['mouse', 'key', 'text', 'clipboard', 'file', 'audio', 'reconnect'].includes(type)) throw new Error('Unsupported RustDesk command.');
     this.send({ ...command, type, sessionId: id });
     return true;
