@@ -1,0 +1,99 @@
+name: Prepare Fabushi 1.2.9 release
+
+on:
+  push:
+    branches: [release/fabushi-1.2.9-20260902]
+    paths: ['.github/workflows/release-1.2.9-prep.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: release/fabushi-1.2.9-20260902
+          fetch-depth: 0
+      - name: Advance canonical release identity
+        shell: python
+        run: |
+          from pathlib import Path
+          import json
+
+          version = '1.2.9'
+          build = 15
+
+          p = Path('app-version.json')
+          data = json.loads(p.read_text())
+          assert data['version'] == '1.2.8'
+          assert data['androidVersionCode'] == 14
+          assert data['iosBuildNumber'] == 14
+          data.update(version=version, androidVersionCode=build, iosBuildNumber=build)
+          p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
+
+          for name in ['desktop/package.json', 'desktop/package-lock.json', 'mobile/package.json', 'mobile/package-lock.json']:
+              p = Path(name)
+              t = p.read_text()
+              if '1.2.8' not in t:
+                  raise SystemExit(f'missing 1.2.8 in {name}')
+              p.write_text(t.replace('1.2.8', version))
+
+          p = Path('mobile/ios/project.yml')
+          t = p.read_text()
+          old = '        MARKETING_VERSION: 1.2.8\n        CURRENT_PROJECT_VERSION: 14'
+          new = '        MARKETING_VERSION: 1.2.9\n        CURRENT_PROJECT_VERSION: 15'
+          if old not in t:
+              raise SystemExit('missing iOS version anchor')
+          p.write_text(t.replace(old, new, 1))
+
+          p = Path('fabushi/CHANGELOG.md')
+          t = p.read_text()
+          anchor = '# 更新日志\n\n'
+          entry = '''## [1.2.9] - 2026-09-02
+
+### 全新正式版本发布
+- 从受保护 `main@868122cfa8ed2490053af5ed99117d93349ec022` 切出新的正式发布列车，完成本轮开放 PR 审阅后，将产品版本统一提升为 `1.2.9`。
+- Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `15`，保证商店与客户端升级身份严格递增，不复用不可变的 `1.2.8` 发布身份。
+- 继续复用仓库现有 exact-main GitHub Actions、桌面签名/公证、移动商店交付、生产部署、不可变 GitHub Release 与安装/升级验证链路；重型构建和测试仅在 GitHub Actions 执行。
+
+---
+
+'''
+          if entry not in t:
+              if anchor not in t:
+                  raise SystemExit('missing changelog anchor')
+              p.write_text(t.replace(anchor, anchor + entry, 1))
+
+          doc = Path('projects/fabushi-cicd-merge-governance/source/2026-09-02-fcm-018-full-platform-release-1.2.9.md')
+          doc.write_text('''# FCM-018 — Fabushi 1.2.9 full-platform formal release
+
+## Requirement
+Complete a brand-new formal Fabushi release from canonical protected `main`: disposition all open PRs, unify version/changelog, execute the existing GitHub Actions CI/CD, publish all currently supported platform/channel outputs, and verify Actions, immutable Release assets, production deployment, installation/package journeys, and explicit upgrade behavior.
+
+## Live intake and baseline
+- Open PR intake at task start: one PR, `#2287`, which is explicitly Draft/WIP and states it must remain isolated from the active formal-release lane until RDF-004/005/006 plus runtime acceptance are green. It is therefore reviewed and correctly retained unmerged rather than violating its acceptance contract.
+- Canonical baseline: `main@868122cfa8ed2490053af5ed99117d93349ec022` / Fabushi `1.2.8`.
+- `desktop-1.2.8` is already immutable and published from that exact main SHA; this task advances to a strictly newer release identity rather than mutating it.
+
+## Release identity
+- Product version: `1.2.9`
+- Android versionCode: `15`
+- iOS build number: `15`
+- Formal release commit marker: `[full-platform-release]`
+
+## Acceptance gate
+FCM-018 remains in progress until its protected PR lands on canonical `main`, exact-main required CI/package/E2E gates pass, `desktop-1.2.9` and mobile/store evidence Releases are immutable and traceable to the accepted main SHA, production deployments are green for that SHA, Apple/Google store delivery is successful, and installation plus previous-release upgrade verification completes successfully.
+''')
+
+          Path('.github/workflows/release-1.2.9-prep.yml').unlink()
+      - name: Commit prepared release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m '[full-platform-release] chore(release): advance Fabushi to 1.2.9'
+          git push origin HEAD:release/fabushi-1.2.9-20260902
