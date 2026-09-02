@@ -135,6 +135,7 @@ test('dispatch_goal makes the plugin own the complete fresh-Chat policy', async 
     autoContinueIncomplete: true,
     maxTaskContinuations: 0,
     continuationMessage: null,
+    maxConcurrentJobs: 2,
     pollIntervalMs: 500,
   });
 });

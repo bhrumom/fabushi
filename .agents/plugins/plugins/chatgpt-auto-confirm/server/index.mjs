@@ -25,6 +25,7 @@ const browserJobStateFile = process.env.CHATGPT_AUTO_CONFIRM_BROWSER_JOB_FILE
 const browserSupervisors = new Map();
 const sleep = milliseconds => new Promise(resolvePromise => setTimeout(resolvePromise, milliseconds));
 const browserTerminalStatuses = new Set(['completed', 'stopped', 'failed']);
+const maxParallelBrowserJobs = 2;
 const configuredBrowserHostRetryDelayMs = Number(process.env.CHATGPT_AUTO_CONFIRM_BROWSER_RETRY_MS);
 const browserHostRetryDelayMs = Number.isFinite(configuredBrowserHostRetryDelayMs)
   ? Math.min(60_000, Math.max(500, configuredBrowserHostRetryDelayMs))
@@ -47,6 +48,7 @@ const pluginDispatchParams = (goal) => ({
   autoContinueIncomplete: true,
   maxTaskContinuations: 0,
   continuationMessage: null,
+  maxConcurrentJobs: maxParallelBrowserJobs,
   pollIntervalMs: 500,
 });
 
@@ -174,27 +176,55 @@ async function callBrowserCapability(
   }
 }
 
-async function readPersistedBrowserJob() {
+function browserStateJobs(saved) {
+  if (Array.isArray(saved?.jobs)) return saved.jobs;
+  return saved && typeof saved === 'object' ? [saved] : [];
+}
+
+function revivePersistedBrowserJob(saved) {
+  const outcome = String(saved?.lastOutcome?.kind || '');
+  const recoverableFailure = saved?.status === 'failed'
+    && saved?.stopRequested !== true
+    && saved?.phase !== 'terminal'
+    && outcome !== 'complete'
+    && outcome !== 'stopped';
+  if (!saved || typeof saved !== 'object' || !saved.id || !saved.goal
+      || (browserTerminalStatuses.has(saved.status) && !recoverableFailure)) return null;
+  return recoverableFailure
+    ? {
+      ...saved,
+      status: 'waiting_for_browser_host',
+      error: '内置 Browser/CDP 暂时不可用，插件将自动恢复同一任务。',
+    }
+    : saved;
+}
+
+async function readPersistedBrowserJobs() {
   try {
     const saved = JSON.parse(await readFile(browserJobStateFile, 'utf8'));
-    const outcome = String(saved?.lastOutcome?.kind || '');
-    const recoverableFailure = saved?.status === 'failed'
-      && saved?.stopRequested !== true
-      && saved?.phase !== 'terminal'
-      && outcome !== 'complete'
-      && outcome !== 'stopped';
-    if (!saved || typeof saved !== 'object' || !saved.id || !saved.goal
-        || (browserTerminalStatuses.has(saved.status) && !recoverableFailure)) return null;
-    return recoverableFailure
-      ? {
-        ...saved,
-        status: 'waiting_for_browser_host',
-        error: '内置 Browser/CDP 暂时不可用，插件将自动恢复同一任务。',
-      }
-      : saved;
+    return browserStateJobs(saved).map(revivePersistedBrowserJob).filter(Boolean);
   } catch {
-    return null;
+    return [];
   }
+}
+
+async function readPersistedBrowserJob() {
+  return (await readPersistedBrowserJobs())[0] || null;
+}
+
+async function writePersistedBrowserJobs(jobs) {
+  const persisted = jobs.length === 1
+    ? jobs[0]
+    : {
+      schema: 'chatgpt-auto-confirm.browser-jobs.v2',
+      maxConcurrentJobs: maxParallelBrowserJobs,
+      jobs,
+    };
+  await mkdir(dirname(browserJobStateFile), { recursive: true });
+  await writeFile(browserJobStateFile, `${JSON.stringify(persisted)}\n`, {
+    encoding: 'utf8', mode: 0o600,
+  });
+  await chmod(browserJobStateFile, 0o600);
 }
 
 async function stopPersistedBrowserJob(jobId) {
@@ -204,29 +234,27 @@ async function stopPersistedBrowserJob(jobId) {
   } catch {
     return null;
   }
-  if (!saved || typeof saved !== 'object' || saved.id !== jobId) return null;
-  if (!browserTerminalStatuses.has(saved.status)) {
-    saved.status = 'stopped';
-    saved.responseRunning = false;
-    saved.error = saved.error || '已由用户停止内置 Browser 任务';
-    saved.lastOutcome = { kind: 'stopped', reason: 'operator' };
-    saved.updatedAt = new Date().toISOString();
-    await mkdir(dirname(browserJobStateFile), { recursive: true });
-    await writeFile(browserJobStateFile, `${JSON.stringify(saved)}\n`, {
-      encoding: 'utf8', mode: 0o600,
-    });
-    await chmod(browserJobStateFile, 0o600);
+  const jobs = browserStateJobs(saved);
+  const job = jobs.find(candidate => candidate?.id === jobId);
+  if (!job) return null;
+  if (!browserTerminalStatuses.has(job.status)) {
+    job.status = 'stopped';
+    job.responseRunning = false;
+    job.error = job.error || '已由用户停止内置 Browser 任务';
+    job.lastOutcome = { kind: 'stopped', reason: 'operator' };
+    job.updatedAt = new Date().toISOString();
+    await writePersistedBrowserJobs(jobs);
   }
   browserSupervisors.delete(jobId);
-  return saved;
+  return job;
 }
 
 function startBrowserSupervisor(jobId) {
   if (!jobId || browserSupervisors.has(jobId)) return;
   const supervisor = (async () => {
     while (true) {
-      const persisted = await readPersistedBrowserJob();
-      if (!persisted || persisted.id !== jobId) break;
+      const persisted = (await readPersistedBrowserJobs()).find(job => job.id === jobId);
+      if (!persisted) break;
       // Reload the capability descriptor on every pass. A new authorized
       // Browser host can therefore replace a dead tab/context without
       // requiring the caller to dispatch the goal again.
@@ -242,7 +270,10 @@ function startBrowserSupervisor(jobId) {
         await sleep(browserHostRetryDelayMs);
         continue;
       }
-      if (browserTerminalStatuses.has(health.activeJob?.status)) break;
+      const healthJobs = Array.isArray(health.jobs)
+        ? health.jobs : [health.activeJob].filter(Boolean);
+      const observedJob = healthJobs.find(job => job?.id === jobId) || persisted;
+      if (browserTerminalStatuses.has(observedJob.status)) break;
       // The trusted Browser host already runs the single-flight pump. Avoid
       // issuing a second HTTP step every 500 ms while that pump is active;
       // the server supervisor only needs to keep polling for a host rotation.
@@ -274,43 +305,63 @@ function startBrowserSupervisor(jobId) {
 }
 
 function maybeStartBrowserSupervisor(result) {
-  const job = result?.job || result?.activeJob;
-  if (result?.ok && job?.id && !browserTerminalStatuses.has(job.status)) {
-    startBrowserSupervisor(job.id);
+  const jobs = Array.isArray(result?.jobs)
+    ? result.jobs : [result?.job || result?.activeJob].filter(Boolean);
+  if (result?.ok) {
+    for (const job of jobs) {
+      if (job?.id && !browserTerminalStatuses.has(job.status)) startBrowserSupervisor(job.id);
+    }
   }
 }
 
 async function resumePersistedBrowserSupervisor() {
-  const job = await readPersistedBrowserJob();
-  if (job?.id) startBrowserSupervisor(job.id);
+  for (const job of await readPersistedBrowserJobs()) startBrowserSupervisor(job.id);
+}
+
+function resultBrowserJobs(result, fallback = []) {
+  if (Array.isArray(result?.jobs)) return result.jobs.filter(Boolean);
+  if (Array.isArray(result?.activeJobs)) return result.activeJobs.filter(Boolean);
+  if (result?.job) return [result.job];
+  if (result?.activeJob) return [result.activeJob];
+  return fallback.filter(Boolean);
+}
+
+function waitingForBrowserHost(jobs) {
+  return jobs.filter(job => (
+    job?.status === 'waiting_for_browser_host' || job?.status === 'reattaching_browser_host'
+  ));
 }
 
 async function runInAppBrowserTool(rpc) {
   const tool = String(rpc.params?.name ?? '');
   if (!new Set(['dispatch_goal', 'browser_capability_status', 'browser_job_status', 'browser_stop', 'browser_watch']).has(tool)) return null;
   if (tool === 'browser_watch') {
-    const persisted = await readPersistedBrowserJob();
-    if (!persisted) return browserToolResponse(rpc, tool, {
+    const persistedJobs = await readPersistedBrowserJobs();
+    if (persistedJobs.length === 0) return browserToolResponse(rpc, tool, {
       ok: false, errorCode: 'browser_job_not_found', message: '当前没有可恢复的内置 Browser 任务。',
     });
-    startBrowserSupervisor(persisted.id);
+    for (const job of persistedJobs) startBrowserSupervisor(job.id);
     const descriptor = await readBrowserCapability();
     const health = descriptor.ok
       ? await callBrowserCapability(descriptor, '/v1/capability', 'GET', undefined, 5_000)
       : descriptor;
-    const observedJob = health?.activeJob || persisted;
+    const jobs = resultBrowserJobs(health, persistedJobs);
+    const reattachJobs = waitingForBrowserHost(jobs);
     const reattachRequired = !descriptor.ok || !health?.ok
       || health?.reattachRequired === true
-      || observedJob?.status === 'waiting_for_browser_host';
+      || reattachJobs.length > 0;
     maybeStartBrowserSupervisor(health);
     return browserToolResponse(rpc, tool, {
       ok: true,
-      supervisor: browserSupervisors.has(persisted.id) ? 'active' : 'starting',
+      supervisor: jobs.every(job => browserSupervisors.has(job.id)) ? 'active' : 'starting',
       capability: reattachRequired ? 'reattach_required' : 'available',
       hostHealth: reattachRequired ? 'reattach_required' : (health?.hostHealth || 'attached'),
       reattachRequired,
-      reattach: reattachRequired ? browserReattachMetadata(observedJob) : null,
-      job: observedJob,
+      reattach: reattachRequired ? browserReattachMetadata(reattachJobs[0] || jobs[0]) : null,
+      reattachments: reattachJobs.map(browserReattachMetadata),
+      job: jobs[0] || null,
+      jobs,
+      maxConcurrentJobs: Number(health?.maxConcurrentJobs || maxParallelBrowserJobs),
     });
   }
   const descriptor = await readBrowserCapability();
@@ -332,20 +383,23 @@ async function runInAppBrowserTool(rpc) {
     });
   }
   if (!descriptor.ok && tool === 'browser_capability_status') {
-    const persisted = await readPersistedBrowserJob();
+    const persistedJobs = await readPersistedBrowserJobs();
     return browserToolResponse(rpc, tool, {
       ok: true,
       available: false,
       hostHealth: 'reattach_required',
-      reattachRequired: !!persisted,
-      reattach: persisted ? browserReattachMetadata(persisted) : null,
-      activeJob: persisted,
+      reattachRequired: persistedJobs.length > 0,
+      reattach: persistedJobs[0] ? browserReattachMetadata(persistedJobs[0]) : null,
+      reattachments: persistedJobs.map(browserReattachMetadata),
+      activeJob: persistedJobs[0] || null,
+      jobs: persistedJobs,
+      maxConcurrentJobs: maxParallelBrowserJobs,
       descriptorError: descriptor,
     });
   }
   if (!descriptor.ok && tool === 'browser_job_status') {
-    const persisted = await readPersistedBrowserJob();
-    if (persisted?.id === requestedJobId) return browserToolResponse(rpc, tool, {
+    const persisted = (await readPersistedBrowserJobs()).find(job => job.id === requestedJobId);
+    if (persisted) return browserToolResponse(rpc, tool, {
       ok: true,
       hostHealth: 'reattach_required',
       reattachRequired: true,
@@ -371,13 +425,18 @@ async function runInAppBrowserTool(rpc) {
   if (tool === 'browser_capability_status') {
     const result = await callBrowserCapability(descriptor, '/v1/capability');
     maybeStartBrowserSupervisor(result);
+    const jobs = resultBrowserJobs(result);
+    const reattachJobs = waitingForBrowserHost(jobs);
     const reattachRequired = !result?.ok || result?.reattachRequired === true
-      || result?.activeJob?.status === 'waiting_for_browser_host';
+      || reattachJobs.length > 0;
     return browserToolResponse(rpc, tool, result?.ok ? {
       ...result,
+      jobs,
+      maxConcurrentJobs: Number(result.maxConcurrentJobs || maxParallelBrowserJobs),
       hostHealth: reattachRequired ? 'reattach_required' : (result.hostHealth || 'attached'),
       reattachRequired,
-      reattach: reattachRequired ? browserReattachMetadata(result.activeJob) : null,
+      reattach: reattachRequired ? browserReattachMetadata(reattachJobs[0] || jobs[0]) : null,
+      reattachments: reattachJobs.map(browserReattachMetadata),
     } : result);
   }
   const jobId = requestedJobId;
@@ -403,12 +462,16 @@ async function runInAppBrowserTool(rpc) {
     });
   }
   maybeStartBrowserSupervisor(result);
-  const reattachRequired = result?.job?.status === 'waiting_for_browser_host';
+  const jobs = resultBrowserJobs(result);
+  const reattachJobs = waitingForBrowserHost(jobs);
+  const reattachRequired = reattachJobs.length > 0;
   return browserToolResponse(rpc, tool, result?.ok ? {
     ...result,
+    jobs,
     hostHealth: reattachRequired ? 'reattach_required' : 'attached',
     reattachRequired,
-    reattach: reattachRequired ? browserReattachMetadata(result.job) : null,
+    reattach: reattachRequired ? browserReattachMetadata(reattachJobs[0]) : null,
+    reattachments: reattachJobs.map(browserReattachMetadata),
   } : result);
 }
 

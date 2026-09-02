@@ -173,3 +173,71 @@ test('a persisted Browser-host failure is offered for automatic reattachment', a
     child.kill('SIGTERM');
   }
 });
+
+test('browser_watch preserves two persisted jobs and supervises both isolated tabs', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-parallel-supervisor-'));
+  const capabilityFile = join(directory, 'capability.json');
+  const jobFile = join(directory, 'jobs.json');
+  const jobs = [
+    {
+      id: 'iab_11111111-2222-4333-8444-555555555551',
+      goal: '继续已有发布目标',
+      status: 'waiting_for_browser_host',
+      phase: 'waiting',
+      attempt: 1,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      currentUrl: 'https://chatgpt.com/g/example/c/existing-goal',
+    },
+    {
+      id: 'iab_11111111-2222-4333-8444-555555555552',
+      goal: '在独立标签页推进 RustDesk 融合',
+      status: 'waiting_for_browser_host',
+      phase: 'waiting',
+      attempt: 0,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      currentUrl: 'https://chatgpt.com/g/example/c/rustdesk-goal',
+    },
+  ];
+  const host = await startFakeHost([{ status: 'waiting_for_browser_host' }]);
+  await writeFile(capabilityFile, `${JSON.stringify({
+    schema: 'chatgpt-auto-confirm.browser-capability.v1',
+    capability: 'browser.in-app.dispatch-and-watch',
+    browser: 'iab',
+    baseUrl: host.baseUrl,
+    token: 'x'.repeat(48),
+    expiresAt: Date.now() + 60_000,
+  })}\n`);
+  await writeFile(jobFile, `${JSON.stringify({
+    schema: 'chatgpt-auto-confirm.browser-jobs.v2',
+    maxConcurrentJobs: 2,
+    jobs,
+  })}\n`);
+  const child = spawn(process.execPath, ['--experimental-strip-types', serverPath.pathname], {
+    env: {
+      ...process.env,
+      CHATGPT_AUTO_CONFIRM_BROWSER_CAPABILITY_FILE: capabilityFile,
+      CHATGPT_AUTO_CONFIRM_BROWSER_JOB_FILE: jobFile,
+      CHATGPT_AUTO_CONFIRM_BROWSER_RETRY_MS: '500',
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  try {
+    child.stdin.write(`${JSON.stringify({
+      jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'browser_watch', arguments: {} },
+    })}\n`);
+    const response = await waitForLine(child, value => value.id === 3);
+    const state = response.result.structuredContent;
+    assert.equal(state.jobs.length, 2);
+    assert.equal(state.maxConcurrentJobs, 2);
+    assert.equal(state.reattachRequired, true);
+    assert.equal(state.reattachments.length, 2);
+    assert.deepEqual(new Set(state.jobs.map(job => job.id)), new Set(jobs.map(job => job.id)));
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 700));
+    assert.ok(host.calls >= 2);
+  } finally {
+    child.kill('SIGTERM');
+    await host.close();
+  }
+});

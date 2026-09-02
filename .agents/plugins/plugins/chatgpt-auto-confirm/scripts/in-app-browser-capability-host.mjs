@@ -23,6 +23,7 @@ const DEFAULT_JOB_FILE = resolve(
   homedir(), '.codex', 'browser', 'chatgpt-auto-confirm-job.json',
 );
 const MAX_GOAL_LENGTH = 10_000;
+export const MAX_PARALLEL_BROWSER_JOBS = 2;
 const MAX_ATTEMPTS = 10_000;
 const DEFAULT_TIMEOUT_SECONDS = 21_600;
 const DEFAULT_STAGNATION_SECONDS = 10_800;
@@ -65,6 +66,7 @@ export const BROWSER_DISPATCH_POLICY = Object.freeze({
   autoContinueIncomplete: true,
   maxTaskContinuations: 0,
   continuationMessage: null,
+  maxConcurrentJobs: MAX_PARALLEL_BROWSER_JOBS,
   pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
 });
 
@@ -844,10 +846,36 @@ async function waitForResponse(tab, job, before, policy) {
   return { kind: 'timed-out', state: latestState };
 }
 
-async function persistJob(host, job = host.activeJob) {
-  if (!job) return;
-  job.updatedAt = new Date().toISOString();
-  const persisted = {
+function hostJobs(host) {
+  if (!(host.jobs instanceof Map)) host.jobs = new Map();
+  if (host.activeJob?.id && !host.jobs.has(host.activeJob.id)) {
+    host.jobs.set(host.activeJob.id, host.activeJob);
+  }
+  return [...host.jobs.values()];
+}
+
+function registerJob(host, job) {
+  if (!job?.id) return job;
+  if (!(host.jobs instanceof Map)) host.jobs = new Map();
+  host.jobs.set(job.id, job);
+  return job;
+}
+
+function jobForId(host, jobId) {
+  if (!jobId) return null;
+  return hostJobs(host).find(job => job.id === jobId) || null;
+}
+
+function activeBrowserJobs(host) {
+  return hostJobs(host).filter(job => !TERMINAL_JOB_STATUSES.has(job.status));
+}
+
+function publicJobs(host) {
+  return hostJobs(host).map(publicJob);
+}
+
+function persistedJob(job) {
+  return {
     id: job.id,
     goal: job.goal,
     status: job.status,
@@ -857,6 +885,7 @@ async function persistJob(host, job = host.activeJob) {
     updatedAt: job.updatedAt,
     currentUrl: job.currentUrl || null,
     conversationId: job.conversationId || null,
+    tabId: job.tab?.id || job.tabId || null,
     responseRunning: job.responseRunning === true,
     authorization: job.authorization || null,
     latestReply: job.latestReply || '',
@@ -872,27 +901,49 @@ async function persistJob(host, job = host.activeJob) {
     lastReattachMethod: job.lastReattachMethod || null,
     lastReattachError: job.lastReattachError || null,
   };
+}
+
+async function persistJob(host, job = host.activeJob) {
+  if (!job) return;
+  registerJob(host, job);
+  job.updatedAt = new Date().toISOString();
+  const jobs = hostJobs(host).map(persistedJob);
+  // Keep the established single-job file shape so an already installed
+  // predecessor can recover it. The moment a second task exists, record an
+  // explicit collection so each task can keep its own tab binding.
+  const persisted = jobs.length === 1
+    ? jobs[0]
+    : {
+      schema: 'chatgpt-auto-confirm.browser-jobs.v2',
+      maxConcurrentJobs: MAX_PARALLEL_BROWSER_JOBS,
+      jobs,
+    };
   await mkdir(dirname(host.jobStateFile), { recursive: true });
   await writeFile(host.jobStateFile, `${JSON.stringify(persisted)}\n`, { encoding: 'utf8', mode: 0o600 });
   await chmod(host.jobStateFile, 0o600);
 }
 
-async function restoreJob(jobStateFile) {
+function restorePersistedJob(saved) {
+  const recoverableFailure = isResumableBrowserFailure(saved);
+  if (!isRecord(saved) || !saved.id || !saved.goal
+      || (TERMINAL_JOB_STATUSES.has(saved.status) && !recoverableFailure)) return null;
+  return {
+    ...saved,
+    status: recoverableFailure ? 'waiting_for_browser_host' : (saved.status || 'accepted'),
+    phase: saved.phase || 'accepted',
+    error: recoverableFailure ? '内置 Browser/CDP 暂时不可用，插件将自动恢复同一任务。' : saved.error,
+    stopRequested: false,
+    restoredFromDisk: true,
+  };
+}
+
+async function restoreJobs(jobStateFile) {
   try {
     const saved = JSON.parse(await readFile(jobStateFile, 'utf8'));
-    const recoverableFailure = isResumableBrowserFailure(saved);
-    if (!isRecord(saved) || !saved.id || !saved.goal
-        || (TERMINAL_JOB_STATUSES.has(saved.status) && !recoverableFailure)) return null;
-    return {
-      ...saved,
-      status: recoverableFailure ? 'waiting_for_browser_host' : (saved.status || 'accepted'),
-      phase: saved.phase || 'accepted',
-      error: recoverableFailure ? '内置 Browser/CDP 暂时不可用，插件将自动恢复同一任务。' : saved.error,
-      stopRequested: false,
-      restoredFromDisk: true,
-    };
+    const rawJobs = Array.isArray(saved?.jobs) ? saved.jobs : [saved];
+    return rawJobs.map(restorePersistedJob).filter(Boolean);
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -924,6 +975,54 @@ function browserRecoveryTarget(host, job) {
   return resumeCurrentConversation || host.newChatUrl;
 }
 
+async function bindBrowserJobTab(host, job, tab, {
+  method = 'existing-tab',
+  url = null,
+} = {}) {
+  if (!tab?.playwright) throw new Error('内置 Browser 任务标签页不可控');
+  job.tab = tab;
+  job.tabId = tab.id || job.tabId || null;
+  if (url) job.currentUrl = url;
+  try { await tab.markHandoff(); } catch { /* the trusted host already owns this tab */ }
+  host.tab = tab;
+  host.lastBrowserActivityAt = new Date().toISOString();
+  if (method !== 'existing-tab') {
+    job.lastReattachedAt = host.lastBrowserActivityAt;
+    job.lastReattachMethod = method;
+    job.lastReattachError = null;
+  }
+  return tab;
+}
+
+async function createBrowserJobTab(host, job) {
+  if (!host.browser?.tabs?.new) throw new Error('内置 Browser 不支持创建任务标签页');
+  const tab = await host.browser.tabs.new();
+  await tab.goto(host.newChatUrl);
+  const url = typeof tab.url === 'function' ? await tab.url() : host.newChatUrl;
+  await bindBrowserJobTab(host, job, tab, { method: 'new-parallel-tab', url });
+  return tab;
+}
+
+async function ensureBrowserJobTab(host, job) {
+  if (job.tab?.playwright) return bindBrowserJobTab(host, job, job.tab);
+  if (job.tabId && host.browser?.tabs?.get) {
+    try {
+      const tab = await host.browser.tabs.get(job.tabId);
+      const target = browserRecoveryTarget(host, job);
+      const currentUrl = typeof tab.url === 'function' ? await tab.url() : target;
+      if (!canonicalChatUrl(target) || sameChatTarget(currentUrl, target)) {
+        return bindBrowserJobTab(host, job, tab, { method: 'controlled-tab', url: currentUrl });
+      }
+    } catch {
+      // The saved tab id is only an optimization. The normal recovery path
+      // below finds the exact conversation or creates an isolated new tab.
+    }
+  }
+  if ((job.phase || 'accepted') === 'accepted') return createBrowserJobTab(host, job);
+  await recoverBrowserHostTab(host, job);
+  return job.tab;
+}
+
 async function recoverBrowserHostTab(host, job) {
   const targetUrl = browserRecoveryTarget(host, job);
   const recovery = await host.recoverTab({
@@ -932,12 +1031,11 @@ async function recoverBrowserHostTab(host, job) {
     fallbackUrl: host.newChatUrl,
     logger: host.logger,
   });
-  host.tab = recovery.tab;
-  host.lastBrowserActivityAt = new Date().toISOString();
+  await bindBrowserJobTab(host, job, recovery.tab, {
+    method: recovery.method,
+    url: recovery.url,
+  });
   job.reattachCount = Number(job.reattachCount || 0) + 1;
-  job.lastReattachedAt = host.lastBrowserActivityAt;
-  job.lastReattachMethod = recovery.method;
-  job.lastReattachError = null;
   job.restorePrepared = true;
   job.error = null;
   job.status = 'running';
@@ -948,9 +1046,30 @@ async function recoverBrowserHostTab(host, job) {
   return recovery;
 }
 
-async function runBrowserStep(host, { allowReattach = true } = {}) {
-  let job = host.pendingJobs.shift() || host.activeJob;
+function nextBrowserJob(host, requestedJobId = '') {
+  if (requestedJobId) {
+    const requested = jobForId(host, requestedJobId);
+    if (!requested) return null;
+    const pendingIndex = host.pendingJobs.findIndex(job => job.id === requested.id);
+    if (pendingIndex >= 0) host.pendingJobs.splice(pendingIndex, 1);
+    return requested;
+  }
+  while (host.pendingJobs.length > 0) {
+    const pending = host.pendingJobs.shift();
+    const job = jobForId(host, pending?.id);
+    if (job && !TERMINAL_JOB_STATUSES.has(job.status)) return job;
+  }
+  const runnable = activeBrowserJobs(host);
+  if (runnable.length === 0) return null;
+  const index = Number(host.roundRobinCursor || 0) % runnable.length;
+  host.roundRobinCursor = (index + 1) % runnable.length;
+  return runnable[index];
+}
+
+async function runBrowserStep(host, { jobId = '', allowReattach = true } = {}) {
+  const job = nextBrowserJob(host, jobId);
   if (!job) return null;
+  registerJob(host, job);
   host.activeJob = job;
   if (TERMINAL_JOB_STATUSES.has(job.status)) return publicJob(job);
   if (job.stopRequested || job.status === 'stopped') {
@@ -959,6 +1078,7 @@ async function runBrowserStep(host, { allowReattach = true } = {}) {
     return publicJob(job);
   }
   try {
+    await ensureBrowserJobTab(host, job);
     await prepareRestoredBrowserJob(host, job);
     // A successful step supersedes a stale host-disconnect diagnostic that
     // was persisted before a new Browser host was attached.
@@ -1090,7 +1210,7 @@ async function runBrowserStep(host, { allowReattach = true } = {}) {
       await persistJob(host, job);
       try {
         await recoverBrowserHostTab(host, job);
-        return await runBrowserStep(host, { allowReattach: false });
+        return await runBrowserStep(host, { jobId: job.id, allowReattach: false });
       } catch (recoveryError) {
         job.status = 'waiting_for_browser_host';
         job.lastReattachError = publicError(recoveryError);
@@ -1120,6 +1240,7 @@ function publicJob(job) {
     updatedAt: job.updatedAt,
     currentUrl: job.currentUrl || null,
     conversationId: job.conversationId || null,
+    tabId: job.tab?.id || job.tabId || null,
     responseRunning: job.responseRunning === true,
     authorization: job.authorization || null,
     latestReply: job.latestReply || '',
@@ -1231,7 +1352,9 @@ async function requestBody(req) {
 }
 
 async function capabilityStatus(host) {
-  const reattachRequired = host.activeJob?.status === 'waiting_for_browser_host';
+  const jobs = publicJobs(host);
+  const activeJobs = jobs.filter(job => !TERMINAL_JOB_STATUSES.has(job.status));
+  const reattachRequired = activeJobs.some(job => job.status === 'waiting_for_browser_host');
   return {
     ok: true,
     capability: BROWSER_CAPABILITY,
@@ -1246,6 +1369,9 @@ async function capabilityStatus(host) {
     pumpActive: host.pumpActive,
     lastBrowserActivityAt: host.lastBrowserActivityAt,
     activeJob: publicJob(host.activeJob),
+    jobs,
+    activeJobs,
+    maxConcurrentJobs: MAX_PARALLEL_BROWSER_JOBS,
     newChatUrl: host.newChatUrl,
     expiresAt: host.expiresAt,
   };
@@ -1279,22 +1405,33 @@ export async function createInAppBrowserCapabilityHost({
     capabilityFile: resolvedCapabilityFile,
     jobStateFile: resolve(jobStateFile),
     activeJob: null,
+    jobs: new Map(),
     pendingJobs: [],
     jobWaiters: [],
     pumpActive: false,
     pumpStopRequested: false,
     stepActive: false,
+    roundRobinCursor: 0,
     lastBrowserActivityAt: new Date().toISOString(),
     pageRefreshCount: 0,
     pageRefreshWindowStartedAt: Date.now(),
     lastPageRefreshAt: 0,
   };
-  host.activeJob = await restoreJob(host.jobStateFile);
-  host.runStep = async () => {
-    if (host.stepActive) return publicJob(host.activeJob);
+  const restoredJobs = await restoreJobs(host.jobStateFile);
+  for (const job of restoredJobs) registerJob(host, job);
+  host.activeJob = restoredJobs[0] || null;
+  // A legacy single-job state did not persist a tab identifier. Preserve the
+  // supplied controlled tab for that oldest job; every additional restored
+  // job reattaches only to its own saved conversation or a new background tab.
+  if (host.activeJob) {
+    host.activeJob.tab = tab;
+    host.activeJob.tabId = tab.id || host.activeJob.tabId || null;
+  }
+  host.runStep = async ({ jobId = '' } = {}) => {
+    if (host.stepActive) return publicJob(jobId ? jobForId(host, jobId) : host.activeJob);
     host.stepActive = true;
     try {
-      return await runBrowserStep(host);
+      return await runBrowserStep(host, { jobId });
     } finally {
       host.stepActive = false;
     }
@@ -1305,18 +1442,17 @@ export async function createInAppBrowserCapabilityHost({
     const leaseDeadline = leaseTimeoutMs > 0 ? Date.now() + leaseTimeoutMs : Number.POSITIVE_INFINITY;
     try {
       while (!host.pumpStopRequested) {
-        if (host.activeJob && TERMINAL_JOB_STATUSES.has(host.activeJob.status)) break;
+        const runningJobs = activeBrowserJobs(host);
+        if (runningJobs.length === 0 && hostJobs(host).length > 0) break;
         if (Date.now() >= leaseDeadline) {
-          if (host.activeJob && !TERMINAL_JOB_STATUSES.has(host.activeJob.status)) {
-            host.activeJob.status = 'waiting_for_browser_host';
-            host.activeJob.error = '内置 Browser 宿主已在执行租约到期前主动轮换；下一轮会自动重新附着同一任务。';
-            await persistJob(host, host.activeJob);
+          for (const job of runningJobs) {
+            job.status = 'waiting_for_browser_host';
+            job.error = '内置 Browser 宿主已在执行租约到期前主动轮换；下一轮会自动重新附着同一任务。';
           }
+          if (runningJobs.length > 0) await persistJob(host, runningJobs.at(-1));
           break;
         }
-        let job = host.pendingJobs[0]
-          || (host.activeJob && !TERMINAL_JOB_STATUSES.has(host.activeJob.status)
-            ? host.activeJob : null);
+        let job = nextBrowserJob(host);
         if (!job) {
           job = await new Promise(resolvePromise => {
             let timer;
@@ -1345,9 +1481,7 @@ export async function createInAppBrowserCapabilityHost({
         // HTTP supervisor ticks. The long-lived Browser lease and the plugin
         // supervisor can legitimately poll at the same time, but only one of
         // them may advance the persisted job.
-        const result = await host.runStep();
-        if (result && (TERMINAL_JOB_STATUSES.has(result.status)
-            || result.status === 'waiting_for_browser_host')) break;
+        await host.runStep({ jobId: job.id });
         const pollIntervalMs = Number(host.policy.pollIntervalMs || DEFAULT_POLL_INTERVAL_MS);
         const remainingMs = Number.isFinite(leaseDeadline)
           ? Math.max(0, leaseDeadline - Date.now()) : pollIntervalMs;
@@ -1364,33 +1498,35 @@ export async function createInAppBrowserCapabilityHost({
   // pumping. Callers should await this method instead of creating the host and
   // letting the Browser execution turn end.
   host.runUntilTerminal = async ({ leaseTimeoutMs = DEFAULT_BROWSER_LEASE_MS } = {}) => {
-    let reattachFailures = 0;
+    const reattachFailures = new Map();
     try {
       while (!host.pumpStopRequested) {
         const result = await host.runPump({
           idleTimeoutMs: 0,
           leaseTimeoutMs,
         });
-        if (!result || TERMINAL_JOB_STATUSES.has(result.status)) return result;
-        if (result.status !== 'waiting_for_browser_host') return result;
-        const job = host.activeJob;
-        if (!job || TERMINAL_JOB_STATUSES.has(job.status) || job.stopRequested) {
-          return publicJob(job);
-        }
-        try {
-          await recoverBrowserHostTab(host, job);
-          reattachFailures = 0;
-        } catch (error) {
-          reattachFailures += 1;
-          job.status = 'waiting_for_browser_host';
-          job.lastReattachError = publicError(error);
-          job.error = '内置 Browser 暂时不可用，插件会继续自动重试并保留同一任务。';
-          await persistJob(host, job);
-          const delay = Math.min(
-            BROWSER_HOST_REATTACH_MAX_DELAY_MS,
-            BROWSER_HOST_REATTACH_INITIAL_DELAY_MS * (2 ** Math.min(reattachFailures - 1, 6)),
-          );
-          await sleep(delay);
+        const remainingJobs = activeBrowserJobs(host);
+        if (!result || remainingJobs.length === 0 || host.pumpStopRequested) return result;
+        const jobsNeedingReattach = remainingJobs.filter(job => (
+          job.status === 'waiting_for_browser_host' || job.status === 'reattaching_browser_host'
+        ));
+        for (const job of jobsNeedingReattach) {
+          try {
+            await recoverBrowserHostTab(host, job);
+            reattachFailures.delete(job.id);
+          } catch (error) {
+            const failures = Number(reattachFailures.get(job.id) || 0) + 1;
+            reattachFailures.set(job.id, failures);
+            job.status = 'waiting_for_browser_host';
+            job.lastReattachError = publicError(error);
+            job.error = '内置 Browser 暂时不可用，插件会继续自动重试并保留同一任务。';
+            await persistJob(host, job);
+            const delay = Math.min(
+              BROWSER_HOST_REATTACH_MAX_DELAY_MS,
+              BROWSER_HOST_REATTACH_INITIAL_DELAY_MS * (2 ** Math.min(failures - 1, 6)),
+            );
+            await sleep(delay);
+          }
         }
       }
       return publicJob(host.activeJob);
@@ -1416,11 +1552,12 @@ export async function createInAppBrowserCapabilityHost({
       }
       const jobMatch = requestUrl.pathname.match(/^\/v1\/chat\/jobs\/([^/]+)(\/stop)?$/u);
       if (req.method === 'GET' && jobMatch) {
-        if (!host.activeJob || host.activeJob.id !== jobMatch[1]) {
+        const job = jobForId(host, jobMatch[1]);
+        if (!job) {
           json(res, 404, { ok: false, errorCode: 'browser_job_not_found' });
           return;
         }
-        json(res, 200, { ok: true, job: publicJob(host.activeJob) });
+        json(res, 200, { ok: true, job: publicJob(job) });
         return;
       }
       if (req.method === 'POST' && requestUrl.pathname === '/v1/chat/dispatch') {
@@ -1436,8 +1573,18 @@ export async function createInAppBrowserCapabilityHost({
           json(res, 400, { ok: false, errorCode: 'browser_policy_rejected', message: bodyPolicyCheck.message });
           return;
         }
-        if (host.activeJob && !TERMINAL_JOB_STATUSES.has(host.activeJob.status)) {
-          json(res, 200, { ok: true, accepted: false, alreadyRunning: true, job: publicJob(host.activeJob) });
+        const existing = activeBrowserJobs(host).find(job => job.goal === goal);
+        if (existing) {
+          json(res, 200, { ok: true, accepted: false, alreadyRunning: true, job: publicJob(existing) });
+          return;
+        }
+        if (activeBrowserJobs(host).length >= MAX_PARALLEL_BROWSER_JOBS) {
+          json(res, 409, {
+            ok: false,
+            errorCode: 'browser_job_capacity_reached',
+            message: `内置 Browser 最多同时运行 ${MAX_PARALLEL_BROWSER_JOBS} 个隔离任务。`,
+            jobs: publicJobs(host),
+          });
           return;
         }
         const job = {
@@ -1460,35 +1607,46 @@ export async function createInAppBrowserCapabilityHost({
           lastReattachMethod: null,
           lastReattachError: null,
         };
+        await createBrowserJobTab(host, job);
+        registerJob(host, job);
         host.activeJob = job;
         host.pendingJobs.push(job);
-        host.jobWaiters.shift()?.(host.pendingJobs.shift());
-        json(res, 202, { ok: true, accepted: true, capability: BROWSER_CAPABILITY, job: publicJob(job) });
+        await persistJob(host, job);
+        host.jobWaiters.shift()?.(job);
+        json(res, 202, {
+          ok: true,
+          accepted: true,
+          capability: BROWSER_CAPABILITY,
+          job: publicJob(job),
+          jobs: publicJobs(host),
+          maxConcurrentJobs: MAX_PARALLEL_BROWSER_JOBS,
+        });
         return;
       }
       if (req.method === 'POST' && requestUrl.pathname === '/v1/chat/step') {
         const body = await requestBody(req);
         const requestedJobId = String(body.jobId || '').trim();
-        if (requestedJobId && (!host.activeJob || host.activeJob.id !== requestedJobId)) {
+        if (requestedJobId && !jobForId(host, requestedJobId)) {
           json(res, 404, { ok: false, errorCode: 'browser_job_not_found' });
           return;
         }
-        const job = await host.runStep();
+        const job = await host.runStep({ jobId: requestedJobId });
         json(res, 200, { ok: true, job });
         return;
       }
       if (req.method === 'POST' && jobMatch && jobMatch[2] === '/stop') {
-        if (!host.activeJob || host.activeJob.id !== jobMatch[1]) {
+        const job = jobForId(host, jobMatch[1]);
+        if (!job) {
           json(res, 404, { ok: false, errorCode: 'browser_job_not_found' });
           return;
         }
-        host.activeJob.stopRequested = true;
-        host.activeJob.status = 'stopped';
-        host.activeJob.responseRunning = false;
-        host.activeJob.error = host.activeJob.error || '已由用户停止内置 Browser 任务';
-        host.activeJob.lastOutcome = { kind: 'stopped', reason: 'operator' };
-        await persistJob(host, host.activeJob);
-        json(res, 200, { ok: true, job: publicJob(host.activeJob) });
+        job.stopRequested = true;
+        job.status = 'stopped';
+        job.responseRunning = false;
+        job.error = job.error || '已由用户停止内置 Browser 任务';
+        job.lastOutcome = { kind: 'stopped', reason: 'operator' };
+        await persistJob(host, job);
+        json(res, 200, { ok: true, job: publicJob(job), jobs: publicJobs(host) });
         return;
       }
       json(res, 404, { ok: false, errorCode: 'browser_capability_route_not_found' });
@@ -1533,7 +1691,14 @@ export async function createInAppBrowserCapabilityHost({
     }
   };
   host.close = async () => {
-    for (const job of [host.activeJob]) if (job && !TERMINAL_JOB_STATUSES.has(job.status)) job.stopRequested = true;
+    const runningJobs = activeBrowserJobs(host);
+    for (const job of runningJobs) {
+      job.stopRequested = true;
+      job.status = 'stopped';
+      job.responseRunning = false;
+      job.lastOutcome = { kind: 'stopped', reason: 'host_closed' };
+    }
+    if (runningJobs.length > 0) await persistJob(host, runningJobs.at(-1));
     await host.release();
   };
   return host;
