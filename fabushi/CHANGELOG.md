@@ -1,5 +1,15 @@
 # 更新日志
 
+## [1.2.13] - 2026-09-03
+
+### 生产依赖安全修复与全平台正式重发
+- 将 `chatgpt-vps-control` 生产依赖树中的 `fast-uri` 从受当前高危主机混淆/SSRF 公告影响的 `3.1.5` 更新到已修复的 `3.1.6`，并要求 GitHub Actions 重新执行 `npm audit --omit=dev` 安全门禁。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.13`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `19`，确保所有正式渠道使用全新且严格递增的发布身份。
+- 本轮已审阅当前开放 PR #2287；该 RustDesk 融合开发线仍由自身 WBS 标记为未完成，继续隔离在专用分支，不提前并入正式发布主线。正式发布仅以 canonical `main` 为来源。
+- 继续使用仓库现有 exact-main GitHub Actions 完成桌面 macOS/Windows/Linux、Android/iOS、Apple/Google Play 渠道、生产部署、不可变 GitHub Release、全新安装与上一正式版本升级验收；重型构建和测试仅在 GitHub Actions 执行。
+
+---
+
 ## [1.2.12] - 2026-09-02
 
 ### 生产依赖安全修复与正式重发
