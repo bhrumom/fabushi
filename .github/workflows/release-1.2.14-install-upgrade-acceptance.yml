@@ -1,0 +1,188 @@
+name: Release 1.2.14 install-upgrade acceptance
+
+on:
+  push:
+    branches:
+      - release/1.2.14-install-upgrade-acceptance
+    paths:
+      - .github/workflows/release-1.2.14-install-upgrade-acceptance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-install-upgrade:
+    name: Linux fresh install and 1.2.13 -> 1.2.14 upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download immutable formal Debian packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/releases/old" "$RUNNER_TEMP/releases/new"
+          gh release download desktop-1.2.13 --repo "$GITHUB_REPOSITORY" --pattern 'fabushi-1.2.13-amd64.deb' --dir "$RUNNER_TEMP/releases/old"
+          gh release download desktop-1.2.14 --repo "$GITHUB_REPOSITORY" --pattern 'fabushi-1.2.14-amd64.deb' --dir "$RUNNER_TEMP/releases/new"
+          old="$RUNNER_TEMP/releases/old/fabushi-1.2.13-amd64.deb"
+          new="$RUNNER_TEMP/releases/new/fabushi-1.2.14-amd64.deb"
+          test "$(dpkg-deb -f "$old" Version)" = '1.2.13'
+          test "$(dpkg-deb -f "$new" Version)" = '1.2.14'
+          test "$(dpkg-deb -f "$old" Package)" = "$(dpkg-deb -f "$new" Package)"
+
+      - name: Fresh install previous formal version
+        shell: bash
+        run: |
+          set -euo pipefail
+          old="$RUNNER_TEMP/releases/old/fabushi-1.2.13-amd64.deb"
+          pkg="$(dpkg-deb -f "$old" Package)"
+          sudo dpkg -i "$old" || { sudo apt-get update; sudo apt-get -f install -y; sudo dpkg -i "$old"; }
+          installed="$(dpkg-query -W -f='${Version}' "$pkg")"
+          test "$installed" = '1.2.13'
+          dpkg -L "$pkg" | tee "$RUNNER_TEMP/installed-1.2.13.txt"
+          test "$(dpkg-query -W -f='${Status}' "$pkg")" = 'install ok installed'
+
+      - name: Upgrade installed previous formal version to 1.2.14
+        shell: bash
+        run: |
+          set -euo pipefail
+          old="$RUNNER_TEMP/releases/old/fabushi-1.2.13-amd64.deb"
+          new="$RUNNER_TEMP/releases/new/fabushi-1.2.14-amd64.deb"
+          pkg="$(dpkg-deb -f "$old" Package)"
+          sudo dpkg -i "$new" || { sudo apt-get -f install -y; sudo dpkg -i "$new"; }
+          installed="$(dpkg-query -W -f='${Version}' "$pkg")"
+          test "$installed" = '1.2.14'
+          test "$(dpkg-query -W -f='${Status}' "$pkg")" = 'install ok installed'
+          dpkg -L "$pkg" | tee "$RUNNER_TEMP/installed-1.2.14-upgrade.txt"
+
+      - name: Remove and fresh install 1.2.14
+        shell: bash
+        run: |
+          set -euo pipefail
+          new="$RUNNER_TEMP/releases/new/fabushi-1.2.14-amd64.deb"
+          pkg="$(dpkg-deb -f "$new" Package)"
+          sudo dpkg -r "$pkg"
+          if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -qx 'install ok installed'; then
+            echo 'Package remained installed after removal' >&2
+            exit 1
+          fi
+          sudo dpkg -i "$new" || { sudo apt-get -f install -y; sudo dpkg -i "$new"; }
+          test "$(dpkg-query -W -f='${Version}' "$pkg")" = '1.2.14'
+          test "$(dpkg-query -W -f='${Status}' "$pkg")" = 'install ok installed'
+
+  macos-install-upgrade:
+    name: macOS fresh install and 1.2.13 -> 1.2.14 replacement
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download immutable formal macOS packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/releases/old" "$RUNNER_TEMP/releases/new"
+          gh release download desktop-1.2.13 --repo "$GITHUB_REPOSITORY" --pattern 'fabushi-1.2.13-macos-arm64.zip' --dir "$RUNNER_TEMP/releases/old"
+          gh release download desktop-1.2.14 --repo "$GITHUB_REPOSITORY" --pattern 'fabushi-1.2.14-macos-arm64.zip' --dir "$RUNNER_TEMP/releases/new"
+
+      - name: Fresh install previous formal version
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/stage-old" "$RUNNER_TEMP/install"
+          ditto -x -k "$RUNNER_TEMP/releases/old/fabushi-1.2.13-macos-arm64.zip" "$RUNNER_TEMP/stage-old"
+          old_app="$(find "$RUNNER_TEMP/stage-old" -maxdepth 3 -name '*.app' -type d -print -quit)"
+          test -n "$old_app"
+          ditto "$old_app" "$RUNNER_TEMP/install/Fabushi.app"
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RUNNER_TEMP/install/Fabushi.app/Contents/Info.plist")"
+          test "$version" = '1.2.13'
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/install/Fabushi.app"
+
+      - name: Upgrade installed previous formal version to 1.2.14
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/stage-new"
+          ditto -x -k "$RUNNER_TEMP/releases/new/fabushi-1.2.14-macos-arm64.zip" "$RUNNER_TEMP/stage-new"
+          new_app="$(find "$RUNNER_TEMP/stage-new" -maxdepth 3 -name '*.app' -type d -print -quit)"
+          test -n "$new_app"
+          rm -rf "$RUNNER_TEMP/install/Fabushi.app"
+          ditto "$new_app" "$RUNNER_TEMP/install/Fabushi.app"
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RUNNER_TEMP/install/Fabushi.app/Contents/Info.plist")"
+          test "$version" = '1.2.14'
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/install/Fabushi.app"
+
+      - name: Remove and fresh install 1.2.14
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/install/Fabushi.app"
+          test ! -e "$RUNNER_TEMP/install/Fabushi.app"
+          new_app="$(find "$RUNNER_TEMP/stage-new" -maxdepth 3 -name '*.app' -type d -print -quit)"
+          ditto "$new_app" "$RUNNER_TEMP/install/Fabushi.app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RUNNER_TEMP/install/Fabushi.app/Contents/Info.plist")" = '1.2.14'
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/install/Fabushi.app"
+
+  windows-install-upgrade:
+    name: Windows fresh install and 1.2.13 -> 1.2.14 upgrade
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download immutable formal Windows installers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\releases\old" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\releases\new" | Out-Null
+          gh release download desktop-1.2.13 --repo $env:GITHUB_REPOSITORY --pattern 'fabushi-1.2.13-setup.exe' --dir "$env:RUNNER_TEMP\releases\old"
+          gh release download desktop-1.2.14 --repo $env:GITHUB_REPOSITORY --pattern 'fabushi-1.2.14-setup.exe' --dir "$env:RUNNER_TEMP\releases\new"
+
+      - name: Fresh install previous formal version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = "$env:RUNNER_TEMP\FabushiInstall"
+          $old = "$env:RUNNER_TEMP\releases\old\fabushi-1.2.13-setup.exe"
+          $p = Start-Process -FilePath $old -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "1.2.13 installer failed with $($p.ExitCode)" }
+          if (-not (Test-Path $installDir)) { throw '1.2.13 install directory missing' }
+          $uninstall = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like '*Fabushi*' } | Select-Object -First 1
+          if (-not $uninstall) { throw 'Fabushi uninstall registration not found after 1.2.13 install' }
+          if ([string]$uninstall.DisplayVersion -notlike '1.2.13*') { throw "Unexpected installed version: $($uninstall.DisplayVersion)" }
+
+      - name: Upgrade installed previous formal version to 1.2.14
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = "$env:RUNNER_TEMP\FabushiInstall"
+          $new = "$env:RUNNER_TEMP\releases\new\fabushi-1.2.14-setup.exe"
+          $p = Start-Process -FilePath $new -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "1.2.14 upgrade installer failed with $($p.ExitCode)" }
+          $uninstall = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like '*Fabushi*' } | Select-Object -First 1
+          if (-not $uninstall) { throw 'Fabushi uninstall registration missing after upgrade' }
+          if ([string]$uninstall.DisplayVersion -notlike '1.2.14*') { throw "Unexpected upgraded version: $($uninstall.DisplayVersion)" }
+          $exe = Get-ChildItem $installDir -Filter '*.exe' -File | Where-Object { $_.Name -notlike 'Uninstall*' } | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $exe) { throw 'Installed Fabushi executable not found after upgrade' }
+
+      - name: Remove and fresh install 1.2.14
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = "$env:RUNNER_TEMP\FabushiInstall"
+          $uninstall = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like '*Fabushi*' } | Select-Object -First 1
+          if (-not $uninstall) { throw 'Cannot find Fabushi uninstaller before fresh install' }
+          $uninstallExe = [string]$uninstall.UninstallString
+          $uninstallExe = $uninstallExe.Trim('"')
+          $p = Start-Process -FilePath $uninstallExe -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Uninstall failed with $($p.ExitCode)" }
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          $new = "$env:RUNNER_TEMP\releases\new\fabushi-1.2.14-setup.exe"
+          $p = Start-Process -FilePath $new -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "1.2.14 fresh installer failed with $($p.ExitCode)" }
+          $fresh = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like '*Fabushi*' } | Select-Object -First 1
+          if (-not $fresh) { throw 'Fabushi uninstall registration missing after 1.2.14 fresh install' }
+          if ([string]$fresh.DisplayVersion -notlike '1.2.14*') { throw "Unexpected fresh installed version: $($fresh.DisplayVersion)" }
