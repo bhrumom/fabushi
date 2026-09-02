@@ -1,5 +1,14 @@
 # 更新日志
 
+## [1.2.6] - 2026-09-02
+
+### 正式发布控制面修复
+- 修复全平台正式 Release 控制面错误强制要求 Linux 独立 `AppImage.blockmap` 的问题；electron-builder 的 AppImage 差分块图嵌入 AppImage 本体，不会生成该独立公开资产。
+- 保留 Linux `AppImage`、`deb` 与 `latest-linux.yml`，并继续严格要求 macOS/Windows updater 元数据、Android APK/AAB、iOS IPA、发布清单和 SHA256 校验。
+- 统一桌面、Android、iOS 正式版本为 `1.2.6`，Android/iOS 构建号提升至 `12`，从新的受保护主线 exact SHA 重新执行完整全平台发布。
+
+---
+
 ## [1.2.5] - 2026-09-02
 
 ### 发布门禁修复
