@@ -34,10 +34,13 @@ jobs:
           grep -q 'denyPendingSession' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           ! grep -q 'if (pending) await this.openPeer(pending, iceServers)' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           grep -q 'data-testid="remote-session-consent"' desktop/src/messaging-shell-v2.tsx
-      - name: Run frontend and desktop type checks
+      - name: Run frontend type check with pinned pnpm lockfile
         run: |
-          npm --prefix frontend/apps/web ci --ignore-scripts
-          npm --prefix frontend/apps/web run typecheck
+          corepack enable
+          pnpm --dir frontend/apps/web install --frozen-lockfile --ignore-scripts
+          pnpm --dir frontend/apps/web run typecheck
+      - name: Run desktop type check
+        run: |
           npm --prefix desktop ci --ignore-scripts
           npm --prefix desktop run typecheck
       - name: Commit verified consent implementation
