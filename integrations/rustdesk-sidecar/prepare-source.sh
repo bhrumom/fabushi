@@ -34,16 +34,21 @@ for old, new in [('mod client;', 'pub mod client;'), ('mod ui_session_interface;
     text = text.replace(old, new, 1)
 lib.write_text(text)
 
-overlay = root / 'integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs'
-target = source / 'src/bin/fabushi_sidecar.rs'
-target.parent.mkdir(parents=True, exist_ok=True)
-target.write_text(overlay.read_text())
+bin_dir = source / 'src/bin'
+bin_dir.mkdir(parents=True, exist_ok=True)
+for filename in ['fabushi_sidecar.rs', 'fabushi_host_bootstrap.rs']:
+    overlay = root / 'integrations/rustdesk-sidecar/overlay/src/bin' / filename
+    (bin_dir / filename).write_text(overlay.read_text())
 
 cargo = source / 'Cargo.toml'
 manifest = cargo.read_text()
-entry = '\n[[bin]]\nname = "fabushi-sidecar"\npath = "src/bin/fabushi_sidecar.rs"\n'
-if 'name = "fabushi-sidecar"' not in manifest:
-    manifest += entry
+entries = [
+    ('fabushi-sidecar', 'src/bin/fabushi_sidecar.rs'),
+    ('fabushi-host-bootstrap', 'src/bin/fabushi_host_bootstrap.rs'),
+]
+for name, path in entries:
+    if f'name = "{name}"' not in manifest:
+        manifest += f'\n[[bin]]\nname = "{name}"\npath = "{path}"\n'
 cargo.write_text(manifest)
 PY
 
@@ -52,6 +57,7 @@ Fabushi RustDesk sidecar corresponding source
 upstream=$REPOSITORY
 commit=$COMMIT
 overlay=integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs
+overlay=integrations/rustdesk-sidecar/overlay/src/bin/fabushi_host_bootstrap.rs
 license=AGPL-3.0-only
 EOF
 
