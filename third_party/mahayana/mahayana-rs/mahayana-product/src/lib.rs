@@ -767,7 +767,7 @@ impl MahayanaProductClient {
         platform: Option<&str>,
     ) -> Result<Value, ProductError> {
         let query = query.map(str::trim).filter(|query| !query.is_empty());
-        let platform = platform.map(safe_marketplace_platform).transpose()?;
+        let platform = platform.map(marketplace_browse_platform).transpose()?;
         let mut parameters = Vec::new();
         if let Some(query) = query {
             parameters.push(("q", query));
@@ -2743,6 +2743,13 @@ fn safe_marketplace_platform(value: &str) -> Result<&str, ProductError> {
     }
 }
 
+fn marketplace_browse_platform(value: &str) -> Result<&str, ProductError> {
+    match safe_marketplace_platform(value)? {
+        "ios" | "android" => Ok("mobile"),
+        platform => Ok(platform),
+    }
+}
+
 fn safe_marketplace_platforms(platforms: &[String]) -> Result<Vec<&str>, ProductError> {
     let mut normalized = Vec::new();
     for platform in platforms {
@@ -3478,6 +3485,9 @@ mod tests {
         assert_eq!(safe_marketplace_platform("desktop"), Ok("desktop"));
         assert_eq!(safe_marketplace_platform("ios"), Ok("ios"));
         assert_eq!(safe_marketplace_platform("android"), Ok("android"));
+        assert_eq!(marketplace_browse_platform("ios"), Ok("mobile"));
+        assert_eq!(marketplace_browse_platform("android"), Ok("mobile"));
+        assert_eq!(marketplace_browse_platform("desktop"), Ok("desktop"));
         assert_eq!(
             safe_marketplace_platforms(&[
                 "desktop".into(),
