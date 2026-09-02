@@ -35,17 +35,16 @@ fn live_test_token() -> Option<String> {
 
 fn isolated_root() -> PathBuf {
     std::env::temp_dir()
-        .join(format!(
-            "mahayana-live-test-driver-{}",
-            std::process::id()
-        ))
+        .join(format!("mahayana-live-test-driver-{}", std::process::id()))
         .join("mahayana-test-driver")
 }
 
 #[test]
 fn live_official_global_dharma_is_external_verified_and_persistent() {
     let Some(token) = live_test_token() else {
-        eprintln!("live test-driver E2E skipped: TEST_ACCOUNT_TOKEN is unavailable outside the cloud marketplace gate");
+        eprintln!(
+            "live test-driver E2E skipped: TEST_ACCOUNT_TOKEN is unavailable outside the cloud marketplace gate"
+        );
         return;
     };
 
@@ -193,15 +192,21 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
     assert!(logs.ok, "logs query failed: {logs:?}");
     let entries = logs.result["entries"].as_array().expect("log entries");
     assert!(!entries.is_empty());
-    assert!(entries.iter().all(|entry| {
-        entry["correlationId"] == "corr-install-global-dharma"
-    }));
-    assert!(entries.iter().any(|entry| {
-        entry["message"] == "test-driver request started"
-    }));
-    assert!(entries.iter().any(|entry| {
-        entry["message"] == "test-driver request completed"
-    }));
+    assert!(
+        entries
+            .iter()
+            .all(|entry| { entry["correlationId"] == "corr-install-global-dharma" })
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|entry| { entry["message"] == "test-driver request started" })
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|entry| { entry["message"] == "test-driver request completed" })
+    );
 
     let events = session.execute(request(
         "events-1",
@@ -216,8 +221,16 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
         .iter()
         .filter(|event| event["correlationId"] == "corr-install-global-dharma")
         .collect::<Vec<_>>();
-    assert!(install_events.iter().any(|event| event["kind"] == "request.started"));
-    assert!(install_events.iter().any(|event| event["kind"] == "request.completed"));
+    assert!(
+        install_events
+            .iter()
+            .any(|event| event["kind"] == "request.started")
+    );
+    assert!(
+        install_events
+            .iter()
+            .any(|event| event["kind"] == "request.completed")
+    );
 
     drop(session);
     let restarted_backend =
