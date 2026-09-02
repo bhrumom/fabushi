@@ -104,6 +104,14 @@ test('authorization detector recognizes connector cards without a manual trigger
     bodyText: '允许 ChatGPT 使用 GitHub。',
     controls: [{ label: '允许', disabled: true }],
   }), false);
+  assert.equal(isPendingAuthorizationState({
+    bodyText: '允许 ChatGPT 使用 GitHub。',
+    stopAnswer: true,
+    controls: [
+      { label: '拒绝', disabled: false },
+      { label: '允许', disabled: false },
+    ],
+  }), false);
 });
 
 function fakeTab(id, url) {
@@ -403,6 +411,62 @@ test('authorization closes an unusable scope menu and directly approves the card
   assert.equal(arrowClicks, 1);
   assert.equal(escapePresses, 1);
   assert.equal(allowClicks, 1);
+});
+
+test('authorization treats a card that disappears during scope selection as resolved', async () => {
+  let arrowClicks = 0;
+  let escapePresses = 0;
+  let reads = 0;
+  const allow = {
+    isVisible: async () => true,
+    isEnabled: async () => true,
+    evaluate: async () => ({
+      label: 'Allow', ariaHasPopup: null, ariaExpanded: null, dataState: null,
+      rect: { left: 10, right: 90, top: 10, bottom: 40 }, disabled: false,
+    }),
+  };
+  const arrow = {
+    isVisible: async () => true,
+    isEnabled: async () => true,
+    click: async () => { arrowClicks += 1; },
+    evaluate: async () => ({
+      label: 'More options', ariaHasPopup: 'menu', ariaExpanded: 'false', dataState: 'closed',
+      rect: { left: 91, right: 110, top: 10, bottom: 40 }, disabled: false,
+    }),
+  };
+  const tab = {
+    playwright: {
+      evaluate: async () => {
+        reads += 1;
+        return reads === 1
+          ? { pendingAuthorization: true, stopAnswer: false }
+          : { pendingAuthorization: false, stopAnswer: true };
+      },
+      getByRole: () => emptyLocator(),
+      getByText: () => emptyLocator(),
+      locator: selector => {
+        if (selector === 'button, [role="button"]') {
+          return { ...emptyLocator(), all: async () => [allow, arrow] };
+        }
+        if (selector === 'body') {
+          return { ...emptyLocator(), press: async key => {
+            assert.equal(key, 'Escape');
+            escapePresses += 1;
+          } };
+        }
+        return emptyLocator();
+      },
+    },
+  };
+  const result = await approveAuthorization(tab);
+  assert.deepEqual(result, {
+    ok: true,
+    found: true,
+    method: 'authorization-settled-during-scope-selection',
+  });
+  assert.equal(arrowClicks, 1);
+  assert.equal(escapePresses, 1);
+  assert.equal(reads, 2);
 });
 
 test('a persisted job automatically retries the same step after its tab binding is replaced', async () => {
