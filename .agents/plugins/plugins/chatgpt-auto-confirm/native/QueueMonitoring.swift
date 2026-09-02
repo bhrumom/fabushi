@@ -252,7 +252,7 @@ func queueContinuation(
       task.lastError = reason
     }
   } else {
-    task.reviewFeedback = "上一个 Chat 因 \(reason) 未能给出有效完整报告。请先检查同一 checkout 的最新落盘进度与正在运行的操作，只补做剩余步骤，完成全部目标和验证后按机器模板总结。"
+    task.reviewFeedback = "上一个 Chat 没有给出有效的最终完成证书（\(reason)）。请在新的 Chat 中重新读取同一 GitHub 仓库的项目文档和已落盘进度，只补做剩余步骤。只有整个项目全部完成时才输出唯一完成证书；否则不要输出报告模板。"
     task.waitingUntil = nil
     task.waitReason = nil
     task.status = "queued"
@@ -632,6 +632,20 @@ func monitorAutomationTask(
     }
     liveStatus["conversationId"] = durableConversationId
   }
+  let observedConversationId = normalizedConversationId(
+    liveStatus["conversationId"] as? String
+  )
+  let verifiedDispatchConversationBinding = !monitoringReview
+    && task.dispatchMarkerVerifiedAt != nil
+    && (observedConversationId == conversationId
+      || observedConversationId == normalizedConversationId(task.dispatchLocalConversationId))
+  let attachedConversationBinding = !monitoringReview
+    && task.attachedConversationWithoutDispatchMarker == true
+    && (observedConversationId == conversationId
+      || observedConversationId == normalizedConversationId(task.dispatchLocalConversationId))
+  let hasCurrentDispatchEvidence = hasCurrentDispatchMarker
+    || verifiedDispatchConversationBinding
+    || attachedConversationBinding
   let terminalDecision = queueReplyTerminalDecision(reply)
   let replyIsActivelyResponding = reply["streaming"] as? Bool == true
     || reply["stopAvailable"] as? Bool == true
@@ -652,8 +666,10 @@ func monitorAutomationTask(
   // The hidden queue renderer can still drift after an internal reload. Never
   // parse a stale page as the active task or create a continuation/review Chat
   // from it. Restoring here is safe because this process has no user composer.
-  if let observed = normalizedConversationId(liveStatus["conversationId"] as? String),
-     observed != conversationId {
+  if let observed = observedConversationId,
+     observed != conversationId,
+     !verifiedDispatchConversationBinding,
+     !attachedConversationBinding {
     // In the desktop app the active conversation pane can be rendered outside
     // `<main>`, while `<main>` contains only the title/share chrome. Include
     // the scoped user bubbles so a freshly sent dispatch marker is not missed.
@@ -736,7 +752,7 @@ func monitorAutomationTask(
   // virtualized body. Never parse an older response as this dispatch merely
   // because the route/id already matches. The user-message marker is the
   // durable proof that the body belongs to the current queue attempt.
-  if !hasCurrentDispatchMarker {
+  if !hasCurrentDispatchEvidence {
     let markerError = responseIsInFlight
       ? "queue_monitor_current_dispatch_marker_active"
       : "queue_monitor_current_dispatch_marker_pending"

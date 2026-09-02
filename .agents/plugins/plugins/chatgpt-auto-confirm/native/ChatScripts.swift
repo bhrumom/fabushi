@@ -17,12 +17,11 @@ func taskReportContract(
   let reportDigest = jsonStringLiteral(appliedDigest ?? "CURRENT_SPEC_DIGEST")
   return """
 
-MAHAYANA_TASK_REPORT_CONTRACT_V4
-每轮结束都只允许输出下面这一种模板，不要放进 Markdown 代码块。`completed` 只记录本轮或此前已完成的项目，绝不代表整个任务完成。只有当前任务目标、已配置的验收和必要验证都完成时，才可同时填写 `"status":"complete"` 和 `"all_tasks_complete":true`；任务文件数量不受限制，也允许完全没有任务文件。此时 `remaining`、`blockers` 必须为空，`wait_seconds` 必须为 0，`next_task` 必须为空。只完成一项或仍有任何剩余工作时，必须填写 `"status":"incomplete"`、`"all_tasks_complete":false` 并写明 `remaining` 与 `next_task`，程序会继续下一轮。外部等待或人工卡点也使用同一模板，设置 `status` 为 `incomplete` 或 `blocked`、`all_tasks_complete` 为 false，并填写 `wait_seconds`、`wait_reason` 和 `next_task`。
+MAHAYANA_TASK_REPORT_CONTRACT_V5
+下面是唯一允许的任务报告，而且只代表整个仓库项目已经全部完成。只有当前目标、项目文档、实现、验收、测试、发布和必要证据全部完成时，才在回复末尾原样输出这个完成证书；未完成、等待、阻塞或本轮提前结束时不要输出任何报告模板，也不要输出“下一步”模板。小程序检测不到有效完成证书时，会保留仓库状态并把同一目标发送到新的 Chat 继续。
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","task_id":\(reportTaskId),"applied_task_revision":\(reportRevision),"applied_spec_digest":\(reportDigest),"status":"incomplete","all_tasks_complete":false,"summary":"本轮实际结果","completed":["本轮已完成项"],"remaining":["整个任务仍未完成项"],"blockers":[],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"下一轮必须继续完成的具体工作"}
+{"protocol":"mahayana.task-report.v1","task_id":\(reportTaskId),"applied_task_revision":\(reportRevision),"applied_spec_digest":\(reportDigest),"status":"complete","all_tasks_complete":true,"summary":"整个项目已完成","completed":["已完成的项目、发布和验收证据"],"remaining":[],"blockers":[],"verification":["可复核的完整验收证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":""}
 MAHAYANA_TASK_REPORT_V1_END
-需要人工介入时，先按共享技能通过 Gmail 创建或回复 `[需人工介入][任务 id]` 邮件，再输出同一模板。禁止发送立项、进展或完成邮件；除这一种模板外不要输出第二套完成、未完成或等待格式。
 """
 }
 
@@ -32,7 +31,7 @@ func messageWithTaskReportContract(
   appliedRevision: Int? = nil,
   appliedDigest: String? = nil
 ) -> String {
-  message.contains("MAHAYANA_TASK_REPORT_CONTRACT_V4")
+  message.contains("MAHAYANA_TASK_REPORT_CONTRACT_V5")
     ? message
     : message + taskReportContract(
       taskId: taskId,
@@ -45,7 +44,10 @@ func continuationFromTaskReport(
   _ report: [String: Any], originalGoal: String, iteration: Int
 ) -> String {
   let body = """
-继续完成同一任务（自动续作第 \(iteration) 轮）。重新读取共享队列技能；如果配置了任务文件，再读取全部当前任务文件。随后使用 Gmail 按任务 id 只读检查 1315518325@qq.com 是否有新增要求并纳入工作。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 `[需人工介入][任务 id]` 邮件。检查同一 checkout 的落盘进度与仍在运行的操作，然后持续做剩余实际工作。不要从头开始，不要只检查或总结，不要中途回复；本轮必须结束时使用消息末尾唯一的统一模板，只有整个任务全部完成才设置 all_tasks_complete=true。
+继续完成同一 GitHub 仓库任务（自动续作第 \(iteration) 轮）。重新读取共享队列技能并按稳定任务 id 定位仓库项目目录；若项目目录不存在，先创建完整立项文档并登记到任务控制文件。检查仓库中已经落盘的项目文档、代码、分支和仍在运行的操作，只补做剩余工作。不要从头开始，不要只检查或总结。只有整个项目全部完成时才输出末尾唯一的完成证书；否则不要输出任何任务报告或下一步模板，小程序会在新 Chat 中继续同一目标。
+
+原始目标：
+\(originalGoal)
 """
   return messageWithTaskReportContract(
     body,
@@ -2200,18 +2202,17 @@ func chatStatusJS() -> String {
   const activeConversationId = activeRowConversationIds.find(id => !id.startsWith('local-chatgpt:'))
     || activeRowConversationIds[0]
     || null;
-  const conversationId = routeConversationId
-    || (portalConversationId && !portalConversationId.startsWith('local-chatgpt:')
-      ? portalConversationId : null)
+  // The composer portal belongs to the live message surface. Sidebar
+  // aria-current and initialRoute can both lag after New Chat or a renderer
+  // replacement, so never let either override a present portal identity.
+  const conversationId = portalConversationId
+    || routeConversationId
     || activeConversationId
-    || portalConversationId
     || null;
-  const conversationSource = routeConversationId
-    ? 'route'
-    : (portalConversationId && !portalConversationId.startsWith('local-chatgpt:')
-      ? 'portal'
-      : (activeConversationId ? 'active-row'
-        : (portalConversationId ? 'portal-local' : 'none')));
+  const conversationSource = portalConversationId
+    ? (portalConversationId.startsWith('local-chatgpt:') ? 'portal-local' : 'portal')
+    : (routeConversationId ? 'route'
+      : (activeConversationId ? 'active-row' : 'none'));
   const chatUrl = conversationId && !conversationId.startsWith('local-chatgpt:')
     ? `https://chatgpt.com/c/${conversationId}`
     : null;
@@ -2237,6 +2238,9 @@ func chatStatusJS() -> String {
     url: pageURL,
     conversationId,
     conversationSource,
+    portalConversationId: portalConversationId || null,
+    routeConversationId: routeConversationId || null,
+    activeConversationId: activeConversationId || null,
     conversationRoute,
     chatUrl
   };

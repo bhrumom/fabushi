@@ -5,6 +5,7 @@ import worker from '../worker/src/index.ts';
 import { HOME, RESOURCES } from '../worker/src/content.generated.ts';
 
 const plugin = JSON.parse(readFileSync(new URL('../.codex-plugin/plugin.json', import.meta.url), 'utf8'));
+const mcpConfig = JSON.parse(readFileSync(new URL('../.mcp.json', import.meta.url), 'utf8'));
 const actionsWorkflow = readFileSync(
   new URL('../../../../../.github/workflows/chatgpt-auto-confirm-runner.yml', import.meta.url),
   'utf8',
@@ -251,6 +252,24 @@ test('worker exposes the interactive login sync command', async () => {
     method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list' }),
   }));
   const tools = (await response.json()).result.tools;
+  const dispatchGoal = tools.find(item => item.name === 'dispatch_goal');
+  assert.ok(dispatchGoal);
+  assert.deepEqual(dispatchGoal.inputSchema.required, ['goal']);
+  assert.equal(dispatchGoal.inputSchema.properties.goal.maxLength, 10000);
+  assert.deepEqual(mcpConfig.mcpServers['chatgpt-auto-confirm-local'], {
+    type: 'stdio',
+    command: 'node',
+    args: ['--experimental-strip-types', './server/index.mjs'],
+    cwd: '.',
+  });
+  assert.match(nativeServer, /\['send_and_watch', 'send_and_watch'\]/);
+  assert.match(nativeServer, /tool === 'dispatch_goal'/);
+  assert.match(workerSource, /PLUGIN_DISPATCH_BROWSER = 'iab'/);
+  assert.match(workerSource, /PLUGIN_DISPATCH_CAPABILITY = 'browser\.in-app\.dispatch-and-watch'/);
+  assert.match(workerSource, /PLUGIN_DISPATCH_MODEL = 'GPT-5\.6 Sol'/);
+  assert.match(workerSource, /PLUGIN_DISPATCH_REASONING = 'Extra High'/);
+  assert.match(nativeServer, /browser\.in-app\.dispatch-and-watch/);
+  assert.match(nativeServer, /browserCapabilityFile/);
   const tool = tools.find(item => item.name === 'login_and_sync_actions');
   assert.ok(tool);
   assert.equal(tool.inputSchema.properties.start.default, true);

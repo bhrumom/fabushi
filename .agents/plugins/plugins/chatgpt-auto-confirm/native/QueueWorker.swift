@@ -1394,6 +1394,36 @@ func dedicatedTaskWorkerProcessRecords() -> [(pid: pid_t, profilePath: String, p
   return records
 }
 
+func dedicatedTaskWorkerHelperProcessIds(profilePath: String) -> [pid_t] {
+  guard profilePath.contains("/task-queue/workers/") else { return [] }
+  let process = Process()
+  let output = Pipe()
+  process.executableURL = URL(fileURLWithPath: "/bin/ps")
+  process.arguments = ["-axo", "pid=,command="]
+  process.standardInput = FileHandle.nullDevice
+  process.standardOutput = output
+  process.standardError = FileHandle.nullDevice
+  let data: Data
+  do {
+    try process.run()
+    data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+  } catch {
+    return []
+  }
+  guard let text = String(data: data, encoding: .utf8) else { return [] }
+  let crashpadMarker = "--database=\(profilePath)/Crashpad"
+  return text.split(separator: "\n").compactMap { lineSlice in
+    let line = String(lineSlice)
+    guard line.contains("/Applications/ChatGPT.app/Contents/Frameworks/"),
+          line.contains("/Helpers/browser_crashpad_handler"),
+          line.contains(crashpadMarker) else { return nil }
+    let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+    guard let first = fields.first, let pid = pid_t(String(first)) else { return nil }
+    return pid
+  }
+}
+
 func dedicatedQueueWorkerPort() -> Int? {
   let processReservedPorts = Set(dedicatedTaskWorkerProcessRecords().map(\.port))
   for port in 9330..<9380
@@ -3517,6 +3547,11 @@ func startAutomationTask(
       + "screenshot=\(modelSelectionBeforeScreenshot ?? "none")"
   )
   let attempt = task.attempts + 1
+  // This round is now queue-owned again. Do not let a previous manual attach
+  // or verified send authorize a different composer if this send fails.
+  task.dispatchMarkerVerifiedAt = nil
+  task.dispatchLocalConversationId = nil
+  task.attachedConversationWithoutDispatchMarker = nil
   let outbound = messageWithTaskReportContract(
     automationTaskMessage(task, forceFullGoal: forceFullGoalPrompt),
     taskId: task.id,
@@ -3678,6 +3713,13 @@ func startAutomationTask(
   task.reviewReport = nil
   task.resultPath = nil
   task.conversationId = conversationId
+  task.dispatchMarkerVerifiedAt = now
+  task.dispatchLocalConversationId = normalizedConversationId(
+    prepared["conversationId"] as? String
+  ) ?? normalizedConversationId(sendResult["conversationId"] as? String)
+    ?? normalizedConversationId(liveStatus["portalConversationId"] as? String)
+    ?? normalizedConversationId(liveStatus["conversationId"] as? String)
+  task.attachedConversationWithoutDispatchMarker = nil
   task.chatURL = conversationId.hasPrefix("local-chatgpt:")
     ? nil
     : liveStatus["chatUrl"] as? String
@@ -3696,9 +3738,11 @@ func terminateDedicatedChatProcess(profilePath: String) {
   guard profilePath.contains("/task-queue/workers/") else { return }
 
   func matchingProcessIds() -> [pid_t] {
-    dedicatedTaskWorkerProcessRecords()
+    let chatProcessIds = dedicatedTaskWorkerProcessRecords()
       .filter { $0.profilePath == profilePath }
       .map(\.pid)
+    return Array(Set(chatProcessIds + dedicatedTaskWorkerHelperProcessIds(profilePath: profilePath)))
+      .sorted()
   }
 
   let trackedPorts = dedicatedQueueChatLaunchers.compactMap { port, launcher -> Int? in
@@ -3750,6 +3794,46 @@ func terminateDedicatedChatProcess(profilePath: String) {
       "worker-create stage=dedicated-process-terminate-failed "
         + "count=\(remaining.count)"
     )
+  }
+}
+
+func cleanupOrphanedDedicatedTaskWorkerArtifacts(
+  _ state: PluginState,
+  olderThan age: TimeInterval = 60.0 * 60.0
+) {
+  let workerDirectory = queueDirectoryURL().appendingPathComponent("workers", isDirectory: true)
+  guard let entries = try? FileManager.default.contentsOfDirectory(
+    at: workerDirectory,
+    includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+    options: [.skipsHiddenFiles]
+  ) else { return }
+
+  let activeStatuses: Set<String> = ["running", "awaiting_review", "reviewing"]
+  var protectedPaths = Set<String>()
+  for task in state.automationTasks ?? [] where activeStatuses.contains(task.status) {
+    if let profilePath = task.workerProfilePath,
+       profilePath.contains("/task-queue/workers/") {
+      protectedPaths.insert(URL(fileURLWithPath: profilePath).standardizedFileURL.path)
+    }
+  }
+  if state.queueEnabled == true,
+     state.queueWorkerMode != nil,
+     let profilePath = state.queueWorkerProfilePath,
+     profilePath.contains("/task-queue/workers/") {
+    protectedPaths.insert(URL(fileURLWithPath: profilePath).standardizedFileURL.path)
+  }
+
+  let cutoff = Date().addingTimeInterval(-max(60.0, age))
+  for entry in entries {
+    guard let values = try? entry.resourceValues(
+      forKeys: [.isDirectoryKey, .contentModificationDateKey]
+    ),
+          values.isDirectory == true,
+          let modifiedAt = values.contentModificationDate,
+          modifiedAt < cutoff else { continue }
+    let profilePath = entry.standardizedFileURL.path
+    guard !protectedPaths.contains(profilePath) else { continue }
+    terminateDedicatedChatProcess(profilePath: profilePath)
   }
 }
 
