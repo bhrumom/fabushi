@@ -375,6 +375,14 @@ export interface RemoteComputerClient {
   pairedAt: number;
   lastSeenAt: number;
 }
+export interface RemoteComputerPermissions {
+  display: boolean;
+  input: boolean;
+  clipboard: boolean;
+  fileTransfer: boolean;
+  audio: boolean;
+}
+
 export interface RemoteComputerSession {
   sessionId: string;
   clientId: string;
@@ -383,6 +391,7 @@ export interface RemoteComputerSession {
   createdAt?: number;
   expiresAt: number;
   generation?: number;
+  permissions: RemoteComputerPermissions;
 }
 export interface RemoteComputerSignal {
   signalId: number;
