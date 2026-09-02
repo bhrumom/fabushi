@@ -91,8 +91,10 @@ new_poll = '''      const { sessions, iceServers } = normalizeSessionsPayload(ev
         error: undefined,
       });
 '''
-assert old_poll in text, 'pollSessions automatic acceptance block changed'
-text = text.replace(old_poll, new_poll, 1)
+if old_poll in text:
+    text = text.replace(old_poll, new_poll, 1)
+elif new_poll not in text:
+    raise SystemExit('pollSessions consent block changed')
 
 insert_before = '''  private async openPeer(session: RemoteComputerSession, iceServers: RTCIceServer[]): Promise<void> {
 '''
@@ -128,8 +130,12 @@ consent_methods = '''  async approvePendingSession(sessionId: string): Promise<v
   }
 
 '''
-assert insert_before in text, 'openPeer marker changed'
-text = text.replace(insert_before, consent_methods + insert_before, 1)
+if 'async approvePendingSession(sessionId: string)' not in text:
+    if insert_before not in text:
+        raise SystemExit('openPeer marker changed')
+    text = text.replace(insert_before, consent_methods + insert_before, 1)
+elif 'async denyPendingSession(sessionId: string)' not in text:
+    raise SystemExit('partial consent methods detected')
 peer.write_text(text)
 
 shell = Path('desktop/src/messaging-shell-v2.tsx')
@@ -151,6 +157,8 @@ replacement = '''            {hostSettings.remoteControlEnabled && remoteCompute
             </div> : null}
             {remoteComputerState?.activeSessionId ? <button type="button" className={styles.computerDangerButton} onClick={() => void remoteComputerControllerRef.current?.disconnectActive()}>断开当前远控</button> : null}
 '''
-assert pairing in text, 'remote settings consent insertion marker changed'
-text = text.replace(pairing, replacement, 1)
+if pairing in text:
+    text = text.replace(pairing, replacement, 1)
+elif 'data-testid="remote-session-consent"' not in text:
+    raise SystemExit('remote settings consent insertion marker changed')
 shell.write_text(text)
