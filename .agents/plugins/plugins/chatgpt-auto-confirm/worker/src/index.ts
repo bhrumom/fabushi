@@ -9,6 +9,7 @@ const PLUGIN_DISPATCH_BROWSER = 'iab';
 const PLUGIN_DISPATCH_CAPABILITY = 'browser.in-app.dispatch-and-watch';
 const PLUGIN_DISPATCH_MODEL = 'GPT-5.6 Sol';
 const PLUGIN_DISPATCH_REASONING = 'Extra High';
+const PLUGIN_MAX_CONCURRENT_BROWSER_JOBS = 2;
 
 const pluginDispatchParams = (goal: string) => ({
   // The plugin accepts only a goal. It deliberately does not accept a prior
@@ -30,6 +31,7 @@ const pluginDispatchParams = (goal: string) => ({
   autoContinueIncomplete: true,
   maxTaskContinuations: 0,
   continuationMessage: null,
+  maxConcurrentJobs: PLUGIN_MAX_CONCURRENT_BROWSER_JOBS,
   pollIntervalMs: 500,
 });
 
@@ -186,12 +188,12 @@ const tools = [
   { name: 'diagnose', description: '只读检查 ChatGPT 已加载的辅助功能结构', annotations: annotations(true), inputSchema: {
     type: 'object', additionalProperties: false, properties: {},
   } },
-  { name: 'dispatch_goal', description: '由插件通过受授权的内置 Browser 派发一个一次性完整目标：只发送 goal，新建 Chat、固定选择聊天页、GPT-5.6 Sol 和极高，自动批准授权卡（优先会话范围，不可用时直接允许）；只有完整完成回执和验证证据才停止，未完成或回执缺失时自动续作', annotations: annotations(), inputSchema: {
+  { name: 'dispatch_goal', description: '由插件通过受授权的内置 Browser 派发一个一次性完整目标：每个目标都有独立后台标签页；最多两个目标可同时持续推进。只发送 goal，固定选择聊天页、GPT-5.6 Sol 和极高，自动批准授权卡（优先会话范围，不可用时直接允许）；只有完整完成回执和验证证据才停止，未完成或回执缺失时自动续作', annotations: annotations(), inputSchema: {
     type: 'object', additionalProperties: false, required: ['goal'], properties: {
       goal: { type: 'string', minLength: 1, maxLength: 10000, description: '只填写原始目标；不要传入历史进度、上一轮回复或续作文本' },
     },
   } },
-  { name: 'browser_capability_status', description: '只读查看受授权的内置 Browser capability、宿主健康、重新附着要求、当前任务和会话范围', annotations: annotations(true), inputSchema: {
+  { name: 'browser_capability_status', description: '只读查看受授权的内置 Browser capability、宿主健康、两个隔离标签页中的任务状态和重新附着要求', annotations: annotations(true), inputSchema: {
     type: 'object', additionalProperties: false, properties: {},
   } },
   { name: 'browser_job_status', description: '只读查看内置 Browser 派发任务的实时状态', annotations: annotations(true), inputSchema: {
@@ -199,7 +201,7 @@ const tools = [
       jobId: { type: 'string', pattern: '^iab_[A-Za-z0-9-]{20,100}$' },
     },
   } },
-  { name: 'browser_watch', description: '启动或恢复插件持久 Browser 监督器；浏览器列表短暂为空、标签页失效或执行租约结束时自动重试/重新附着同一任务，不重复派发或携带历史进度', annotations: annotations(), inputSchema: {
+  { name: 'browser_watch', description: '启动或恢复插件持久 Browser 监督器；同时轮询最多两个隔离标签页。浏览器列表短暂为空、标签页失效或执行租约结束时自动重试/重新附着各自任务，不重复派发或携带历史进度', annotations: annotations(), inputSchema: {
     type: 'object', additionalProperties: false, properties: {},
   } },
   { name: 'browser_stop', description: '停止一个由内置 Browser 派发的长期任务', annotations: annotations(), inputSchema: {

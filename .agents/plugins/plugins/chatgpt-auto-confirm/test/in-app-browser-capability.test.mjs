@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
   BROWSER_DISPATCH_POLICY,
   BROWSER_CAPABILITY,
+  MAX_PARALLEL_BROWSER_JOBS,
   promptForGoal,
   COMPLETION_CERTIFICATE_INSTRUCTION,
   parseCompletionCertificate,
@@ -27,6 +28,7 @@ test('in-app Browser policy is fixed to the authorized Chat surface', () => {
   assert.equal(BROWSER_DISPATCH_POLICY.reasoning, 'Extra High');
   assert.equal(BROWSER_DISPATCH_POLICY.surface, 'chat');
   assert.equal(BROWSER_DISPATCH_POLICY.goalOnlyDispatch, true);
+  assert.equal(BROWSER_DISPATCH_POLICY.maxConcurrentJobs, MAX_PARALLEL_BROWSER_JOBS);
   assert.deepEqual(validateBrowserPolicy({ ...BROWSER_DISPATCH_POLICY }), { ok: true });
   assert.equal(validateBrowserPolicy({ ...BROWSER_DISPATCH_POLICY, connector: 'devspace1' }).ok, false);
   assert.equal(validateBrowserPolicy({ ...BROWSER_DISPATCH_POLICY, previousProgress: 'must not be sent' }).ok, false);
@@ -507,6 +509,101 @@ test('a persisted Browser-host failure is revived instead of treated as a termin
     assert.equal(host.activeJob.status, 'waiting_for_browser_host');
     assert.match(host.activeJob.error, /自动恢复同一任务/);
     assert.equal(host.activeJob.id, 'iab_33333333-4444-4555-8666-777777777777');
+  } finally {
+    await host.close();
+  }
+});
+
+test('two Browser goals keep isolated tabs while one pump advances both jobs', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-parallel-jobs-'));
+  const capabilityFile = join(directory, 'capability.json');
+  const jobStateFile = join(directory, 'job.json');
+  const now = new Date().toISOString();
+  const existingUrl = 'https://chatgpt.com/g/fabushi/c/existing-parallel-goal';
+  await writeFile(jobStateFile, `${JSON.stringify({
+    id: 'iab_10101010-2020-4030-8040-505050505050',
+    goal: '继续已有发布目标',
+    status: 'running',
+    phase: 'waiting',
+    attempt: 1,
+    startedAt: now,
+    updatedAt: now,
+    currentUrl: existingUrl,
+    conversationId: 'existing-parallel-goal',
+  })}\n`);
+  const existingTab = fakeTab('existing-parallel-tab', existingUrl);
+  const createdTabs = [];
+  const browser = {
+    tabs: {
+      new: async () => {
+        const tab = fakeTab(`parallel-tab-${createdTabs.length + 1}`, 'about:blank');
+        createdTabs.push(tab);
+        return tab;
+      },
+    },
+  };
+  const host = await createInAppBrowserCapabilityHost({
+    browser,
+    tab: existingTab,
+    startUrl: existingUrl,
+    capabilityFile,
+    jobStateFile,
+  });
+  const request = async (pathname, body) => {
+    const response = await fetch(`${host.baseUrl}${pathname}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: {
+        authorization: `Bearer ${host.token}`,
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const dispatched = await request('/v1/chat/dispatch', {
+      goal: '在独立标签页推进 RustDesk 融合目标',
+      policy: BROWSER_DISPATCH_POLICY,
+    });
+    assert.equal(dispatched.status, 202);
+    assert.equal(dispatched.body.accepted, true);
+    assert.equal(dispatched.body.jobs.length, MAX_PARALLEL_BROWSER_JOBS);
+    assert.equal(createdTabs.length, 1);
+    assert.equal(dispatched.body.job.tabId, 'parallel-tab-1');
+    assert.notEqual(dispatched.body.job.tabId, existingTab.id);
+
+    const capacity = await request('/v1/chat/dispatch', {
+      goal: '不应覆盖前两个目标的第三个任务',
+      policy: BROWSER_DISPATCH_POLICY,
+    });
+    assert.equal(capacity.status, 409);
+    assert.equal(capacity.body.errorCode, 'browser_job_capacity_reached');
+
+    const status = await request('/v1/capability');
+    assert.equal(status.status, 200);
+    assert.equal(status.body.jobs.length, MAX_PARALLEL_BROWSER_JOBS);
+    assert.equal(status.body.activeJobs.length, MAX_PARALLEL_BROWSER_JOBS);
+
+    const stepped = [];
+    host.policy.pollIntervalMs = 1;
+    host.runStep = async ({ jobId } = {}) => {
+      const job = host.jobs.get(jobId);
+      stepped.push(job.id);
+      job.status = 'completed';
+      job.phase = 'terminal';
+      host.activeJob = job;
+      return { ...job };
+    };
+    const result = await host.runPump({ leaseTimeoutMs: 200 });
+    assert.equal(result.status, 'completed');
+    assert.deepEqual(new Set(stepped), new Set([
+      'iab_10101010-2020-4030-8040-505050505050',
+      dispatched.body.job.id,
+    ]));
+
+    const persisted = JSON.parse(await readFile(jobStateFile, 'utf8'));
+    assert.equal(persisted.schema, 'chatgpt-auto-confirm.browser-jobs.v2');
+    assert.equal(persisted.jobs.length, MAX_PARALLEL_BROWSER_JOBS);
   } finally {
     await host.close();
   }
