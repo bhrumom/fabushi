@@ -1,5 +1,15 @@
 # 更新日志
 
+## [1.2.7] - 2026-09-02
+
+### 正式发布渠道闭环
+- 将桌面、Android、iOS 正式版本统一提升到 `1.2.7`，Android/iOS repository build identity 提升到 `13`，从新的受保护 `main` exact SHA 重新执行全平台正式发布。
+- 新增正式发布渠道编排器：仅在 exact-main Native mobile quality gate 成功且提交带 `[full-platform-release]` 标记时，使用仓库 `GITHUB_TOKEN` 通过 `workflow_dispatch` 调用现有 Apple Store 与 Google Play 交付工作流，不复制签名、构建或上传实现。
+- Google Play GitHub 证据使用独立 `google-play-v<version>-<SHA>` 标签，避免与其他 Android Release 标签争用不可变发布名。
+- 保留所有现有 exact-SHA release gate、签名、公证、模拟用户 E2E、不可变 Release 与生产部署要求，不用本地重型构建替代 GitHub Actions。
+
+---
+
 ## [1.2.6] - 2026-09-02
 
 ### 正式发布控制面修复
