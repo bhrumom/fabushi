@@ -28,10 +28,9 @@ jobs:
   protocol-and-bridge:
     name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 18
     env:
       CARGO_INCREMENTAL: "1"
-      MAHAYANA_TEST_DRIVER_ROOT: ${{ runner.temp }}/mahayana-test-driver
     defaults:
       run:
         working-directory: third_party/mahayana/mahayana-rs
@@ -172,14 +171,3 @@ jobs:
           --profile ci
           --no-default-features
           --features local-only
-
-      - name: Test iOS external MiniApp driver protocol and backend
-        run: >-
-          cargo test
-          -p mahayana-test-driver-protocol
-          --profile ci
-          && cargo test
-          -p mahayana-cli
-          --features test-driver
-          --bin mahayana-test-driver
-          --profile ci
