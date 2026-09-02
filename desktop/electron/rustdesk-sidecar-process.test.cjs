@@ -44,6 +44,10 @@ function readWritten(stream) {
   return () => Buffer.concat(chunks).toString('utf8');
 }
 
+function grant(overrides = {}) {
+  return { display: true, input: false, clipboard: false, fileTransfer: false, audio: false, ...overrides };
+}
+
 test('production binary path cannot be overridden by inherited environment', () => {
   const fs = { existsSync: () => true };
   assert.equal(binaryPath({ app: { isPackaged: true }, env: { FABUSHI_RUSTDESK_SIDECAR_BIN: '/evil' }, resourcesPath: '/signed', platform: 'win32', fsImpl: fs }), '/signed/rustdesk-sidecar/fabushi-sidecar.exe');
@@ -58,12 +62,40 @@ test('manager freezes grants and blocks input escalation before writing to sidec
   const { manager, children } = harness();
   manager.start();
   const output = readWritten(children[0].stdin);
-  const opened = manager.open({ sessionId: 'session-1', peerId: '123456789', password: 'ephemeral', grant: { display: true, input: false, clipboard: false, fileTransfer: false, audio: false } });
+  const opened = manager.open({ sessionId: 'session-1', peerId: '123456789', password: 'ephemeral', grant: grant() });
   assert.equal(opened.grant.input, false);
   assert.throws(() => manager.command('session-1', { type: 'mouse', x: 1, y: 1, mask: 0 }), /not granted/);
   assert.match(output(), /"type":"open"/);
   assert.doesNotMatch(output(), /MAHAYANA_AUTH_TOKEN|FABUSHI_ACCOUNT_TOKEN/);
   assert.equal(children[0].spawnOptions.env.MAHAYANA_AUTH_TOKEN, undefined);
+});
+
+test('manager blocks clipboard file and audio escalation before provider execution', () => {
+  const { manager } = harness();
+  manager.open({ sessionId: 'session-1', peerId: '123456789', password: 'ephemeral', grant: grant() });
+  assert.throws(() => manager.command('session-1', { type: 'clipboard', text: 'secret' }), /clipboard is not granted/i);
+  assert.throws(() => manager.command('session-1', { type: 'file', action: 'readRemoteDir', path: '/' }), /file transfer is not granted/i);
+  assert.throws(() => manager.command('session-1', { type: 'audio', enabled: true }), /audio is not granted/i);
+});
+
+test('manager forwards only granted provider commands with immutable session id', () => {
+  const { manager, children } = harness();
+  manager.start();
+  const output = readWritten(children[0].stdin);
+  manager.open({
+    sessionId: 'session-2',
+    peerId: '123456789',
+    password: 'ephemeral',
+    grant: grant({ input: true, clipboard: true, fileTransfer: true, audio: true }),
+  });
+  manager.command('session-2', { type: 'clipboard', text: 'hello' });
+  manager.command('session-2', { type: 'file', action: 'readRemoteDir', path: '/tmp' });
+  manager.command('session-2', { type: 'audio', enabled: true });
+  const lines = output().trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(lines.at(-3).sessionId, 'session-2');
+  assert.equal(lines.at(-3).type, 'clipboard');
+  assert.equal(lines.at(-2).type, 'file');
+  assert.equal(lines.at(-1).type, 'audio');
 });
 
 test('unknown-session events terminate the provider process instead of crossing session boundaries', () => {
@@ -75,11 +107,11 @@ test('unknown-session events terminate the provider process instead of crossing 
 
 test('close and process exit revoke all local session state', () => {
   const { manager, children } = harness();
-  manager.open({ sessionId: 'session-1', peerId: '123456789', password: 'ephemeral', grant: { display: true, input: true, clipboard: false, fileTransfer: false, audio: false } });
+  manager.open({ sessionId: 'session-1', peerId: '123456789', password: 'ephemeral', grant: grant({ input: true }) });
   assert.equal(manager.sessions.size, 1);
   manager.closeSession('session-1');
   assert.equal(manager.sessions.size, 0);
-  manager.open({ sessionId: 'session-2', peerId: '123456789', password: 'ephemeral', grant: { display: true, input: true, clipboard: false, fileTransfer: false, audio: false } });
+  manager.open({ sessionId: 'session-2', peerId: '123456789', password: 'ephemeral', grant: grant({ input: true }) });
   children[0].emit('exit', 1, null);
   assert.equal(manager.sessions.size, 0);
   assert.equal(manager.child, null);
