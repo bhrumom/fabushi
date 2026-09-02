@@ -1,0 +1,48 @@
+name: RustDesk explicit session consent
+
+on:
+  push:
+    branches:
+      - codex/rustdesk-fusion-route-negotiation
+    paths:
+      - '.github/scripts/rustdesk-explicit-session-consent.py'
+      - '.github/workflows/rustdesk-explicit-session-consent.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/rustdesk-fusion-route-negotiation
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Apply explicit per-session consent
+        run: python .github/scripts/rustdesk-explicit-session-consent.py
+      - name: Verify no pending session is auto-opened
+        run: |
+          grep -q 'pendingAuthorization' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
+          grep -q 'approvePendingSession' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
+          grep -q 'denyPendingSession' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
+          ! grep -q 'if (pending) await this.openPeer(pending, iceServers)' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
+          grep -q 'data-testid="remote-session-consent"' desktop/src/messaging-shell-v2.tsx
+      - name: Run frontend type and desktop quality checks
+        run: |
+          npm --prefix frontend/apps/web ci --ignore-scripts
+          npm --prefix frontend/apps/web run typecheck
+          npm --prefix desktop ci --ignore-scripts
+          npm --prefix desktop run typecheck
+      - name: Commit verified consent implementation
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add frontend/apps/web/src/lib/remote-computer/desktop-peer.ts desktop/src/messaging-shell-v2.tsx
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'feat(remote): require explicit approval for each remote session'
+          git push origin HEAD:codex/rustdesk-fusion-route-negotiation
