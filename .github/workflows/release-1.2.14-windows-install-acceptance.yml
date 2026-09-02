@@ -1,0 +1,92 @@
+name: Release 1.2.14 Windows install acceptance
+
+on:
+  push:
+    branches:
+      - release/1.2.14-install-upgrade-acceptance
+    paths:
+      - .github/workflows/release-1.2.14-windows-install-acceptance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-install-upgrade:
+    name: Windows fresh install and 1.2.13 -> 1.2.14 upgrade
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download immutable formal Windows installers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\releases\old" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\releases\new" | Out-Null
+          gh release download desktop-1.2.13 --repo $env:GITHUB_REPOSITORY --pattern 'fabushi-1.2.13-setup.exe' --dir "$env:RUNNER_TEMP\releases\old"
+          gh release download desktop-1.2.14 --repo $env:GITHUB_REPOSITORY --pattern 'fabushi-1.2.14-setup.exe' --dir "$env:RUNNER_TEMP\releases\new"
+
+      - name: Fresh install previous formal version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = "$env:RUNNER_TEMP\FabushiInstall"
+          $old = "$env:RUNNER_TEMP\releases\old\fabushi-1.2.13-setup.exe"
+          $p = Start-Process -FilePath $old -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "1.2.13 installer failed with $($p.ExitCode)" }
+          $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like '*Fabushi*' } | Select-Object -First 1
+          if (-not $entry) { throw 'Fabushi registration missing after 1.2.13 install' }
+          if ([string]$entry.DisplayVersion -notlike '1.2.13*') { throw "Unexpected installed version: $($entry.DisplayVersion)" }
+          if (-not (Test-Path $installDir)) { throw '1.2.13 install directory missing' }
+
+      - name: Upgrade previous formal version to 1.2.14
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = "$env:RUNNER_TEMP\FabushiInstall"
+          $new = "$env:RUNNER_TEMP\releases\new\fabushi-1.2.14-setup.exe"
+          $p = Start-Process -FilePath $new -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "1.2.14 upgrade failed with $($p.ExitCode)" }
+          $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like '*Fabushi*' } | Select-Object -First 1
+          if (-not $entry) { throw 'Fabushi registration missing after upgrade' }
+          if ([string]$entry.DisplayVersion -notlike '1.2.14*') { throw "Unexpected upgraded version: $($entry.DisplayVersion)" }
+          $exe = Get-ChildItem $installDir -Filter '*.exe' -File | Where-Object { $_.Name -notlike 'Uninstall*' } | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $exe) { throw 'Installed Fabushi executable not found after upgrade' }
+
+      - name: Uninstall upgraded app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like '*Fabushi*' } | Select-Object -First 1
+          if (-not $entry) { throw 'Cannot find Fabushi uninstaller' }
+          $command = [string]$entry.UninstallString
+          if ($command -match '^"([^"]+)"\s*(.*)$') {
+            $uninstallExe = $Matches[1]
+            $tail = $Matches[2].Trim()
+          } else {
+            $uninstallExe = $command
+            $tail = ''
+          }
+          if (-not (Test-Path $uninstallExe)) { throw "Uninstaller path missing: $uninstallExe" }
+          $args = @()
+          if ($tail) { $args += $tail }
+          $args += '/S'
+          $p = Start-Process -FilePath $uninstallExe -ArgumentList $args -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Uninstall failed with $($p.ExitCode)" }
+          Start-Sleep -Seconds 2
+
+      - name: Fresh install 1.2.14 after removal
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = "$env:RUNNER_TEMP\FabushiInstall"
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          $new = "$env:RUNNER_TEMP\releases\new\fabushi-1.2.14-setup.exe"
+          $p = Start-Process -FilePath $new -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "1.2.14 fresh install failed with $($p.ExitCode)" }
+          $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like '*Fabushi*' } | Select-Object -First 1
+          if (-not $entry) { throw 'Fabushi registration missing after 1.2.14 fresh install' }
+          if ([string]$entry.DisplayVersion -notlike '1.2.14*') { throw "Unexpected fresh installed version: $($entry.DisplayVersion)" }
+          if (-not (Test-Path $installDir)) { throw '1.2.14 fresh install directory missing' }
