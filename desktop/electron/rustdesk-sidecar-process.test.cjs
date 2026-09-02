@@ -44,6 +44,10 @@ function readWritten(stream) {
   return () => Buffer.concat(chunks).toString('utf8');
 }
 
+function flushWrites() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 function grant(overrides = {}) {
   return { display: true, input: false, clipboard: false, fileTransfer: false, audio: false, ...overrides };
 }
@@ -58,13 +62,14 @@ test('sidecar receives a minimal environment without Fabushi account credentials
   assert.deepEqual(env, { PATH: '/bin', HOME: '/home/user' });
 });
 
-test('manager freezes grants and blocks input escalation before writing to sidecar', () => {
+test('manager freezes grants and blocks input escalation before writing to sidecar', async () => {
   const { manager, children } = harness();
   manager.start();
   const output = readWritten(children[0].stdin);
   const opened = manager.open({ sessionId: 'session-1', peerId: '123456789', password: 'ephemeral', grant: grant() });
   assert.equal(opened.grant.input, false);
   assert.throws(() => manager.command('session-1', { type: 'mouse', x: 1, y: 1, mask: 0 }), /not granted/);
+  await flushWrites();
   assert.match(output(), /"type":"open"/);
   assert.doesNotMatch(output(), /MAHAYANA_AUTH_TOKEN|FABUSHI_ACCOUNT_TOKEN/);
   assert.equal(children[0].spawnOptions.env.MAHAYANA_AUTH_TOKEN, undefined);
@@ -78,7 +83,7 @@ test('manager blocks clipboard file and audio escalation before provider executi
   assert.throws(() => manager.command('session-1', { type: 'audio', enabled: true }), /audio is not granted/i);
 });
 
-test('manager forwards only granted provider commands with immutable session id', () => {
+test('manager forwards only granted provider commands with immutable session id', async () => {
   const { manager, children } = harness();
   manager.start();
   const output = readWritten(children[0].stdin);
@@ -91,6 +96,7 @@ test('manager forwards only granted provider commands with immutable session id'
   manager.command('session-2', { type: 'clipboard', text: 'hello' });
   manager.command('session-2', { type: 'file', action: 'readRemoteDir', path: '/tmp' });
   manager.command('session-2', { type: 'audio', enabled: true });
+  await flushWrites();
   const lines = output().trim().split('\n').map((line) => JSON.parse(line));
   assert.equal(lines.at(-3).sessionId, 'session-2');
   assert.equal(lines.at(-3).type, 'clipboard');
