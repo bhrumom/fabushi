@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'projects/rustdesk-fabushi-fusion/**'
+      - 'integrations/rustdesk-sidecar/**'
       - 'chatgpt-vps-control/tests/rustdesk-*.test.js'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
       - '.github/workflows/rustdesk-fusion-security.yml'
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - 'projects/rustdesk-fabushi-fusion/**'
+      - 'integrations/rustdesk-sidecar/**'
       - 'chatgpt-vps-control/tests/rustdesk-*.test.js'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
       - '.github/workflows/rustdesk-fusion-security.yml'
@@ -41,6 +43,8 @@ jobs:
           tests/rustdesk-transport-contract.test.js
           tests/rustdesk-route-negotiation-contract.test.js
           tests/rustdesk-session-grants-audit-contract.test.js
+          tests/rustdesk-session-permission-enforcement.test.js
+          tests/rustdesk-sidecar-boundary-contract.test.js
 
   worker:
     runs-on: ubuntu-latest
