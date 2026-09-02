@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/rustdesk-desktop-runtime-integration.yml'
+      - 'integrations/rustdesk-sidecar/**'
       - 'desktop/electron/rustdesk-sidecar-process.cjs'
       - 'desktop/electron/rustdesk-sidecar-process.test.cjs'
       - 'desktop/electron/native-edge.cjs'
