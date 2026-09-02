@@ -13,6 +13,7 @@ on:
       - 'frontend/apps/web/src/lib/remote-computer/**'
       - 'desktop/src/messaging-shell-v2.tsx'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/lib.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0020_remote_computer_requested_grants.sql'
       - 'chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js'
       - '.github/scripts/rustdesk-*.py'
@@ -48,6 +49,7 @@ jobs:
           python .github/scripts/rustdesk-explicit-session-consent.py
           python .github/scripts/rustdesk-active-session-gate.py
           python .github/scripts/rustdesk-requested-grants-integration.py
+          python .github/scripts/rustdesk-migration-v20-registration.py
           python .github/scripts/rustdesk-desktop-runtime-integration.py
           python .github/scripts/rustdesk-host-runtime-integration.py
       - name: Verify consent, immutable grants and isolated native provider boundary
@@ -60,6 +62,7 @@ jobs:
           grep -q 'permissions: RemoteComputerPermissionsRequest' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
           grep -q 'JOIN remote_computer_session_grants g' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
           grep -q 'NEW.allow_clipboard' third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0020_remote_computer_requested_grants.sql
+          grep -q 'REMOTE_COMPUTER_REQUESTED_GRANTS_SCHEMA_V20' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/lib.rs
           grep -q 'data-testid="remote-session-consent"' desktop/src/messaging-shell-v2.tsx
           grep -q 'openRustDeskSession' desktop/electron/native-edge.cjs
           grep -q 'rustdesk-sidecar-event' desktop/electron/preload.cjs
@@ -82,7 +85,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add frontend/apps/web/src/lib/remote-computer/desktop-peer.ts frontend/apps/web/src/lib/remote-computer/remote-api.ts desktop/src/messaging-shell-v2.tsx desktop/electron/main.cjs desktop/electron/native-edge.cjs desktop/electron/preload.cjs desktop/package.json integrations/rustdesk-sidecar/README.md third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0020_remote_computer_requested_grants.sql chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js
+          git add frontend/apps/web/src/lib/remote-computer/desktop-peer.ts frontend/apps/web/src/lib/remote-computer/remote-api.ts desktop/src/messaging-shell-v2.tsx desktop/electron/main.cjs desktop/electron/native-edge.cjs desktop/electron/preload.cjs desktop/package.json integrations/rustdesk-sidecar/README.md third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/lib.rs third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0020_remote_computer_requested_grants.sql chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js
           if git diff --cached --quiet; then
             echo 'Product source already materialized.'
             exit 0
