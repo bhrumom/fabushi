@@ -1,0 +1,50 @@
+name: Release metadata sync temp
+
+on:
+  push:
+    branches:
+      - codex/formal-release-1.2.10
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-metadata-sync-temp
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/formal-release-1.2.10
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Regenerate package lock metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd desktop && npm install --package-lock-only --ignore-scripts --no-audit --no-fund)
+          (cd mobile && npm install --package-lock-only --ignore-scripts --no-audit --no-fund)
+          node - <<'NODE'
+          const fs = require('fs');
+          for (const path of ['desktop/package-lock.json','mobile/package-lock.json']) {
+            const doc = JSON.parse(fs.readFileSync(path, 'utf8'));
+            if (doc.packages?.['']?.version !== '1.2.10') throw new Error(`${path} root version drift`);
+          }
+          NODE
+      - name: Commit generated metadata and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/release-metadata-sync-temp.yml
+          git add desktop/package-lock.json mobile/package-lock.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(release): sync 1.2.10 lock metadata'
+          git push origin HEAD:codex/formal-release-1.2.10
