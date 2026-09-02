@@ -13,7 +13,7 @@ Make Fabushi mobile authentication behave like a native mobile sign-in flow: a m
 - iOS/Android browser starts are identified to the account service as `mobile`.
 - A local auth secrets file that can no longer be decrypted is quarantined and treated as signed out so a fresh browser login can recreate the session; managed/requested secrets are not reset.
 - Native and shared-host CI gates pass before merge.
-- Version is advanced to 1.2.2 and the merged source is delivered through the existing iOS/TestFlight and Google Play workflows, with the auth worker deployed from the same canonical source.
+- Version is advanced to 1.2.3 and the merged source is delivered through the existing iOS/TestFlight and Google Play workflows, with the auth worker deployed from the same canonical source.
 
 ## Evidence
 
