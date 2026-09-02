@@ -69,6 +69,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "resources/rustdesk-sidecar",
+        "to": "rustdesk-sidecar",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
