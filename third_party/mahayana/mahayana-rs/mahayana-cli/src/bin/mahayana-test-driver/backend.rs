@@ -467,8 +467,8 @@ mod tests {
 
     #[test]
     fn plugin_release_args_default_to_ios() {
-        let (plugin_id, version, platform) =
-            plugin_release_args(&json!({"pluginId": "global-dharma"})).unwrap();
+        let params = json!({"pluginId": "global-dharma"});
+        let (plugin_id, version, platform) = plugin_release_args(&params).unwrap();
         assert_eq!(plugin_id, "global-dharma");
         assert_eq!(version, None);
         assert_eq!(platform, "ios");
@@ -513,11 +513,13 @@ mod tests {
         let pointer = InstalledPluginPointer {
             plugin_id: "global-dharma".into(),
             version: "1.0.0".into(),
-            platform: "ios".into(),
+            artifact_id: "ios-local-web".into(),
+            artifact_sha256: "43de877dc87b5dff306164eb143baad545ef40bea2247f28cbe21616829478be"
+                .into(),
             runtime: "local-web".into(),
-            sha256: "43de877dc87b5dff306164eb143baad545ef40bea2247f28cbe21616829478be".into(),
-            source_url: "https://example.invalid/global-dharma.tar.gz".into(),
-            installed_path,
+            entry: Some("index.html".into()),
+            requested_permissions: Vec::new(),
+            installed_path: installed_path.to_string_lossy().into_owned(),
         };
         let state_dir = root.join("plugins").join("global-dharma");
         std::fs::write(
