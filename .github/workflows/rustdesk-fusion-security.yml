@@ -1,0 +1,67 @@
+name: RustDesk fusion security
+
+on:
+  pull_request:
+    paths:
+      - 'projects/rustdesk-fabushi-fusion/**'
+      - 'chatgpt-vps-control/tests/rustdesk-*.test.js'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
+      - '.github/workflows/rustdesk-fusion-security.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'projects/rustdesk-fabushi-fusion/**'
+      - 'chatgpt-vps-control/tests/rustdesk-*.test.js'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
+      - '.github/workflows/rustdesk-fusion-security.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rustdesk-fusion-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Verify RustDesk fusion source and security contracts
+        working-directory: chatgpt-vps-control
+        run: >-
+          node --test
+          tests/rustdesk-device-presence-contract.test.js
+          tests/rustdesk-provider-session-contract.test.js
+          tests/rustdesk-transport-contract.test.js
+          tests/rustdesk-route-negotiation-contract.test.js
+          tests/rustdesk-session-grants-audit-contract.test.js
+
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: rustfmt
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: rustdesk-fusion-platform-worker
+          cache-on-failure: true
+      - name: Check Worker formatting
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt -p mahayana-platform-worker -- --check
+      - name: Run Worker schema and security tests
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test --locked -p mahayana-platform-worker
+      - name: Compile Worker for Cloudflare Wasm
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo check --locked --target wasm32-unknown-unknown -p mahayana-platform-worker
