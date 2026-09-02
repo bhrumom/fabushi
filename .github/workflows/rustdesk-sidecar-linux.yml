@@ -69,15 +69,19 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Check AGPL sidecar overlay
+      - name: Check AGPL sidecar overlays
         working-directory: ${{ runner.temp }}/rustdesk-sidecar
-        run: cargo check --locked --bin fabushi-sidecar
+        run: |
+          cargo check --locked --bin fabushi-sidecar
+          cargo check --locked --bin fabushi-host-bootstrap
 
-      - name: Build AGPL sidecar overlay
+      - name: Build AGPL sidecar overlays
         working-directory: ${{ runner.temp }}/rustdesk-sidecar
-        run: cargo build --locked --release --bin fabushi-sidecar
+        run: |
+          cargo build --locked --release --bin fabushi-sidecar
+          cargo build --locked --release --bin fabushi-host-bootstrap
 
-      - name: Smoke protocol and deny unauthenticated input
+      - name: Smoke controller protocol and deny unauthenticated input
         working-directory: ${{ runner.temp }}/rustdesk-sidecar
         run: |
           printf '%s\n%s\n' \
@@ -88,15 +92,32 @@ jobs:
           grep -F 'unknown-session' "$RUNNER_TEMP/sidecar.out"
           ! grep -E 'cookie|bearer|accountToken|deviceToken' "$RUNNER_TEMP/sidecar.out"
 
-      - name: Upload corresponding-source overlay and binary
+      - name: Smoke host bootstrap protocol without exposing password
+        working-directory: ${{ runner.temp }}/rustdesk-sidecar
+        run: |
+          printf '%s\n' '{"type":"hello","protocol":"fabushi.rustdesk-host-bootstrap.v1"}' \
+            | timeout 10s target/release/fabushi-host-bootstrap > "$RUNNER_TEMP/host-bootstrap.out"
+          grep -F '"type":"hello"' "$RUNNER_TEMP/host-bootstrap.out"
+          ! grep -F 'temporaryPassword' "$RUNNER_TEMP/host-bootstrap.out"
+
+      - name: Package exact corresponding source
+        working-directory: ${{ runner.temp }}/rustdesk-sidecar
+        run: |
+          tar --exclude=.git --exclude=target -czf "$RUNNER_TEMP/rustdesk-sidecar-corresponding-source.tar.gz" .
+          test -s "$RUNNER_TEMP/rustdesk-sidecar-corresponding-source.tar.gz"
+
+      - name: Upload corresponding source and binaries
         uses: actions/upload-artifact@v4
         with:
           name: rustdesk-sidecar-linux-${{ github.sha }}
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/rustdesk-sidecar/target/release/fabushi-sidecar
+            ${{ runner.temp }}/rustdesk-sidecar/target/release/fabushi-host-bootstrap
             ${{ runner.temp }}/rustdesk-sidecar/FABUSHI-SIDECAR-SOURCE.txt
+            ${{ runner.temp }}/rustdesk-sidecar-corresponding-source.tar.gz
             integrations/rustdesk-sidecar/UPSTREAM.lock
             integrations/rustdesk-sidecar/README.md
             integrations/rustdesk-sidecar/prepare-source.sh
             integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs
+            integrations/rustdesk-sidecar/overlay/src/bin/fabushi_host_bootstrap.rs
