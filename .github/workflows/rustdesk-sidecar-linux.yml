@@ -11,6 +11,8 @@ on:
       - 'desktop/electron/**'
       - 'frontend/apps/web/src/lib/remote-computer/**'
       - 'desktop/src/messaging-shell-v2.tsx'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs'
+      - 'chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js'
       - '.github/scripts/rustdesk-*.py'
       - '.github/workflows/rustdesk-sidecar-linux.yml'
   workflow_dispatch:
@@ -39,9 +41,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - name: Materialize explicit consent and trusted native provider bridge
+      - name: Materialize fail-closed consent, active-session gate, and trusted native provider bridge
         run: |
           python .github/scripts/rustdesk-explicit-session-consent.py
+          python .github/scripts/rustdesk-active-session-gate.py
           python .github/scripts/rustdesk-desktop-runtime-integration.py
       - name: Verify consent is fail closed and provider bridge is trusted-only
         run: |
@@ -49,10 +52,12 @@ jobs:
           grep -q 'approvePendingSession' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           grep -q 'denyPendingSession' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           ! grep -q 'if (pending) await this.openPeer(pending, iceServers)' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
+          grep -q 'session.state != "active"' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
           grep -q 'data-testid="remote-session-consent"' desktop/src/messaging-shell-v2.tsx
           grep -q 'openRustDeskSession' desktop/electron/native-edge.cjs
           grep -q 'rustdesk-sidecar-event' desktop/electron/preload.cjs
           grep -q 'new RustDeskSidecarProcess' desktop/electron/main.cjs
+          node --test chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js
           node --test desktop/electron/rustdesk-sidecar-process.test.cjs
           node --test desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs
           bash .github/scripts/assert-electron-feature-host-bridge.sh
@@ -66,7 +71,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add frontend/apps/web/src/lib/remote-computer/desktop-peer.ts desktop/src/messaging-shell-v2.tsx desktop/electron/main.cjs desktop/electron/native-edge.cjs desktop/electron/preload.cjs
+          git add frontend/apps/web/src/lib/remote-computer/desktop-peer.ts desktop/src/messaging-shell-v2.tsx desktop/electron/main.cjs desktop/electron/native-edge.cjs desktop/electron/preload.cjs third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js
           if git diff --cached --quiet; then
             echo 'Product source already materialized.'
             exit 0
