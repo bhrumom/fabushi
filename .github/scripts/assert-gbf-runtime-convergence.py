@@ -10,6 +10,8 @@ feature_host = (root / 'third_party/mahayana/mahayana-rs/mahayana-feature-host/s
 runtime = (root / 'third_party/mahayana/mahayana-rs/mahayana-runtime/src/lib.rs').read_text(encoding='utf-8')
 kernel_resilience = (root / 'third_party/mahayana/mahayana-rs/mahayana-kernel/src/resilience.rs').read_text(encoding='utf-8')
 remote_device = (root / 'desktop/electron/remote-device-agent-supervisor.cjs').read_text(encoding='utf-8')
+rustdesk_sidecar = (root / 'desktop/electron/rustdesk-sidecar-process.cjs').read_text(encoding='utf-8')
+rustdesk_bootstrap = (root / 'desktop/electron/rustdesk-host-bootstrap.cjs').read_text(encoding='utf-8')
 
 method_block = re.search(r'const methodNames = \[([\s\S]*?)\];', edge)
 if not method_block:
@@ -45,8 +47,11 @@ for legacy in [
     if legacy.exists():
         raise SystemExit(f'GBF runtime convergence: retired Grok runtime path exists: {legacy}')
 
-# Desktop JS may only spawn the Rust Host, isolated local ASR provider, and the
-# installed application's pinned account-scoped remote-device transport.
+# Desktop JS may only spawn the Rust Host, isolated local ASR provider, the
+# installed application's pinned account-scoped remote-device transport, and
+# the separately distributed RustDesk AGPL provider boundary. RustDesk is
+# explicitly constrained to the pinned sidecar/bootstrap pair below; adding
+# any other desktop process surface still fails closed.
 for label, needle in {
     'official packaged device gateway': "const OFFICIAL_DEVICE_GATEWAY_URL = 'wss://fabushi-mcp.ombhrum.com/agent'",
     'content-addressed embedded device agent': "path.join(root, 'bin', 'fabushi-device-agent.js')",
@@ -55,6 +60,14 @@ for label, needle in {
     'logout credential cleanup': 'this.fs.rmSync(this.tokenFile, { force: true })',
 }.items():
     if needle not in remote_device:
+        raise SystemExit(f'GBF runtime convergence: missing {label}: {needle}')
+
+for label, (text, needle) in {
+    'RustDesk sidecar uses child_process only behind dedicated provider boundary': (rustdesk_sidecar, 'node:child_process'),
+    'RustDesk sidecar requires pinned packaged executable resolution': (rustdesk_sidecar, 'executablePath'),
+    'RustDesk host bootstrap uses child_process only behind dedicated provider boundary': (rustdesk_bootstrap, 'node:child_process'),
+}.items():
+    if needle not in text:
         raise SystemExit(f'GBF runtime convergence: missing {label}: {needle}')
 
 process_hits = []
@@ -70,6 +83,10 @@ for base in [root / 'desktop', root / 'frontend/apps/web/src']:
                 'desktop/electron/offline-asr.cjs',
                 'desktop/electron/remote-device-agent-supervisor.cjs',
                 'desktop/electron/remote-device-agent-supervisor.test.cjs',
+                'desktop/electron/rustdesk-host-bootstrap.cjs',
+                'desktop/electron/rustdesk-host-bootstrap.test.cjs',
+                'desktop/electron/rustdesk-sidecar-process.cjs',
+                'desktop/electron/rustdesk-sidecar-process.test.cjs',
             }:
                 # Ignore RegExp.exec; only child_process import or known process-call identifiers count.
                 if "node:child_process" in text or re.search(r'\b(?:spawn|execFile)\s*\(', text):
@@ -85,4 +102,4 @@ for needle in [
     if needle not in feature_host:
         raise SystemExit(f'GBF runtime convergence: local execution policy guard missing: {needle}')
 
-print(f'GBF runtime convergence passed: {len(methods)} renderer Host methods; one FeatureHost execution path; no direct runtime.callTool bypass.')
+print(f'GBF runtime convergence passed: {len(methods)} renderer Host methods; one FeatureHost execution path; approved RustDesk provider boundary; no direct runtime.callTool bypass.')
