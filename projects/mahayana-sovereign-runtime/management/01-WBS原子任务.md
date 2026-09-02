@@ -13,5 +13,6 @@
 | MSR-301 | Workspace/worktree/checkpoint/rewind parity | MSR-102 | objective workspace parity | workspace tests | planned | make rewind exact and worktrees Git-aware |
 | MSR-302 | Queue/goal/oracle/attempt/workflow/subagent parity | MSR-102 | long-running workflow parity | supervisor/orchestrator tests | planned | persist and bind primitives to production turns |
 | MSR-401 | Normalize MCP/skills/plugins/connectors/MiniApps/model stack | MSR-202 | Mahayana-owned extension/model contracts | integration tests | planned | add MCP runtime-status contract first |
+| MSR-402 | iOS-first external MiniApp test driver and real E2E | MSR-401 | versioned Debug-only driver -> real online marketplace/install/update/chat/action evidence -> iOS Simulator CI | protocol/CLI contract tests + Release negative + live external MiniApp E2E | in-progress | wire real `plugin.list` and `marketplace.search` product backend after protocol gate |
 | MSR-501 | Cross-surface parity and E2E | MSR-401 | required surfaces pass | GitHub Actions E2E | planned | validate |
 | MSR-601 | Upstream isolation and final acceptance | MSR-501 | default product path vendor-independent | dependency/source audit + release gates | in-progress | remove default CLI reachability to codex-core-plugins/codex-tui, then rerun exact-head gates |
