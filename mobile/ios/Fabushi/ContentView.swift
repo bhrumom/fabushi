@@ -45,6 +45,28 @@ private enum MobileSection: String, CaseIterable, Identifiable {
     }
 }
 
+private struct LoginBlob: View {
+    let color: Color
+    let width: CGFloat
+    let height: CGFloat
+    let rotation: Double
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: min(width, height) * 0.42, style: .continuous)
+                .fill(color)
+                .rotationEffect(.degrees(rotation))
+            HStack(spacing: max(8, width * 0.08)) {
+                Capsule().fill(.white).frame(width: max(8, width * 0.11), height: max(18, height * 0.25))
+                Capsule().fill(.white).frame(width: max(8, width * 0.11), height: max(18, height * 0.25))
+            }
+            .rotationEffect(.degrees(rotation * 0.35))
+        }
+        .frame(width: width, height: height)
+        .accessibilityHidden(true)
+    }
+}
+
 struct ContentView: View {
     @Bindable var model: MarketplaceModel
     @Bindable var messaging: MessagingModel
@@ -519,11 +541,11 @@ struct ContentView: View {
 
     private var authLoadingView: some View {
         ZStack {
-            Color(red: 0.043, green: 0.043, blue: 0.047).ignoresSafeArea()
+            Color(red: 0.985, green: 0.985, blue: 0.978).ignoresSafeArea()
             VStack(spacing: 16) {
                 avatar.frame(width: 70, height: 70)
-                ProgressView().tint(.white)
-                Text("正在连接 Mahayana Rust Host…").foregroundStyle(.white)
+                ProgressView().tint(.black)
+                Text("正在连接 Fabushi…").foregroundStyle(Color.black.opacity(0.68))
                 if let featureHostSmokeStatus = model.featureHostSmokeStatus {
                     Text(featureHostSmokeStatus).font(.caption2).foregroundStyle(.clear).accessibilityIdentifier("feature-host-smoke")
                 }
@@ -535,34 +557,87 @@ struct ContentView: View {
 
     private var loginView: some View {
         ZStack {
-            Color(red: 0.043, green: 0.043, blue: 0.047).ignoresSafeArea()
-            VStack(spacing: 18) {
-                Spacer()
-                avatar.frame(width: 86, height: 86)
-                Text("登录 Fabushi").font(.largeTitle.bold()).foregroundStyle(.white)
-                Text("登录后即可使用桌面端与移动端共用的会话、智能体和插件能力。")
-                    .multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.72)).padding(.horizontal, 30)
-                if let attemptId = model.browserLoginAttemptId {
-                    Label("正在等待浏览器完成登录", systemImage: "globe")
-                        .foregroundStyle(.white.opacity(0.78)).font(.subheadline)
-                    Text(attemptId).font(.caption.monospaced()).foregroundStyle(.secondary)
-                    Button("重新打开登录页面") { Task { await model.reopenBrowserLogin() } }
-                        .buttonStyle(.borderedProminent).accessibilityIdentifier("mobile-login-reopen")
-                    Button("取消登录") { Task { await model.cancelBrowserLogin() } }
-                        .buttonStyle(.bordered).accessibilityIdentifier("mobile-login-cancel")
-                } else {
-                    Button(model.loginBusy ? "正在准备…" : "使用浏览器登录") { Task { await model.beginBrowserLogin() } }
-                        .buttonStyle(.borderedProminent).controlSize(.large).disabled(model.loginBusy)
-                        .accessibilityIdentifier("mobile-login-browser")
+            Color(red: 0.985, green: 0.985, blue: 0.978).ignoresSafeArea()
+            GeometryReader { proxy in
+                let width = proxy.size.width
+                let height = proxy.size.height
+                Group {
+                    LoginBlob(color: Color(red: 1.00, green: 0.57, blue: 0.04), width: 92, height: 92, rotation: -8)
+                        .position(x: width * 0.25, y: height * 0.16)
+                    LoginBlob(color: Color(red: 0.53, green: 0.30, blue: 1.00), width: 58, height: 66, rotation: 12)
+                        .position(x: width * 0.69, y: height * 0.17)
+                    LoginBlob(color: Color(red: 0.00, green: 0.78, blue: 0.45), width: 82, height: 68, rotation: 5)
+                        .position(x: width * 1.00, y: height * 0.32)
+                    LoginBlob(color: Color(red: 0.08, green: 0.49, blue: 0.98), width: 84, height: 66, rotation: 7)
+                        .position(x: width * 0.00, y: height * 0.37)
+                    LoginBlob(color: Color(red: 1.00, green: 0.14, blue: 0.26), width: 92, height: 82, rotation: 8)
+                        .position(x: width * 0.56, y: height * 0.79)
+                    LoginBlob(color: Color(red: 0.00, green: 0.72, blue: 0.65), width: 70, height: 70, rotation: -9)
+                        .position(x: width * 0.18, y: height * 0.76)
+                    LoginBlob(color: Color(red: 0.64, green: 0.40, blue: 0.20), width: 62, height: 62, rotation: 17)
+                        .position(x: width * 0.91, y: height * 0.68)
                 }
-                if let loginError = model.loginError { Text(loginError).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center).padding(.horizontal, 24) }
-                Text(model.message).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 24)
+            }
+            .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                Spacer()
+                VStack(spacing: 17) {
+                    Text("Fabushi")
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .tracking(-1.5)
+                        .foregroundStyle(.black)
+                    Text("你的常驻智能体团队，持续完成工作。")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color.black.opacity(0.42))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                }
+                .padding(.bottom, 74)
+                Spacer()
+
+                if model.loginError != nil {
+                    Text("登录暂时不可用，请稍后重试。")
+                        .font(.footnote)
+                        .foregroundStyle(Color.red.opacity(0.82))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 12)
+                }
+
+                if model.browserLoginAttemptId != nil {
+                    Button("继续登录") { Task { await model.reopenBrowserLogin() } }
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 58)
+                        .background(.black, in: Capsule())
+                        .accessibilityIdentifier("mobile-login-reopen")
+                    Button("取消登录") { Task { await model.cancelBrowserLogin() } }
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color.black.opacity(0.46))
+                        .padding(.top, 10)
+                        .accessibilityIdentifier("mobile-login-cancel")
+                } else {
+                    Button { Task { await model.beginBrowserLogin() } } label: {
+                        HStack(spacing: 10) {
+                            if model.loginBusy { ProgressView().tint(.white) }
+                            Text(model.loginBusy ? "正在准备…" : "登录")
+                        }
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 58)
+                        .background(.black, in: Capsule())
+                    }
+                    .disabled(model.loginBusy)
+                    .accessibilityIdentifier("mobile-login-browser")
+                }
+
                 if let featureHostSmokeStatus = model.featureHostSmokeStatus {
                     Text(featureHostSmokeStatus).font(.caption2).foregroundStyle(.clear).accessibilityIdentifier("feature-host-smoke")
                 }
-                Spacer()
             }
-            .padding(24)
+            .padding(.horizontal, 28)
+            .padding(.bottom, 18)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mobile-login")
