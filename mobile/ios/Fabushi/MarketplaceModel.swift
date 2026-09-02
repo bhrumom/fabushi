@@ -108,8 +108,8 @@ final class MarketplaceModel {
         }
     }
 
-    private func applyAuth(_ object: [String: Any]?) {
-        loggedIn = object?["loggedIn"] as? Bool ?? false
+    private func applyAuth(_ object: [String: Any]?, defaultLoggedIn: Bool = false) {
+        loggedIn = object?["loggedIn"] as? Bool ?? defaultLoggedIn
         guard let user = object?["user"] as? [String: Any] else {
             accountName = "Fabushi"
             accountEmail = ""
@@ -392,7 +392,11 @@ final class MarketplaceModel {
             }
             switch status {
             case "completed":
-                if let auth = object["auth"] as? [String: Any] { applyAuth(auth) } else { loggedIn = true }
+                if let auth = object["auth"] as? [String: Any] {
+                    applyAuth(auth, defaultLoggedIn: true)
+                } else {
+                    loggedIn = true
+                }
                 browserLoginAttemptId = nil
                 browserLoginURL = nil
                 webAuthenticationSession = nil
