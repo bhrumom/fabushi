@@ -13,6 +13,7 @@ on:
       - 'frontend/apps/web/src/lib/remote-computer/**'
       - 'desktop/src/messaging-shell-v2.tsx'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0020_remote_computer_requested_grants.sql'
       - 'chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js'
       - '.github/scripts/rustdesk-*.py'
       - '.github/workflows/rustdesk-sidecar-linux.yml'
@@ -42,19 +43,23 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - name: Materialize fail-closed consent and trusted native runtimes
+      - name: Materialize fail-closed consent, grants and trusted native runtimes
         run: |
           python .github/scripts/rustdesk-explicit-session-consent.py
           python .github/scripts/rustdesk-active-session-gate.py
+          python .github/scripts/rustdesk-requested-grants-integration.py
           python .github/scripts/rustdesk-desktop-runtime-integration.py
           python .github/scripts/rustdesk-host-runtime-integration.py
-      - name: Verify consent and isolated native provider boundary
+      - name: Verify consent, immutable grants and isolated native provider boundary
         run: |
           grep -q 'pendingAuthorization' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           grep -q 'approvePendingSession' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           grep -q 'denyPendingSession' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           ! grep -q 'if (pending) await this.openPeer(pending, iceServers)' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           grep -q 'session.state != "active"' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
+          grep -q 'permissions: RemoteComputerPermissionsRequest' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
+          grep -q 'JOIN remote_computer_session_grants g' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
+          grep -q 'NEW.allow_clipboard' third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0020_remote_computer_requested_grants.sql
           grep -q 'data-testid="remote-session-consent"' desktop/src/messaging-shell-v2.tsx
           grep -q 'openRustDeskSession' desktop/electron/native-edge.cjs
           grep -q 'rustdesk-sidecar-event' desktop/electron/preload.cjs
@@ -77,12 +82,12 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add frontend/apps/web/src/lib/remote-computer/desktop-peer.ts desktop/src/messaging-shell-v2.tsx desktop/electron/main.cjs desktop/electron/native-edge.cjs desktop/electron/preload.cjs desktop/package.json integrations/rustdesk-sidecar/README.md third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js
+          git add frontend/apps/web/src/lib/remote-computer/desktop-peer.ts frontend/apps/web/src/lib/remote-computer/remote-api.ts desktop/src/messaging-shell-v2.tsx desktop/electron/main.cjs desktop/electron/native-edge.cjs desktop/electron/preload.cjs desktop/package.json integrations/rustdesk-sidecar/README.md third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0020_remote_computer_requested_grants.sql chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js
           if git diff --cached --quiet; then
             echo 'Product source already materialized.'
             exit 0
           fi
-          git commit -m 'feat(remote): ship isolated RustDesk host runtime and explicit consent'
+          git commit -m 'feat(remote): persist explicit RustDesk capability grants'
           git push origin HEAD:codex/rustdesk-fusion-route-negotiation
 
   source-and-build:
