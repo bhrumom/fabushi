@@ -1361,6 +1361,16 @@ function nextBrowserJob(host, requestedJobId = '') {
   return runnable[index];
 }
 
+function readyForLeaseDrain(job) {
+  if (!job || TERMINAL_JOB_STATUSES.has(job.status)) return false;
+  // A response can finish in the same polling slice in which the Browser
+  // lease expires. Drain the already-decided handoff (or an accepted job that
+  // has not started yet) once before yielding the host, so a finished Chat is
+  // followed by its fresh Chat in the same trusted Browser execution.
+  return job.status === 'handoff_to_fresh_chat'
+    || (job.phase === 'accepted' && job.responseRunning !== true);
+}
+
 async function runBrowserStep(host, { jobId = '', allowReattach = true } = {}) {
   const job = nextBrowserJob(host, jobId);
   if (!job) return null;
@@ -1741,11 +1751,22 @@ export async function createInAppBrowserCapabilityHost({
     if (host.pumpActive) throw new Error('内置 Browser capability 泵已在运行');
     host.pumpActive = true;
     const leaseDeadline = leaseTimeoutMs > 0 ? Date.now() + leaseTimeoutMs : Number.POSITIVE_INFINITY;
+    const leaseDrainedJobs = new Set();
     try {
       while (!host.pumpStopRequested) {
         const runningJobs = activeBrowserJobs(host);
         if (runningJobs.length === 0 && hostJobs(host).length > 0) break;
         if (Date.now() >= leaseDeadline) {
+          const readyJobs = runningJobs.filter(job => (
+            !leaseDrainedJobs.has(job.id) && readyForLeaseDrain(job)
+          ));
+          if (readyJobs.length > 0) {
+            for (const job of readyJobs) {
+              leaseDrainedJobs.add(job.id);
+              await host.runStep({ jobId: job.id });
+            }
+            continue;
+          }
           for (const job of runningJobs) {
             job.status = 'waiting_for_browser_host';
             job.error = '内置 Browser 宿主已在执行租约到期前主动轮换；下一轮会自动重新附着同一任务。';

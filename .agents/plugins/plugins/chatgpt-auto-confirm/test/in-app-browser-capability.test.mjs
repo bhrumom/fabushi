@@ -1280,6 +1280,59 @@ test('a scheduled Browser slice yields persisted recovery state before its execu
   }
 });
 
+test('lease rotation drains a decided fresh-chat handoff before yielding', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-lease-drain-'));
+  const capabilityFile = join(directory, 'capability.json');
+  const jobStateFile = join(directory, 'job.json');
+  const now = new Date().toISOString();
+  const jobId = 'iab_88888888-3333-4444-8555-666666666666';
+  const activeJob = {
+    id: jobId,
+    goal: '在新 Chat 继续完整目标',
+    status: 'handoff_to_fresh_chat',
+    phase: 'accepted',
+    attempt: 2,
+    startedAt: now,
+    updatedAt: now,
+    currentUrl: 'https://chatgpt.com/g/fabushi/c/finished-chat',
+    conversationId: 'finished-chat',
+    responseRunning: false,
+  };
+  await writeFile(jobStateFile, `${JSON.stringify(activeJob)}\n`);
+  const host = await createInAppBrowserCapabilityHost({
+    browser: { tabs: {} },
+    tab: { id: 'lease-drain', playwright: {} },
+    startUrl: 'https://chatgpt.com/g/fabushi/project',
+    capabilityFile,
+    jobStateFile,
+  });
+  let steps = 0;
+  try {
+    host.policy.pollIntervalMs = 5;
+    host.runStep = async ({ jobId: requestedJobId } = {}) => {
+      steps += 1;
+      assert.equal(requestedJobId, jobId);
+      const job = host.jobs.get(requestedJobId);
+      job.status = 'running';
+      job.phase = 'waiting';
+      job.responseRunning = true;
+      job.currentUrl = 'https://chatgpt.com/g/fabushi/c/fresh-chat';
+      job.conversationId = 'fresh-chat';
+      return { ...job };
+    };
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 5));
+    await host.runPump({ leaseTimeoutMs: 1 });
+    assert.equal(steps, 1);
+    const saved = JSON.parse(await readFile(jobStateFile, 'utf8'));
+    assert.equal(saved.status, 'waiting_for_browser_host');
+    assert.equal(saved.phase, 'waiting');
+    assert.equal(saved.currentUrl, 'https://chatgpt.com/g/fabushi/c/fresh-chat');
+    assert.equal(saved.conversationId, 'fresh-chat');
+  } finally {
+    await host.close();
+  }
+});
+
 test('a Browser lease rotates into recoverable reattachment before its execution expires', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'chatgpt-auto-confirm-lease-rotation-'));
   const capabilityFile = join(directory, 'capability.json');
