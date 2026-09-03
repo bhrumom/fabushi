@@ -32,6 +32,9 @@ use uuid::Uuid;
 
 const MAX_TOOL_OUTPUT_BYTES: usize = 64 * 1024;
 const DEFAULT_MAX_MODEL_TURNS: usize = 16;
+const SECRET_LABEL_MAX_CHARS: usize = 120;
+const SECRET_DESCRIPTION_MAX_CHARS: usize = 400;
+const SECRET_TARGET_MAX_CHARS: usize = 160;
 
 #[derive(Debug, Clone)]
 pub struct NativeEngineConfig {
@@ -75,6 +78,18 @@ impl NativeEngineConfig {
     }
 }
 
+/// Trusted host-owned tools that are appended to the native Agent tool list.
+/// The implementation is responsible for keeping any credentials it uses out
+/// of both arguments and returned values.
+#[async_trait]
+pub trait NativeExternalToolProvider: Send + Sync {
+    fn definitions(&self) -> Vec<Value>;
+
+    fn handles(&self, name: &str) -> bool;
+
+    async fn execute(&self, name: &str, arguments: Value) -> Result<Value, KernelError>;
+}
+
 struct NativeSession {
     workspace_root: Option<PathBuf>,
     history: Vec<Value>,
@@ -83,6 +98,161 @@ struct NativeSession {
 
 struct ApprovalWaiter {
     sender: oneshot::Sender<bool>,
+}
+
+/// A secret request is deliberately represented by metadata only. The value is
+/// entered by the presentation surface and never becomes a model argument,
+/// model result, transcript item, or event payload.
+#[derive(Debug, Clone)]
+pub struct SecretRequest {
+    pub request_id: String,
+    pub label: String,
+    pub description: Option<String>,
+    pub connector: String,
+    pub field: String,
+}
+
+struct PendingSecret {
+    operation_id: String,
+    request: SecretRequest,
+    sender: oneshot::Sender<Result<(), String>>,
+}
+
+/// In-process rendezvous between the native Agent tool loop and the trusted
+/// host. The host resolves a request only after it has persisted the value in
+/// secure storage, so resuming the model is not an acknowledgement of a value
+/// being merely present in the renderer.
+#[derive(Default)]
+pub struct SecretRequestBroker {
+    pending: Mutex<HashMap<String, PendingSecret>>,
+}
+
+impl SecretRequestBroker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn is_pending(&self, request_id: &str) -> Result<bool, KernelError> {
+        self.pending
+            .lock()
+            .map(|pending| pending.contains_key(request_id))
+            .map_err(|_| KernelError::Backend("secret request registry poisoned".into()))
+    }
+
+    pub fn pending_request(&self, request_id: &str) -> Result<Option<SecretRequest>, KernelError> {
+        self.pending
+            .lock()
+            .map(|pending| pending.get(request_id).map(|item| item.request.clone()))
+            .map_err(|_| KernelError::Backend("secret request registry poisoned".into()))
+    }
+
+    pub async fn wait(
+        &self,
+        request: SecretRequest,
+        operation_id: &OperationId,
+        events: SharedKernelEventSink,
+    ) -> Result<(), KernelError> {
+        let request_id = request.request_id.clone();
+        let (sender, receiver) = oneshot::channel();
+        self.pending
+            .lock()
+            .map_err(|_| KernelError::Backend("secret request registry poisoned".into()))?
+            .insert(
+                request_id.clone(),
+                PendingSecret {
+                    operation_id: operation_id.as_str().to_string(),
+                    request: request.clone(),
+                    sender,
+                },
+            );
+
+        if let Err(error) = events.emit(KernelEvent::Activity {
+            operation_id: operation_id.clone(),
+            kind: "secret-request".into(),
+            title: "Secure secret input required".into(),
+            detail: request.description.clone(),
+            metadata: json!({
+                "stepId": format!("secret-request:{request_id}"),
+                "secretRequestId": &request_id,
+                "label": &request.label,
+            }),
+        }) {
+            self.pending
+                .lock()
+                .map_err(|_| KernelError::Backend("secret request registry poisoned".into()))?
+                .remove(&request.request_id);
+            return Err(error);
+        }
+
+        match receiver.await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(message)) => Err(KernelError::Backend(message)),
+            Err(_) => {
+                let _ = self
+                    .pending
+                    .lock()
+                    .map(|mut pending| pending.remove(&request_id));
+                Err(KernelError::Backend(
+                    "secret request was closed before it was provided".into(),
+                ))
+            }
+        }
+    }
+
+    pub fn resolve(&self, request_id: &str) -> Result<(), KernelError> {
+        let pending = self
+            .pending
+            .lock()
+            .map_err(|_| KernelError::Backend("secret request registry poisoned".into()))?
+            .remove(request_id)
+            .ok_or_else(|| {
+                KernelError::Backend(format!("secret request not found: {request_id}"))
+            })?;
+        pending
+            .sender
+            .send(Ok(()))
+            .map_err(|_| KernelError::Backend("secret request waiter is no longer active".into()))
+    }
+
+    pub fn cancel_operation(&self, operation_id: &OperationId) -> Result<(), KernelError> {
+        let cancelled = {
+            let mut pending = self
+                .pending
+                .lock()
+                .map_err(|_| KernelError::Backend("secret request registry poisoned".into()))?;
+            let request_ids = pending
+                .iter()
+                .filter(|(_, item)| item.operation_id == operation_id.as_str())
+                .map(|(request_id, _)| request_id.clone())
+                .collect::<Vec<_>>();
+            request_ids
+                .into_iter()
+                .filter_map(|request_id| pending.remove(&request_id))
+                .collect::<Vec<_>>()
+        };
+        for pending in cancelled {
+            let _ = pending.sender.send(Err(
+                "operation interrupted while waiting for secret input".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn cancel_all(&self) -> Result<(), KernelError> {
+        let cancelled = self
+            .pending
+            .lock()
+            .map_err(|_| KernelError::Backend("secret request registry poisoned".into()))?
+            .drain()
+            .map(|(_, pending)| pending)
+            .collect::<Vec<_>>();
+        for pending in cancelled {
+            let _ = pending.sender.send(Err(
+                "account session reset while waiting for secret input".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 pub struct NativeEngine {
@@ -94,12 +264,31 @@ pub struct NativeEngine {
     memory: Mutex<MemoryStore>,
     workflows: Mutex<HashMap<String, Workflow>>,
     subagents: Mutex<SubagentScheduler>,
+    secret_requests: Arc<SecretRequestBroker>,
+    external_tools: Option<Arc<dyn NativeExternalToolProvider>>,
 }
 
 impl NativeEngine {
     pub fn new(
         model: Arc<dyn ModelRuntime>,
         config: NativeEngineConfig,
+    ) -> Result<Self, KernelError> {
+        Self::new_with_tools(model, config, Arc::new(SecretRequestBroker::new()), None)
+    }
+
+    pub fn new_with_secret_broker(
+        model: Arc<dyn ModelRuntime>,
+        config: NativeEngineConfig,
+        secret_requests: Arc<SecretRequestBroker>,
+    ) -> Result<Self, KernelError> {
+        Self::new_with_tools(model, config, secret_requests, None)
+    }
+
+    pub fn new_with_tools(
+        model: Arc<dyn ModelRuntime>,
+        config: NativeEngineConfig,
+        secret_requests: Arc<SecretRequestBroker>,
+        external_tools: Option<Arc<dyn NativeExternalToolProvider>>,
     ) -> Result<Self, KernelError> {
         config.validate()?;
         Ok(Self {
@@ -114,6 +303,8 @@ impl NativeEngine {
                 SubagentScheduler::new(4)
                     .map_err(|error| KernelError::Backend(error.to_string()))?,
             ),
+            secret_requests,
+            external_tools,
         })
     }
 
@@ -187,6 +378,7 @@ impl NativeEngine {
         session
             .history
             .push(json!({"role": "user", "content": prompt}));
+        let mut public_message_sent = false;
 
         for turn in 0..self.config.max_model_turns {
             ensure_not_interrupted(interrupted)?;
@@ -201,10 +393,17 @@ impl NativeEngine {
                 kind: "model".into(),
                 title: format!("Mahayana reasoning turn {}", turn + 1),
                 detail: None,
-                metadata: json!({"engine": "mahayana-native"}),
+                metadata: json!({
+                    "engine": "mahayana-native",
+                    "stepId": format!("model:{}", turn + 1),
+                    "status": "running",
+                }),
             })?;
 
-            let collector = Arc::new(ModelCollector::default());
+            let collector = Arc::new(ModelCollector::streaming(
+                Arc::clone(&events),
+                operation_id.clone(),
+            ));
             let sink: SharedModelEventSink = collector.clone();
             self.model
                 .infer(
@@ -213,7 +412,10 @@ impl NativeEngine {
                         input: Value::Array(session.history.clone()),
                         metadata: json!({
                             "instructions": self.config.system_instructions,
-                            "tools": tool_definitions(self.config.enable_process_tools),
+                            "tools": tool_definitions(
+                                self.config.enable_process_tools,
+                                self.external_tools.as_deref(),
+                            ),
                             "tool_choice": "auto",
                             "parallel_tool_calls": false,
                         }),
@@ -223,6 +425,17 @@ impl NativeEngine {
                 .await
                 .map_err(model_error)?;
             ensure_not_interrupted(interrupted)?;
+            events.emit(KernelEvent::Activity {
+                operation_id: operation_id.clone(),
+                kind: "model".into(),
+                title: format!("Mahayana reasoning turn {}", turn + 1),
+                detail: Some("模型输出已接收".into()),
+                metadata: json!({
+                    "engine": "mahayana-native",
+                    "stepId": format!("model:{}", turn + 1),
+                    "status": "completed",
+                }),
+            })?;
 
             if let Some(usage) = collector.usage()? {
                 events.emit(KernelEvent::UsageUpdated {
@@ -244,19 +457,33 @@ impl NativeEngine {
                             "model completed without assistant text or tool calls".into(),
                         )
                     })?;
-                events.emit(KernelEvent::MessageDelta {
-                    operation_id: operation_id.clone(),
-                    delta: text.clone(),
-                })?;
-                events.emit(KernelEvent::MessageCompleted {
-                    operation_id: operation_id.clone(),
-                    text: text.clone(),
-                })?;
+                // Once the model has used the public SendMessage tool, its
+                // remaining assistant text is an internal scratchpad. This
+                // is the same boundary used by Grok Bot: only deliberate,
+                // concise public messages reach the conversation transcript.
+                if !public_message_sent {
+                    // A Responses stream may already have forwarded deltas to
+                    // the kernel sink. Emit a single delta only for a JSON or
+                    // legacy model result that had no incremental callbacks.
+                    if collector.text()?.is_empty() {
+                        events.emit(KernelEvent::MessageDelta {
+                            operation_id: operation_id.clone(),
+                            delta: text.clone(),
+                        })?;
+                    }
+                    events.emit(KernelEvent::MessageCompleted {
+                        operation_id: operation_id.clone(),
+                        text: text.clone(),
+                    })?;
+                }
                 return Ok(text);
             }
 
             for call in calls {
                 ensure_not_interrupted(interrupted)?;
+                if call.name == "send_message" {
+                    public_message_sent = true;
+                }
                 events.emit(KernelEvent::ToolStarted {
                     operation_id: operation_id.clone(),
                     tool: call.name.clone(),
@@ -327,7 +554,55 @@ impl NativeEngine {
                 .await?;
             ensure_not_interrupted(interrupted)?;
 
+            if let Some(provider) = self.external_tools.as_ref()
+                && provider.handles(&call.name)
+            {
+                return provider.execute(&call.name, call.arguments.clone()).await;
+            }
+
             match call.name.as_str() {
+                "send_message" => {
+                    let message =
+                        bounded_secret_text(string_arg(&call.arguments, "message")?, 4000);
+                    if message.is_empty() {
+                        return Err(KernelError::Backend(
+                            "tool argument message must not be empty".into(),
+                        ));
+                    }
+                    events.emit(KernelEvent::MessageDelta {
+                        operation_id: operation_id.clone(),
+                        delta: message.clone(),
+                    })?;
+                    events.emit(KernelEvent::MessageCompleted {
+                        operation_id: operation_id.clone(),
+                        text: message,
+                    })?;
+                    Ok(json!({"delivered": true}))
+                }
+                "request_secret" => {
+                    let label = required_secret_label(&call.arguments, "label")?;
+                    let description = optional_secret_description(&call.arguments, "description")?;
+                    let connector = required_secret_target(&call.arguments, "connector")?;
+                    let field = required_secret_target(&call.arguments, "field")?;
+                    let request_id = format!("secret:{}", Uuid::new_v4());
+                    self.secret_requests
+                        .wait(
+                            SecretRequest {
+                                request_id: request_id.clone(),
+                                label,
+                                description,
+                                connector,
+                                field,
+                            },
+                            operation_id,
+                            Arc::clone(&events),
+                        )
+                        .await?;
+                    Ok(json!({
+                        "provided": true,
+                        "secretRequestId": request_id,
+                    }))
+                }
                 "workspace_read" => {
                     let root = workspace_root(session)?;
                     let path = string_arg(&call.arguments, "path")?;
@@ -765,6 +1040,12 @@ impl EngineBackend for NativeEngine {
             }
         }
         let session_id = SessionId::new();
+        let history = request
+            .metadata
+            .get("history")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         self.sessions
             .lock()
             .map_err(|_| KernelError::Backend("native session registry poisoned".into()))?
@@ -772,7 +1053,7 @@ impl EngineBackend for NativeEngine {
                 session_id.as_str().to_string(),
                 Arc::new(AsyncMutex::new(NativeSession {
                     workspace_root,
-                    history: Vec::new(),
+                    history,
                     prompt_queue: PromptQueue::default(),
                 })),
             );
@@ -849,6 +1130,7 @@ impl EngineBackend for NativeEngine {
             .cloned()
             .ok_or_else(|| KernelError::OperationNotFound(operation_id.as_str().to_string()))?;
         interrupted.store(true, Ordering::SeqCst);
+        self.secret_requests.cancel_operation(operation_id)?;
         Ok(())
     }
 
@@ -863,6 +1145,44 @@ impl EngineBackend for NativeEngine {
             .sender
             .send(resolution.approved)
             .map_err(|_| KernelError::ApprovalNotFound(resolution.approval_id))
+    }
+
+    fn reset_session(&self) -> Result<(), KernelError> {
+        let operations = self
+            .active_operations
+            .lock()
+            .map_err(|_| KernelError::Backend("native operation registry poisoned".into()))?
+            .drain()
+            .map(|(_, interrupted)| interrupted)
+            .collect::<Vec<_>>();
+        for interrupted in operations {
+            interrupted.store(true, Ordering::SeqCst);
+        }
+        let approvals = self
+            .approvals
+            .lock()
+            .map_err(|_| KernelError::Backend("approval registry poisoned".into()))?
+            .drain()
+            .map(|(_, waiter)| waiter)
+            .collect::<Vec<_>>();
+        for waiter in approvals {
+            let _ = waiter.sender.send(false);
+        }
+        self.secret_requests.cancel_all()?;
+        self.sessions
+            .lock()
+            .map_err(|_| KernelError::Backend("native session registry poisoned".into()))?
+            .clear();
+        *self
+            .memory
+            .lock()
+            .map_err(|_| KernelError::Backend("memory store poisoned".into()))? =
+            MemoryStore::default();
+        self.workflows
+            .lock()
+            .map_err(|_| KernelError::Backend("workflow store poisoned".into()))?
+            .clear();
+        Ok(())
     }
 }
 
@@ -928,9 +1248,17 @@ struct ModelCollector {
     output: Mutex<Option<Value>>,
     text: Mutex<String>,
     usage: Mutex<Option<ModelUsage>>,
+    streaming_events: Option<(SharedKernelEventSink, OperationId)>,
 }
 
 impl ModelCollector {
+    fn streaming(events: SharedKernelEventSink, operation_id: OperationId) -> Self {
+        Self {
+            streaming_events: Some((events, operation_id)),
+            ..Self::default()
+        }
+    }
+
     fn output(&self) -> Result<Option<Value>, KernelError> {
         self.output
             .lock()
@@ -956,11 +1284,20 @@ impl ModelCollector {
 impl ModelEventSink for ModelCollector {
     fn emit(&self, event: ModelEvent) -> Result<(), ModelError> {
         match event {
-            ModelEvent::OutputTextDelta(delta) => self
-                .text
-                .lock()
-                .map_err(|_| ModelError::EventConsumerClosed)?
-                .push_str(&delta),
+            ModelEvent::OutputTextDelta(delta) => {
+                if let Some((events, operation_id)) = self.streaming_events.as_ref() {
+                    events
+                        .emit(KernelEvent::MessageDelta {
+                            operation_id: operation_id.clone(),
+                            delta: delta.clone(),
+                        })
+                        .map_err(|error| ModelError::Inference(error.to_string()))?;
+                }
+                self.text
+                    .lock()
+                    .map_err(|_| ModelError::EventConsumerClosed)?
+                    .push_str(&delta);
+            }
             ModelEvent::Usage(usage) => {
                 *self
                     .usage
@@ -1143,10 +1480,62 @@ fn string_arg<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, KernelErro
         .ok_or_else(|| KernelError::Backend(format!("tool argument {key} is required")))
 }
 
+fn required_secret_label(arguments: &Value, key: &str) -> Result<String, KernelError> {
+    let value = bounded_secret_text(string_arg(arguments, key)?, SECRET_LABEL_MAX_CHARS);
+    if value.is_empty() {
+        return Err(KernelError::Backend(format!(
+            "tool argument {key} is required"
+        )));
+    }
+    Ok(value)
+}
+
+fn optional_secret_description(
+    arguments: &Value,
+    key: &str,
+) -> Result<Option<String>, KernelError> {
+    let Some(value) = arguments.get(key) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let value = value
+        .as_str()
+        .ok_or_else(|| KernelError::Backend(format!("tool argument {key} must be a string")))?;
+    let value = bounded_secret_text(value, SECRET_DESCRIPTION_MAX_CHARS);
+    Ok((!value.is_empty()).then_some(value))
+}
+
+fn required_secret_target(arguments: &Value, key: &str) -> Result<String, KernelError> {
+    let value = string_arg(arguments, key)?.trim();
+    if value.is_empty()
+        || value.chars().count() > SECRET_TARGET_MAX_CHARS
+        || !value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | ':' | '/' | '-')
+        })
+    {
+        return Err(KernelError::Backend(format!(
+            "tool argument {key} is not a safe secret target"
+        )));
+    }
+    Ok(value.to_string())
+}
+
+fn bounded_secret_text(value: &str, max_chars: usize) -> String {
+    value
+        .trim()
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(max_chars)
+        .collect()
+}
+
 fn tool_risk(tool: &str) -> RiskLevel {
     match tool {
         "workspace_write" | "workspace_restore" => RiskLevel::WorkspaceWrite,
         "process_exec" => RiskLevel::SystemWrite,
+        "connector_mcp_call" => RiskLevel::ExternalSideEffect,
         _ => RiskLevel::ReadOnly,
     }
 }
@@ -1171,8 +1560,38 @@ fn model_error(error: ModelError) -> KernelError {
     KernelError::Backend(error.to_string())
 }
 
-fn tool_definitions(enable_process_tools: bool) -> Vec<Value> {
+fn tool_definitions(
+    enable_process_tools: bool,
+    external_tools: Option<&dyn NativeExternalToolProvider>,
+) -> Vec<Value> {
     let mut tools = vec![
+        function_tool(
+            "send_message",
+            "Send one concise, user-visible message to the conversation. Ordinary assistant text is private scratchpad and is not shown. For a multi-step request, send a short acknowledgement before the first real tool call, then send one natural 1-3 sentence update after each meaningful milestone and a final result after the actual work is complete. Do not put simulated tool names, fake progress, or a whole multi-step report inside one message, and never claim work is complete before the actual result is ready.",
+            json!({
+                "type":"object",
+                "properties":{
+                    "message":{"type":"string","description":"The short natural-language message the user should see."}
+                },
+                "required":["message"],
+                "additionalProperties":false
+            }),
+        ),
+        function_tool(
+            "request_secret",
+            "Ask the user for a credential through Mahayana's masked secure-input prompt. Never ask the user to paste a secret into chat, and never put a secret in this tool's arguments. The Agent pauses until the trusted host stores the value; after resuming, the result only confirms that the opaque request was provided.",
+            json!({
+                "type":"object",
+                "properties":{
+                    "label":{"type":"string","description":"Short human-readable name shown in the secure prompt."},
+                    "description":{"type":"string","description":"Why the credential is needed; do not include the credential itself."},
+                    "connector":{"type":"string","description":"Trusted connector identifier that will consume the credential."},
+                    "field":{"type":"string","description":"Credential field used by the connector, such as token."}
+                },
+                "required":["label","connector","field"],
+                "additionalProperties":false
+            }),
+        ),
         function_tool(
             "workspace_read",
             "Read a UTF-8 text file inside the active workspace.",
@@ -1263,6 +1682,9 @@ fn tool_definitions(enable_process_tools: bool) -> Vec<Value> {
             ),
         ]);
     }
+    if let Some(external_tools) = external_tools {
+        tools.extend(external_tools.definitions());
+    }
     tools
 }
 
@@ -1276,7 +1698,7 @@ fn function_tool(name: &str, description: &str, parameters: Value) -> Value {
 }
 
 fn default_system_instructions() -> String {
-    "You are Mahayana, a product-owned coding and automation Agent. Inspect before editing; prefer minimal, reversible changes; use checkpoints before risky workspace mutations; use workflows for dependent tasks; delegate focused analysis to subagents; never claim a tool succeeded unless its result says so; respect Mahayana approval and platform policy."
+    "You are Mahayana, a product-owned coding and automation Agent. Inspect before editing; prefer minimal, reversible changes; use checkpoints before risky workspace mutations; use workflows for dependent tasks; delegate focused analysis to subagents; never claim a tool succeeded unless its result says so; respect Mahayana approval and platform policy. The user-facing conversation is separate from your private reasoning scratchpad: ordinary assistant text is not a public reply. Treat every request that needs more than one action as an observable multi-step run: first call send_message with a brief acknowledgement, then call the real tools, then call send_message after each meaningful milestone, and finally call send_message with the verified result. Each public update must be a natural 1-3 sentence message, so the UI can render separate human-like bubbles in order. Never write fake progress, simulated tool output, or a list of all steps into one final message; never describe a tool as used unless you actually called it and received its result. For a simple question that needs no tool, one final send_message is enough. When a connector needs a credential, call request_secret with a short label, reason, connector, and field. Never ask the user to paste a secret into chat, never include a secret in a prompt or tool argument, and continue only from the secure acknowledgement after the trusted host stores it. After secure acknowledgement, use connector_mcp_list to discover the trusted connector's tools and connector_mcp_call to use them; the host injects the stored credential at the connector boundary, so never copy it into connector arguments."
         .to_string()
 }
 

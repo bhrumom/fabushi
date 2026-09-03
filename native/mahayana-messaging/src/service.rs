@@ -507,7 +507,14 @@ impl<S: MessagingStateStore> MessagingService<S> {
                     .take(max_items)
                     .cloned()
                     .collect(),
-                bots: state.bots.bots.values().take(max_items).cloned().collect(),
+                bots: state
+                    .bots
+                    .bots
+                    .values()
+                    .filter(|profile| visible_actor_ids.contains(&profile.actor_id))
+                    .take(max_items)
+                    .cloned()
+                    .collect(),
                 bot_executions: state
                     .bots
                     .executions

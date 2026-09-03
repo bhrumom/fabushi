@@ -599,6 +599,112 @@ impl MahayanaProductClient {
             .map_err(secrets_error)
     }
 
+    /// Returns a credential bound to one trusted connector field. The target
+    /// is hashed into the encrypted secret name, so neither connector ids nor
+    /// field names become a plaintext storage filename.
+    pub fn connector_secret(
+        &self,
+        connector: &str,
+        field: &str,
+    ) -> Result<Option<String>, ProductError> {
+        let name = connector_secret_name(connector, field)?;
+        self.managed_secrets
+            .get(&SecretScope::Global, &name)
+            .map_err(secrets_error)
+    }
+
+    pub fn connector_secret_for_platform(
+        &self,
+        connector: &str,
+        platform: &str,
+        field: &str,
+    ) -> Result<Option<String>, ProductError> {
+        let name = connector_secret_name_for_platform(connector, platform, field)?;
+        self.managed_secrets
+            .get(&SecretScope::Global, &name)
+            .map_err(secrets_error)
+    }
+
+    /// Stores a credential for the trusted connector final hop. The value is
+    /// accepted only by the Rust-owned host and is never returned to UI/model
+    /// callers.
+    pub fn store_connector_secret(
+        &self,
+        connector: &str,
+        field: &str,
+        value: &str,
+    ) -> Result<(), ProductError> {
+        if value.trim().is_empty() {
+            return Err(ProductError::State("secret value must not be empty".into()));
+        }
+        let name = connector_secret_name(connector, field)?;
+        self.managed_secrets
+            .set(&SecretScope::Global, &name, value)
+            .map_err(secrets_error)
+    }
+
+    pub fn store_connector_secret_for_platform(
+        &self,
+        connector: &str,
+        platform: &str,
+        field: &str,
+        value: &str,
+    ) -> Result<(), ProductError> {
+        if value.trim().is_empty() {
+            return Err(ProductError::State("secret value must not be empty".into()));
+        }
+        let name = connector_secret_name_for_platform(connector, platform, field)?;
+        self.managed_secrets
+            .set(&SecretScope::Global, &name, value)
+            .map_err(secrets_error)
+    }
+
+    /// Removes a credential bound to one connector field without exposing the
+    /// previous value.
+    pub fn revoke_connector_secret(
+        &self,
+        connector: &str,
+        field: &str,
+    ) -> Result<bool, ProductError> {
+        let name = connector_secret_name(connector, field)?;
+        self.managed_secrets
+            .delete(&SecretScope::Global, &name)
+            .map_err(secrets_error)
+    }
+
+    pub fn revoke_connector_secret_for_platform(
+        &self,
+        connector: &str,
+        platform: &str,
+        field: &str,
+    ) -> Result<bool, ProductError> {
+        let name = connector_secret_name_for_platform(connector, platform, field)?;
+        self.managed_secrets
+            .delete(&SecretScope::Global, &name)
+            .map_err(secrets_error)
+    }
+
+    /// Stores a user-provided Agent credential in the encrypted managed
+    /// namespace. The value is accepted only at the Rust host boundary; this
+    /// method intentionally returns no secret material to the caller.
+    pub fn store_managed_secret(
+        &self,
+        secret_request_id: &str,
+        value: &str,
+    ) -> Result<(), ProductError> {
+        let secret_request_id = secret_request_id.trim();
+        if secret_request_id.is_empty() {
+            return Err(ProductError::InvalidParameter("secretRequestId"));
+        }
+        if value.trim().is_empty() {
+            return Err(ProductError::State("secret value must not be empty".into()));
+        }
+        let name = managed_secret_name(secret_request_id)?;
+        self.managed_secrets
+            .set(&SecretScope::Global, &name, value)
+            .map_err(secrets_error)
+    }
+
     /// Revokes a first-party requested secret from the encrypted managed
     /// secrets namespace. The returned boolean indicates whether a value was
     /// present before revocation.
@@ -1460,13 +1566,7 @@ impl MahayanaProductClient {
                 value,
                 ..
             } => {
-                if value.is_empty() {
-                    return Err(ProductError::State("secret value must not be empty".into()));
-                }
-                let name = managed_secret_name(&secret_request_id)?;
-                self.managed_secrets
-                    .set(&SecretScope::Global, &name, &value)
-                    .map_err(secrets_error)?;
+                self.store_managed_secret(&secret_request_id, &value)?;
                 // Never echo the secret or its encrypted storage key. The
                 // opaque request id is the only renderer-visible handle.
                 json!({"provided": true, "secretRequestId": secret_request_id})
@@ -2697,6 +2797,44 @@ fn managed_secret_name(secret_request_id: &str) -> Result<SecretName, ProductErr
     SecretName::new(&format!("MAHAYANA_REQUESTED_SECRET_{digest:X}")).map_err(secrets_error)
 }
 
+fn connector_secret_name(connector: &str, field: &str) -> Result<SecretName, ProductError> {
+    let connector = validate_connector_secret_target(connector, "connector")?;
+    let field = validate_connector_secret_target(field, "field")?;
+    let target = format!("{connector}\0{field}");
+    let digest = sha2::Sha256::digest(target.as_bytes());
+    SecretName::new(&format!("MAHAYANA_CONNECTOR_SECRET_{digest:X}")).map_err(secrets_error)
+}
+
+fn connector_secret_name_for_platform(
+    connector: &str,
+    platform: &str,
+    field: &str,
+) -> Result<SecretName, ProductError> {
+    let connector = validate_connector_secret_target(connector, "connector")?;
+    let platform = validate_connector_secret_target(platform, "platform")?;
+    let field = validate_connector_secret_target(field, "field")?;
+    let target = format!("{connector}\0{platform}\0{field}");
+    let digest = sha2::Sha256::digest(target.as_bytes());
+    SecretName::new(&format!("MAHAYANA_CONNECTOR_PLATFORM_SECRET_{digest:X}"))
+        .map_err(secrets_error)
+}
+
+fn validate_connector_secret_target<'a>(
+    value: &'a str,
+    parameter: &'static str,
+) -> Result<&'a str, ProductError> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.chars().count() > 160
+        || !value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | ':' | '/' | '-')
+        })
+    {
+        return Err(ProductError::InvalidParameter(parameter));
+    }
+    Ok(value)
+}
+
 fn merge_refreshed_session(session: Value, response: Value, access_token: &str) -> Value {
     let mut updated = session.as_object().cloned().unwrap_or_default();
     if let Some(response) = response.as_object() {
@@ -3327,6 +3465,40 @@ mod tests {
         assert_eq!(
             managed_secret_name("  "),
             Err(ProductError::InvalidParameter("secretRequestId"))
+        );
+    }
+
+    #[test]
+    fn connector_secret_names_are_stable_and_target_scoped() {
+        let github_token = connector_secret_name("github", "token").expect("connector secret");
+        let github_api_key = connector_secret_name("github", "api_key").expect("connector secret");
+        assert!(
+            github_token
+                .as_str()
+                .starts_with("MAHAYANA_CONNECTOR_SECRET_")
+        );
+        assert_ne!(github_token, github_api_key);
+        assert_eq!(
+            connector_secret_name(" github ", " token ").expect("trimmed target"),
+            github_token
+        );
+        assert_eq!(
+            connector_secret_name("github", "token/value").expect("slash target"),
+            connector_secret_name("github", "token/value").expect("slash target")
+        );
+        assert_ne!(
+            connector_secret_name("slack", "token").expect("connector secret"),
+            github_token
+        );
+        assert_ne!(
+            connector_secret_name_for_platform("github", "desktop", "token")
+                .expect("desktop connector secret"),
+            connector_secret_name_for_platform("github", "mobile", "token")
+                .expect("mobile connector secret")
+        );
+        assert_eq!(
+            connector_secret_name("", "token"),
+            Err(ProductError::InvalidParameter("connector"))
         );
     }
 

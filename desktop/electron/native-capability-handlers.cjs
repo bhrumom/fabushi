@@ -99,6 +99,7 @@ function createNativeCapabilityHandlers(deps) {
     mutateNativeState,
     windowForEvent,
     broadcastNativeEvent,
+    clearAccountBoundMessagingState,
   } = deps;
 
   const telemetryPath = () => path.join(app.getPath('userData'), 'diagnostics', 'native-events.ndjson');
@@ -725,7 +726,9 @@ function createNativeCapabilityHandlers(deps) {
 
     async loginAccount(params) {
       if (params.username != null || params.password != null) {
-        return host.request('feature.auth.passwordLogin', { username: String(params.username ?? ''), password: String(params.password ?? '') });
+        const auth = await host.request('feature.auth.passwordLogin', { username: String(params.username ?? ''), password: String(params.password ?? '') });
+        if (auth?.loggedIn === true || auth?.auth?.loggedIn === true) clearAccountBoundMessagingState?.();
+        return auth;
       }
       const providers = await host.request('feature.auth.providers', {});
       const provider = cleanString(params.provider, 80) || (Array.isArray(providers) ? cleanString(providers[0]?.id ?? providers[0], 80) : '');
@@ -742,6 +745,7 @@ function createNativeCapabilityHandlers(deps) {
 
     async logoutAccount() {
       const auth = await host.request('feature.auth.logout', {});
+      clearAccountBoundMessagingState?.();
       broadcastNativeEvent('account-auth-changed', auth);
       return auth;
     },

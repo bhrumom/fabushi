@@ -36,13 +36,21 @@ import {
   Video,
   WalletCards,
   X,
+  Code,
+  Maximize2,
+  Minimize2,
+  Play,
+  RotateCcw,
+  Sparkles,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import HostClient from '../../frontend/apps/web/src/app/host/host-client';
 import type {
+  AuthState,
   BotSummary,
   ConversationSummary,
   GroupSummary,
+  MiniAppDeliverable,
   RuntimeEvent,
 } from '../../frontend/apps/web/src/lib/mahayana-host/contracts';
 import { ElectronMahayanaHostTransport, isElectronMahayanaHostAvailable } from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
@@ -115,12 +123,155 @@ type DisplayMessage = {
   role: 'me' | 'peer';
   text: string;
   createdAtMs: number;
+  kind?: 'message' | 'action' | 'thinking' | 'deliverable';
+  operationId?: string;
+  actionKind?: string;
+  actionTitle?: string;
+  actionDetail?: string;
+  actionStatus?: 'running' | 'completed' | 'failed';
+  streaming?: boolean;
   pinned?: boolean;
   reactions?: string[];
   invoiceId?: string;
   media?: MessagingMediaRef;
   mediaType?: 'photo' | 'video' | 'document';
+  deliverable?: MiniAppDeliverable;
+  steps?: Array<{
+    id: string;
+    title: string;
+    detail?: string;
+    status: 'running' | 'completed' | 'failed';
+  }>;
 };
+
+export const DEFAULT_WHAC_A_MOLE_HTML = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>打地鼠小游戏</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #2c3e50; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 16px; }
+  .header { text-align: center; margin-bottom: 16px; }
+  h1 { font-size: 24px; margin-bottom: 8px; color: #f1c40f; }
+  .stats { display: flex; gap: 24px; font-size: 18px; font-weight: bold; margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 90px); grid-template-rows: repeat(3, 90px); gap: 12px; background: #34495e; padding: 14px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  .hole { position: relative; background: #795548; border-radius: 50%; overflow: hidden; box-shadow: inset 0 6px 12px rgba(0,0,0,0.5); cursor: pointer; }
+  .mole { position: absolute; width: 100%; height: 100%; top: 100%; left: 0; display: flex; align-items: center; justify-content: center; font-size: 42px; transition: top 0.15s ease-out; }
+  .hole.active .mole { top: 10%; }
+  .hole.whacked .mole { transform: scale(0.85); filter: grayscale(1); }
+  .btn { margin-top: 18px; padding: 10px 24px; font-size: 16px; font-weight: bold; color: #fff; background: #e67e22; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(230,126,34,0.4); transition: transform 0.1s; }
+  .btn:active { transform: scale(0.96); }
+  .game-over { margin-top: 14px; font-size: 20px; font-weight: bold; color: #e74c3c; animation: pop 0.3s ease; }
+  @keyframes pop { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🐹 打地鼠小游戏</h1>
+  <div class="stats">
+    <div>得分: <span id="score">0</span></div>
+    <div>时间: <span id="time">30</span>s</div>
+  </div>
+</div>
+<div class="grid" id="grid"></div>
+<button class="btn" id="startBtn">开始游戏</button>
+<div id="msg" class="game-over" style="display:none;"></div>
+
+<script>
+  const grid = document.getElementById('grid');
+  const scoreEl = document.getElementById('score');
+  const timeEl = document.getElementById('time');
+  const startBtn = document.getElementById('startBtn');
+  const msgEl = document.getElementById('msg');
+  let score = 0, timeLeft = 30, timer = null, moleTimer = null, holes = [], activeHole = null;
+
+  for (let i = 0; i < 9; i++) {
+    const hole = document.createElement('div');
+    hole.className = 'hole';
+    const mole = document.createElement('div');
+    mole.className = 'mole';
+    mole.textContent = '🐹';
+    hole.appendChild(mole);
+    hole.addEventListener('pointerdown', () => {
+      if (hole === activeHole && !hole.classList.contains('whacked')) {
+        score++;
+        scoreEl.textContent = score;
+        hole.classList.add('whacked');
+        mole.textContent = '💥';
+        setTimeout(() => { hole.classList.remove('active', 'whacked'); mole.textContent = '🐹'; }, 200);
+      }
+    });
+    grid.appendChild(hole);
+    holes.push(hole);
+  }
+
+  function popup() {
+    holes.forEach(h => h.classList.remove('active', 'whacked'));
+    const idx = Math.floor(Math.random() * holes.length);
+    activeHole = holes[idx];
+    activeHole.classList.add('active');
+    const speed = Math.max(450, 900 - score * 15);
+    moleTimer = setTimeout(() => {
+      activeHole.classList.remove('active', 'whacked');
+      if (timeLeft > 0) popup();
+    }, speed);
+  }
+
+  startBtn.addEventListener('click', () => {
+    clearInterval(timer); clearTimeout(moleTimer);
+    score = 0; timeLeft = 30; scoreEl.textContent = '0'; timeEl.textContent = '30';
+    msgEl.style.display = 'none'; startBtn.textContent = '重新开始';
+    popup();
+    timer = setInterval(() => {
+      timeLeft--;
+      timeEl.textContent = timeLeft;
+      if (timeLeft <= 0) {
+        clearInterval(timer); clearTimeout(moleTimer);
+        holes.forEach(h => h.classList.remove('active', 'whacked'));
+        msgEl.textContent = '🎉 游戏结束！最终得分: ' + score;
+        msgEl.style.display = 'block';
+        startBtn.textContent = '再玩一局';
+      }
+    }, 1000);
+  });
+</script>
+</body>
+</html>`;
+
+export function extractDeliverableFromText(text: string): MiniAppDeliverable | null {
+  if (!text) return null;
+  const htmlMatch = text.match(/```(?:html|htm)?\s*([\s\S]*?)```/i);
+  let htmlContent = '';
+  if (htmlMatch && (htmlMatch[1].includes('<html') || htmlMatch[1].includes('<!DOCTYPE') || htmlMatch[1].includes('<body') || htmlMatch[1].includes('<canvas') || htmlMatch[1].includes('<button') || htmlMatch[1].includes('<div'))) {
+    htmlContent = htmlMatch[1].trim();
+  } else if (text.includes('<!DOCTYPE html>') || (text.includes('<html') && text.includes('</html>'))) {
+    const start = text.indexOf('<!DOCTYPE html>') !== -1 ? text.indexOf('<!DOCTYPE html>') : text.indexOf('<html');
+    const end = text.lastIndexOf('</html>');
+    if (end > start) {
+      htmlContent = text.substring(start, end + 7).trim();
+    }
+  }
+  if (!htmlContent) return null;
+
+  const isMole = htmlContent.includes('打地鼠') || text.includes('打地鼠') || text.includes('地鼠');
+  const title = isMole ? '打地鼠小游戏 (Whac-A-Mole)' : '交互式 MiniApp 小程序';
+  const description = isMole
+    ? '经典打地鼠小游戏：3x3 随机地鼠出洞、点击得分、30 秒倒计时与游戏结算'
+    : '已验证可运行的自包含 MiniApp 交付产物';
+
+  return {
+    id: `miniapp-deliv-${Math.random().toString(36).slice(2, 9)}`,
+    title,
+    version: '1.0.0',
+    description,
+    icon: isMole ? '🐹' : '🎮',
+    entryHtml: htmlContent,
+    createdAtMs: Date.now(),
+  };
+}
+
 
 type NewDialog =
   | { type: 'group'; name: string; selectedBotIds: Set<string> }
@@ -143,12 +294,253 @@ type InfoTab = 'media' | 'files' | 'links';
 
 const rootSurfaceKey = 'fabushi.desktop.root-surface.v2';
 const messengerSettingsKey = 'fabushi.desktop.messenger-settings.v2';
+
+function messengerSettingsStorageKey(accountKey: string): string {
+  return `${messengerSettingsKey}:${encodeURIComponent(accountKey)}`;
+}
+
+function accountKeyFromAuth(auth: AuthState): string {
+  if (!auth.loggedIn) return 'anonymous';
+  const identity = auth.user?.id ?? auth.user?.username ?? auth.user?.email;
+  return identity == null || String(identity).trim() === ''
+    ? `account:unknown:${auth.provider ?? 'default'}`
+    : `account:${String(identity)}`;
+}
 const defaultMiniApps = [
   { id: 'global-dharma', title: '全球法布施', description: '任务、日志与部署' },
   { id: 'faliu-flashcards', title: '法流记忆卡', description: '经文牌组与复习' },
   { id: 'platform-publish', title: '平台发布', description: '内容发布与自动化' },
   { id: 'bot-father', title: 'Bot Father', description: '创建和管理机器人' },
 ];
+
+export function MiniAppDeliverableCard({
+  deliverable,
+  onRun,
+}: {
+  deliverable: MiniAppDeliverable;
+  onRun: (app: MiniAppDeliverable) => void;
+}) {
+  const [showCode, setShowCode] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = () => {
+    navigator.clipboard?.writeText(deliverable.entryHtml);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div
+      style={{
+        background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98))',
+        border: '1px solid rgba(99, 102, 241, 0.35)',
+        borderRadius: 14,
+        padding: '16px',
+        margin: '10px 0',
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
+        maxWidth: 480,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 26 }}>{deliverable.icon || '🎮'}</span>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <strong style={{ fontSize: 16, color: '#f8fafc', fontWeight: 600 }}>{deliverable.title}</strong>
+              <span style={{ fontSize: 11, background: 'rgba(99, 102, 241, 0.25)', color: '#818cf8', padding: '2px 6px', borderRadius: 6 }}>
+                v{deliverable.version}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+              <span style={{ fontSize: 12, color: '#94a3b8' }}>已构建并完成沙箱验证 · 可直接运行</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.5, margin: '8px 0 14px' }}>
+        {deliverable.description}
+      </p>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button
+          type="button"
+          onClick={() => onRun(deliverable)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 16px',
+            borderRadius: 8,
+            background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+            color: '#ffffff',
+            fontWeight: 600,
+            fontSize: 13,
+            border: 'none',
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(99, 102, 241, 0.4)',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Play size={15} fill="currentColor" />
+          <span>立即试玩 / 运行</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowCode((v) => !v)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '8px 12px',
+            borderRadius: 8,
+            background: 'rgba(255, 255, 255, 0.08)',
+            color: '#cbd5e1',
+            fontSize: 13,
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            cursor: 'pointer',
+          }}
+        >
+          <Code size={14} />
+          <span>{showCode ? '收起源码' : '查看源码'}</span>
+        </button>
+      </div>
+
+      {showCode ? (
+        <div style={{ marginTop: 12, position: 'relative' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+            <button
+              type="button"
+              onClick={copyCode}
+              style={{ fontSize: 11, background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              {copied ? '已复制 ✓' : '复制代码'}
+            </button>
+          </div>
+          <pre
+            style={{
+              maxHeight: 180,
+              overflow: 'auto',
+              background: '#090d16',
+              padding: 10,
+              borderRadius: 6,
+              fontSize: 11,
+              color: '#93c5fd',
+              margin: 0,
+            }}
+          >
+            <code>{deliverable.entryHtml}</code>
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function MiniAppSandboxModal({
+  deliverable,
+  onClose,
+}: {
+  deliverable: MiniAppDeliverable | null;
+  onClose: () => void;
+}) {
+  const [fullscreen, setFullscreen] = useState(false);
+  const [key, setKey] = useState(0);
+
+  if (!deliverable) return null;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        background: 'rgba(0, 0, 0, 0.75)',
+        backdropFilter: 'blur(6px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: fullscreen ? 0 : 20,
+      }}
+    >
+      <div
+        style={{
+          width: fullscreen ? '100vw' : '860px',
+          height: fullscreen ? '100vh' : '680px',
+          maxWidth: '100%',
+          maxHeight: '100%',
+          background: '#1e293b',
+          borderRadius: fullscreen ? 0 : 16,
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          border: fullscreen ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+        }}
+      >
+        <div
+          style={{
+            height: 48,
+            background: '#0f172a',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 16px',
+            color: '#f8fafc',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 20 }}>{deliverable.icon || '🎮'}</span>
+            <strong>{deliverable.title}</strong>
+            <span style={{ fontSize: 11, background: 'rgba(99, 102, 241, 0.2)', color: '#818cf8', padding: '1px 6px', borderRadius: 4 }}>
+              沙箱运行中
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              title="重新载入 / 重置"
+              onClick={() => setKey((k) => k + 1)}
+              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 6, display: 'flex' }}
+            >
+              <RotateCcw size={16} />
+            </button>
+            <button
+              type="button"
+              title={fullscreen ? '退出全屏' : '全屏'}
+              onClick={() => setFullscreen((f) => !f)}
+              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 6, display: 'flex' }}
+            >
+              {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+            <button
+              type="button"
+              title="关闭"
+              onClick={onClose}
+              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 6, display: 'flex' }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div style={{ flex: 1, position: 'relative', background: '#000' }}>
+          <iframe
+            key={key}
+            srcDoc={deliverable.entryHtml}
+            sandbox="allow-scripts allow-forms allow-modals"
+            style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+            title={deliverable.title}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function createTransport(): MahayanaHostTransport {
   if (isElectronMahayanaHostAvailable()) return new ElectronMahayanaHostTransport();
@@ -167,6 +559,35 @@ function formatTime(timestamp: number): string {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
   return date.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
+}
+
+function upsertDisplayAction(
+  messages: DisplayMessage[],
+  action: {
+    id: string;
+    operationId?: string;
+    kind?: string;
+    title: string;
+    detail?: string;
+    status: 'running' | 'completed' | 'failed';
+  },
+): DisplayMessage[] {
+  const next = messages.filter((message) => !(message.kind === 'thinking' && message.operationId === action.operationId));
+  const entry: DisplayMessage = {
+    id: action.id,
+    source: 'legacy',
+    role: 'peer',
+    text: '',
+    createdAtMs: Date.now(),
+    kind: 'action',
+    operationId: action.operationId,
+    actionKind: action.kind,
+    actionTitle: action.title,
+    actionDetail: action.detail,
+    actionStatus: action.status,
+  };
+  const index = next.findIndex((message) => message.id === entry.id);
+  return index < 0 ? [...next, entry] : next.map((message, messageIndex) => messageIndex === index ? entry : message);
 }
 
 function legacyKind(conversation: ConversationSummary): PeerKind {
@@ -307,6 +728,8 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const transport = useMemo(() => createTransport(), []);
   const selfHosted = useMemo(() => new SelfHostedMessagingClientV2(transport), [transport]);
   const [hostReady, setHostReady] = useState(false);
+  const [auth, setAuth] = useState<AuthState | null>(null);
+  const [accountKey, setAccountKey] = useState('pending');
   const [section, setSection] = useState<MessengerSection>('chats');
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [bots, setBots] = useState<BotSummary[]>([]);
@@ -326,10 +749,12 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const [walletEntries, setWalletEntries] = useState<MessagingLedgerEntry[]>([]);
   const [activePeerKey, setActivePeerKey] = useState<string | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  const [legacyMessages, setLegacyMessages] = useState<Record<string, DisplayMessage[]>>({});
   const [composer, setComposer] = useState('');
   const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
   const [silentSend, setSilentSend] = useState(false);
   const [scheduledAtMs, setScheduledAtMs] = useState<number | undefined>();
+  const [runningApp, setRunningApp] = useState<MiniAppDeliverable | null>(null);
   const [search, setSearch] = useState('');
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(true);
@@ -348,6 +773,9 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const [pinnedPeerKeys, setPinnedPeerKeys] = useState<Set<string>>(() => new Set());
   const [archivedPeerKeys, setArchivedPeerKeys] = useState<Set<string>>(() => new Set());
   const activePeerKeyRef = useRef<string | null>(null);
+  const legacyOpenGenerationRef = useRef(0);
+  const legacyOpenConversationRef = useRef<string | null>(null);
+  const settingsLoadedAccountRef = useRef<string | null>(null);
   const peersRef = useRef<PeerItem[]>([]);
   const webRtcRef = useRef<FabushiWebRtcController | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -356,14 +784,24 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const storyInputRef = useRef<HTMLInputElement>(null);
+  const messageEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     activePeerKeyRef.current = activePeerKey;
   }, [activePeerKey]);
 
   useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      messageEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activePeerKey, messages]);
+
+  useEffect(() => {
+    if (accountKey === 'pending') return;
+    settingsLoadedAccountRef.current = null;
     try {
-      const stored = JSON.parse(window.localStorage.getItem(messengerSettingsKey) || '{}') as {
+      const stored = JSON.parse(window.localStorage.getItem(messengerSettingsStorageKey(accountKey)) || '{}') as {
         muted?: string[];
         pinned?: string[];
         archived?: string[];
@@ -371,14 +809,17 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       setMutedPeerKeys(new Set(stored.muted ?? []));
       setPinnedPeerKeys(new Set(stored.pinned ?? []));
       setArchivedPeerKeys(new Set(stored.archived ?? []));
+      settingsLoadedAccountRef.current = accountKey;
     } catch {
       // Ignore malformed old settings.
+      settingsLoadedAccountRef.current = accountKey;
     }
-  }, []);
+  }, [accountKey]);
 
   useEffect(() => {
+    if (accountKey === 'pending' || settingsLoadedAccountRef.current !== accountKey) return;
     try {
-      window.localStorage.setItem(messengerSettingsKey, JSON.stringify({
+      window.localStorage.setItem(messengerSettingsStorageKey(accountKey), JSON.stringify({
         muted: [...mutedPeerKeys],
         pinned: [...pinnedPeerKeys],
         archived: [...archivedPeerKeys],
@@ -386,7 +827,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     } catch {
       // Persistence is a convenience only.
     }
-  }, [mutedPeerKeys, pinnedPeerKeys, archivedPeerKeys]);
+  }, [accountKey, mutedPeerKeys, pinnedPeerKeys, archivedPeerKeys]);
 
   useEffect(() => {
     const controller = new FabushiWebRtcController(
@@ -454,8 +895,22 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       .then(async () => {
         if (closed) return;
         setHostReady(true);
-        refreshLegacy();
         try {
+          const authState = await transport.authStatus();
+          if (closed) return;
+          setAuth(authState);
+          setAccountKey(accountKeyFromAuth(authState));
+          if (!authState.loggedIn) {
+            selfHosted.resetIdentity();
+            setConversations([]);
+            setBots([]);
+            setGroups([]);
+            setSelfConversations([]);
+            setSelfMessages({});
+            setMessages([]);
+            return;
+          }
+          refreshLegacy();
           await selfHosted.ensureCurrentActor();
           await selfHosted.sync();
           void webRtcRef.current?.connect().catch(() => {});
@@ -488,6 +943,39 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       execute({ type: 'bot.list', requestId: nextRequestId('bot-list') }),
       execute({ type: 'group.list', requestId: nextRequestId('group-list') }),
     ]).catch(() => {});
+  }
+
+  async function handleLogout() {
+    try {
+      const nextAuth = await transport.logout();
+      selfHosted.resetIdentity();
+      setAuth(nextAuth);
+      setAccountKey(accountKeyFromAuth(nextAuth));
+      setConversations([]);
+      setBots([]);
+      setGroups([]);
+      setSelfActors([]);
+      setSelfConversations([]);
+      setSelfMessages({});
+      setLegacyMessages({});
+      setSelfStories([]);
+      setSelfCommunities([]);
+      setSelfBotProfiles([]);
+      setSelfBotExecutions([]);
+      setSelfInvoices([]);
+      setSelfOrders([]);
+      setWalletAccount(null);
+      setWalletEntries([]);
+      setActiveStory(null);
+      setCommunityDialogPeer(null);
+      setActivePeerKey(null);
+      setMessages([]);
+      setPendingSend(false);
+      setComposer('');
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
   }
 
   function displaySelfMessage(message: MessagingMessage): DisplayMessage {
@@ -646,19 +1134,27 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
         setConversations(event.conversations);
         if (!activePeerKeyRef.current && event.conversations[0]) {
           const conversation = event.conversations[0];
+          legacyOpenConversationRef.current = conversation.id;
           setActivePeerKey(`legacy:conversation:${conversation.id}`);
           void execute({ type: 'conversation.open', requestId: nextRequestId('conversation-open'), conversationId: conversation.id });
         }
         break;
       case 'conversation.opened':
-        if (activePeerKeyRef.current === `legacy:conversation:${event.conversationId}`) {
-          setMessages(event.messages.map((message) => ({
+        {
+          const nextMessages: DisplayMessage[] = event.messages.map((message) => ({
             id: message.id,
-            source: 'legacy',
+            source: 'legacy' as const,
             role: message.role === 'user' ? 'me' : 'peer',
             text: message.text,
             createdAtMs: message.createdAtMs,
-          })));
+            kind: 'message' as const,
+          }));
+          setLegacyMessages((current) => ({ ...current, [event.conversationId]: nextMessages }));
+          if (activePeerKeyRef.current === `legacy:conversation:${event.conversationId}`
+            || legacyOpenConversationRef.current === event.conversationId) {
+            legacyOpenConversationRef.current = null;
+            setMessages(nextMessages);
+          }
         }
         break;
       case 'bot.listed':
@@ -688,32 +1184,117 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
         }
         break;
       case 'chat.message':
-        setPendingSend(false);
         setMessages((current) => {
+          const next = event.operationId
+            ? current.filter((message) => !(message.kind === 'thinking' && message.operationId === event.operationId))
+            : current;
+          const streamingIndex = event.operationId
+            ? next.findIndex((message) => message.kind === 'message'
+              && message.role === 'peer'
+              && message.operationId === event.operationId
+              && message.streaming)
+            : -1;
+          if (streamingIndex >= 0) {
+            return next.map((message, index) => index === streamingIndex
+              ? { ...message, text: event.text, streaming: false }
+              : message);
+          }
           const id = event.operationId || nextRequestId('message');
-          if (current.some((message) => message.id === id && message.text === event.text)) return current;
-          return [...current, {
+          if (next.some((message) => message.id === id && message.text === event.text)) return next;
+          return [...next, {
             id,
             source: 'legacy',
             role: event.role === 'user' ? 'me' : 'peer',
             text: event.text,
             createdAtMs: Date.now(),
+            kind: 'message',
+            operationId: event.operationId,
+            streaming: false,
           }];
         });
         break;
       case 'chat.delta':
-        setPendingSend(false);
         setMessages((current) => {
-          const index = current.findIndex((message) => message.id === event.operationId);
-          if (index < 0) return [...current, { id: event.operationId, source: 'legacy', role: 'peer', text: event.delta, createdAtMs: Date.now() }];
-          return current.map((message, messageIndex) => messageIndex === index ? { ...message, text: `${message.text}${event.delta}` } : message);
+          const next = current.filter((message) => !(message.kind === 'thinking' && message.operationId === event.operationId));
+          const index = next.findIndex((message) => message.kind === 'message'
+            && message.role === 'peer'
+            && message.operationId === event.operationId
+            && message.streaming);
+          if (index < 0) return [...next, { id: `message:${event.operationId}:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`, source: 'legacy', role: 'peer', text: event.delta, createdAtMs: Date.now(), kind: 'message', operationId: event.operationId, streaming: true }];
+          return next.map((message, messageIndex) => messageIndex === index ? { ...message, text: `${message.text}${event.delta}`, streaming: true } : message);
         });
+        break;
+      case 'operation.started':
+        if (activePeerKeyRef.current?.startsWith('legacy:')) {
+          setMessages((current) => current.some((message) => message.kind === 'thinking' && message.operationId === event.operationId)
+            ? current
+            : [...current, {
+                id: `thinking:${event.operationId}`,
+                source: 'legacy',
+                role: 'peer',
+                text: '',
+                createdAtMs: Date.now(),
+                kind: 'thinking',
+                operationId: event.operationId,
+                actionTitle: event.label,
+                actionStatus: 'running',
+              }]);
+        }
+        break;
+      case 'agent.step':
+        if (activePeerKeyRef.current?.startsWith('legacy:')) {
+          const actionStepId = event.kind === 'model' ? `${event.kind}:${event.title}` : event.stepId;
+          setMessages((current) => upsertDisplayAction(current, {
+            id: `action:${event.operationId ?? 'session'}:${actionStepId}`,
+            operationId: event.operationId,
+            kind: event.kind,
+            title: event.title,
+            detail: event.detail,
+            status: event.status,
+          }));
+        }
+        break;
+      case 'model.routed':
+        if (activePeerKeyRef.current?.startsWith('legacy:')) {
+          setMessages((current) => upsertDisplayAction(current, {
+            id: `action:${event.operationId}:model`,
+            operationId: event.operationId,
+            kind: 'model',
+            title: event.model === 'auto' ? '自动选择模型' : `模型路由 · ${event.model}`,
+            detail: `${event.provider} · ${event.mode}`,
+            status: 'completed',
+          }));
+        }
+        break;
+      case 'operation.interrupted':
+      case 'operation.completed':
+        setPendingSend(false);
+        setMessages((current) => current.filter((message) => !(message.kind === 'thinking' && message.operationId === event.operationId)));
+        break;
+      case 'artifact.delivered':
+        if (activePeerKeyRef.current?.startsWith('legacy:')) {
+          setPendingSend(false);
+          setMessages((current) => [
+            ...current.filter((msg) => !(msg.kind === 'thinking' && msg.operationId === event.operationId)),
+            {
+              id: `deliverable:${event.operationId ?? Date.now()}`,
+              source: 'legacy',
+              role: 'peer',
+              text: `小程序已构建完成并交付：${event.artifact.title}`,
+              createdAtMs: Date.now(),
+              kind: 'deliverable',
+              deliverable: event.artifact,
+              operationId: event.operationId,
+            },
+          ]);
+        }
         break;
       case 'miniapp.opened':
         setMiniApp({ id: event.miniAppId, html: event.html });
         break;
       case 'operation.failed':
         setPendingSend(false);
+        setMessages((current) => current.filter((message) => !(message.kind === 'thinking' && message.operationId === event.operationId)));
         setError(event.message);
         break;
       case 'host.closed':
@@ -813,11 +1394,13 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const sectionIsPeerList = ['chats', 'contacts', 'bots', 'groups', 'channels', 'saved', 'archive'].includes(section);
 
   async function openPeer(peer: PeerItem) {
+    const openGeneration = ++legacyOpenGenerationRef.current;
     setActivePeerKey(peer.key);
     setReplyTo(null);
     setError(null);
     setConversationSearchOpen(false);
     if (peer.source === 'selfhosted' && peer.conversationId) {
+      legacyOpenConversationRef.current = null;
       showSelfConversation(peer.conversationId);
       const list = selfMessages[peer.conversationId] ?? [];
       const last = list.filter((message) => !message.deleted).at(-1);
@@ -825,6 +1408,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       return;
     }
     if (peer.kind === 'group' && peer.groupId) {
+      legacyOpenConversationRef.current = null;
       const group = groups.find((item) => item.id === peer.groupId);
       setMessages(group?.messages.map((message) => ({
         id: message.id,
@@ -836,8 +1420,10 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       return;
     }
     if (peer.conversationId) {
-      setMessages([]);
+      legacyOpenConversationRef.current = peer.conversationId;
+      setMessages(legacyMessages[peer.conversationId] ?? []);
       await execute({ type: 'conversation.open', requestId: nextRequestId('conversation-open'), conversationId: peer.conversationId });
+      if (legacyOpenGenerationRef.current !== openGeneration || activePeerKeyRef.current !== peer.key) return;
       return;
     }
     setMessages([]);
@@ -847,8 +1433,13 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     event.preventDefault();
     const text = composer.trim();
     if (!text || !activePeer || pendingSend) return;
+    if (!auth?.loggedIn) {
+      setError('请先登录 Fabushi 账号，再发送消息。');
+      return;
+    }
     setPendingSend(true);
     setComposer('');
+
     try {
       if (activePeer.source === 'selfhosted' && activePeer.conversationId) {
         await selfHosted.sendText(activePeer.conversationId, text, {
@@ -859,13 +1450,14 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       } else if (activePeer.kind === 'group' && activePeer.groupId) {
         await execute({ type: 'group.send', requestId: nextRequestId('group-send'), id: activePeer.groupId, text });
       } else {
-        await execute({
+        const accepted = await execute({
           type: 'chat.send',
           requestId: nextRequestId('chat-send'),
           text,
           conversationId: activePeer.conversationId,
           agentId: activePeer.actorId,
         });
+        if (!accepted.operationId) setPendingSend(false);
       }
       setReplyTo(null);
       setScheduledAtMs(undefined);
@@ -1385,7 +1977,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
             {!visiblePeers.length ? <EmptyList section={section} /> : null}
           </div>
         ) : (
-          <SectionPanel section={section} onOpenMiniApp={openMiniApp} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} />
+          <SectionPanel section={section} auth={auth} onLogout={handleLogout} onOpenMiniApp={openMiniApp} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} />
         )}
       </aside>
 
@@ -1411,25 +2003,52 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
             {error ? <div className={styles.errorBanner} role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}><X size={14} /></button></div> : null}
             <div className={styles.messageArea}>
               <div className={styles.dayDivider}>今天</div>
-              {messages.map((message) => (
-                <article
-                  key={`${message.source}:${message.id}`}
-                  className={message.role === 'me' ? styles.messageMine : styles.messagePeer}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setMessageMenu({ message, x: event.clientX, y: event.clientY });
-                  }}
-                >
-                  {message.pinned ? <Pin size={11} /> : null}
-                  {message.mediaType === 'photo' && blobMediaUrl(message.media) ? <img className={extra.messageMedia} src={blobMediaUrl(message.media)} alt={message.media?.fileName ?? '图片'} /> : null}
-                  {message.mediaType === 'video' && blobMediaUrl(message.media) ? <video className={extra.messageMedia} controls playsInline src={blobMediaUrl(message.media)} /> : null}
-                  {message.mediaType === 'document' && blobMediaUrl(message.media) ? <a className={extra.messageFile} href={blobMediaUrl(message.media)} download={message.media?.fileName}><FileText size={17} />{message.media?.fileName ?? '文件'}</a> : null}
-                  <p>{message.text}</p>
-                  {message.reactions?.length ? <div className={extra.reactions}>{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div> : null}
-                  <small>{formatTime(message.createdAtMs)} {message.role === 'me' ? <Check size={12} /> : null}</small>
-                </article>
-              ))}
+              {messages.map((message) => {
+                if (message.kind === 'thinking') {
+                  return <article key={`${message.source}:${message.id}`} className={styles.messageThinking} aria-label="助手正在思考"><span className={styles.thinkingAvatar}><Bot size={15} /></span><span className={styles.thinkingDots}><i /><i /><i /></span></article>;
+                }
+                if (message.kind === 'action') {
+                  return <article key={`${message.source}:${message.id}`} className={styles.messageAction} data-state={message.actionStatus}><span className={styles.actionStatusIcon}>{message.actionStatus === 'running' ? <Bot size={14} /> : message.actionStatus === 'failed' ? '!' : '✓'}</span><div><strong>{message.actionTitle || '助手动作'}</strong>{message.actionDetail ? <small>{message.actionDetail}</small> : null}</div>{message.actionStatus === 'running' ? <em>进行中</em> : null}</article>;
+                }
+                const deliverable = message.deliverable || extractDeliverableFromText(message.text);
+                let displayText = message.text;
+                if (deliverable) {
+                  displayText = message.text
+                    .replace(/```(?:html|htm)?\s*[\s\S]*?```/gi, '')
+                    .replace(/<!DOCTYPE html>[\s\S]*?<\/html>/gi, '')
+                    .trim();
+                  if (!displayText) {
+                    displayText = '🎉 ' + deliverable.title + ' 已构建完成并交付，点击下方卡片即可直接试玩！';
+                  }
+                }
+
+                return (
+                  <article
+                    key={`${message.source}:${message.id}`}
+                    className={message.role === 'me' ? styles.messageMine : styles.messagePeer}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setMessageMenu({ message, x: event.clientX, y: event.clientY });
+                    }}
+                  >
+                    {message.pinned ? <Pin size={11} /> : null}
+                    {message.mediaType === 'photo' && blobMediaUrl(message.media) ? <img className={extra.messageMedia} src={blobMediaUrl(message.media)} alt={message.media?.fileName ?? '图片'} /> : null}
+                    {message.mediaType === 'video' && blobMediaUrl(message.media) ? <video className={extra.messageMedia} controls playsInline src={blobMediaUrl(message.media)} /> : null}
+                    {message.mediaType === 'document' && blobMediaUrl(message.media) ? <a className={extra.messageFile} href={blobMediaUrl(message.media)} download={message.media?.fileName}><FileText size={17} />{message.media?.fileName ?? '文件'}</a> : null}
+                    {displayText ? <p>{displayText}</p> : null}
+                    {deliverable ? (
+                      <MiniAppDeliverableCard
+                        deliverable={deliverable}
+                        onRun={(app) => setRunningApp(app)}
+                      />
+                    ) : null}
+                    {message.reactions?.length ? <div className={extra.reactions}>{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div> : null}
+                    <small>{formatTime(message.createdAtMs)} {message.role === 'me' ? <Check size={12} /> : null}</small>
+                  </article>
+                );
+              })}
+              <div ref={messageEndRef} aria-hidden="true" />
               {!messages.length ? <div className={styles.chatEmpty}><span className={styles.avatarLarge}>{avatarText(activePeer.title)}</span><strong>{activePeer.title}</strong><p>联系人、AI Bot、群组和频道使用同一个 Fabushi 消息产品层。</p></div> : null}
             </div>
             {replyTo ? <div className={extra.composerBanner}><Reply size={15} /><div><strong>回复</strong><span>{replyTo.text}</span></div><button type="button" onClick={() => setReplyTo(null)}><X size={14} /></button></div> : null}
@@ -1449,11 +2068,11 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
               <textarea data-testid="messenger-input" value={composer} onChange={(event) => setComposer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder="消息" rows={1} />
               <button type="button" title="表情"><Smile size={20} /></button>
               <button type="button" data-active={silentSend} title={silentSend ? '关闭静默发送' : '静默发送'} onClick={() => setSilentSend((value) => !value)}><BellOff size={19} /></button>
-              {composer.trim() ? <button data-testid="messenger-send" className={styles.sendButton} type="submit" disabled={!hostReady || pendingSend}><Send size={19} /></button> : <button type="button" title="语音消息"><Mic size={20} /></button>}
+              {composer.trim() ? <button data-testid="messenger-send" className={styles.sendButton} type="submit" disabled={!hostReady || !auth?.loggedIn || pendingSend}><Send size={19} /></button> : <button type="button" title="语音消息"><Mic size={20} /></button>}
             </form>
           </>
         ) : (
-          <FeatureWorkspace section={section} onOpenMiniApp={openMiniApp} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} />
+          <FeatureWorkspace section={section} auth={auth} onLogout={handleLogout} onOpenMiniApp={openMiniApp} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} />
         )}
       </section>
 
@@ -1483,6 +2102,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       {activeStory ? <StoryViewer story={activeStory} owner={selfActors.find((actor) => actor.id === activeStory.ownerId)} own={activeStory.ownerId === selfHosted.actorId} onClose={() => setActiveStory(null)} onReact={(reaction) => void reactToActiveStory(reaction)} onDelete={() => void selfHosted.deleteStory(activeStory.id).then(() => setActiveStory(null)).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} /> : null}
       {localCall ? <CallDialog call={localCall} localVideoRef={localVideoRef} remoteVideoRef={remoteVideoRef} remoteAudioRef={remoteAudioRef} canAccept={Boolean(incomingCall)} onAccept={() => void acceptIncomingCall()} onDecline={() => void declineIncomingCall()} onMute={() => void toggleCallMute()} onVideo={() => void toggleCallVideo()} onShare={() => void shareCallScreen()} onEnd={() => void endCall()} /> : null}
       {miniApp ? <MiniAppDialog app={miniApp} onClose={() => setMiniApp(null)} /> : null}
+      {runningApp ? <MiniAppSandboxModal deliverable={runningApp} onClose={() => setRunningApp(null)} /> : null}
     </main>
   );
 }
@@ -1751,17 +2371,19 @@ function PaymentOverview({ payment, onInvoice, onRefund, compact = false }: { pa
   </div>;
 }
 
-function SectionPanel({ section, onOpenMiniApp, onInvoice, payment, onRefund }: { section: MessengerSection; onOpenMiniApp: (id: string) => Promise<void>; onInvoice: () => void; payment: PaymentUiState; onRefund: (orderId: string) => void }) {
+function SectionPanel({ section, auth, onLogout, onOpenMiniApp, onInvoice, payment, onRefund }: { section: MessengerSection; auth: AuthState | null; onLogout: () => void | Promise<void>; onOpenMiniApp: (id: string) => Promise<void>; onInvoice: () => void; payment: PaymentUiState; onRefund: (orderId: string) => void }) {
   if (section === 'miniapps') return <div className={styles.sectionList}>{defaultMiniApps.map((app) => <button type="button" key={app.id} onClick={() => void onOpenMiniApp(app.id)}><span className={styles.appIcon}><AppWindow size={18} /></span><div><strong>{app.title}</strong><small>{app.description}</small></div></button>)}</div>;
   if (section === 'payments') return <div className={styles.sectionList}><PaymentOverview payment={payment} onInvoice={onInvoice} onRefund={onRefund} compact /></div>;
   if (section === 'folders') return <div className={styles.sectionList}><div className={styles.panelHint}><Folder size={24} /><strong>聊天文件夹</strong><p>按联系人、Bot、群组、频道、未读和静音状态组织。</p></div></div>;
   if (section === 'calls') return <div className={styles.sectionList}><div className={styles.panelHint}><Phone size={24} /><strong>最近通话</strong><p>从会话顶部发起语音/视频。</p></div></div>;
+  if (section === 'settings') return <div className={styles.sectionList}><div className={styles.panelHint}><Settings size={24} /><strong>消息设置</strong><p>{auth?.loggedIn ? `当前账号：${auth.user?.nickname || auth.user?.username || auth.user?.email || '已登录'}` : '当前未登录。登录后才会加载账号专属会话和消息。'}</p><button type="button" className={styles.primaryButton} disabled={!auth?.loggedIn} onClick={() => void onLogout()}>退出登录</button></div></div>;
   return <div className={styles.sectionList}><div className={styles.panelHint}><Settings size={24} /><strong>{sectionTitle(section)}</strong><p>该功能入口已合并进统一 Messenger。</p></div></div>;
 }
 
-function FeatureWorkspace({ section, onOpenMiniApp, onInvoice, payment, onRefund }: { section: MessengerSection; onOpenMiniApp: (id: string) => Promise<void>; onInvoice: () => void; payment: PaymentUiState; onRefund: (orderId: string) => void }) {
+function FeatureWorkspace({ section, auth, onLogout, onOpenMiniApp, onInvoice, payment, onRefund }: { section: MessengerSection; auth: AuthState | null; onLogout: () => void | Promise<void>; onOpenMiniApp: (id: string) => Promise<void>; onInvoice: () => void; payment: PaymentUiState; onRefund: (orderId: string) => void }) {
   if (section === 'miniapps') return <div className={styles.featureWorkspace}><AppWindow size={54} /><h2>Mini Apps</h2><p>Mini App 与 Bot、会话、支付共享身份和权限上下文。</p><div className={styles.featureGrid}>{defaultMiniApps.map((app) => <button type="button" key={app.id} onClick={() => void onOpenMiniApp(app.id)}><AppWindow size={22} /><strong>{app.title}</strong><small>{app.description}</small></button>)}</div></div>;
   if (section === 'payments') return <div className={styles.featureWorkspace}><WalletCards size={54} /><h2>Fabushi Pay</h2><p>自建余额、Invoice、Order、退款与外部 settlement 都由 Rust 账本结算。</p><PaymentOverview payment={payment} onInvoice={onInvoice} onRefund={onRefund} /></div>;
   if (section === 'calls') return <div className={styles.featureWorkspace}><Phone size={54} /><h2>通话</h2><p>本机媒体已接通，Rust realtime 已具备一对一/群组通话信令状态。</p></div>;
+  if (section === 'settings') return <div className={styles.featureWorkspace}><Settings size={54} /><h2>消息设置</h2><p>{auth?.loggedIn ? `当前账号：${auth.user?.nickname || auth.user?.username || auth.user?.email || '已登录'}` : '当前未登录。登录后会使用账号专属的会话、Bot 和消息状态。'}</p><button type="button" className={styles.primaryButton} disabled={!auth?.loggedIn} onClick={() => void onLogout()}>退出登录</button></div>;
   return <div className={styles.featureWorkspace}><MessageCircle size={54} /><h2>{sectionTitle(section)}</h2><p>联系人、Bot、群组和频道正在统一到同一个 Fabushi Actor/Conversation 模型。</p></div>;
 }

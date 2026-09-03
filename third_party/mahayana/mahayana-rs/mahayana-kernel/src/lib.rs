@@ -303,6 +303,13 @@ pub trait EngineBackend: Send + Sync {
     async fn interrupt(&self, operation_id: &OperationId) -> Result<(), KernelError>;
 
     async fn resolve_approval(&self, resolution: ApprovalResolution) -> Result<(), KernelError>;
+
+    /// Clears account-bound local sessions and pending approvals. The default
+    /// keeps compatibility backends stateless while native engines override
+    /// it to prevent context from crossing an account transition.
+    fn reset_session(&self) -> Result<(), KernelError> {
+        Ok(())
+    }
 }
 
 /// Product-owned backend registry and capability router.
