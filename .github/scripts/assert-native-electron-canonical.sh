@@ -13,7 +13,10 @@ test -f third_party/mahayana/mahayana-rs/mahayana-app-host-mobile/Cargo.toml || 
 test -f app-version.json || fail 'canonical app-version.json is missing'
 test -f .github/workflows/electron-desktop.yml || fail 'Electron desktop quality workflow is missing'
 test -f .github/workflows/native-mobile.yml || fail 'native mobile quality workflow is missing'
-test -f .github/workflows/native-electron-release.yml || fail 'native Electron release workflow is missing'
+for workflow in release-desktop-platform.yml release-macos.yml release-windows.yml release-linux.yml native-android-release.yml release-ios.yml; do
+  test -f ".github/workflows/$workflow" || fail "platform release workflow $workflow is missing"
+done
+test -f .github/workflows/native-electron-release.yml || fail 'disabled legacy combined release marker is missing'
 test -f .github/workflows/google-play-delivery.yml || fail 'native Android Google Play delivery workflow is missing'
 test -x .github/scripts/macos-codesign-wrapper/codesign || fail 'secure-timestamp codesign wrapper is missing or not executable'
 bash -n .github/scripts/macos-codesign-wrapper/codesign || fail 'secure-timestamp codesign wrapper has invalid shell syntax'
@@ -75,7 +78,7 @@ if grep -Eq "project\(':capacitor|apply from:.*capacitor" mobile/android/setting
   fail 'Capacitor cannot return to the canonical Android project'
 fi
 if grep -Eq 'npm run tauri|tauri android|tauri ios|mobile/src-tauri' \
-  .github/workflows/electron-desktop.yml .github/workflows/native-mobile.yml .github/workflows/native-electron-release.yml; then
+  .github/workflows/electron-desktop.yml .github/workflows/native-mobile.yml .github/workflows/release-desktop-platform.yml .github/workflows/release-macos.yml .github/workflows/release-windows.yml .github/workflows/release-linux.yml .github/workflows/native-android-release.yml .github/workflows/release-ios.yml; then
   fail 'canonical desktop/mobile workflows cannot invoke Tauri'
 fi
 

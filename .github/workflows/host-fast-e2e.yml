@@ -1,44 +1,7 @@
 name: Host fast E2E
 
 on:
-  pull_request:
-    paths:
-      - frontend/apps/host/**
-      - frontend/apps/web/src/app/host/**
-      - frontend/apps/web/src/lib/mahayana-host/**
-      - frontend/apps/web/tsconfig.host.json
-      - frontend/apps/web/package.json
-      - frontend/packages/shared/src/mahayana-host-features.ts
-      - contracts/automation/cross-platform-journeys.json
-      - frontend/packages/shared/src/index.ts
-      - frontend/pnpm-lock.yaml
-      - frontend/pnpm-workspace.yaml
-      - fabushi/web/mahayana-wasm/**
-      - fabushi/e2e/package.json
-      - fabushi/e2e/package-lock.json
-      - fabushi/e2e/playwright.host.config.js
-      - fabushi/e2e/tests/host-fast-user-journey.spec.ts
-      - .github/workflows/host-fast-e2e.yml
-  push:
-    branches:
-      - main
-    paths:
-      - frontend/apps/host/**
-      - frontend/apps/web/src/app/host/**
-      - frontend/apps/web/src/lib/mahayana-host/**
-      - frontend/apps/web/tsconfig.host.json
-      - frontend/packages/shared/src/mahayana-host-features.ts
-      - contracts/automation/cross-platform-journeys.json
-      - frontend/pnpm-lock.yaml
-      - frontend/pnpm-workspace.yaml
-      - fabushi/web/mahayana-wasm/**
-      - fabushi/e2e/**
-      - .github/workflows/host-fast-e2e.yml
   workflow_dispatch:
-
-concurrency:
-  group: host-fast-e2e-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
 
 permissions:
   contents: read

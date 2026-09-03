@@ -8,9 +8,6 @@ on:
         required: false
         default: latest
         type: string
-  release:
-    types:
-      - published
 
 permissions:
   contents: read

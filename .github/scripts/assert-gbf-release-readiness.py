@@ -15,57 +15,71 @@ required_workflows = [
     'messaging-product-gate.yml',
     'gbf-release-candidate.yml',
     'gbf-rollback-drill.yml',
-    'native-electron-release.yml',
+    'release-desktop-platform.yml',
+    'release-macos.yml',
+    'release-windows.yml',
+    'release-linux.yml',
+    'native-android-release.yml',
+    'release-ios.yml',
 ]
 for name in required_workflows:
-    path = workflows / name
-    if not path.is_file():
+    if not (workflows / name).is_file():
         raise SystemExit(f'GBF release readiness: missing workflow {name}')
 
 rc = (workflows / 'gbf-release-candidate.yml').read_text(encoding='utf-8')
-for name in required_workflows[:7]:
-    if name not in rc:
-        raise SystemExit(f'GBF release readiness: RC coordinator does not dispatch {name}')
-if 'headSha == \\"$RC_SHA\\"' not in rc and 'headSha == "$RC_SHA"' not in rc:
-    raise SystemExit('GBF release readiness: RC coordinator is not pinned to one head SHA')
+if 'workflow_dispatch:' not in rc or 'pull_request:' in rc or '\n  push:' in rc:
+    raise SystemExit('GBF release readiness: RC fan-out must be explicit/manual only')
+
+fast = (workflows / 'electron-desktop.yml').read_text(encoding='utf-8')
+for forbidden in ('npm run test:e2e', 'npx electron-builder', 'Build and stage CI native Host'):
+    if forbidden in fast:
+        raise SystemExit(f'GBF release readiness: automatic Electron fast gate contains heavy step {forbidden}')
+for marker in ('Electron desktop result', 'npx tsc --noEmit', 'npx vite build'):
+    if marker not in fast:
+        raise SystemExit(f'GBF release readiness: Electron fast gate missing {marker}')
+
+reusable = (workflows / 'release-desktop-platform.yml').read_text(encoding='utf-8')
+for marker in (
+    "inputs.release_kind == 'formal'",
+    'npx electron-builder --${{ inputs.platform }} --publish never',
+    'npm run test:e2e',
+    '--prerelease --latest=false',
+):
+    if marker not in reusable:
+        raise SystemExit(f'GBF release readiness: reusable desktop release missing {marker}')
+
+for name, target in (
+    ('release-macos.yml', 'platform: mac'),
+    ('release-windows.yml', 'platform: win'),
+    ('release-linux.yml', 'platform: linux'),
+):
+    text = (workflows / name).read_text(encoding='utf-8')
+    for marker in ('workflow_dispatch:', 'release_kind:', 'options: [test, formal]', target):
+        if marker not in text:
+            raise SystemExit(f'GBF release readiness: {name} missing {marker}')
+
+for name in ('native-android-release.yml', 'release-ios.yml'):
+    text = (workflows / name).read_text(encoding='utf-8')
+    for marker in ('workflow_dispatch:', 'release_kind:', 'options: [test, formal]', 'intentionally blocked until'):
+        if marker not in text:
+            raise SystemExit(f'GBF release readiness: {name} missing {marker}')
+
+legacy = (workflows / 'native-electron-release.yml').read_text(encoding='utf-8')
+if 'Legacy combined release (disabled)' not in legacy:
+    raise SystemExit('GBF release readiness: old combined five-platform release is not disabled')
 
 rollback = (workflows / 'gbf-rollback-drill.yml').read_text(encoding='utf-8')
-for marker in (
-    'releases/latest',
-    'prerelease',
-    'SHA256SUMS.txt',
-    'sha256sum -c',
-    'previous-good release checksums verified',
-):
+for marker in ('releases?per_page=100', 'prerelease', 'SHA256SUMS.txt', 'sha256sum -c', 'previous-good release checksums verified'):
     if marker not in rollback:
         raise SystemExit(f'GBF release readiness: rollback drill missing {marker}')
 
-release = (workflows / 'native-electron-release.yml').read_text(encoding='utf-8')
-for marker in (
-    'CI result',
-    'Electron desktop result',
-    'Electron macOS',
-    'Electron Windows',
-    'Native mobile result',
-    'Native iOS',
-    'already exists; refusing to mutate an existing release',
-    'gh release create',
-    'SHA256SUMS.txt',
-    'ANDROID_KEYSTORE_BASE64',
-    'IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64',
-):
-    if marker not in release:
-        raise SystemExit(f'GBF release readiness: native release workflow missing {marker}')
-
-historical = (
-    'grok-bot-latest-source-fusion',
-    'grok-bot-0.16-source-fusion',
-)
-for path in workflows.glob('*.y*ml'):
+historical = ('grok-bot-latest-source-fusion', 'grok-bot-0.16-source-fusion')
+production_release_workflows = [workflows / name for name in required_workflows]
+for path in production_release_workflows:
     text = path.read_text(encoding='utf-8')
     for branch in historical:
         if branch in text:
-            raise SystemExit(f'GBF release readiness: production workflow {path} references historical branch {branch}')
+            raise SystemExit(f'GBF release readiness: production release workflow {path} references historical branch {branch}')
 
 for forbidden in (
     root / 'vendor' / 'grok-bot-0.20.0',
@@ -85,4 +99,4 @@ for marker in (
     if marker not in adr:
         raise SystemExit(f'GBF release readiness: historical-branch ADR missing {marker}')
 
-print('GBF release readiness passed: canonical per-platform gates, rollback integrity, immutable signed release and historical-branch isolation are all enforced.')
+print('GBF release readiness passed: fast automatic gates, manual platform-isolated test/formal releases, rollback integrity, and historical-branch isolation are enforced.')
