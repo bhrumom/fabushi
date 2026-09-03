@@ -18,8 +18,8 @@ Remove long application-driving E2E from automatic CI/CD, split release entry po
 | FCM-023.3 | Disable automatic GBF seven-gate fan-out | `gbf-release-candidate.yml` is manual-only | implemented |
 | FCM-023.4 | Add separate macOS/Windows/Linux/Android/iOS release workflows | five visible manual workflow files | implemented |
 | FCM-023.5 | Distinguish test/formal modes | each platform workflow exposes `release_kind`; long E2E only on formal | implemented |
-| FCM-023.6 | Produce current macOS test build only | latest branch SHA produces Mac-only artifact; other platform workflows not dispatched | pending |
-| FCM-023.7 | Install/launch test build on target Mac for product review | target Mac launch evidence | pending |
+| FCM-023.6 | Produce current macOS test build only | latest branch SHA produces Mac-only artifact; other platform workflows not dispatched | passed |
+| FCM-023.7 | Install/launch test build on target Mac for product review | target Mac launch evidence | passed |
 
 ## Constraints
 
@@ -35,3 +35,20 @@ Remove long application-driving E2E from automatic CI/CD, split release entry po
 - Desktop releases use one reusable single-platform builder plus `Release macOS`, `Release Windows`, and `Release Linux`.
 - `Release Android` and `Release iOS` are manual-only. Their formal modes fail closed until real-build E2E calibration is restored.
 - YAML parse, `git diff --check`, `.github/scripts/assert-gbf-release-readiness.py`, `.github/scripts/assert-native-electron-canonical.sh`, and the FCM-023 policy smoke checks passed locally; application builds remain GitHub Actions only. The legacy unreferenced `check-publish-cd-release.sh` still has an unrelated stale account-registration text assertion and is not used as acceptance evidence for this task.
+
+## macOS test release evidence — 2026-09-03
+
+- Source SHA: `550f644cd6c16c729d0c956f2ecd2c81cfe8050e`.
+- Mac-only workflow: `Fabushi macOS hot package`, run `33732202936`, job `100574499149`, conclusion `success`.
+- Host binary cache: hit; Rust setup/build/save steps skipped.
+- Renderer, offline ASR, Computer Use staging, macOS package, artifact upload, and prerelease publication: success.
+- Formal-only Developer ID setup, Playwright diagnostics, Linux E2E, and macOS/Windows E2E: skipped by `release_kind=test`.
+- Test release: `desktop-mac-test-152-550f644cd6c1`, version `1.2.14-test.152`.
+- Assets: `fabushi-1.2.14-test.152-macos-arm64.dmg`, ZIP, blockmaps, and `latest-mac.yml`.
+- Target Mac install: `/Users/gloriachan/Applications/Fabushi Test.app`; existing formal application was not overwritten.
+- Target Mac launch: process `/Users/gloriachan/Applications/Fabushi Test.app/Contents/MacOS/fabushi` observed running after launch.
+- Windows/Linux/Android/iOS release workflows were not dispatched for this request.
+
+## Next action
+
+Wait for product review of this real test build, then recalibrate the inaccurate app-driving E2E against observed behavior before enabling those checks as formal-release gates.

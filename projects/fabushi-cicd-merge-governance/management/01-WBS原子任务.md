@@ -49,4 +49,4 @@
 | FCM-023 | Split release delivery into fast test and strict formal lanes with one manual workflow per platform | yes | automatic long App E2E disabled; five platform release workflows; macOS test artifact delivered without other platforms | in-progress |
 | FCM-023.1 | Disable automatic long application-driving E2E and RC fan-out | yes | PR/main automatic jobs no longer launch Playwright/device UI release journeys | implemented |
 | FCM-023.2 | Add per-platform test/formal release workflows | yes | macOS/Windows/Linux/Android/iOS each have manual `release_kind` entry point | implemented |
-| FCM-023.3 | Deliver current macOS test build | yes | Mac-only test package artifact built and launched on target Mac | pending |
+| FCM-023.3 | Deliver current macOS test build | yes | Mac-only test package artifact built and launched on target Mac | passed |
