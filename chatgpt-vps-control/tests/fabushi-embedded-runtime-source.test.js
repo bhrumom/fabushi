@@ -108,10 +108,14 @@ test("Electron and Mahayana discover the private packaged stdio runtime", () => 
 
 test("every full Electron packager installs and stages Computer Use before sealing", () => {
   const workflows = [
-    ".github/workflows/electron-desktop.yml",
-    ".github/workflows/native-electron-release.yml",
+    ".github/workflows/release-desktop-platform.yml",
     ".github/workflows/apple-store-delivery.yml",
   ];
+
+  const automaticFastGate = source(".github/workflows/electron-desktop.yml");
+  assert.doesNotMatch(automaticFastGate, /electron-builder/, "automatic Electron fast gate must not package the application");
+  const legacyCombinedRelease = source(".github/workflows/native-electron-release.yml");
+  assert.match(legacyCombinedRelease, /Legacy combined release \(disabled\)/);
 
   for (const workflow of workflows) {
     const yaml = source(workflow);
@@ -161,8 +165,11 @@ test("every full Electron packager installs and stages Computer Use before seali
   }
 
   const hotPackage = source(".github/workflows/electron-macos-hot-package.yml");
-  assert.match(hotPackage, /- 'chatgpt-vps-control\/\*\*'/);
-  assert.match(hotPackage, /grep -Eq '\^chatgpt-vps-control\/'[\s\S]*full_required=true/);
+  assert.match(hotPackage, /uses: \.\/\.github\/workflows\/release-desktop-platform\.yml/);
+  assert.match(hotPackage, /platform: mac/);
+  assert.match(hotPackage, /default: test/);
+  assert.match(hotPackage, /secrets: inherit/);
+  assert.doesNotMatch(hotPackage, /\n  push:/);
 
   const ci = source(".github/workflows/ci.yml");
   assert.match(ci, /\^chatgpt-vps-control/);
@@ -380,18 +387,20 @@ test("paired clients require a possession-bound token before a control session c
 });
 
 
-test("the exact-main platform deployment is recoverable and smokes remote-control fail-closed behavior", () => {
-  const release = source(".github/workflows/native-electron-release.yml");
-  for (const gate of [
-    "Computer control security result",
-    "Canonical architecture guardrails",
-    "Resolve Worker source and deployment impact",
-  ]) assert.ok(release.includes(gate), `unified release is missing ${gate}`);
-  assert.match(release, /git merge-base --is-ancestor/);
-  assert.match(release, /test "\$RELEASE_TAG" = "v\$version"/);
-  assert.match(release, /release-assets\/fabushi-release-manifest\.json/);
-  assert.match(release, /Conflicting public release asset name/);
-  assert.match(release, /find release-assets -maxdepth 1 -type f/);
+test("platform delivery stays isolated while remote-control security and deployment remain fail closed", () => {
+  const legacyRelease = source(".github/workflows/native-electron-release.yml");
+  assert.match(legacyRelease, /Legacy combined release \(disabled\)/);
+  assert.doesNotMatch(legacyRelease, /electron-builder/);
+
+  const release = source(".github/workflows/release-desktop-platform.yml");
+  assert.match(release, /npx electron-builder --\$\{\{ inputs\.platform \}\} --publish never/);
+  assert.match(release, /Verify packaged Computer Use runtime and signing boundary/);
+  assert.match(release, /--expected-mac-team/);
+  assert.match(release, /--prerelease --latest=false/);
+
+  const rollback = source(".github/workflows/gbf-rollback-drill.yml");
+  assert.match(rollback, /SHA256SUMS\.txt/);
+  assert.match(rollback, /sha256sum -c/);
 
   const security = source(".github/workflows/computer-control-security.yml");
   assert.match(security, /name: Computer control security result/);

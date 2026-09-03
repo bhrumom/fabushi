@@ -15,6 +15,7 @@ on:
       - 'frontend/packages/mcp-app-sdk/**'
       - 'frontend/apps/web/src/lib/mahayana-host/**'
       - 'frontend/apps/web/src/lib/remote-computer/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
       - 'frontend/packages/shared/**'
       - 'contracts/automation/cross-platform-journeys.json'
       - '.github/scripts/assert-native-electron-canonical.sh'

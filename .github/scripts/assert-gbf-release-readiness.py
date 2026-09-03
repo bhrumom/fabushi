@@ -58,6 +58,21 @@ for marker in (
     if marker not in reusable:
         raise SystemExit(f'GBF release readiness: macOS test/formal signing contract missing {marker}')
 
+for marker in (
+    'export CHATGPT_COMPUTER_CODESIGN_IDENTITY=',
+    'export CHATGPT_COMPUTER_TEAM_ID=',
+    'Verify packaged Computer Use runtime and signing boundary',
+    '--expected-mac-team',
+):
+    if marker not in reusable:
+        raise SystemExit(f'GBF release readiness: packaged Computer Use signing verification missing {marker}')
+identity_step = reusable.index('Install Developer ID identity for macOS release')
+staging_step = reusable.index('node chatgpt-vps-control/bin/prepare-fabushi-bundle.js')
+package_step = reusable.index('npx electron-builder --${{ inputs.platform }} --publish never')
+verify_step = reusable.index('node .github/scripts/verify-packaged-computer-control.mjs', package_step)
+if not identity_step < staging_step < package_step < verify_step:
+    raise SystemExit('GBF release readiness: macOS identity -> Computer Use staging -> package -> package verification order is invalid')
+
 desktop_package = (root / 'desktop' / 'package.json').read_text(encoding='utf-8')
 if '"forceCodeSigning": true' not in desktop_package:
     raise SystemExit('GBF release readiness: macOS package must fail closed instead of emitting an unsigned test artifact')
