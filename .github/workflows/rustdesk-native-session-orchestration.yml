@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/scripts/rustdesk-native-session-orchestration.py'
       - '.github/scripts/rustdesk-native-consent-hardening.py'
+      - '.github/scripts/rustdesk-provider-parity-integration.py'
       - '.github/scripts/rustdesk-requested-grants-integration.py'
       - '.github/scripts/rustdesk-migration-v20-registration.py'
       - '.github/workflows/rustdesk-native-session-orchestration.yml'
@@ -51,6 +52,7 @@ jobs:
           python .github/scripts/rustdesk-migration-v20-registration.py
           python .github/scripts/rustdesk-native-session-orchestration.py
           python .github/scripts/rustdesk-native-consent-hardening.py
+          python .github/scripts/rustdesk-provider-parity-integration.py
       - name: Verify authoritative cloud grant materialization
         run: |
           grep -q 'RemoteComputerPermissionsRequest' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
@@ -68,6 +70,16 @@ jobs:
           grep -q 'type: "rustdesk.bootstrap"' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           grep -q 'nativeRustDesk.connect' frontend/apps/web/src/lib/remote-computer/mobile-peer.ts
           grep -q "provider: 'rustdesk-sidecar'" desktop/src/messaging-shell-v2.tsx
+      - name: Verify bounded provider parity operations
+        run: |
+          grep -q 'async writeClipboard' frontend/apps/web/src/lib/remote-computer/native-rustdesk-controller.ts
+          grep -q 'async sendFileCommand' frontend/apps/web/src/lib/remote-computer/native-rustdesk-controller.ts
+          grep -q 'async setAudioEnabled' frontend/apps/web/src/lib/remote-computer/native-rustdesk-controller.ts
+          grep -q 'async reconnect' frontend/apps/web/src/lib/remote-computer/native-rustdesk-controller.ts
+          grep -q 'nativeRustDesk.writeClipboard' frontend/apps/web/src/lib/remote-computer/mobile-peer.ts
+          grep -q 'nativeRustDesk.sendFileCommand' frontend/apps/web/src/lib/remote-computer/mobile-peer.ts
+          grep -q 'nativeRustDesk.setAudioEnabled' frontend/apps/web/src/lib/remote-computer/mobile-peer.ts
+          grep -q 'nativeRustDesk.reconnect' frontend/apps/web/src/lib/remote-computer/mobile-peer.ts
       - name: Verify temporary credentials never enter cloud persistence
         run: |
           ! grep -Eq 'temporaryPassword|rustdeskPassword|providerPassword' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
