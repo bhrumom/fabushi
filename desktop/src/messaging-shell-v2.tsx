@@ -1122,6 +1122,11 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
       // Presence begins automatically after login. The controller receives the
       // persisted opt-in before any remote session polling is allowed.
       controlEnabled: remoteControlEnabledRef.current,
+      provider: 'rustdesk-sidecar',
+      platform: navigator.platform.toLowerCase().includes('mac') ? 'macos'
+        : navigator.platform.toLowerCase().includes('win') ? 'windows'
+          : navigator.platform.toLowerCase().includes('linux') ? 'linux' : 'unknown',
+      capabilities: ['remote-desktop', 'input', 'clipboard', 'file-transfer', 'display', 'audio', 'session-management'],
       resolveAgentId: (requestedAgentId) => requestedAgentId === 'mahayana-assistant'
         || peersRef.current.some((peer) => isAgentPeer(peer) && (peer.actorId ?? peer.id) === requestedAgentId)
         ? requestedAgentId
@@ -3090,6 +3095,11 @@ async function saveInvoiceDialog() {
             {hostSettings.remoteControlEnabled && remoteComputerState?.registration?.pairingCode ? <div className={styles.computerPairingCode}>
               <span><small>配对码</small><strong>{remoteComputerState.registration.pairingCode}</strong></span>
               <button type="button" onClick={() => void remoteComputerControllerRef.current?.refreshPairingCode().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))}>刷新</button>
+            </div> : null}
+            {remoteComputerState?.pendingAuthorization ? <div className={styles.computerPairingCode} data-testid="remote-session-consent">
+              <span><small>远控请求</small><strong>{remoteComputerState.pendingAuthorization.clientLabel || '已配对设备'}</strong></span>
+              <button type="button" onClick={() => void remoteComputerControllerRef.current?.approvePendingSession(remoteComputerState.pendingAuthorization!.sessionId).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))}>允许本次连接</button>
+              <button type="button" className={styles.computerDangerButton} onClick={() => void remoteComputerControllerRef.current?.denyPendingSession(remoteComputerState.pendingAuthorization!.sessionId).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))}>拒绝</button>
             </div> : null}
             {remoteComputerState?.activeSessionId ? <button type="button" className={styles.computerDangerButton} onClick={() => void remoteComputerControllerRef.current?.disconnectActive()}>断开当前远控</button> : null}
             <div className={styles.computerProfileButtons}>

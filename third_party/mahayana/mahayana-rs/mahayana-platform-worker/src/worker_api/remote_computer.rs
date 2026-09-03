@@ -45,6 +45,28 @@ struct RemoteComputerPairRequest {
 struct RemoteComputerSessionCreateRequest {
     client_id: String,
     client_token: String,
+    #[serde(default = "default_remote_control_permissions")]
+    permissions: RemoteComputerPermissionsRequest,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerPermissionsRequest {
+    display: bool,
+    input: bool,
+    clipboard: bool,
+    file_transfer: bool,
+    audio: bool,
+}
+
+fn default_remote_control_permissions() -> RemoteComputerPermissionsRequest {
+    RemoteComputerPermissionsRequest {
+        display: true,
+        input: true,
+        clipboard: false,
+        file_transfer: false,
+        audio: false,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -93,6 +115,22 @@ struct RemoteComputerSessionCloseRequest {
     client_id: Option<String>,
     #[serde(default)]
     mobile_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerTransportRequest {
+    role: String,
+    #[serde(default)]
+    device_secret: Option<String>,
+    #[serde(default)]
+    client_id: Option<String>,
+    #[serde(default)]
+    mobile_token: Option<String>,
+    #[serde(default)]
+    direct_available: bool,
+    #[serde(default)]
+    relay_region: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,6 +184,18 @@ struct RemoteComputerSessionRow {
 }
 
 #[derive(Debug, Deserialize)]
+struct RemoteComputerTransportRow {
+    client_id: String,
+    mobile_token_hash: String,
+    state: String,
+    expires_at: i64,
+    provider: String,
+    route_policy: String,
+    selected_route: Option<String>,
+    relay_region: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct RemoteComputerSessionListRow {
     session_id: String,
     client_id: String,
@@ -153,6 +203,11 @@ struct RemoteComputerSessionListRow {
     state: String,
     created_at: i64,
     expires_at: i64,
+    allow_display: i64,
+    allow_input: i64,
+    allow_clipboard: i64,
+    allow_file_transfer: i64,
+    allow_audio: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -866,14 +921,20 @@ pub(super) async fn remote_computer_sessions(
     let rows = worker::query!(
         &database,
         "SELECT s.session_id, s.client_id, c.label AS client_label,
-                s.state, s.created_at, s.expires_at
+                s.state, s.created_at, s.expires_at,
+                g.allow_display, g.allow_input, g.allow_clipboard,
+                g.allow_file_transfer, g.allow_audio
          FROM remote_computer_sessions s
          JOIN remote_computer_clients c
            ON c.client_id = s.client_id AND c.device_id = s.device_id AND c.user_id = s.user_id
          JOIN remote_computers d ON d.device_id = s.device_id AND d.user_id = s.user_id
+         JOIN remote_computer_session_grants g
+           ON g.session_id = s.session_id AND g.user_id = s.user_id
+          AND g.device_id = s.device_id AND g.client_id = s.client_id
          WHERE s.user_id = ?1 AND s.device_id = ?2 AND s.state <> 'closed'
            AND s.expires_at > ?3 AND c.revoked_at IS NULL
            AND c.client_token_hash IS NOT NULL AND d.revoked_at IS NULL
+           AND g.revoked_at IS NULL AND g.expires_at > ?3
          ORDER BY s.created_at DESC LIMIT 32",
         &account.user_id,
         device_id,
@@ -892,6 +953,13 @@ pub(super) async fn remote_computer_sessions(
                 "state": row.state,
                 "createdAt": row.created_at,
                 "expiresAt": row.expires_at,
+                "permissions": {
+                    "display": row.allow_display != 0,
+                    "input": row.allow_input != 0,
+                    "clipboard": row.allow_clipboard != 0,
+                    "fileTransfer": row.allow_file_transfer != 0,
+                    "audio": row.allow_audio != 0,
+                },
             })
         })
         .collect::<Vec<_>>();
@@ -930,6 +998,13 @@ pub(super) async fn remote_computer_session_create(
             400,
             "invalid_client_token",
             "Paired client credential is invalid.",
+        );
+    }
+    if !input.permissions.display {
+        return error_response(
+            400,
+            "display_permission_required",
+            "Remote control sessions must explicitly grant display access.",
         );
     }
     let database = context.env.d1(DATABASE_BINDING)?;
@@ -989,22 +1064,23 @@ pub(super) async fn remote_computer_session_create(
     let inserted = worker::query!(
         &database,
         "INSERT INTO remote_computer_sessions
-         (session_id, device_id, client_id, user_id, mobile_token_hash, state, created_at, expires_at, closed_at)
-         SELECT ?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, NULL
+         (session_id, device_id, client_id, user_id, mobile_token_hash, state, created_at, expires_at, closed_at,
+          allow_display, allow_input, allow_clipboard, allow_file_transfer, allow_audio)
+         SELECT ?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, NULL, ?8, ?9, ?10, ?11, ?12
          WHERE EXISTS (
                  SELECT 1 FROM remote_computer_clients c
                  JOIN remote_computers d
                    ON d.device_id = c.device_id AND d.user_id = c.user_id
                  WHERE c.client_id = ?3 AND c.device_id = ?2 AND c.user_id = ?4
-                   AND c.client_token_hash = ?10 AND c.revoked_at IS NULL
+                   AND c.client_token_hash = ?15 AND c.revoked_at IS NULL
                    AND d.revoked_at IS NULL
                )
            AND (SELECT COUNT(*) FROM remote_computer_sessions
                 WHERE user_id = ?4 AND device_id = ?2 AND client_id = ?3
-                  AND state <> 'closed' AND expires_at > ?6) < ?8
+                  AND state <> 'closed' AND expires_at > ?6) < ?13
            AND (SELECT COUNT(*) FROM remote_computer_sessions
                 WHERE user_id = ?4 AND device_id = ?2
-                  AND state <> 'closed' AND expires_at > ?6) < ?9",
+                  AND state <> 'closed' AND expires_at > ?6) < ?14",
         &session_id,
         &device_id,
         &input.client_id,
@@ -1012,6 +1088,11 @@ pub(super) async fn remote_computer_session_create(
         &mobile_token_hash,
         now,
         expires_at,
+        input.permissions.display as i64,
+        input.permissions.input as i64,
+        input.permissions.clipboard as i64,
+        input.permissions.file_transfer as i64,
+        input.permissions.audio as i64,
         REMOTE_SESSION_MAX_PER_CLIENT,
         REMOTE_SESSION_MAX_PER_DEVICE,
         &candidate_hash
@@ -1056,6 +1137,13 @@ pub(super) async fn remote_computer_session_create(
         "createdAt": now,
         "expiresAt": expires_at,
         "state": "pending",
+        "permissions": {
+            "display": input.permissions.display,
+            "input": input.permissions.input,
+            "clipboard": input.permissions.clipboard,
+            "fileTransfer": input.permissions.file_transfer,
+            "audio": input.permissions.audio,
+        },
         "iceServers": remote_ice_servers(&context.env),
     }))?
     .with_headers(auth_headers()))
@@ -1174,7 +1262,10 @@ fn remote_session_actor_allowed(
     desktop_authorized: bool,
     now: i64,
 ) -> bool {
-    if session.state == "closed" || session.expires_at <= now {
+    // Pending sessions are only consent requests. Neither controller nor target may
+    // negotiate transport or exchange signaling until the target device explicitly
+    // activates the session with its device secret.
+    if session.state != "active" || session.expires_at <= now {
         return false;
     }
     match role {
@@ -1187,6 +1278,191 @@ fn remote_session_actor_allowed(
         }
         _ => false,
     }
+}
+
+fn remote_relay_available(env: &Env, provider: &str) -> bool {
+    match provider {
+        "fabushi-webrtc" => env
+            .var("REMOTE_TURN_URL")
+            .ok()
+            .is_some_and(|value| !value.to_string().trim().is_empty()),
+        "rustdesk-sidecar" => env
+            .var("RUSTDESK_RELAY_URL")
+            .ok()
+            .is_some_and(|value| !value.to_string().trim().is_empty()),
+        _ => false,
+    }
+}
+
+fn remote_relay_region(value: Option<&str>) -> Option<Option<String>> {
+    let Some(value) = value else {
+        return Some(None);
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Some(None);
+    }
+    (value.len() <= 32
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
+    .then(|| Some(value.to_ascii_lowercase()))
+}
+
+pub(super) async fn remote_computer_session_transport(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
+    let account = match authenticated_account(&request, &context.env) {
+        Ok(account) => account,
+        Err(_) => return error_response(401, "unauthorized", "A valid account token is required."),
+    };
+    let device_id = route_identifier(&context, "device_id")?.to_string();
+    let session_id = route_identifier(&context, "session_id")?.to_string();
+    let input: RemoteComputerTransportRequest = match request.json().await {
+        Ok(input) => input,
+        Err(_) => {
+            return error_response(
+                400,
+                "invalid_transport_request",
+                "Transport negotiation request must be valid JSON.",
+            );
+        }
+    };
+    if !remote_role(&input.role) {
+        return error_response(
+            400,
+            "invalid_control_role",
+            "Control role must be desktop or mobile.",
+        );
+    }
+    let Some(relay_region) = remote_relay_region(input.relay_region.as_deref()) else {
+        return error_response(400, "invalid_relay_region", "relayRegion is invalid.");
+    };
+    let database = context.env.d1(DATABASE_BINDING)?;
+    let Some(session) = worker::query!(
+        &database,
+        "SELECT s.client_id, s.mobile_token_hash, s.state, s.expires_at,
+                s.provider, s.route_policy, s.selected_route, s.relay_region
+         FROM remote_computer_sessions s
+         JOIN remote_computer_clients c
+           ON c.client_id = s.client_id AND c.device_id = s.device_id AND c.user_id = s.user_id
+         JOIN remote_computers d ON d.device_id = s.device_id AND d.user_id = s.user_id
+         WHERE s.session_id = ?1 AND s.device_id = ?2 AND s.user_id = ?3
+           AND c.revoked_at IS NULL AND c.client_token_hash IS NOT NULL
+           AND d.revoked_at IS NULL LIMIT 1",
+        &session_id,
+        &device_id,
+        &account.user_id
+    )?
+    .first::<RemoteComputerTransportRow>(None)
+    .await?
+    else {
+        return error_response(
+            404,
+            "control_session_not_found",
+            "Control session was not found.",
+        );
+    };
+    let now = now_seconds();
+    let desktop_authorized = if input.role == "desktop" {
+        match input.device_secret.as_deref() {
+            Some(secret) => {
+                remote_desktop_secret_matches(&database, &account.user_id, &device_id, secret)
+                    .await?
+            }
+            None => false,
+        }
+    } else {
+        false
+    };
+    let actor_allowed = remote_session_actor_allowed(
+        &RemoteComputerSessionRow {
+            client_id: session.client_id.clone(),
+            mobile_token_hash: session.mobile_token_hash.clone(),
+            state: session.state.clone(),
+            expires_at: session.expires_at,
+        },
+        &input.role,
+        input.client_id.as_deref(),
+        input.mobile_token.as_deref(),
+        desktop_authorized,
+        now,
+    );
+    if !actor_allowed {
+        return error_response(
+            403,
+            "control_session_forbidden",
+            "This actor cannot negotiate transport for the control session.",
+        );
+    }
+
+    let relay_available = remote_relay_available(&context.env, &session.provider);
+    let selected_route = if session.route_policy == "relay-only" {
+        if !relay_available {
+            return error_response(
+                503,
+                "relay_unavailable",
+                "The session requires relay transport, but no authenticated relay is configured.",
+            );
+        }
+        "relay"
+    } else if input.direct_available {
+        "direct"
+    } else if relay_available {
+        "relay"
+    } else {
+        return error_response(
+            503,
+            "transport_unavailable",
+            "Direct transport is unavailable and no authenticated relay is configured.",
+        );
+    };
+    if session.selected_route.as_deref() == Some("relay") && selected_route == "direct" {
+        return error_response(
+            409,
+            "transport_route_locked",
+            "A session that fell back to relay cannot be upgraded back to direct transport.",
+        );
+    }
+    let stored_region = if selected_route == "relay" {
+        relay_region.or(session.relay_region)
+    } else {
+        None
+    };
+    let updated = worker::query!(
+        &database,
+        "UPDATE remote_computer_sessions
+         SET selected_route = ?1, relay_region = ?2, transport_updated_at = ?3
+         WHERE session_id = ?4 AND device_id = ?5 AND user_id = ?6
+           AND state <> 'closed' AND expires_at > ?3
+           AND (selected_route IS NULL OR selected_route = ?1
+                OR (selected_route = 'direct' AND ?1 = 'relay'))",
+        selected_route,
+        stored_region.as_deref(),
+        now,
+        &session_id,
+        &device_id,
+        &account.user_id
+    )?
+    .run()
+    .await?;
+    if updated.meta()?.and_then(|meta| meta.changes).unwrap_or(0) == 0 {
+        return error_response(
+            409,
+            "transport_route_conflict",
+            "Transport route changed concurrently; refresh the session before retrying.",
+        );
+    }
+    Ok(Response::from_json(&json!({
+        "sessionId": session_id,
+        "provider": session.provider,
+        "routePolicy": session.route_policy,
+        "selectedRoute": selected_route,
+        "relayRegion": stored_region,
+        "transportUpdatedAt": now,
+    }))?
+    .with_headers(auth_headers()))
 }
 
 pub(super) async fn remote_computer_session_close(

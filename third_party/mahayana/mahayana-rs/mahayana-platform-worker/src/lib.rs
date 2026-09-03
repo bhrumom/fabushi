@@ -18,6 +18,12 @@ pub const REMOTE_COMPUTER_SESSION_PROVIDER_SCHEMA_V16: &str =
     include_str!("../migrations/0016_remote_computer_session_provider.sql");
 pub const REMOTE_COMPUTER_TRANSPORT_CONTRACT_SCHEMA_V17: &str =
     include_str!("../migrations/0017_remote_computer_transport_contract.sql");
+pub const REMOTE_COMPUTER_TRANSPORT_AUDIT_SCHEMA_V18: &str =
+    include_str!("../migrations/0018_remote_computer_transport_audit.sql");
+pub const REMOTE_COMPUTER_AUDIT_GRANTS_SCHEMA_V19: &str =
+    include_str!("../migrations/0019_remote_computer_audit_grants.sql");
+pub const REMOTE_COMPUTER_REQUESTED_GRANTS_SCHEMA_V20: &str =
+    include_str!("../migrations/0020_remote_computer_requested_grants.sql");
 pub const WORKSPACE_MESSAGING_SCHEMA_V7: &str =
     include_str!("../migrations/0007_workspace_messaging.sql");
 pub const FABUSHI_PAY_SCHEMA_V7: &str = include_str!("../migrations/0007_fabushi_pay.sql");

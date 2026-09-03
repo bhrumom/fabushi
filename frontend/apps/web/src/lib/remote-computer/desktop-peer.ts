@@ -14,6 +14,7 @@ import type {
   RuntimeEvent,
 } from "../mahayana-host/contracts";
 import type { MahayanaHostTransport } from "../mahayana-host/transport";
+import { invokeNativeDesktop } from "../fabushi-runtime/native-desktop";
 
 const DEVICE_ID_STORAGE_KEY = "fabushi-remote-computer-device-id-v1";
 const DEVICE_ID_SCOPE_STORAGE_PREFIX = "fabushi-remote-computer-device-id-v2";
@@ -70,6 +71,7 @@ export interface RemoteComputerDesktopState {
   registration?: RemoteComputerRegistration;
   clients: RemoteComputerClient[];
   sessions: RemoteComputerSession[];
+  pendingAuthorization?: RemoteComputerSession;
   activeSessionId?: string;
   activeClientId?: string;
   connectionState: RTCPeerConnectionState | "idle";
@@ -127,6 +129,7 @@ interface PeerSession {
   pendingOperations: number;
   drainingSignals: boolean;
   pendingRemoteCandidates: RTCIceCandidateInit[];
+  rustDeskBootstrapped: boolean;
 }
 
 type IncomingChannelMessage =
@@ -255,6 +258,21 @@ function normalizeIceServers(value: unknown): RTCIceServer[] {
   });
 }
 
+function normalizeRemotePermissions(value: unknown): RemoteComputerSession["permissions"] {
+  const permissions = objectValue(value);
+  const names = ["display", "input", "clipboard", "fileTransfer", "audio"] as const;
+  if (names.some((name) => typeof permissions[name] !== "boolean")) {
+    throw new Error("Remote computer session permissions are invalid");
+  }
+  return {
+    display: permissions.display as boolean,
+    input: permissions.input as boolean,
+    clipboard: permissions.clipboard as boolean,
+    fileTransfer: permissions.fileTransfer as boolean,
+    audio: permissions.audio as boolean,
+  };
+}
+
 function normalizeSessionsPayload(value: unknown, expectedDeviceId: string): NormalizedSessionListPayload {
   const data = objectValue(value);
   if (data.deviceId !== expectedDeviceId || !Array.isArray(data.sessions) || data.sessions.length > MAX_REMOTE_SESSIONS) {
@@ -282,6 +300,7 @@ function normalizeSessionsPayload(value: unknown, expectedDeviceId: string): Nor
       state: session.state as RemoteComputerSession["state"],
       ...(session.createdAt === undefined ? {} : { createdAt: session.createdAt }),
       expiresAt: session.expiresAt,
+      permissions: normalizeRemotePermissions(session.permissions),
       ...(session.generation === undefined ? {} : { generation: session.generation }),
     };
   });
@@ -648,6 +667,7 @@ export class RemoteComputerDesktopController {
   private heartbeatTimer?: number;
   private stopPromise?: Promise<void>;
   private peers = new Map<string, PeerSession>();
+  private lastIceServers: RTCIceServer[] = [];
   private stopped = true;
   private polling = false;
   private heartbeating = false;
@@ -729,6 +749,7 @@ export class RemoteComputerDesktopController {
     this.peers.clear();
     this.update({
       sessions: [],
+      pendingAuthorization: undefined,
       activeSessionId: undefined,
       activeClientId: undefined,
       connectionState: "idle",
@@ -766,6 +787,7 @@ export class RemoteComputerDesktopController {
     this.peers.clear();
     this.update({
       running: false,
+      pendingAuthorization: undefined,
       activeSessionId: undefined,
       activeClientId: undefined,
       connectionState: "idle",
@@ -863,15 +885,18 @@ export class RemoteComputerDesktopController {
       });
       if (this.stopped || !this.controlEnabled) return;
       const { sessions, iceServers } = normalizeSessionsPayload(event.data, this.deviceId);
-      this.update({ sessions, error: undefined });
+      this.lastIceServers = iceServers;
       const known = new Set(sessions.map((session) => session.sessionId));
       for (const peer of [...this.peers.values()]) {
         if (!known.has(peer.session.sessionId)) await this.closePeer(peer, false);
       }
-      if (![...this.peers.values()].some((peer) => !peer.closing)) {
-        const pending = sessions.find((session) => session.state === "pending");
-        if (pending) await this.openPeer(pending, iceServers);
-      }
+      const hasActivePeer = [...this.peers.values()].some((peer) => !peer.closing);
+      const pending = hasActivePeer ? undefined : sessions.find((session) => session.state === "pending");
+      this.update({
+        sessions,
+        pendingAuthorization: pending,
+        error: undefined,
+      });
     } catch (cause) {
       if (this.controlEnabled) {
         const message = cause instanceof Error ? cause.message : String(cause);
@@ -882,6 +907,37 @@ export class RemoteComputerDesktopController {
     } finally {
       this.polling = false;
     }
+  }
+
+  async approvePendingSession(sessionId: string): Promise<void> {
+    if (this.stopped || !this.controlEnabled) throw new Error("Remote control is disabled");
+    const pending = this.state.sessions.find((session) => session.sessionId === sessionId && session.state === "pending");
+    if (!pending || this.state.pendingAuthorization?.sessionId !== sessionId) {
+      throw new Error("Remote session is no longer awaiting authorization");
+    }
+    this.update({ pendingAuthorization: undefined, error: undefined });
+    try {
+      await this.openPeer(pending, this.lastIceServers);
+    } catch (cause) {
+      this.update({ error: cause instanceof Error ? cause.message : String(cause) });
+      throw cause;
+    }
+  }
+
+  async denyPendingSession(sessionId: string): Promise<void> {
+    const pending = this.state.sessions.find((session) => session.sessionId === sessionId && session.state === "pending");
+    if (!pending) return;
+    await remoteRequest(this.transport, {
+      type: "remoteComputer.sessionClose",
+      requestId: requestId("remote-deny"),
+      deviceId: this.deviceId,
+      sessionId,
+    });
+    this.update({
+      sessions: this.state.sessions.filter((session) => session.sessionId !== sessionId),
+      pendingAuthorization: undefined,
+      error: undefined,
+    });
   }
 
   private async openPeer(session: RemoteComputerSession, iceServers: RTCIceServer[]): Promise<void> {
@@ -897,6 +953,7 @@ export class RemoteComputerDesktopController {
       pendingOperations: 0,
       drainingSignals: false,
       pendingRemoteCandidates: [],
+      rustDeskBootstrapped: false,
     };
     this.peers.set(session.sessionId, entry);
     this.update({
@@ -1009,6 +1066,7 @@ export class RemoteComputerDesktopController {
           sessionId: entry.session.sessionId,
           generation: entry.session.generation ?? 0,
         });
+        await this.maybeSendRustDeskBootstrap(entry);
       }
       await remoteRequest(this.transport, {
         type: "remoteComputer.signal",
@@ -1038,6 +1096,38 @@ export class RemoteComputerDesktopController {
     }
   }
 
+  private async maybeSendRustDeskBootstrap(entry: PeerSession): Promise<void> {
+    const channel = entry.channel;
+    if (this.provider !== "rustdesk-sidecar" || entry.rustDeskBootstrapped || entry.closing || !entry.activated
+      || !channel || channel.readyState !== "open") return;
+    try {
+      const credential = await invokeNativeDesktop<{ peerId?: unknown; temporaryPassword?: unknown }>(
+        "createRustDeskHostSessionCredential",
+        { sessionId: entry.session.sessionId, clientLabel: entry.session.clientLabel ?? entry.session.clientId, grant: entry.session.permissions },
+      );
+      const peerId = typeof credential?.peerId === "string" ? credential.peerId : "";
+      const password = typeof credential?.temporaryPassword === "string" ? credential.temporaryPassword : "";
+      if (!/^[A-Za-z0-9._:-]{1,160}$/.test(peerId) || password.length < 6 || password.length > 32 || /\s/.test(password)) {
+        throw new Error("RustDesk host bootstrap returned invalid credentials");
+      }
+      entry.rustDeskBootstrapped = true;
+      await sendJson(channel, {
+        type: "rustdesk.bootstrap",
+        protocol: 1,
+        sessionId: entry.session.sessionId,
+        peerId,
+        password,
+        forceRelay: false,
+        grant: entry.session.permissions,
+      });
+    } catch (cause) {
+      // Browser/mobile and native sessions keep the already-authorized WebRTC path
+      // when a native provider is unavailable. Never fail open by fabricating a
+      // RustDesk credential or widening the session grant.
+      this.update({ error: cause instanceof Error ? cause.message : String(cause) });
+    }
+  }
+
   private configureChannel(entry: PeerSession, channel: RTCDataChannel): void {
     if (!this.controlEnabled) {
       channel.close();
@@ -1052,13 +1142,16 @@ export class RemoteComputerDesktopController {
       }
       this.update({ channelOpen: entry.activated, connectionState: entry.peer.connectionState });
       if (!entry.activated) return;
-      void sendJson(channel, {
-        type: "computer.hello",
-        protocol: 1,
-        deviceId: this.deviceId,
-        sessionId: entry.session.sessionId,
-        generation: entry.session.generation ?? 0,
-      }).catch((cause) => this.update({ error: cause instanceof Error ? cause.message : String(cause) }));
+      void (async () => {
+        await sendJson(channel, {
+          type: "computer.hello",
+          protocol: 1,
+          deviceId: this.deviceId,
+          sessionId: entry.session.sessionId,
+          generation: entry.session.generation ?? 0,
+        });
+        await this.maybeSendRustDeskBootstrap(entry);
+      })().catch((cause) => this.update({ error: cause instanceof Error ? cause.message : String(cause) }));
     };
     channel.onclose = () => {
       this.update({ channelOpen: false });
@@ -1112,6 +1205,10 @@ export class RemoteComputerDesktopController {
       return;
     }
     if (message.type === "computer.snapshot.request") {
+      if (!entry.session.permissions.display) {
+        await sendJson(channel, { type: "computer.error", message: "Remote session does not grant display permission" });
+        return;
+      }
       const responseId = typeof message.id === "string" && message.id.length > 0 && message.id.length <= 200 ? message.id : "";
       if (!responseId) {
         await sendJson(channel, { type: "computer.error", message: "Snapshot request id is invalid" });
@@ -1197,6 +1294,10 @@ export class RemoteComputerDesktopController {
       return;
     }
     if (message.type === "computer.action") {
+      if (!entry.session.permissions.input) {
+        await sendJson(channel, { type: "computer.error", message: "Remote session does not grant input permission" });
+        return;
+      }
       const responseId = typeof message.id === "string" && message.id.length > 0 && message.id.length <= 200 ? message.id : "";
       const actionChain = Array.isArray(message.then) ? message.then : [];
       if (!responseId || !message.action || typeof message.action !== "object" || actionChain.length > MAX_ACTION_CHAIN) {
@@ -1226,6 +1327,10 @@ export class RemoteComputerDesktopController {
   private async closePeer(entry: PeerSession, notifyServer: boolean): Promise<void> {
     if (entry.closing) return;
     entry.closing = true;
+    if (entry.rustDeskBootstrapped) {
+      entry.rustDeskBootstrapped = false;
+      await invokeNativeDesktop("revokeRustDeskHostSessionCredential", { sessionId: entry.session.sessionId }).catch(() => undefined);
+    }
     if (entry.signalTimer) window.clearInterval(entry.signalTimer);
     entry.signalTimer = undefined;
     const channel = entry.channel;
