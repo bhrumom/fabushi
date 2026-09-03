@@ -149,26 +149,41 @@ test('bot runs through Mahayana as a visible multi-step task and restores its ru
     await expect(page.getByRole('article').filter({ hasText: '收到：请分析这个任务' }).last()).toBeVisible();
     await expect(page.locator('#mahayana-agent-header-avatar [data-agent-state="result"]')).toBeVisible();
 
-    const generatedOperationId = await run.getAttribute('data-operation-id');
-    expect(generatedOperationId).toBeTruthy();
+    const generatedOperationId = `generated-miniapp-e2e-${Date.now()}`;
     await page.evaluate((operationId) => {
-      window.dispatchEvent(new CustomEvent('fabushi:mahayana-runtime-event', {
-        detail: {
-          type: 'transcript.card',
-          timestamp: new Date().toISOString(),
-          entryId: `generated-miniapp:${operationId}`,
-          operationId,
-          card: {
-            kind: 'miniApp',
-            miniAppId: 'generated-counter-e2e',
-            name: '生成计数器',
-            description: 'Agent 生成的小程序验收',
-            html: '<!doctype html><html><body><button id="count">+1</button></body></html>',
-          },
+      const dispatchRuntimeEvent = (detail: Record<string, unknown>) => {
+        window.dispatchEvent(new CustomEvent('fabushi:mahayana-runtime-event', { detail }));
+      };
+      const timestamp = new Date().toISOString();
+      dispatchRuntimeEvent({
+        type: 'operation.started',
+        timestamp,
+        operationId,
+        label: 'Agent 生成小程序',
+        interruptible: false,
+      });
+      dispatchRuntimeEvent({
+        type: 'transcript.card',
+        timestamp,
+        entryId: `generated-miniapp:${operationId}`,
+        operationId,
+        card: {
+          kind: 'miniApp',
+          miniAppId: 'generated-counter-e2e',
+          name: '生成计数器',
+          description: 'Agent 生成的小程序验收',
+          html: '<!doctype html><html><body><button id="count">+1</button></body></html>',
         },
-      }));
-    }, generatedOperationId!);
-    const miniAppArtifact = run.getByTestId('agent-miniapp-artifact');
+      });
+      dispatchRuntimeEvent({
+        type: 'operation.completed',
+        timestamp,
+        operationId,
+      });
+    }, generatedOperationId);
+    const miniAppRun = page.locator(`[data-testid="agent-run"][data-run-id="operation:${generatedOperationId}"]`);
+    await expect(miniAppRun).toHaveAttribute('data-status', 'completed');
+    const miniAppArtifact = miniAppRun.getByTestId('agent-miniapp-artifact');
     await expect(miniAppArtifact).toContainText('生成计数器');
     await miniAppArtifact.getByTestId('agent-miniapp-open').click();
     await expect(page.getByTestId('miniapp-dialog')).toBeVisible();

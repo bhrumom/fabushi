@@ -982,7 +982,6 @@ function RunCard({
       className={styles.runCard}
       data-testid="agent-run"
       data-run-id={run.id}
-      data-operation-id={run.operationId}
       data-status={run.status}
       open={latest || activeStatuses(run.status)}
     >
