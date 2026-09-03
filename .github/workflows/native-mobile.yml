@@ -384,6 +384,25 @@ jobs:
         working-directory: mobile/ios
         run: xcodegen generate
 
+      - name: Ensure generated Xcode project has workspace metadata
+        if: github.event_name != 'pull_request' && matrix.target == 'ios'
+        working-directory: mobile/ios
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f Fabushi.xcodeproj/project.pbxproj
+          workspace_file='Fabushi.xcodeproj/project.xcworkspace/contents.xcworkspacedata'
+          if [ ! -s "$workspace_file" ]; then
+            mkdir -p "$(dirname "$workspace_file")"
+            cat > "$workspace_file" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Workspace
+             version = "1.0">
+          </Workspace>
+          EOF
+          fi
+          test -s "$workspace_file"
+
       - name: Select an available iPhone simulator
         if: github.event_name != 'pull_request' && matrix.target == 'ios'
         id: simulator
