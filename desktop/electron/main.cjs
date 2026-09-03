@@ -1380,6 +1380,8 @@ applyStartupNativePreferences();
 
 app.whenReady().then(async () => {
   const rustDeskHostStatus = rustDeskHostDaemon.start();
+  if (rustDeskHostStatus.available) console.info(JSON.stringify({ type: 'fabushi.rustdesk-host.started', ...rustDeskHostStatus }));
+  const rustDeskHostStatus = rustDeskHostDaemon.start();
   if (rustDeskHostStatus.available) {
     console.info(JSON.stringify({ type: 'fabushi.rustdesk-host.started', ...rustDeskHostStatus }));
     try {
