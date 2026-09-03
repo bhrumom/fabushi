@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AppWindow,
   Check,
   ChevronDown,
   ChevronUp,
@@ -700,6 +701,12 @@ function PdfCard({ card }: { card: Extract<TranscriptCard, { kind: "pdf" }> }) {
   return <article className={styles.documentCard}><header><FileText size={17} /><strong>{card.name}</strong>{card.pageCount ? <span>{card.pageCount} pages</span> : null}{source ? <a href={source} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a> : null}</header>{source ? <object className={styles.pdfPreview} data={source} type="application/pdf"><a href={source}>Open PDF</a></object> : <p>PDF content is unavailable.</p>}</article>;
 }
 
+
+function MiniAppCard({ card }: { card: Extract<TranscriptCard, { kind: "miniApp" }> }) {
+  const canOpen = typeof window !== "undefined" && typeof window.fabushi?.registerMiniAppDocument === "function";
+  return <article className={styles.documentCard} data-testid="transcript-miniapp-card"><header><AppWindow size={17} /><strong>{card.name}</strong><span>Mini App</span></header><p>{card.description || "Runnable Fabushi Mini App artifact."}</p>{canOpen ? <footer className={styles.cardActions}><button className={styles.primaryCardButton} type="button" onClick={() => window.dispatchEvent(new CustomEvent("fabushi:open-generated-miniapp", { detail: card }))}><AppWindow size={15} /> 打开小程序</button></footer> : <p className={styles.cardDescription}>请在 Fabushi 桌面或移动应用中打开此产物。</p>}</article>;
+}
+
 function SpreadsheetCard({ card }: { card: Extract<TranscriptCard, { kind: "spreadsheet" }> }) {
   const [active, setActive] = useState(0);
   const sheet = card.sheets[active];
@@ -715,5 +722,6 @@ export function TranscriptCardView({ entry, onResolveDraft, onProvideSecret, onC
   if (card.kind === "event") return <EventResultCard card={card} />;
   if (card.kind === "pdf") return <PdfCard card={card} />;
   if (card.kind === "spreadsheet") return <SpreadsheetCard card={card} />;
+  if (card.kind === "miniApp") return <MiniAppCard card={card} />;
   return null;
 }

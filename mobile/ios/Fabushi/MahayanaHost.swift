@@ -1,4 +1,50 @@
 import Foundation
+import Security
+
+
+private enum MobileAuthStoragePassphrase {
+    private static let service = "com.ombhrum.fabushi.mahayana-storage.v1"
+    private static let account = "default"
+
+    static func loadOrCreate() throws -> String {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecSuccess, let data = item as? Data, data.count == 32 {
+            return data.base64EncodedString()
+        }
+        guard status == errSecItemNotFound else {
+            throw MahayanaHost.HostError.requestFailed("无法读取系统 Keychain 登录存储密钥（\(status)）")
+        }
+        var bytes = [UInt8](repeating: 0, count: 32)
+        let randomStatus = bytes.withUnsafeMutableBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, buffer.count, baseAddress)
+        }
+        guard randomStatus == errSecSuccess else {
+            throw MahayanaHost.HostError.requestFailed("无法生成系统登录存储密钥")
+        }
+        let data = Data(bytes)
+        let add: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecValueData as String: data,
+        ]
+        let addStatus = SecItemAdd(add as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            throw MahayanaHost.HostError.requestFailed("无法写入系统 Keychain 登录存储密钥（\(addStatus)）")
+        }
+        return data.base64EncodedString()
+    }
+}
 
 final class MahayanaHost: @unchecked Sendable {
     struct JSONResult: @unchecked Sendable {
@@ -24,8 +70,15 @@ final class MahayanaHost: @unchecked Sendable {
 
     init(appDataDirectory: URL, featureHostTest: Bool = false) throws {
         try FileManager.default.createDirectory(at: appDataDirectory, withIntermediateDirectories: true)
-        handle = appDataDirectory.path.withCString { path in
-            featureHostTest ? mahayana_app_host_create_test(path) : mahayana_app_host_create(path)
+        if featureHostTest {
+            handle = appDataDirectory.path.withCString { mahayana_app_host_create_test($0) }
+        } else {
+            let storagePassphrase = try MobileAuthStoragePassphrase.loadOrCreate()
+            handle = appDataDirectory.path.withCString { path in
+                storagePassphrase.withCString { passphrase in
+                    mahayana_app_host_create_with_storage_passphrase(path, passphrase)
+                }
+            }
         }
         guard handle != nil else { throw HostError.initializationFailed }
     }

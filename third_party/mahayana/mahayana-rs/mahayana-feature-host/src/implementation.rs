@@ -230,6 +230,7 @@ struct FeatureState {
     pending_approvals: BTreeMap<String, PendingApproval>,
     operations: BTreeSet<String>,
     operation_agents: BTreeMap<String, String>,
+    generated_mini_app_operations: BTreeSet<String>,
     background_operations: BTreeMap<String, BackgroundOperationContext>,
     remote_computer_sessions: BTreeMap<String, RemoteComputerLocalSession>,
     remote_computer_device_secrets: BTreeMap<String, String>,
@@ -261,6 +262,7 @@ impl Default for FeatureState {
             pending_approvals: BTreeMap::new(),
             operations: BTreeSet::new(),
             operation_agents: BTreeMap::new(),
+            generated_mini_app_operations: BTreeSet::new(),
             background_operations: BTreeMap::new(),
             remote_computer_sessions: BTreeMap::new(),
             remote_computer_device_secrets: BTreeMap::new(),
@@ -5985,9 +5987,27 @@ impl FeatureHostController {
                         None
                     }
                 } else {
+                    let expects_generated_mini_app = if message.role == RuntimeMessageRole::Assistant {
+                        self.state()?
+                            .generated_mini_app_operations
+                            .remove(&operation_id)
+                    } else {
+                        false
+                    };
                     let mut cards = transcript_cards_from_metadata(&message.metadata);
+                    let mut message_text = message.text;
+                    if message.role == RuntimeMessageRole::Assistant
+                        && !cards.iter().any(|card| matches!(card, TranscriptCard::MiniApp { .. }))
+                        && let Some((card, visible_text)) = generated_mini_app_card_from_text(
+                            &message_text,
+                            expects_generated_mini_app,
+                        )
+                    {
+                        cards.push(card);
+                        message_text = visible_text;
+                    }
                     let message_id = message.id.to_string();
-                    if message.text.trim().is_empty() && !cards.is_empty() {
+                    if message_text.trim().is_empty() && !cards.is_empty() {
                         let first = cards.remove(0);
                         let mut state = self.state()?;
                         for (index, card) in cards.into_iter().enumerate() {
@@ -6026,7 +6046,7 @@ impl FeatureHostController {
                         Some(HostEvent::ChatMessage {
                             timestamp: timestamp(),
                             role,
-                            text: message.text,
+                            text: message_text,
                             operation_id: Some(operation_id),
                         })
                     }
@@ -6040,6 +6060,7 @@ impl FeatureHostController {
             } => Some(self.translate_runtime_approval(approval_id, title, details)?),
             RuntimeEvent::OperationCompleted { operation_id } => {
                 let operation_id = operation_id.to_string();
+                self.state()?.generated_mini_app_operations.remove(&operation_id);
                 let group_context = self.state()?.group_operations.remove(&operation_id);
                 if let Some(context) = group_context {
                     let _ = self.advance_group_run_after_turn(&context)?;
@@ -6071,6 +6092,7 @@ impl FeatureHostController {
                 message,
             } => {
                 let operation_id = operation_id.to_string();
+                self.state()?.generated_mini_app_operations.remove(&operation_id);
                 let group_context = self.state()?.group_operations.remove(&operation_id);
                 if let Some(context) = group_context {
                     let group = {
@@ -6752,6 +6774,7 @@ impl FeatureHostController {
             .map(ConversationId)
             .or_else(|| bot_conversation_id.map(ConversationId))
             .unwrap_or_else(|| ConversationId(MAHAYANA_AI_CONVERSATION_ID.to_string()));
+        let expects_generated_mini_app = requests_runnable_mini_app(&text);
         let (provider, routed_model) = match self.runtime()?.execute(RuntimeCommand::Status)? {
             RuntimeResponse::Status(status) => (
                 format!("{:?}", status.model_provider).to_lowercase(),
@@ -6804,6 +6827,9 @@ impl FeatureHostController {
         };
         let mut state = self.state()?;
         state.operations.insert(operation_id.clone());
+        if expects_generated_mini_app {
+            state.generated_mini_app_operations.insert(operation_id.clone());
+        }
         state.operation_agents.insert(
             operation_id.clone(),
             agent_id
@@ -7299,6 +7325,134 @@ impl FeatureHostController {
             .lock()
             .map_err(|_| FeatureHostError::StatePoisoned)
     }
+}
+
+const GENERATED_MINI_APP_MAX_BYTES: usize = 5 * 1024 * 1024;
+
+fn requests_runnable_mini_app(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    ["小程序", "mini app", "miniapp", "web app", "网页应用", "交互应用"]
+        .iter()
+        .any(|marker| lower.contains(marker))
+        && ["做", "创建", "生成", "实现", "开发", "build", "create", "make", "generate"]
+            .iter()
+            .any(|marker| lower.contains(marker))
+}
+
+fn safe_generated_mini_app_id(value: &str) -> Option<String> {
+    let value = value.trim().to_ascii_lowercase();
+    (2..=64).contains(&value.len())
+        .then_some(())
+        .filter(|_| value.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric))
+        .filter(|_| value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-'))
+        .map(|_| value)
+}
+
+fn generated_mini_app_id(value: Option<&str>, html: &str) -> String {
+    if let Some(value) = value.and_then(safe_generated_mini_app_id) {
+        return value;
+    }
+    let digest = Sha256::digest(html.as_bytes());
+    let suffix = digest[..8]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("generated-{suffix}")
+}
+
+fn fenced_block(text: &str, language: &str) -> Option<(usize, usize, &str)> {
+    let marker = format!("```{language}");
+    let start = text.find(&marker)?;
+    let content_start = text[start + marker.len()..]
+        .find('\n')
+        .map(|offset| start + marker.len() + offset + 1)?;
+    let closing_offset = text[content_start..].find("```")?;
+    let end = content_start + closing_offset + 3;
+    Some((start, end, &text[content_start..content_start + closing_offset]))
+}
+
+fn mini_app_visible_text(text: &str, start: usize, end: usize, name: &str) -> String {
+    let remainder = format!("{}{}", &text[..start], &text[end..]);
+    let remainder = remainder.trim();
+    let launch = format!("小程序「{name}」已生成，可点击下方卡片直接打开。");
+    if remainder.is_empty() {
+        launch
+    } else {
+        format!("{remainder}\n\n{launch}")
+    }
+}
+
+fn mini_app_card_from_parts(metadata: &Value, html: &str) -> Option<TranscriptCard> {
+    let html = html.trim();
+    if html.is_empty() || html.len() > GENERATED_MINI_APP_MAX_BYTES {
+        return None;
+    }
+    let lower = html.to_ascii_lowercase();
+    if !lower.contains("<html") && !lower.contains("<!doctype html") {
+        return None;
+    }
+    let name = metadata
+        .get("name")
+        .or_else(|| metadata.get("title"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("生成的小程序")
+        .chars()
+        .take(120)
+        .collect::<String>();
+    let description = metadata
+        .get("description")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(300).collect::<String>());
+    let id = generated_mini_app_id(
+        metadata
+            .get("id")
+            .or_else(|| metadata.get("miniAppId"))
+            .and_then(Value::as_str),
+        html,
+    );
+    Some(TranscriptCard::MiniApp {
+        mini_app_id: id,
+        name,
+        html: html.to_string(),
+        description,
+    })
+}
+
+fn generated_mini_app_card_from_text(
+    text: &str,
+    allow_html_fallback: bool,
+) -> Option<(TranscriptCard, String)> {
+    if let Some((start, end, body)) = fenced_block(text, "fabushi-miniapp") {
+        let mut lines = body.lines();
+        let metadata_line = lines.next()?.trim();
+        let metadata: Value = serde_json::from_str(metadata_line).ok()?;
+        let html = lines.collect::<Vec<_>>().join("\n");
+        let card = mini_app_card_from_parts(&metadata, &html)?;
+        let name = match &card {
+            TranscriptCard::MiniApp { name, .. } => name.clone(),
+            _ => unreachable!(),
+        };
+        return Some((card, mini_app_visible_text(text, start, end, &name)));
+    }
+    if !allow_html_fallback {
+        return None;
+    }
+    for language in ["html", "htm"] {
+        if let Some((start, end, html)) = fenced_block(text, language) {
+            let metadata = json!({"name":"生成的小程序"});
+            let card = mini_app_card_from_parts(&metadata, html)?;
+            let name = match &card {
+                TranscriptCard::MiniApp { name, .. } => name.clone(),
+                _ => unreachable!(),
+            };
+            return Some((card, mini_app_visible_text(text, start, end, &name)));
+        }
+    }
+    None
 }
 
 fn transcript_cards_from_metadata(metadata: &Value) -> Vec<TranscriptCard> {
@@ -8754,7 +8908,8 @@ fn compose_agent_input(
     mode_statement: Option<&str>,
     attachments: &[AttachmentContext],
 ) -> String {
-    if mode == AgentMode::Agent && attachments.is_empty() {
+    let wants_runnable_mini_app = mode == AgentMode::Agent && requests_runnable_mini_app(text);
+    if mode == AgentMode::Agent && attachments.is_empty() && !wants_runnable_mini_app {
         return text.to_string();
     }
     let mode_instruction = match mode {
@@ -8768,6 +8923,11 @@ fn compose_agent_input(
         "[Agent 模式]\n{}\n{mode_instruction}\n\n[用户请求]\n{text}",
         mode_statement.unwrap_or("")
     );
+    if wants_runnable_mini_app {
+        input.push_str(
+            "\n\n[可运行 Mini App 产物协议]\n如果最终交付物是可直接运行的自包含 HTML 小程序，不要只把源码作为普通代码块结束。请在最终回复中附加且只附加一个如下 fenced block：\n```fabushi-miniapp\n{\"id\":\"short-kebab-id\",\"name\":\"用户可见名称\",\"description\":\"一句话说明\"}\n<!doctype html>...完整自包含 HTML...\n```\n普通代码示例不要使用 fabushi-miniapp 标记。Fabushi 会把这个 block 转换为可点击打开的小程序卡片。",
+        );
+    }
     for attachment in attachments {
         input.push_str("\n\n[附件: ");
         input.push_str(&attachment.name);
@@ -12824,4 +12984,45 @@ mod tests {
                 && message == "provider unavailable"
         ));
     }
+
+    #[test]
+    fn mini_app_agent_turn_adds_structured_artifact_instruction() {
+        let input = compose_agent_input(
+            "帮我创建一个可以点击计数的小程序",
+            AgentMode::Agent,
+            None,
+            &[],
+        );
+        assert!(input.contains("```fabushi-miniapp"));
+        assert!(input.contains("完整自包含 HTML"));
+
+        let ordinary = compose_agent_input("解释 HTML 是什么", AgentMode::Agent, None, &[]);
+        assert_eq!(ordinary, "解释 HTML 是什么");
+    }
+
+    #[test]
+    fn generated_mini_app_envelope_becomes_clickable_card_without_raw_source() {
+        let text = "已完成。\n```fabushi-miniapp\n{\"id\":\"counter-demo\",\"name\":\"计数器\",\"description\":\"点击按钮计数\"}\n<!doctype html><html><body><button>+1</button></body></html>\n```";
+        let (card, visible) = generated_mini_app_card_from_text(text, false)
+            .expect("promote generated Mini App");
+        match card {
+            TranscriptCard::MiniApp { mini_app_id, name, html, description } => {
+                assert_eq!(mini_app_id, "counter-demo");
+                assert_eq!(name, "计数器");
+                assert!(html.contains("<button>+1</button>"));
+                assert_eq!(description.as_deref(), Some("点击按钮计数"));
+            }
+            other => panic!("unexpected card: {other:?}"),
+        }
+        assert!(visible.contains("可点击下方卡片直接打开"));
+        assert!(!visible.contains("<!doctype html>"));
+    }
+
+    #[test]
+    fn ordinary_html_example_is_not_promoted_without_app_intent() {
+        let text = "示例：\n```html\n<!doctype html><html><body>Hello</body></html>\n```";
+        assert!(generated_mini_app_card_from_text(text, false).is_none());
+        assert!(generated_mini_app_card_from_text(text, true).is_some());
+    }
+
 }

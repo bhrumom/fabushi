@@ -134,8 +134,11 @@ test('desktop Messenger unifies Telegram-class navigation with Fabushi agent ide
     const profileMark = profileNavigation.locator('[data-engine="fabushi-motion-v3"]').first();
     await expect(profileMark).toBeVisible();
     await expect(profileMark).toHaveAttribute('data-motion-tier', 'ambient');
+    await expect(profileMark.locator('[data-fabushi-avatar-runtime="v1"]')).toHaveAttribute('data-frame-clock', 'shared-30fps');
     await profileNavigation.click();
     await expect(page.getByTestId('profile-navigation-menu')).toBeVisible();
+    await expect(page.getByTestId('profile-logout')).toBeVisible();
+    await expect(page.getByTestId('profile-logout')).toHaveText('退出登录');
     for (const label of [
       '聊天',
       '联系人',
@@ -314,9 +317,7 @@ test('account settings logs out and clears account-scoped fast-start caches', as
     });
 
     await page.getByTestId('profile-navigation-trigger').click();
-    await page.getByTitle('设置', { exact: true }).click();
-    await page.getByTestId('settings-category-account').click();
-    const logout = page.getByTestId('settings-logout');
+    const logout = page.getByTestId('profile-logout');
     await expect(logout).toBeVisible();
     await expect(logout).toHaveText('退出登录');
     await logout.click();

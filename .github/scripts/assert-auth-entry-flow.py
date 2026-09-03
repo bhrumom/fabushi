@@ -21,6 +21,10 @@ worker = '\n'.join([
 product = read_source('third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs')
 feature = read_source('third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs')
 app_host = read_source('third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs')
+mobile_ffi = read_source('third_party/mahayana/mahayana-rs/mahayana-app-host-mobile/src/lib.rs')
+mobile_secrets = read_source('third_party/mahayana/mahayana-rs/mahayana-secrets/src/lib.rs')
+ios_mobile_host = read_source('mobile/ios/Fabushi/MahayanaHost.swift')
+android_mobile_host = read_source('mobile/android/app/src/main/java/com/ombhrum/fabushi/core/MahayanaHost.kt')
 main = read_source('desktop/electron/main.cjs')
 host_process = read_source('desktop/electron/host-process.cjs')
 
@@ -94,6 +98,17 @@ required = {
     'browser registration submit route': (worker, '/api/auth/browser/register'),
     'browser login/register UI tabs': (worker, 'aria-label=\"账号模式\"'),
     'worker browser poll uses POST': (worker, '.post_async(\"/api/auth/browser/attempts/:attempt_id\", browser_login_poll)'),
+    'mobile secrets accepts platform-protected passphrase': (mobile_secrets, 'new_with_namespace_and_passphrase'),
+    'product supports platform-protected storage passphrase': (product, 'new_with_default_api_base_url_and_storage_passphrase'),
+    'app host forwards mobile storage passphrase': (app_host, 'new_with_feature_mode_and_storage_passphrase'),
+    'mobile FFI accepts storage passphrase': (mobile_ffi, 'mahayana_app_host_create_with_storage_passphrase'),
+    'iOS session key uses generic-password Keychain': (ios_mobile_host, 'kSecClassGenericPassword'),
+    'iOS session key is device-only after first unlock': (ios_mobile_host, 'kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly'),
+    'iOS injects Keychain-derived storage passphrase into Rust Host': (ios_mobile_host, 'mahayana_app_host_create_with_storage_passphrase'),
+    'Android session key uses Android Keystore': (android_mobile_host, 'AndroidKeyStore'),
+    'Android session key uses AES': (android_mobile_host, 'KeyProperties.KEY_ALGORITHM_AES'),
+    'Android session key uses authenticated GCM wrapping': (android_mobile_host, 'AES/GCM/NoPadding'),
+    'Android injects Keystore-unwrapped storage passphrase into Rust Host': (android_mobile_host, 'MobileAuthStoragePassphrase.loadOrCreate(context)'),
 }
 if full_contract:
     required.update({
@@ -127,6 +142,18 @@ if full_contract:
 for label, (text, marker) in required.items():
     if marker not in text:
         raise SystemExit(f'auth entry gate: missing {label}: {marker}')
+
+# Mobile account durability must never regress to plaintext/UI persistence. The
+# platform shells may persist only Keychain/Keystore-wrapped key material; Rust
+# owns the encrypted account session itself.
+for label, text in [('iOS', ios_mobile_host), ('Android', android_mobile_host)]:
+    for forbidden in ['accessToken', 'refreshToken']:
+        if forbidden in text:
+            raise SystemExit(f'auth entry gate: {label} mobile Host must not persist account credentials: {forbidden}')
+if 'UserDefaults.standard.set' in ios_mobile_host:
+    raise SystemExit('auth entry gate: iOS Mahayana Host must not persist auth storage key in UserDefaults')
+if 'putString("storagePassphrase"' in android_mobile_host or 'putString("passphrase"' in android_mobile_host:
+    raise SystemExit('auth entry gate: Android Mahayana Host must not persist auth storage passphrase in plaintext SharedPreferences')
 
 if 'DEFAULT_DESKTOP_PRODUCT_API_BASE_URL' in host_process:
     raise SystemExit('auth entry gate: obsolete staging desktop default compatibility marker must not return')

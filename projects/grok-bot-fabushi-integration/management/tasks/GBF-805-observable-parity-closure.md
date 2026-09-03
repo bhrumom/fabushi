@@ -7,7 +7,7 @@
 - Tracking issue: `#2155`
 - Reference baseline: `bhrum/grok-bot-0.18-reconstructed@a9f633e09d49a85829b8236331b9e21f7e612634`
 - Canonical implementation: `bhrumom/fabushi`
-- Active manual branch: `fix/gbf805-manual-parity-closure`
+- Active implementation branch: `fix/gbf805-product-parity-20260903`
 
 ## Objective
 
@@ -155,3 +155,16 @@ The implementation is being exercised only by normal product/CI workflows, not b
 ## Completion rule
 
 `GBF-805` may be marked `RELEASED` only after every required closure above has objective evidence on canonical `main` and the exact tested release. Missing visual, persistence, entitlement, packaged E2E, update-discovery or provenance evidence is a blocker, not a documentation exception.
+
+
+## 2026-09-03 parity round — session, true streaming, generated Mini App, energy
+
+This continuation is sourced from `source/2026-09-03-session-streaming-miniapp-energy.md`. Completion now additionally requires all five reported user-visible failures to be closed in packaged builds:
+
+1. mobile full-process relaunch restores the authenticated session through AAC-004's Keychain/Keystore-backed encrypted Rust store;
+2. desktop avatar/profile navigation exposes `退出登录` directly and exercises the same canonical logout/cache-clear boundary;
+3. OpenAI Responses, OpenAI-compatible Chat Completions and Anthropic providers request/consume SSE and emit multiple real `chat.delta` events before terminal completion rather than converting one completed body into a fake single delta;
+4. Agent-produced self-contained Mini Apps become structured `miniApp` transcript artifacts, render an `打开小程序` action and reuse Fabushi's isolated Mini App surface across desktop/iOS/Android instead of exposing the final HTML as a JSON/code `<pre>`;
+5. MSR-106 verifies current-main avatar motion is one shared 30 FPS scheduler with shared focus/visibility lifecycle and target-Mac packaged energy evidence.
+
+Targeted unit/source/E2E regressions are part of this branch, but this task remains `IN_PROGRESS` until GitHub Actions, protected main, exact-main packaged/mobile/visual/energy evidence and Release are all green.

@@ -57,7 +57,8 @@ if grep -Fq "ipcMain.handle('fabushi:host'" "$main"; then
 fi
 grep -Fq 'Object.keys(MAHAYANA_EDGE.methods).map((method)' "$main" || { echo "Electron main does not derive edge handlers from MAHAYANA_EDGE" >&2; exit 1; }
 grep -Fq 'serveMainEdge(ipcMain, MAHAYANA_EDGE, handlers' "$main" || { echo "Electron main does not serve MAHAYANA_EDGE through the shared edge runtime" >&2; exit 1; }
-grep -Fq "host.request('feature.receive', { timeoutMs: 500 })" "$main" || { echo "Electron main runtime event pump must use a bounded long poll" >&2; exit 1; }
+grep -Fq "host.request('feature.receive', { timeoutMs: HOST_EVENT_LONG_POLL_MS })" "$main" || { echo "Electron main runtime event pump must use the bounded long poll constant" >&2; exit 1; }
+grep -Fq "const HOST_EVENT_LONG_POLL_MS = 500" "$main" || { echo "Electron main runtime event pump must use a bounded 500ms serial-Host timeout" >&2; exit 1; }
 grep -Fq 'receive_with_timeout(Duration::from_millis(timeout_ms))' "$app_host" || { echo "Rust app host must forward bounded feature.receive timeoutMs" >&2; exit 1; }
 grep -Fq "mahayanaEdgeServer.emit(win.webContents, 'runtime-event', event)" "$main" || { echo "Electron main runtime event push is missing" >&2; exit 1; }
 

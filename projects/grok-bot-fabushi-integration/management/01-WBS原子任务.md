@@ -57,4 +57,4 @@
 | GBF-802 | M8 | 灰度与回滚演练 | GBF-801 | rollback 在目标环境验证 | runbook drill | evidence/GBF-802 | NOT_STARTED | GBF-801 | 执行回滚演练 |
 | GBF-803 | M8 | 正式发布 | GBF-801,802 | release/post-release smoke 通过 | GitHub release/deploy evidence | evidence/GBF-803 | NOT_STARTED | GBF-802 | 发布目标版本 |
 | GBF-804 | M8 | 历史 Grok 分支归档决策 | GBF-703,803 | 分支不再是运行权威；ADR 完成 | branch/ref audit + ADR | evidence/GBF-804 | NOT_STARTED | GBF-803 | archive/retain policy |
-| GBF-805 | M8 | 0.18 reconstructed observable parity closure | GBF-106,307,308,408,506,801..804 | capability matrix 无未实现/未决项 | packaged cross-platform journeys + visual diff + Release | evidence/GBF-805 | NOT_STARTED | downstream tasks | 完成后逐项关闭 parity matrix |
+| GBF-805 | M8 | 0.18 reconstructed observable parity closure | GBF-106,307,308,408,506,801..804 | capability matrix 无未实现/未决项 | packaged cross-platform journeys + visual diff + Release | evidence/GBF-805 | IN_PROGRESS | exact-head CI/package/mobile relaunch/energy evidence pending | 完成 2026-09-03 streaming/session/MiniApp/energy round并走 protected main/Release |

@@ -9,6 +9,13 @@ private let webMcpMessageHandler = "fabushiWebMcp"
 struct MiniAppWebMcpSurface: View {
     let plugin: MarketplacePlugin
     let model: MarketplaceModel
+    let localHtmlOverride: String?
+
+    init(plugin: MarketplacePlugin, model: MarketplaceModel, localHtmlOverride: String? = nil) {
+        self.plugin = plugin
+        self.model = model
+        self.localHtmlOverride = localHtmlOverride
+    }
 
     @Environment(\.dismiss) private var dismiss
     @State private var status = "正在解析本地 WebMCP…"
@@ -39,7 +46,11 @@ struct MiniAppWebMcpSurface: View {
         }
         .accessibilityIdentifier("miniapp-webmcp-surface")
         .task(id: plugin.pluginId) {
-            localHtml = await model.loadLocalMiniAppHtml(pluginId: plugin.pluginId)
+            if let localHtmlOverride {
+                localHtml = hardenGeneratedMiniAppDocument(localHtmlOverride)
+            } else {
+                localHtml = await model.loadLocalMiniAppHtml(pluginId: plugin.pluginId)
+            }
             sourceResolved = true
             status = localHtml == nil ? "正在加载 Hosted WebMCP…" : "正在加载本地 WebMCP…"
         }
@@ -236,6 +247,21 @@ private struct MiniAppWebView: UIViewRepresentable {
             webView.evaluateJavaScript("window.__fabushiNativeResolve?.(\(requestJson),\(json));")
         }
     }
+}
+
+private func hardenGeneratedMiniAppDocument(_ html: String) -> String {
+    let policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; media-src data:; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'\">"
+    if let range = html.range(of: "<head>", options: .caseInsensitive) {
+        var result = html
+        result.insert(contentsOf: policy, at: range.upperBound)
+        return result
+    }
+    if let range = html.range(of: "<html>", options: .caseInsensitive) {
+        var result = html
+        result.insert(contentsOf: "<head>\(policy)</head>", at: range.upperBound)
+        return result
+    }
+    return "<!doctype html><html><head>\(policy)</head><body>\(html)</body></html>"
 }
 
 private func injectLocalWebMcp(_ html: String, plugin: MarketplacePlugin) -> String {

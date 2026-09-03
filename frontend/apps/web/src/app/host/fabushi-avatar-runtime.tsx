@@ -152,6 +152,45 @@ function reducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 }
 
+const SHARED_AVATAR_FRAME_INTERVAL_MS = 1000 / 30;
+type SharedAvatarFrameListener = (now: number) => void;
+const sharedAvatarFrameListeners = new Set<SharedAvatarFrameListener>();
+let sharedAvatarFrameTimer: ReturnType<typeof setTimeout> | null = null;
+let sharedAvatarAnimationFrame = 0;
+
+function stopSharedAvatarFrameClock(): void {
+  if (sharedAvatarFrameTimer != null) {
+    clearTimeout(sharedAvatarFrameTimer);
+    sharedAvatarFrameTimer = null;
+  }
+  if (sharedAvatarAnimationFrame && typeof cancelAnimationFrame === "function") {
+    cancelAnimationFrame(sharedAvatarAnimationFrame);
+    sharedAvatarAnimationFrame = 0;
+  }
+}
+
+function scheduleSharedAvatarFrame(): void {
+  if (sharedAvatarFrameListeners.size === 0 || sharedAvatarFrameTimer != null || sharedAvatarAnimationFrame) return;
+  sharedAvatarFrameTimer = setTimeout(() => {
+    sharedAvatarFrameTimer = null;
+    if (sharedAvatarFrameListeners.size === 0 || typeof requestAnimationFrame !== "function") return;
+    sharedAvatarAnimationFrame = requestAnimationFrame((now) => {
+      sharedAvatarAnimationFrame = 0;
+      for (const listener of [...sharedAvatarFrameListeners]) listener(now);
+      scheduleSharedAvatarFrame();
+    });
+  }, SHARED_AVATAR_FRAME_INTERVAL_MS);
+}
+
+function subscribeSharedAvatarFrame(listener: SharedAvatarFrameListener): () => void {
+  sharedAvatarFrameListeners.add(listener);
+  scheduleSharedAvatarFrame();
+  return () => {
+    sharedAvatarFrameListeners.delete(listener);
+    if (sharedAvatarFrameListeners.size === 0) stopSharedAvatarFrameClock();
+  };
+}
+
 function hashIdentity(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
@@ -211,7 +250,6 @@ export const FabushiAvatarRuntime = forwardRef<FabushiAvatarRuntimeHandle, Fabus
         return;
       }
 
-      let frame = 0;
       const startedAt = performance.now();
       const tick = (now: number) => {
         const elapsed = now - startedAt;
@@ -234,10 +272,8 @@ export const FabushiAvatarRuntime = forwardRef<FabushiAvatarRuntimeHandle, Fabus
         const blinkScale = blinkWave > 0.985 ? 0.18 : motion.eyeScale;
         face.setAttribute("transform", `translate(0 ${(-bob - bounce).toFixed(2)}) rotate(${(motion.tilt + spin).toFixed(2)} ${C} ${C})`);
         eyes.setAttribute("transform", `translate(${(gx * 4).toFixed(2)} ${(gy * 3).toFixed(2)}) scale(1 ${blinkScale.toFixed(3)})`);
-        frame = requestAnimationFrame(tick);
       };
-      frame = requestAnimationFrame(tick);
-      return () => cancelAnimationFrame(frame);
+      return subscribeSharedAvatarFrame(tick);
     }, [emphasis, gaze, motion, paused, phaseOffset]);
 
     const rootStyle: CSSProperties = {
@@ -254,6 +290,7 @@ export const FabushiAvatarRuntime = forwardRef<FabushiAvatarRuntimeHandle, Fabus
       <svg
         aria-hidden="true"
         data-fabushi-avatar-runtime="v1"
+        data-frame-clock="shared-30fps"
         data-state={state}
         data-shape={shape}
         height={size}

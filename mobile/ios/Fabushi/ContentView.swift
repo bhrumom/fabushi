@@ -8,6 +8,12 @@ private enum MobileDestination {
     case remoteComputer
 }
 
+private struct OpenedMobileMiniApp: Identifiable {
+    let plugin: MarketplacePlugin
+    let htmlOverride: String?
+    var id: String { plugin.pluginId }
+}
+
 private enum MobileSection: String, CaseIterable, Identifiable {
     case chats, contacts, bots, groups, channels, calls, saved, archive, folders, miniapps, payments, settings
     var id: String { rawValue }
@@ -71,7 +77,7 @@ struct ContentView: View {
     @Bindable var model: MarketplaceModel
     @Bindable var messaging: MessagingModel
     let appAgentSurface: FabushiAppAgentSurface
-    @State private var openedMiniApp: MarketplacePlugin?
+    @State private var openedMiniApp: OpenedMobileMiniApp?
     @State private var destination: MobileDestination = .home
     @State private var agentChatPresented = false
     @State private var isSearching = false
@@ -136,8 +142,8 @@ struct ContentView: View {
                 RemoteComputerSurface { destination = .home }
             }
         }
-        .fullScreenCover(item: $openedMiniApp) { plugin in
-            MiniAppWebMcpSurface(plugin: plugin, model: model)
+        .fullScreenCover(item: $openedMiniApp) { opened in
+            MiniAppWebMcpSurface(plugin: opened.plugin, model: model, localHtmlOverride: opened.htmlOverride)
         }
         .alert("插件权限", isPresented: Binding(
             get: { model.permissionRequest != nil },
@@ -176,7 +182,7 @@ struct ContentView: View {
             String(model.loading),
             model.installingPluginId ?? "",
             model.permissionRequest?.pluginId ?? "",
-            openedMiniApp?.pluginId ?? "",
+            openedMiniApp?.plugin.pluginId ?? "",
             pluginRevision,
         ].joined(separator: "|")
     }
@@ -214,7 +220,7 @@ struct ContentView: View {
         let screen: String
         if let openedMiniApp {
             screen = "miniapp"
-            add("miniapp-\(openedMiniApp.pluginId)", role: "application", name: openedMiniApp.displayName)
+            add("miniapp-\(openedMiniApp.plugin.pluginId)", role: "application", name: openedMiniApp.plugin.displayName)
             add(
                 "miniapp-close",
                 role: "button",
@@ -281,7 +287,7 @@ struct ContentView: View {
                         "open-\(plugin.pluginId)",
                         role: "button",
                         name: "打开 \(plugin.displayName)",
-                        action: .init(allowed: ["invoke"]) { _ in openedMiniApp = plugin }
+                        action: .init(allowed: ["invoke"]) { _ in openedMiniApp = OpenedMobileMiniApp(plugin: plugin, htmlOverride: nil) }
                     )
                     add(
                         "install-\(plugin.pluginId)",
@@ -1006,6 +1012,27 @@ struct ContentView: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 8).background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 11))
             .accessibilityIdentifier("mahayana-step")
+        } else if entry.kind == .miniApp {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.grid.2x2.fill").foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.miniAppName ?? "生成的小程序").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                        Text(entry.miniAppDescription ?? "可直接运行的 Fabushi 小程序产物").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Button("打开小程序") {
+                    guard let id = entry.miniAppId, let html = entry.miniAppHtml else { return }
+                    openedMiniApp = OpenedMobileMiniApp(
+                        plugin: MarketplacePlugin(pluginId: id, displayName: entry.miniAppName ?? "生成的小程序", description: entry.miniAppDescription ?? "Agent generated Mini App", latestVersion: nil, tools: []),
+                        htmlOverride: html
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("mahayana-generated-miniapp-open")
+            }
+            .padding(12).background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.28)))
         } else if entry.role == .user {
             HStack { Spacer(minLength: 44); Text(entry.text).foregroundStyle(.white).padding(.horizontal, 13).padding(.vertical, 10).background(Color.black, in: RoundedRectangle(cornerRadius: 16)) }
         } else {
@@ -1462,7 +1489,7 @@ struct ContentView: View {
 
                             HStack(spacing: 8) {
                                 Button("打开 WebMCP") {
-                                    openedMiniApp = plugin
+                                    openedMiniApp = OpenedMobileMiniApp(plugin: plugin, htmlOverride: nil)
                                 }
                                 .accessibilityIdentifier("open-\(plugin.pluginId)")
 

@@ -578,6 +578,13 @@ export type TranscriptCard =
       kind: "spreadsheet";
       name: string;
       sheets: SpreadsheetSheet[];
+    }
+  | {
+      kind: "miniApp";
+      miniAppId: string;
+      name: string;
+      html: string;
+      description?: string;
     };
 
 export type UpdateState =
