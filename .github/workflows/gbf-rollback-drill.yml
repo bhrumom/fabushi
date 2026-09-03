@@ -1,0 +1,115 @@
+name: GBF rollback drill
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gbf-rollback-drill.yml'
+      - '.github/workflows/native-electron-release.yml'
+      - '.github/workflows/post-main-delivery.yml'
+      - 'projects/grok-bot-fabushi-integration/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gbf-rollback-drill-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  previous-good-release:
+    name: Previous-good release is immutable and retrievable
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Resolve the latest stable published rollback target
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | test("^desktop-[0-9]+\\.[0-9]+\\.[0-9]+$")))] | first')"
+          if [ -z "$release_json" ] || [ "$release_json" = "null" ]; then
+            echo 'No canonical stable desktop GitHub release exists; desktop rollback cannot be honestly demonstrated.' >&2
+            exit 1
+          fi
+          tag="$(jq -r '.tag_name // empty' <<<"$release_json")"
+          test -n "$tag"
+          git fetch --tags --force origin
+          git rev-parse -q --verify "refs/tags/$tag"
+          sha="$(git rev-list -n 1 "refs/tags/$tag")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          printf 'rollback target tag=%s sha=%s\n' "$tag" "$sha" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download the previous-good release assets
+        shell: bash
+        env:
+          TARGET_TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p rollback-assets
+          gh release download "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --dir rollback-assets
+          count="$(find rollback-assets -maxdepth 1 -type f | wc -l | tr -d ' ')"
+          if [ "$count" -lt 1 ]; then
+            echo "Rollback release $TARGET_TAG has no downloadable assets." >&2
+            exit 1
+          fi
+          find rollback-assets -maxdepth 1 -type f -printf '%f\n' | sort >> "$GITHUB_STEP_SUMMARY"
+          test -f rollback-assets/latest-mac.yml
+          test -n "$(find rollback-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$(find rollback-assets -maxdepth 1 -type f -name '*macos-*.zip' -print -quit)"
+
+      - name: Verify release checksums when published
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f rollback-assets/SHA256SUMS.txt ]; then
+            echo 'Previous-good release has no SHA256SUMS.txt; rollback integrity proof is incomplete.' >&2
+            exit 1
+          fi
+          cd rollback-assets
+          : > SHA256SUMS.rollback.txt
+          manifest_digests="$(awk '{print $1}' SHA256SUMS.txt | grep -E '^[0-9a-fA-F]{64}$' | tr 'A-F' 'a-f' | sort -u)"
+          verified=0
+          while IFS= read -r -d '' asset; do
+            case "$asset" in
+              ./SHA256SUMS.txt|./SHA256SUMS.rollback.txt) continue ;;
+            esac
+            digest="$(sha256sum "$asset" | awk '{print tolower($1)}')"
+            if ! grep -Fxq "$digest" <<<"$manifest_digests"; then
+              echo "Downloaded rollback asset has no matching published checksum: $asset ($digest)" >&2
+              exit 1
+            fi
+            printf '%s  %s\n' "$digest" "$asset" >> SHA256SUMS.rollback.txt
+            verified=$((verified + 1))
+          done < <(find . -maxdepth 1 -type f -print0 | sort -z)
+          test "$verified" -gt 0
+          sha256sum -c SHA256SUMS.rollback.txt
+          echo "previous-good release checksums verified by content digest for $verified assets" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require immutable-release and canonical-gate guards in the current release workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          release=.github/workflows/native-electron-release.yml
+          grep -q "Required release gate '" "$release"
+          grep -q "CI result" "$release"
+          grep -q "Electron desktop result" "$release"
+          grep -q "Native mobile result" "$release"
+          grep -q 'already exists; refusing to mutate an existing release' "$release"
+          grep -q 'gh release create' "$release"
+          echo 'current release workflow preserves immutable release semantics' >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gbf-rollback-drill-${{ steps.target.outputs.tag }}
+          path: |
+            rollback-assets/SHA256SUMS.txt
+            rollback-assets/SHA256SUMS.rollback.txt
+          if-no-files-found: error
+          retention-days: 14

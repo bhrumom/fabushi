@@ -15,6 +15,10 @@ test -f .github/workflows/electron-desktop.yml || fail 'Electron desktop quality
 test -f .github/workflows/native-mobile.yml || fail 'native mobile quality workflow is missing'
 test -f .github/workflows/native-electron-release.yml || fail 'native Electron release workflow is missing'
 test -f .github/workflows/google-play-delivery.yml || fail 'native Android Google Play delivery workflow is missing'
+test -x .github/scripts/macos-codesign-wrapper/codesign || fail 'secure-timestamp codesign wrapper is missing or not executable'
+bash -n .github/scripts/macos-codesign-wrapper/codesign || fail 'secure-timestamp codesign wrapper has invalid shell syntax'
+grep -q 'Timestamp=' .github/scripts/macos-codesign-wrapper/codesign || fail 'codesign wrapper must verify the secure Timestamp field'
+grep -q 'GITHUB_PATH' .github/scripts/build-offline-asr-engine.mjs || fail 'macOS build must install the codesign wrapper for later signing steps'
 
 grep -q '"electron"' desktop/package.json || fail 'desktop does not declare Electron'
 grep -q 'mahayana-app-host-desktop' desktop/package.json || fail 'Electron must build the desktop-only Rust sidecar wrapper'
@@ -23,16 +27,46 @@ grep -q 'nodeIntegration: false' desktop/electron/main.cjs || fail 'Electron nod
 grep -q 'sandbox: true' desktop/electron/main.cjs || fail 'Electron renderer sandbox is not enforced'
 grep -q 'androidx.compose' mobile/android/app/build.gradle || fail 'Android canonical UI is not Compose'
 grep -q 'SwiftUI' mobile/ios/Fabushi/FabushiApp.swift || fail 'iOS canonical UI is not SwiftUI'
-node - <<'NODE'
-const fs = require('fs');
-const canonical = JSON.parse(fs.readFileSync('app-version.json', 'utf8')).version;
-const desktop = JSON.parse(fs.readFileSync('desktop/package.json', 'utf8')).version;
-const mobile = JSON.parse(fs.readFileSync('mobile/package.json', 'utf8')).version;
-if (desktop !== canonical || mobile !== canonical) {
-  console.error(`version drift: canonical=${canonical} desktop=${desktop} mobile=${mobile}`);
-  process.exit(1);
+python3 - <<'PY'
+import json
+import re
+from pathlib import Path
+
+canonical_data = json.loads(Path('app-version.json').read_text(encoding='utf-8'))
+canonical = str(canonical_data.get('version', '')).strip()
+if not re.fullmatch(r'\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?', canonical):
+    raise SystemExit(f'invalid canonical semantic version: {canonical!r}')
+
+def package_version(path):
+    return json.loads(Path(path).read_text(encoding='utf-8'))['version']
+
+def lock_root_version(path):
+    document = json.loads(Path(path).read_text(encoding='utf-8'))
+    return document['packages']['']['version']
+
+versions = {
+    'desktop/package.json': package_version('desktop/package.json'),
+    'desktop/package-lock.json': lock_root_version('desktop/package-lock.json'),
+    'mobile/package.json': package_version('mobile/package.json'),
+    'mobile/package-lock.json': lock_root_version('mobile/package-lock.json'),
 }
-NODE
+drift = {path: version for path, version in versions.items() if version != canonical}
+if drift:
+    raise SystemExit(f'version drift: canonical={canonical} values={drift}')
+
+ios_project = Path('mobile/ios/project.yml').read_text(encoding='utf-8')
+marketing_match = re.search(r'^\s*MARKETING_VERSION:\s*[\'"]?([^\s\'"]+)', ios_project, re.MULTILINE)
+if not marketing_match or marketing_match.group(1) != canonical:
+    observed = marketing_match.group(1) if marketing_match else '<missing>'
+    raise SystemExit(f'iOS marketing version drift: canonical={canonical} project={observed}')
+ios_build_number = str(canonical_data.get('iosBuildNumber', '')).strip()
+if not re.fullmatch(r'\d+', ios_build_number):
+    raise SystemExit(f'invalid canonical iOS build number: {ios_build_number!r}')
+ios_build_match = re.search(r'^\s*CURRENT_PROJECT_VERSION:\s*[\'"]?([^\s\'"]+)', ios_project, re.MULTILINE)
+if not ios_build_match or ios_build_match.group(1) != ios_build_number:
+    observed = ios_build_match.group(1) if ios_build_match else '<missing>'
+    raise SystemExit(f'iOS build number drift: canonical={ios_build_number} project={observed}')
+PY
 
 if grep -Eq '"@tauri-apps/|"@capacitor/' mobile/package.json desktop/package.json; then
   fail 'Tauri/Capacitor dependencies cannot return to canonical app packages'

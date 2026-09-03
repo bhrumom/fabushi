@@ -45,6 +45,8 @@ on:
 
 permissions:
   contents: write
+  actions: read
+  checks: read
 
 concurrency:
   group: google-play-delivery-${{ inputs.track }}
@@ -130,6 +132,14 @@ jobs:
             echo "- Status: ${{ inputs.release_status }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Require canonical release source gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
+          RELEASE_TARGET: android
+        run: bash .github/scripts/require-release-source-gates.sh
+
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -166,7 +176,7 @@ jobs:
           shared-key: google-play-native-android-v1
 
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
+        run: command -v cargo-ndk >/dev/null 2>&1 || cargo install cargo-ndk --locked
 
       - name: Build native Mahayana Host JNI libraries
         working-directory: third_party/mahayana/mahayana-rs
@@ -266,5 +276,6 @@ jobs:
           gh release create "$release_tag" "${assets[@]}" \
             --target "${{ steps.release.outputs.source_sha }}" \
             --title "Fabushi Android ${{ steps.release.outputs.version_name }} (${{ steps.release.outputs.version_code }})" \
-            --notes "Native Android package delivered to Google Play track '${{ inputs.track }}' from ${{ steps.release.outputs.short_sha }}."
+            --notes "Native Android package delivered to Google Play track '${{ inputs.track }}' from ${{ steps.release.outputs.short_sha }}." \
+            --latest=false
           echo "- GitHub Release: $release_tag" >> "$GITHUB_STEP_SUMMARY"

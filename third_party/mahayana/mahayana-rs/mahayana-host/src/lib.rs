@@ -15,6 +15,7 @@ use mahayana_conversation::ConversationProvider;
 use mahayana_core::ApprovalDecision;
 use mahayana_core::ApprovalId;
 use mahayana_core::BuildProfile;
+use mahayana_core::ModelProviderMode;
 use mahayana_core::OperationId;
 use mahayana_core::RuntimeCommand;
 use mahayana_core::RuntimeConfig;
@@ -22,7 +23,6 @@ use mahayana_core::RuntimeEvent;
 use mahayana_core::RuntimeResponse;
 use mahayana_core::RuntimeStatus;
 use mahayana_kernel::EngineBackend;
-use mahayana_mcp_runtime::ManagedSecretProvider;
 use mahayana_mcp_runtime::NativeMcpRegistry;
 use mahayana_miniapp::EntitlementChecker;
 use mahayana_miniapp::MiniAppConversationProvider;
@@ -33,10 +33,9 @@ use mahayana_model::ResponsesModelConfig;
 use mahayana_model::ResponsesModelRuntime;
 use mahayana_native_agent::NativeAgentBackend;
 use mahayana_native_agent::NativeAgentConfig;
-use mahayana_native_agent::NativeMcpToolProvider;
 use mahayana_native_engine::NativeEngine;
 use mahayana_native_engine::NativeEngineConfig;
-use mahayana_native_engine::SecretRequestBroker;
+use mahayana_native_engine::ProcessExecution;
 use mahayana_platform_core::HostPlatform;
 use mahayana_product::MahayanaProductClient;
 use mahayana_product::ProductError;
@@ -54,7 +53,6 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
@@ -76,6 +74,14 @@ pub struct HostCreateConfig {
     pub host_platform: Option<HostPlatform>,
     pub mini_apps: Vec<MiniAppDefinition>,
     pub use_codex_account: bool,
+    /// Provider credential supplied by the native OS secret bridge. It is
+    /// intentionally excluded from serialized Host configuration.
+    #[serde(skip)]
+    pub model_bearer_token: Option<String>,
+    #[serde(skip)]
+    pub model_wire_api: mahayana_model::responses::ResponsesWireApi,
+    #[serde(skip)]
+    pub process_execution: ProcessExecution,
     /// Tests and constrained hosts may opt out of inherited local plugins.
     pub inherit_installed_plugins: Option<bool>,
 }
@@ -100,33 +106,15 @@ impl From<RuntimeError> for HostError {
     }
 }
 
-#[derive(Clone)]
-struct ProductManagedSecretProvider {
-    client: MahayanaProductClient,
-    platform: HostPlatform,
-}
-
-impl ManagedSecretProvider for ProductManagedSecretProvider {
-    fn resolve(&self, connector: &str, field: &str) -> Result<Option<String>, String> {
-        self.client
-            .connector_secret_for_platform(connector, platform_name(self.platform), field)
-            .map_err(|_| "managed secret lookup failed".to_string())
-    }
-}
-
 /// Long-lived process-local host shared by every presentation surface.
 #[derive(Clone)]
 pub struct MahayanaHost {
     runtime: Arc<MahayanaRuntime>,
     product_client: MahayanaProductClient,
-    secret_requests: Arc<SecretRequestBroker>,
-    secret_submission_lock: Arc<Mutex<()>>,
-    host_platform: HostPlatform,
 }
 
 impl MahayanaHost {
     pub fn create(config: HostCreateConfig) -> Result<Self, HostError> {
-        let host_platform = host_platform_for_config(&config);
         let api_base_url = env::var("MAHAYANA_API_BASE_URL")
             .ok()
             .filter(|value| !value.trim().is_empty())
@@ -152,15 +140,9 @@ impl MahayanaHost {
             ),
             (None, None) => MahayanaProductClient::default(),
         };
-        let secret_requests = Arc::new(SecretRequestBroker::new());
-        let secret_submission_lock = Arc::new(Mutex::new(()));
-        let runtime = build_runtime(config, product_client.clone(), Arc::clone(&secret_requests))?;
         Ok(Self {
-            runtime: Arc::new(runtime),
+            runtime: Arc::new(build_runtime(config, product_client.clone())?),
             product_client,
-            secret_requests,
-            secret_submission_lock,
-            host_platform,
         })
     }
 
@@ -205,94 +187,12 @@ impl MahayanaHost {
             .map_err(|error| HostError::new(error.to_string()))
     }
 
-    /// Persist a secret submitted by the trusted presentation surface and then
-    /// resume the exact native Agent operation that requested it. The value is
-    /// never returned to the renderer, transcript, event stream, or model.
-    pub fn provide_secret(
-        &self,
-        secret_request_id: String,
-        value: String,
-    ) -> Result<(), HostError> {
-        let _submission_guard = self
-            .secret_submission_lock
-            .lock()
-            .map_err(|_| HostError::new("secure secret submission is unavailable"))?;
-        let secret_request_id = secret_request_id.trim().to_string();
-        if secret_request_id.is_empty() {
-            return Err(HostError::new("secret request id must not be empty"));
-        }
-        if value.trim().is_empty() {
-            return Err(HostError::new("secret value must not be empty"));
-        }
-        let pending = self
-            .secret_requests
-            .pending_request(&secret_request_id)
-            .map_err(|error| HostError::new(error.to_string()))?;
-        let Some(pending) = pending else {
-            return Err(HostError::new(
-                "secret request is no longer awaiting secure input",
-            ));
-        };
-        let previous_connector_secret = self
-            .product_client
-            .connector_secret_for_platform(
-                &pending.connector,
-                platform_name(self.host_platform),
-                &pending.field,
-            )
-            .map_err(|error| HostError::new(error.to_string()))?;
-
-        self.product_client
-            .store_connector_secret_for_platform(
-                &pending.connector,
-                platform_name(self.host_platform),
-                &pending.field,
-                &value,
-            )
-            .map_err(|error| HostError::new(error.to_string()))?;
-        if let Err(error) = self.secret_requests.resolve(&secret_request_id) {
-            match previous_connector_secret.as_deref() {
-                Some(previous) => {
-                    let _ = self.product_client.store_connector_secret_for_platform(
-                        &pending.connector,
-                        platform_name(self.host_platform),
-                        &pending.field,
-                        previous,
-                    );
-                }
-                None => {
-                    let _ = self.product_client.revoke_connector_secret_for_platform(
-                        &pending.connector,
-                        platform_name(self.host_platform),
-                        &pending.field,
-                    );
-                }
-            }
-            return Err(HostError::new(error.to_string()));
-        }
-        Ok(())
-    }
-
     /// Revoke and remove the Rust-owned product session without exposing any
     /// bearer or refresh credential to the host UI.
     pub fn clear_session(&self) -> Result<serde_json::Value, HostError> {
-        self.product_execute("mahayana.auth.logout", &serde_json::json!({}))
-    }
-
-    /// Clear in-process Agent transcripts and sessions without touching the
-    /// product credential. Callers use this immediately before logout or an
-    /// account switch so a long-lived host cannot reuse old context.
-    pub fn reset_runtime_session(&self) -> Result<(), HostError> {
-        self.runtime.reset_session().map_err(HostError::from)
-    }
-
-    /// Point the embedded conversation provider at the authenticated account's
-    /// transcript after the feature host has completed its account-scope
-    /// transition.
-    pub fn set_conversation_history_path(&self, path: Option<PathBuf>) -> Result<(), HostError> {
-        self.runtime
-            .set_conversation_history_path(path)
-            .map_err(HostError::from)
+        let response = self.product_execute("mahayana.auth.logout", &serde_json::json!({}))?;
+        self.runtime.reset_session().map_err(HostError::from)?;
+        Ok(response)
     }
 }
 
@@ -325,33 +225,9 @@ pub fn default_product_session_path() -> PathBuf {
     shared
 }
 
-fn host_platform_for_config(config: &HostCreateConfig) -> HostPlatform {
-    #[cfg(all(feature = "mobile-embedded", not(feature = "desktop-full")))]
-    {
-        return HostPlatform::Mobile;
-    }
-    config
-        .host_platform
-        .unwrap_or(match config.runtime.build_profile {
-            BuildProfile::DesktopFull => HostPlatform::Desktop,
-            BuildProfile::MobileEmbedded => HostPlatform::Mobile,
-            BuildProfile::WebWasm => HostPlatform::Web,
-        })
-}
-
-fn platform_name(platform: HostPlatform) -> &'static str {
-    match platform {
-        HostPlatform::Cli => "cli",
-        HostPlatform::Desktop => "desktop",
-        HostPlatform::Mobile => "mobile",
-        HostPlatform::Web => "web",
-    }
-}
-
 fn build_runtime(
     create: HostCreateConfig,
     product_client: MahayanaProductClient,
-    secret_requests: Arc<SecretRequestBroker>,
 ) -> Result<MahayanaRuntime, HostError> {
     let mut runtime_config = create.runtime.clone();
     if runtime_config.remote_agent_enabled {
@@ -361,7 +237,13 @@ fn build_runtime(
     {
         runtime_config.build_profile = BuildProfile::MobileEmbedded;
     }
-    let host_platform = host_platform_for_config(&create);
+    let host_platform = create
+        .host_platform
+        .unwrap_or(match runtime_config.build_profile {
+            BuildProfile::DesktopFull => HostPlatform::Desktop,
+            BuildProfile::MobileEmbedded => HostPlatform::Mobile,
+            BuildProfile::WebWasm => HostPlatform::Web,
+        });
     let inherit_installed_plugins = create.inherit_installed_plugins.unwrap_or(
         matches!(runtime_config.build_profile, BuildProfile::DesktopFull) && !cfg!(test),
     );
@@ -380,10 +262,10 @@ fn build_runtime(
         .or_else(|| runtime_config.workspace_roots.first().cloned())
         .or_else(|| data_dir.as_ref().map(|path| path.join("workspace")))
         .or_else(|| std::env::current_dir().ok());
-    if runtime_config.workspace_roots.is_empty() {
-        if let Some(cwd) = cwd.as_ref() {
-            runtime_config.workspace_roots.push(cwd.clone());
-        }
+    if runtime_config.workspace_roots.is_empty()
+        && let Some(cwd) = cwd.as_ref()
+    {
+        runtime_config.workspace_roots.push(cwd.clone());
     }
 
     let mut builder = RuntimeBuilder::new(runtime_config.clone());
@@ -479,26 +361,40 @@ fn build_runtime(
             .base_url
             .clone()
             .ok_or_else(|| HostError::new("Mahayana model base URL is required"))?;
-        let model_credential_client = product_client.clone();
-        let model_credential_resolver: ModelCredentialResolver =
-            Arc::new(move || match model_credential_client.session_token() {
+        let configured_model_token = create.model_bearer_token.clone();
+        let model_provider = runtime_config.model.provider;
+        let credential_client = product_client.clone();
+        let credential_resolver: ModelCredentialResolver = Arc::new(move || {
+            if matches!(model_provider, ModelProviderMode::UserConfiguredRemote) {
+                return Ok(configured_model_token.clone());
+            }
+            match credential_client.session_token() {
                 Ok(token) => Ok(Some(token)),
-                Err(ProductError::NotLoggedIn) => Ok(None),
+                Err(ProductError::NotLoggedIn | ProductError::SessionExpired) => Ok(None),
                 Err(error) => Err(ModelError::Inference(format!(
-                    "product account session unavailable: {error}"
+                    "unable to resolve Mahayana model credential: {error}"
                 ))),
-            });
+            }
+        });
         let model_runtime = Arc::new(
             ResponsesModelRuntime::new(ResponsesModelConfig {
                 base_url,
                 default_model: runtime_config.model.model.clone(),
-                bearer_token: session_token.clone(),
+                bearer_token: if matches!(
+                    runtime_config.model.provider,
+                    ModelProviderMode::UserConfiguredRemote
+                ) {
+                    create.model_bearer_token.clone()
+                } else {
+                    session_token.clone()
+                },
                 provider_mode: runtime_config.model.provider,
+                wire_api: create.model_wire_api,
             })
             .map_err(|error| HostError::new(error.to_string()))?
-            .with_credential_resolver(model_credential_resolver),
+            .with_credential_resolver(credential_resolver),
         );
-        let engine_config = match runtime_config.build_profile {
+        let mut engine_config = match runtime_config.build_profile {
             BuildProfile::DesktopFull => {
                 NativeEngineConfig::desktop(runtime_config.model.model.clone())
             }
@@ -506,38 +402,22 @@ fn build_runtime(
                 NativeEngineConfig::embedded(runtime_config.model.model.clone())
             }
         };
+        engine_config.process_execution = create.process_execution.clone();
+        engine_config.session_state_path = runtime_config
+            .data_dir
+            .as_ref()
+            .map(|root| root.join("provider-neutral-assistant-session.json"));
+        let native_engine = Arc::new(
+            NativeEngine::new(model_runtime, engine_config)
+                .map_err(|error| HostError::new(error.to_string()))?,
+        );
+        let engine_backend: Arc<dyn EngineBackend> = native_engine.clone();
         let mcp_roots = runtime_config
             .workspace_roots
             .iter()
             .map(|root| root.join(".agents/plugins/plugins"))
             .collect::<Vec<_>>();
-        let mcp_session_token_client = product_client.clone();
-        let mcp_session_token_resolver: mahayana_mcp_runtime::SessionTokenResolver =
-            Arc::new(move || match mcp_session_token_client.session_token() {
-                Ok(token) => Ok(Some(token)),
-                Err(ProductError::NotLoggedIn) => Ok(None),
-                Err(error) => Err(error.to_string()),
-            });
-        let mcp_registry = NativeMcpRegistry::new(mcp_roots, session_token.clone())
-            .with_session_token_resolver(mcp_session_token_resolver)
-            .with_managed_secret_provider(Arc::new(ProductManagedSecretProvider {
-                client: product_client.clone(),
-                platform: host_platform,
-            }));
-        let native_mcp_tools = Arc::new(NativeMcpToolProvider::new(
-            mcp_registry.clone(),
-            host_platform,
-        ));
-        let native_engine = Arc::new(
-            NativeEngine::new_with_tools(
-                model_runtime,
-                engine_config,
-                Arc::clone(&secret_requests),
-                Some(native_mcp_tools),
-            )
-            .map_err(|error| HostError::new(error.to_string()))?,
-        );
-        let engine_backend: Arc<dyn EngineBackend> = native_engine.clone();
+        let mcp_registry = NativeMcpRegistry::new(mcp_roots, session_token.clone());
         let native_agent: Arc<dyn mahayana_agent::AgentBackend> =
             Arc::new(NativeAgentBackend::new(
                 native_engine,

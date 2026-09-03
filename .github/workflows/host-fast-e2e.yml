@@ -13,6 +13,7 @@ on:
       - frontend/packages/shared/src/index.ts
       - frontend/pnpm-lock.yaml
       - frontend/pnpm-workspace.yaml
+      - fabushi/web/mahayana-wasm/**
       - fabushi/e2e/package.json
       - fabushi/e2e/package-lock.json
       - fabushi/e2e/playwright.host.config.js
@@ -30,6 +31,7 @@ on:
       - contracts/automation/cross-platform-journeys.json
       - frontend/pnpm-lock.yaml
       - frontend/pnpm-workspace.yaml
+      - fabushi/web/mahayana-wasm/**
       - fabushi/e2e/**
       - .github/workflows/host-fast-e2e.yml
   workflow_dispatch:
@@ -54,6 +56,7 @@ jobs:
           sparse-checkout: |
             /frontend/**
             /fabushi/e2e/**
+            /fabushi/web/mahayana-wasm/**
             /contracts/automation/cross-platform-journeys.json
 
       - name: Set up Node.js
@@ -88,6 +91,12 @@ jobs:
           pnpm --filter @fabushi/host typecheck
           pnpm --filter @fabushi/web typecheck:host
 
+      - name: Build production Host bundle outside journey budget
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_MAHAYANA_HOST_MODE: test
+        run: pnpm --filter @fabushi/host build
+
       - name: Install Playwright test package without browser download
         working-directory: fabushi/e2e
         env:
@@ -101,6 +110,8 @@ jobs:
         id: journey
         working-directory: fabushi/e2e
         shell: bash
+        env:
+          FABUSHI_HOST_PREBUILT: "1"
         run: |
           set -euo pipefail
           started_at="$(date +%s)"

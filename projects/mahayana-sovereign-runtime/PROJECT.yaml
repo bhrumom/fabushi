@@ -1,0 +1,25 @@
+project_id: FAB-P0005
+project_key: MSR
+legacy_project_ids:
+  - MSR
+name: Mahayana Sovereign Runtime
+slug: mahayana-sovereign-runtime
+status: active
+repository: bhrumom/fabushi
+authoritative_branch: main
+authoritative_path: projects/mahayana-sovereign-runtime
+owner: Fabushi engineering
+reviewers: []
+current_stage: M1-capability-inventory-and-boundary-closure
+created_at: 2026-08-22
+updated_at: 2026-08-22
+risk_tier: tier-1
+security_classification: public
+target_finish: null
+related_projects:
+  - grok-bot-fabushi-integration
+  - telegram-fabushi-integration
+source_systems:
+  - GitHub:bhrumom/fabushi
+  - GitHub:openai/codex
+  - GitHub:xai-org/grok-build

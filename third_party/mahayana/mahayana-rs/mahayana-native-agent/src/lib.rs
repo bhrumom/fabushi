@@ -6,9 +6,8 @@
 
 use async_trait::async_trait;
 use mahayana_agent::{
-    AgentActivity, AgentActivityStatus, AgentBackend, AgentError, AgentEvent, AgentEventSink,
-    AgentMessageRequest, ApprovalResolution, McpAppSession, OpenMcpAppRequest,
-    SharedAgentEventSink, StartThreadRequest,
+    AgentActivity, AgentActivityStatus, AgentBackend, AgentError, AgentEvent, AgentMessageRequest,
+    ApprovalResolution, McpAppSession, OpenMcpAppRequest, SharedAgentEventSink, StartThreadRequest,
 };
 use mahayana_core::{
     AgentThreadId, ApprovalDecision, ConversationId, Message, MessageId, MessageRole,
@@ -19,10 +18,8 @@ use mahayana_kernel::{
     ExecutionPolicy, KernelError, KernelEvent, KernelEventSink, OpenSessionRequest,
     OperationId as KernelOperationId, RunRequest, RuntimeProfile, SessionId, SharedKernelEventSink,
 };
-use mahayana_mcp_runtime::{NativeMcpClient, NativeMcpRegistry, ResolvedMcpPlugin};
+use mahayana_mcp_runtime::{NativeMcpRegistry, ResolvedMcpPlugin};
 use mahayana_native_engine::NativeEngine;
-use mahayana_native_engine::NativeExternalToolProvider;
-use mahayana_platform_core::HostPlatform;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -36,106 +33,6 @@ pub struct NativeAgentConfig {
     pub mcp_registry: NativeMcpRegistry,
 }
 
-/// Native Agent tools for the product-owned connector registry. The model sees
-/// connector metadata and tool results only; the MCP client resolves any
-/// managed credential inside the trusted final hop.
-pub struct NativeMcpToolProvider {
-    registry: NativeMcpRegistry,
-    platform: HostPlatform,
-}
-
-impl NativeMcpToolProvider {
-    pub fn new(registry: NativeMcpRegistry, platform: HostPlatform) -> Self {
-        Self { registry, platform }
-    }
-}
-
-#[async_trait]
-impl NativeExternalToolProvider for NativeMcpToolProvider {
-    fn definitions(&self) -> Vec<Value> {
-        vec![
-            json!({
-                "type":"function",
-                "name":"connector_mcp_list",
-                "description":"Discover tools exposed by one trusted Mahayana connector. Never request or transmit credentials through this tool.",
-                "parameters":{
-                    "type":"object",
-                    "properties":{
-                        "connector":{"type":"string","description":"Trusted connector/plugin id."}
-                    },
-                    "required":["connector"],
-                    "additionalProperties":false
-                }
-            }),
-            json!({
-                "type":"function",
-                "name":"connector_mcp_call",
-                "description":"Call a tool on one trusted Mahayana connector. Use only opaque business arguments; the host injects any stored credential at the connector boundary and secrets must never be included here.",
-                "parameters":{
-                    "type":"object",
-                    "properties":{
-                        "connector":{"type":"string","description":"Trusted connector/plugin id."},
-                        "tool":{"type":"string","description":"MCP tool name returned by connector_mcp_list."},
-                        "arguments":{"type":"object","description":"Non-secret MCP tool arguments."}
-                    },
-                    "required":["connector","tool"],
-                    "additionalProperties":false
-                }
-            }),
-        ]
-    }
-
-    fn handles(&self, name: &str) -> bool {
-        matches!(name, "connector_mcp_list" | "connector_mcp_call")
-    }
-
-    async fn execute(&self, name: &str, arguments: Value) -> Result<Value, KernelError> {
-        let connector = required_connector_argument(&arguments)?;
-        let registry = self.registry.clone();
-        let platform = self.platform;
-        match name {
-            "connector_mcp_list" => tokio::task::spawn_blocking(move || {
-                let plugin = registry
-                    .resolve_plugin(&connector, platform)
-                    .map_err(|error| KernelError::Backend(error.to_string()))?;
-                let tools = plugin
-                    .client()
-                    .list_tools()
-                    .map_err(|error| KernelError::Backend(error.to_string()))?;
-                Ok(json!({"connector": connector, "tools": tools}))
-            })
-            .await
-            .map_err(|error| KernelError::Backend(error.to_string()))?,
-            "connector_mcp_call" => {
-                let tool = required_tool_argument(&arguments)?;
-                let tool_arguments = arguments
-                    .get("arguments")
-                    .cloned()
-                    .unwrap_or_else(|| json!({}));
-                if !tool_arguments.is_object() {
-                    return Err(KernelError::Backend(
-                        "tool argument arguments must be an object".into(),
-                    ));
-                }
-                tokio::task::spawn_blocking(move || {
-                    let plugin = registry
-                        .resolve_plugin(&connector, platform)
-                        .map_err(|error| KernelError::Backend(error.to_string()))?;
-                    plugin
-                        .client()
-                        .call_tool(&tool, tool_arguments)
-                        .map_err(|error| KernelError::Backend(error.to_string()))
-                })
-                .await
-                .map_err(|error| KernelError::Backend(error.to_string()))?
-            }
-            _ => Err(KernelError::CapabilityUnavailable(format!(
-                "unknown native connector tool: {name}"
-            ))),
-        }
-    }
-}
-
 #[derive(Clone)]
 struct NativeThread {
     session_id: SessionId,
@@ -146,7 +43,6 @@ struct NativeThread {
 struct NativeMcpSession {
     plugin: ResolvedMcpPlugin,
     tools: Vec<Value>,
-    resources: Vec<Value>,
 }
 
 pub struct NativeAgentBackend {
@@ -264,18 +160,21 @@ impl KernelEventSink for NativeEventBridge {
                 },
             },
             KernelEvent::UsageUpdated {
+                total_tokens,
                 input_tokens,
+                cached_input_tokens,
                 output_tokens,
+                reasoning_output_tokens,
                 ..
             } => AgentEvent::TokenUsageUpdated {
                 usage: ModelTokenUsageSnapshot {
                     total: None,
                     last: ModelTokenUsage {
-                        total_tokens: to_i64(input_tokens.saturating_add(output_tokens)),
+                        total_tokens: to_i64(total_tokens),
                         input_tokens: to_i64(input_tokens),
-                        cached_input_tokens: 0,
+                        cached_input_tokens: to_i64(cached_input_tokens),
                         output_tokens: to_i64(output_tokens),
-                        reasoning_output_tokens: 0,
+                        reasoning_output_tokens: to_i64(reasoning_output_tokens),
                     },
                     model_context_window: None,
                 },
@@ -313,7 +212,7 @@ impl KernelEventSink for NativeEventBridge {
                 },
             },
             KernelEvent::ToolStarted {
-                tool, ..
+                tool, arguments, ..
             } if tool == "send_message" => return Ok(()),
             KernelEvent::ToolStarted {
                 tool, arguments, ..
@@ -328,7 +227,10 @@ impl KernelEventSink for NativeEventBridge {
                 },
             },
             KernelEvent::ToolCompleted {
-                tool, ..
+                tool,
+                output,
+                success,
+                ..
             } if tool == "send_message" => return Ok(()),
             KernelEvent::ToolCompleted {
                 tool,
@@ -397,30 +299,29 @@ impl AgentBackend for NativeAgentBackend {
         events: SharedAgentEventSink,
     ) -> Result<(), AgentError> {
         let thread = self.thread(&request.thread_id)?;
-        if let Ok(mcp) = self.mcp_session(&request.thread_id) {
-            if mcp
+        if let Ok(mcp) = self.mcp_session(&request.thread_id)
+            && mcp
                 .tools
                 .iter()
                 .any(|tool| tool.get("name").and_then(Value::as_str) == Some("chat"))
-            {
-                let result = self
-                    .mcp_call(
-                        mcp,
-                        "chat".into(),
-                        json!({"message":request.text,"surface":"agent"}),
-                    )
-                    .await?;
-                return events.emit(AgentEvent::MessageCompleted {
-                    message: Message {
-                        id: MessageId::generated("mcp-chat"),
-                        conversation_id: request.conversation_id,
-                        role: MessageRole::Assistant,
-                        text: mcp_result_text(&result),
-                        created_at_ms: now_ms(),
-                        metadata: json!({"mcpResult":result}),
-                    },
-                });
-            }
+        {
+            let result = self
+                .mcp_call(
+                    mcp,
+                    "chat".into(),
+                    json!({"message":request.text,"surface":"agent"}),
+                )
+                .await?;
+            return events.emit(AgentEvent::MessageCompleted {
+                message: Message {
+                    id: MessageId::generated("mcp-chat"),
+                    conversation_id: request.conversation_id,
+                    role: MessageRole::Assistant,
+                    text: mcp_result_text(&result),
+                    created_at_ms: now_ms(),
+                    metadata: json!({"mcpResult":result}),
+                },
+            });
         }
 
         let sink: SharedKernelEventSink = Arc::new(NativeEventBridge {
@@ -463,6 +364,23 @@ impl AgentBackend for NativeAgentBackend {
             })
             .await
             .map_err(kernel_error)
+    }
+
+    fn reset_session(&self) -> Result<(), AgentError> {
+        NativeEngine::reset_session(&self.engine).map_err(kernel_error)?;
+        self.threads
+            .lock()
+            .map_err(|_| AgentError::Backend("native thread registry poisoned".into()))?
+            .clear();
+        self.mcp_sessions
+            .lock()
+            .map_err(|_| AgentError::Backend("native MCP session registry poisoned".into()))?
+            .clear();
+        self.disabled_tools
+            .lock()
+            .map_err(|_| AgentError::Backend("MCP tool policy registry poisoned".into()))?
+            .clear();
+        Ok(())
     }
 
     async fn list_mcp_servers(&self) -> Result<Vec<Value>, AgentError> {
@@ -586,7 +504,6 @@ impl AgentBackend for NativeAgentBackend {
                 NativeMcpSession {
                     plugin: resolved.clone(),
                     tools: tools.clone(),
-                    resources: resources.clone(),
                 },
             );
         Ok(McpAppSession {
@@ -654,20 +571,6 @@ impl AgentBackend for NativeAgentBackend {
             .map_err(|error| AgentError::Backend(error.to_string()))
     }
 
-    fn reset_session(&self) -> Result<(), AgentError> {
-        self.threads
-            .lock()
-            .map_err(|_| AgentError::Backend("native thread registry poisoned".into()))?
-            .clear();
-        self.mcp_sessions
-            .lock()
-            .map_err(|_| AgentError::Backend("native MCP session registry poisoned".into()))?
-            .clear();
-        self.engine
-            .reset_session()
-            .map_err(kernel_error)
-    }
-
     fn name(&self) -> &'static str {
         "mahayana-native"
     }
@@ -725,44 +628,6 @@ fn mcp_result_text(result: &Value) -> String {
         .unwrap_or_else(|| {
             serde_json::to_string_pretty(result).unwrap_or_else(|_| "MCP result".into())
         })
-}
-
-fn required_connector_argument(arguments: &Value) -> Result<String, KernelError> {
-    required_connector_argument_named(arguments, "connector")
-}
-
-fn required_connector_argument_named(arguments: &Value, key: &str) -> Result<String, KernelError> {
-    let value = arguments
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| KernelError::Backend(format!("tool argument {key} is required")))?;
-    if value.len() > 160
-        || !value.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | ':' | '/' | '-')
-        })
-    {
-        return Err(KernelError::Backend(format!(
-            "tool argument {key} is not a safe connector target"
-        )));
-    }
-    Ok(value.to_string())
-}
-
-fn required_tool_argument(arguments: &Value) -> Result<String, KernelError> {
-    let value = arguments
-        .get("tool")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| KernelError::Backend("tool argument tool is required".into()))?;
-    if value.chars().count() > 200 || value.chars().any(|character| character.is_control()) {
-        return Err(KernelError::Backend(
-            "tool argument tool is not a safe MCP tool name".into(),
-        ));
-    }
-    Ok(value.to_string())
 }
 
 fn policy_for_profile(profile: RuntimeProfile) -> ExecutionPolicy {

@@ -4,6 +4,11 @@ const REMOTE_PAIRING_SECONDS: i64 = 10 * 60;
 const REMOTE_CONTROL_SESSION_SECONDS: i64 = 2 * 60 * 60;
 const REMOTE_SIGNAL_SECONDS: i64 = 5 * 60;
 const REMOTE_SIGNAL_MAX_BYTES: usize = 256 * 1024;
+const REMOTE_SIGNAL_MAX_ROWS_PER_SESSION: i64 = 512;
+const REMOTE_SESSION_MAX_PER_CLIENT: i64 = 4;
+const REMOTE_SESSION_MAX_PER_DEVICE: i64 = 32;
+const REMOTE_CLIENT_MAX_PER_DEVICE: i64 = 64;
+const REMOTE_COMPUTER_MAX_PER_ACCOUNT: i64 = 64;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -11,6 +16,14 @@ struct RemoteComputerRegisterRequest {
     device_id: String,
     label: String,
     device_secret: String,
+    #[serde(default = "default_remote_provider")]
+    provider: String,
+    #[serde(default = "default_remote_platform")]
+    platform: String,
+    #[serde(default = "default_remote_app_version")]
+    app_version: String,
+    #[serde(default)]
+    capabilities: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,6 +44,7 @@ struct RemoteComputerPairRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RemoteComputerSessionCreateRequest {
     client_id: String,
+    client_token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,6 +99,11 @@ struct RemoteComputerSessionCloseRequest {
 struct RemoteComputerRow {
     device_id: String,
     label: String,
+    provider: String,
+    platform: String,
+    app_version: String,
+    capabilities_json: String,
+    active_session_count: i64,
     last_seen_at: i64,
     created_at: i64,
 }
@@ -111,6 +130,11 @@ struct RemoteComputerClientRow {
     label: String,
     paired_at: i64,
     last_seen_at: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteComputerClientAuthRow {
+    client_token_hash: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -177,10 +201,14 @@ async fn remote_desktop_secret_matches(
 
 fn new_remote_pairing_code() -> String {
     let raw = Uuid::new_v4().simple().to_string();
-    raw[..8].to_ascii_uppercase()
+    raw[..12].to_ascii_uppercase()
 }
 
 fn new_remote_mobile_token() -> String {
+    format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
+}
+
+fn new_remote_client_token() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 
@@ -189,12 +217,83 @@ fn remote_label(value: &str) -> Option<String> {
     (!value.is_empty() && value.chars().count() <= 80).then(|| value.to_string())
 }
 
+fn default_remote_provider() -> String {
+    "fabushi-webrtc".to_string()
+}
+
+fn default_remote_platform() -> String {
+    "unknown".to_string()
+}
+
+fn default_remote_app_version() -> String {
+    "unknown".to_string()
+}
+
+fn remote_provider(value: &str) -> Option<String> {
+    let value = value.trim();
+    matches!(value, "fabushi-webrtc" | "rustdesk-sidecar").then(|| value.to_string())
+}
+
+fn remote_platform(value: &str) -> Option<String> {
+    let value = value.trim();
+    matches!(
+        value,
+        "windows" | "macos" | "linux" | "android" | "ios" | "web" | "unknown"
+    )
+    .then(|| value.to_string())
+}
+
+fn remote_app_version(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()
+        && value.len() <= 64
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || ".+_-".contains(character)))
+    .then(|| value.to_string())
+}
+
+fn remote_capabilities(values: &[String]) -> Option<Vec<String>> {
+    if values.len() > 32 {
+        return None;
+    }
+    let mut normalized = Vec::with_capacity(values.len());
+    for value in values {
+        let value = value.trim();
+        if !matches!(
+            value,
+            "remote-desktop"
+                | "input"
+                | "clipboard"
+                | "file-transfer"
+                | "display"
+                | "audio"
+                | "session-management"
+        ) {
+            return None;
+        }
+        if !normalized.iter().any(|existing| existing == value) {
+            normalized.push(value.to_string());
+        }
+    }
+    normalized.sort();
+    Some(normalized)
+}
+
 fn remote_role(value: &str) -> bool {
     matches!(value, "desktop" | "mobile")
 }
 
 fn remote_signal_kind(value: &str) -> bool {
     matches!(value, "offer" | "answer" | "ice" | "ready" | "close")
+}
+
+fn remote_signal_kind_allowed(role: &str, kind: &str) -> bool {
+    match role {
+        "mobile" => matches!(kind, "offer" | "ice" | "ready" | "close"),
+        "desktop" => matches!(kind, "answer" | "ice" | "ready" | "close"),
+        _ => false,
+    }
 }
 
 fn remote_ice_servers(env: &Env) -> Vec<Value> {
@@ -250,11 +349,19 @@ pub(super) async fn remote_computer_list(
     let database = context.env.d1(DATABASE_BINDING)?;
     let rows = worker::query!(
         &database,
-        "SELECT device_id, label, last_seen_at, created_at
-         FROM remote_computers
-         WHERE user_id = ?1 AND revoked_at IS NULL
-         ORDER BY last_seen_at DESC LIMIT 64",
-        &account.user_id
+        "SELECT computer.device_id, computer.label, computer.provider,
+                computer.platform, computer.app_version, computer.capabilities_json,
+                (SELECT COUNT(*) FROM remote_computer_sessions session
+                 WHERE session.user_id = computer.user_id
+                   AND session.device_id = computer.device_id
+                   AND session.state = 'active'
+                   AND session.expires_at > ?2) AS active_session_count,
+                computer.last_seen_at, computer.created_at
+         FROM remote_computers computer
+         WHERE computer.user_id = ?1 AND computer.revoked_at IS NULL
+         ORDER BY computer.last_seen_at DESC LIMIT 64",
+        &account.user_id,
+        now_seconds()
     )?
     .all()
     .await?
@@ -263,9 +370,18 @@ pub(super) async fn remote_computer_list(
     let computers = rows
         .into_iter()
         .map(|row| {
+            let capabilities = serde_json::from_str::<Vec<String>>(&row.capabilities_json)
+                .ok()
+                .and_then(|values| remote_capabilities(&values))
+                .unwrap_or_default();
             json!({
                 "deviceId": row.device_id,
                 "label": row.label,
+                "provider": row.provider,
+                "platform": row.platform,
+                "appVersion": row.app_version,
+                "capabilities": capabilities,
+                "activeSessionCount": row.active_session_count,
                 "lastSeenAt": row.last_seen_at,
                 "createdAt": row.created_at,
                 "online": now.saturating_sub(row.last_seen_at) <= 45,
@@ -312,6 +428,28 @@ pub(super) async fn remote_computer_register(
             "Computer device secret is invalid.",
         );
     }
+    let Some(provider) = remote_provider(&input.provider) else {
+        return error_response(400, "invalid_provider", "Computer provider is invalid.");
+    };
+    let Some(platform) = remote_platform(&input.platform) else {
+        return error_response(400, "invalid_platform", "Computer platform is invalid.");
+    };
+    let Some(app_version) = remote_app_version(&input.app_version) else {
+        return error_response(
+            400,
+            "invalid_app_version",
+            "Computer appVersion is invalid.",
+        );
+    };
+    let Some(capabilities) = remote_capabilities(&input.capabilities) else {
+        return error_response(
+            400,
+            "invalid_capabilities",
+            "Computer capabilities are invalid.",
+        );
+    };
+    let capabilities_json = serde_json::to_string(&capabilities)
+        .map_err(|error| worker::Error::RustError(error.to_string()))?;
     let device_secret_hash = remote_secret_hash(&input.device_secret);
     let code = new_remote_pairing_code();
     let code_hash = remote_secret_hash(&code);
@@ -321,13 +459,21 @@ pub(super) async fn remote_computer_register(
     let result = worker::query!(
         &database,
         "INSERT INTO remote_computers
-         (device_id, user_id, label, device_secret_hash, pairing_code_hash, pairing_expires_at, created_at, last_seen_at, revoked_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, NULL)
+         (device_id, user_id, label, device_secret_hash, pairing_code_hash, pairing_expires_at,
+          created_at, last_seen_at, revoked_at, provider, platform, app_version, capabilities_json)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, NULL, ?8, ?9, ?10, ?11
+         WHERE (SELECT COUNT(*) FROM remote_computers existing
+                WHERE existing.user_id = ?2 AND existing.revoked_at IS NULL
+                  AND existing.device_id <> ?1) < ?12
          ON CONFLICT(device_id) DO UPDATE SET
            label = excluded.label,
            pairing_code_hash = excluded.pairing_code_hash,
            pairing_expires_at = excluded.pairing_expires_at,
            last_seen_at = excluded.last_seen_at,
+           provider = excluded.provider,
+           platform = excluded.platform,
+           app_version = excluded.app_version,
+           capabilities_json = excluded.capabilities_json,
            revoked_at = NULL
          WHERE remote_computers.user_id = excluded.user_id
            AND remote_computers.device_secret_hash = excluded.device_secret_hash",
@@ -337,11 +483,34 @@ pub(super) async fn remote_computer_register(
         &device_secret_hash,
         &code_hash,
         expires_at,
-        now
+        now,
+        &provider,
+        &platform,
+        &app_version,
+        &capabilities_json,
+        REMOTE_COMPUTER_MAX_PER_ACCOUNT
     )?
     .run()
     .await?;
     if result.meta()?.and_then(|meta| meta.changes).unwrap_or(0) == 0 {
+        let owned = worker::query!(
+            &database,
+            "SELECT 1 AS ok FROM remote_computers
+             WHERE device_id = ?1 AND user_id = ?2 AND device_secret_hash = ?3 LIMIT 1",
+            &input.device_id,
+            &account.user_id,
+            &device_secret_hash
+        )?
+        .first::<RemoteComputerExistsRow>(None)
+        .await?
+        .is_some();
+        if owned {
+            return error_response(
+                429,
+                "computer_limit",
+                "This account has too many registered computers; remove one before reactivating this device.",
+            );
+        }
         return error_response(
             403,
             "device_secret_mismatch",
@@ -351,6 +520,10 @@ pub(super) async fn remote_computer_register(
     Ok(Response::from_json(&json!({
         "deviceId": input.device_id,
         "label": label,
+        "provider": provider,
+        "platform": platform,
+        "appVersion": app_version,
+        "capabilities": capabilities,
         "pairingCode": code,
         "pairingExpiresAt": expires_at,
     }))?
@@ -422,7 +595,7 @@ pub(super) async fn remote_computer_pair(
         }
     };
     let code = input.pairing_code.trim().to_ascii_uppercase();
-    if code.len() != 8 || !code.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if code.len() != 12 || !code.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return error_response(400, "invalid_pairing_code", "Pairing code is invalid.");
     }
     let Some(label) = remote_label(&input.label) else {
@@ -451,33 +624,117 @@ pub(super) async fn remote_computer_pair(
         );
     };
     let client_id = format!("remote-client-{}", Uuid::new_v4());
-    database
+    let client_token = new_remote_client_token();
+    let client_token_hash = remote_secret_hash(&client_token);
+    let pairing_claim_hash = remote_secret_hash(&format!("pair-claim:{client_id}:{client_token}"));
+    let results = database
         .batch(vec![
             worker::query!(
                 &database,
-                "INSERT INTO remote_computer_clients
-                 (client_id, device_id, user_id, label, paired_at, last_seen_at, revoked_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?5, NULL)",
-                &client_id,
+                "UPDATE remote_computers SET pairing_code_hash = ?1
+                 WHERE device_id = ?2 AND user_id = ?3 AND pairing_code_hash = ?4
+                   AND pairing_expires_at > ?5 AND revoked_at IS NULL
+                   AND (SELECT COUNT(*) FROM remote_computer_clients c
+                        WHERE c.device_id = remote_computers.device_id
+                          AND c.user_id = remote_computers.user_id
+                          AND c.revoked_at IS NULL AND c.client_token_hash IS NOT NULL) < ?6",
+                &pairing_claim_hash,
                 &computer.device_id,
                 &account.user_id,
+                &code_hash,
+                now,
+                REMOTE_CLIENT_MAX_PER_DEVICE
+            )?,
+            worker::query!(
+                &database,
+                "INSERT INTO remote_computer_clients
+                 (client_id, device_id, user_id, label, paired_at, last_seen_at, revoked_at, client_token_hash)
+                 SELECT ?1, d.device_id, d.user_id, ?2, ?3, ?3, NULL, ?4
+                 FROM remote_computers d
+                 WHERE d.device_id = ?5 AND d.user_id = ?6 AND d.pairing_code_hash = ?7
+                   AND d.revoked_at IS NULL
+                   AND (SELECT COUNT(*) FROM remote_computer_clients c
+                        WHERE c.device_id = d.device_id AND c.user_id = d.user_id
+                          AND c.revoked_at IS NULL AND c.client_token_hash IS NOT NULL) < ?8",
+                &client_id,
                 &label,
-                now
+                now,
+                &client_token_hash,
+                &computer.device_id,
+                &account.user_id,
+                &pairing_claim_hash,
+                REMOTE_CLIENT_MAX_PER_DEVICE
             )?,
             worker::query!(
                 &database,
                 "UPDATE remote_computers
-                 SET pairing_code_hash = NULL, pairing_expires_at = NULL
-                 WHERE device_id = ?1 AND user_id = ?2",
+                 SET pairing_code_hash = CASE
+                       WHEN EXISTS (SELECT 1 FROM remote_computer_clients c
+                                    WHERE c.client_id = ?4 AND c.device_id = ?1
+                                      AND c.user_id = ?2 AND c.revoked_at IS NULL
+                                      AND c.client_token_hash IS NOT NULL)
+                       THEN NULL ELSE ?5 END,
+                     pairing_expires_at = CASE
+                       WHEN EXISTS (SELECT 1 FROM remote_computer_clients c
+                                    WHERE c.client_id = ?4 AND c.device_id = ?1
+                                      AND c.user_id = ?2 AND c.revoked_at IS NULL
+                                      AND c.client_token_hash IS NOT NULL)
+                       THEN NULL ELSE pairing_expires_at END
+                 WHERE device_id = ?1 AND user_id = ?2 AND pairing_code_hash = ?3",
                 &computer.device_id,
-                &account.user_id
+                &account.user_id,
+                &pairing_claim_hash,
+                &client_id,
+                &code_hash
             )?,
         ])
         .await?;
+    let claim_changes = d1_changes(results.first());
+    let insert_changes = d1_changes(results.get(1));
+    if claim_changes == 0 {
+        let limit_reached = worker::query!(
+            &database,
+            "SELECT 1 AS ok FROM remote_computers d
+             WHERE d.device_id = ?1 AND d.user_id = ?2 AND d.pairing_code_hash = ?3
+               AND d.pairing_expires_at > ?4 AND d.revoked_at IS NULL
+               AND (SELECT COUNT(*) FROM remote_computer_clients c
+                    WHERE c.device_id = d.device_id AND c.user_id = d.user_id
+                      AND c.revoked_at IS NULL AND c.client_token_hash IS NOT NULL) >= ?5
+             LIMIT 1",
+            &computer.device_id,
+            &account.user_id,
+            &code_hash,
+            now,
+            REMOTE_CLIENT_MAX_PER_DEVICE
+        )?
+        .first::<RemoteComputerExistsRow>(None)
+        .await?
+        .is_some();
+        if limit_reached {
+            return error_response(
+                429,
+                "paired_client_limit",
+                "This computer has too many paired clients; revoke one before pairing again.",
+            );
+        }
+        return error_response(
+            404,
+            "pairing_code_not_found",
+            "Pairing code was already consumed or expired.",
+        );
+    }
+    if insert_changes == 0 {
+        return error_response(
+            429,
+            "paired_client_limit",
+            "This computer has too many paired clients; revoke one before pairing again.",
+        );
+    }
     Ok(Response::from_json(&json!({
         "deviceId": computer.device_id,
         "computerLabel": computer.label,
         "clientId": client_id,
+        "clientToken": client_token,
         "clientLabel": label,
         "pairedAt": now,
     }))?
@@ -500,6 +757,7 @@ pub(super) async fn remote_computer_clients(
          FROM remote_computer_clients c
          JOIN remote_computers d ON d.device_id = c.device_id
          WHERE c.user_id = ?1 AND c.device_id = ?2 AND c.revoked_at IS NULL
+           AND c.client_token_hash IS NOT NULL
            AND d.user_id = ?1 AND d.revoked_at IS NULL
          ORDER BY c.paired_at DESC LIMIT 64",
         &account.user_id,
@@ -610,10 +868,12 @@ pub(super) async fn remote_computer_sessions(
         "SELECT s.session_id, s.client_id, c.label AS client_label,
                 s.state, s.created_at, s.expires_at
          FROM remote_computer_sessions s
-         JOIN remote_computer_clients c ON c.client_id = s.client_id
-         JOIN remote_computers d ON d.device_id = s.device_id
+         JOIN remote_computer_clients c
+           ON c.client_id = s.client_id AND c.device_id = s.device_id AND c.user_id = s.user_id
+         JOIN remote_computers d ON d.device_id = s.device_id AND d.user_id = s.user_id
          WHERE s.user_id = ?1 AND s.device_id = ?2 AND s.state <> 'closed'
-           AND s.expires_at > ?3 AND c.revoked_at IS NULL AND d.revoked_at IS NULL
+           AND s.expires_at > ?3 AND c.revoked_at IS NULL
+           AND c.client_token_hash IS NOT NULL AND d.revoked_at IS NULL
          ORDER BY s.created_at DESC LIMIT 32",
         &account.user_id,
         device_id,
@@ -665,20 +925,34 @@ pub(super) async fn remote_computer_session_create(
     if !valid_relay_identifier(&input.client_id, 160) {
         return error_response(400, "invalid_client_id", "clientId is invalid.");
     }
+    if input.client_token.len() < 48 || input.client_token.len() > 256 {
+        return error_response(
+            400,
+            "invalid_client_token",
+            "Paired client credential is invalid.",
+        );
+    }
     let database = context.env.d1(DATABASE_BINDING)?;
     let client = worker::query!(
         &database,
-        "SELECT client_id, label, paired_at, last_seen_at
+        "SELECT client_token_hash
          FROM remote_computer_clients
-         WHERE client_id = ?1 AND device_id = ?2 AND user_id = ?3 AND revoked_at IS NULL
+         WHERE client_id = ?1 AND device_id = ?2 AND user_id = ?3
+           AND revoked_at IS NULL AND client_token_hash IS NOT NULL
          LIMIT 1",
         &input.client_id,
         &device_id,
         &account.user_id
     )?
-    .first::<RemoteComputerClientRow>(None)
+    .first::<RemoteComputerClientAuthRow>(None)
     .await?;
-    if client.is_none() {
+    let candidate_hash = remote_secret_hash(&input.client_token);
+    if !client.is_some_and(|client| {
+        constant_time_eq(
+            candidate_hash.as_bytes(),
+            client.client_token_hash.as_bytes(),
+        )
+    }) {
         return error_response(
             403,
             "client_not_paired",
@@ -704,19 +978,76 @@ pub(super) async fn remote_computer_session_create(
     let expires_at = now + REMOTE_CONTROL_SESSION_SECONDS;
     worker::query!(
         &database,
+        "UPDATE remote_computer_sessions SET state = 'closed', closed_at = ?1
+         WHERE user_id = ?2 AND device_id = ?3 AND state <> 'closed' AND expires_at <= ?1",
+        now,
+        &account.user_id,
+        &device_id
+    )?
+    .run()
+    .await?;
+    let inserted = worker::query!(
+        &database,
         "INSERT INTO remote_computer_sessions
          (session_id, device_id, client_id, user_id, mobile_token_hash, state, created_at, expires_at, closed_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, NULL)",
+         SELECT ?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, NULL
+         WHERE EXISTS (
+                 SELECT 1 FROM remote_computer_clients c
+                 JOIN remote_computers d
+                   ON d.device_id = c.device_id AND d.user_id = c.user_id
+                 WHERE c.client_id = ?3 AND c.device_id = ?2 AND c.user_id = ?4
+                   AND c.client_token_hash = ?10 AND c.revoked_at IS NULL
+                   AND d.revoked_at IS NULL
+               )
+           AND (SELECT COUNT(*) FROM remote_computer_sessions
+                WHERE user_id = ?4 AND device_id = ?2 AND client_id = ?3
+                  AND state <> 'closed' AND expires_at > ?6) < ?8
+           AND (SELECT COUNT(*) FROM remote_computer_sessions
+                WHERE user_id = ?4 AND device_id = ?2
+                  AND state <> 'closed' AND expires_at > ?6) < ?9",
         &session_id,
         &device_id,
         &input.client_id,
         &account.user_id,
         &mobile_token_hash,
         now,
-        expires_at
+        expires_at,
+        REMOTE_SESSION_MAX_PER_CLIENT,
+        REMOTE_SESSION_MAX_PER_DEVICE,
+        &candidate_hash
     )?
     .run()
     .await?;
+    if inserted.meta()?.and_then(|meta| meta.changes).unwrap_or(0) == 0 {
+        let still_paired = worker::query!(
+            &database,
+            "SELECT 1 AS ok FROM remote_computer_clients c
+             JOIN remote_computers d
+               ON d.device_id = c.device_id AND d.user_id = c.user_id
+             WHERE c.client_id = ?1 AND c.device_id = ?2 AND c.user_id = ?3
+               AND c.client_token_hash = ?4 AND c.revoked_at IS NULL
+               AND d.revoked_at IS NULL LIMIT 1",
+            &input.client_id,
+            &device_id,
+            &account.user_id,
+            &candidate_hash
+        )?
+        .first::<RemoteComputerExistsRow>(None)
+        .await?
+        .is_some();
+        if !still_paired {
+            return error_response(
+                403,
+                "client_not_paired",
+                "This phone is no longer paired with the computer.",
+            );
+        }
+        return error_response(
+            429,
+            "control_session_limit",
+            "Too many pending control sessions exist for this paired client.",
+        );
+    }
     Ok(Response::from_json(&json!({
         "sessionId": session_id,
         "deviceId": device_id,
@@ -761,11 +1092,21 @@ pub(super) async fn remote_computer_session_activate(
            AND EXISTS (SELECT 1 FROM remote_computers d
                        WHERE d.device_id = ?2 AND d.user_id = ?3
                          AND d.device_secret_hash = ?5 AND d.revoked_at IS NULL)
+           AND EXISTS (SELECT 1 FROM remote_computer_clients c
+                       WHERE c.client_id = remote_computer_sessions.client_id
+                         AND c.device_id = ?2 AND c.user_id = ?3
+                         AND c.revoked_at IS NULL AND c.client_token_hash IS NOT NULL)
            AND NOT EXISTS (
                SELECT 1 FROM remote_computer_sessions active
                WHERE active.device_id = ?2 AND active.user_id = ?3
                  AND active.session_id <> ?1 AND active.state = 'active'
                  AND active.expires_at > ?4
+                 AND EXISTS (SELECT 1 FROM remote_computer_clients active_client
+                             WHERE active_client.client_id = active.client_id
+                               AND active_client.device_id = active.device_id
+                               AND active_client.user_id = active.user_id
+                               AND active_client.revoked_at IS NULL
+                               AND active_client.client_token_hash IS NOT NULL)
            )",
         session_id,
         device_id,
@@ -809,9 +1150,14 @@ async fn load_remote_control_session(
 ) -> Result<Option<RemoteComputerSessionRow>> {
     worker::query!(
         database,
-        "SELECT client_id, mobile_token_hash, state, expires_at
-         FROM remote_computer_sessions
-         WHERE session_id = ?1 AND device_id = ?2 AND user_id = ?3 LIMIT 1",
+        "SELECT s.client_id, s.mobile_token_hash, s.state, s.expires_at
+         FROM remote_computer_sessions s
+         JOIN remote_computer_clients c
+           ON c.client_id = s.client_id AND c.device_id = s.device_id AND c.user_id = s.user_id
+         JOIN remote_computers d ON d.device_id = s.device_id AND d.user_id = s.user_id
+         WHERE s.session_id = ?1 AND s.device_id = ?2 AND s.user_id = ?3
+           AND c.revoked_at IS NULL AND c.client_token_hash IS NOT NULL
+           AND d.revoked_at IS NULL LIMIT 1",
         session_id,
         device_id,
         user_id
@@ -909,10 +1255,11 @@ pub(super) async fn remote_computer_session_close(
     worker::query!(
         &database,
         "UPDATE remote_computer_sessions SET state = 'closed', closed_at = ?1
-         WHERE session_id = ?2 AND user_id = ?3",
+         WHERE session_id = ?2 AND user_id = ?3 AND device_id = ?4",
         now,
         &session_id,
-        &account.user_id
+        &account.user_id,
+        &device_id
     )?
     .run()
     .await?;
@@ -940,6 +1287,7 @@ pub(super) async fn remote_computer_signal(
     if !valid_relay_identifier(&input.session_id, 160)
         || !remote_role(&input.sender_role)
         || !remote_signal_kind(&input.kind)
+        || !remote_signal_kind_allowed(&input.sender_role, &input.kind)
     {
         return error_response(400, "invalid_signal", "Signal identifiers are invalid.");
     }
@@ -990,36 +1338,80 @@ pub(super) async fn remote_computer_signal(
         );
     }
     let expires_at = now + REMOTE_SIGNAL_SECONDS;
-    database
-        .batch(vec![
-            worker::query!(
-                &database,
-                "DELETE FROM remote_computer_signals WHERE expires_at <= ?1",
-                now
-            )?,
-            worker::query!(
-                &database,
-                "INSERT INTO remote_computer_signals
-                 (session_id, user_id, sender_role, kind, payload_json, created_at, expires_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                &input.session_id,
-                &account.user_id,
+    worker::query!(
+        &database,
+        "DELETE FROM remote_computer_signals WHERE expires_at <= ?1",
+        now
+    )?
+    .run()
+    .await?;
+    let inserted = worker::query!(
+        &database,
+        "INSERT INTO remote_computer_signals
+         (session_id, user_id, sender_role, kind, payload_json, created_at, expires_at)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+         WHERE EXISTS (
+                 SELECT 1 FROM remote_computer_sessions s
+                 JOIN remote_computer_clients c
+                   ON c.client_id = s.client_id AND c.device_id = s.device_id
+                  AND c.user_id = s.user_id
+                 JOIN remote_computers d
+                   ON d.device_id = s.device_id AND d.user_id = s.user_id
+                 WHERE s.session_id = ?1 AND s.user_id = ?2 AND s.device_id = ?9
+                   AND s.state <> 'closed' AND s.expires_at > ?6
+                   AND c.revoked_at IS NULL AND c.client_token_hash IS NOT NULL
+                   AND d.revoked_at IS NULL
+               )
+           AND (SELECT COUNT(*) FROM remote_computer_signals
+                WHERE session_id = ?1 AND user_id = ?2 AND expires_at > ?6) < ?8",
+        &input.session_id,
+        &account.user_id,
+        &input.sender_role,
+        &input.kind,
+        &payload_json,
+        now,
+        expires_at,
+        REMOTE_SIGNAL_MAX_ROWS_PER_SESSION,
+        &device_id
+    )?
+    .run()
+    .await?;
+    if inserted.meta()?.and_then(|meta| meta.changes).unwrap_or(0) == 0 {
+        let current_session =
+            load_remote_control_session(&database, &account.user_id, &device_id, &input.session_id)
+                .await?;
+        if !current_session.as_ref().is_some_and(|current| {
+            remote_session_actor_allowed(
+                current,
                 &input.sender_role,
-                &input.kind,
-                &payload_json,
+                input.client_id.as_deref(),
+                input.mobile_token.as_deref(),
+                desktop_authorized,
                 now,
-                expires_at
-            )?,
-        ])
-        .await?;
+            )
+        }) {
+            return error_response(
+                409,
+                "control_session_unavailable",
+                "The control session was closed, expired, or revoked.",
+            );
+        }
+        return error_response(
+            429,
+            "signal_queue_full",
+            "The remote-control signaling queue is full; reconnect before retrying.",
+        );
+    }
     if input.sender_role == "mobile" {
         worker::query!(
             &database,
             "UPDATE remote_computer_clients SET last_seen_at = ?1
-             WHERE client_id = ?2 AND user_id = ?3",
+             WHERE client_id = ?2 AND user_id = ?3 AND device_id = ?4
+               AND revoked_at IS NULL",
             now,
             &session.client_id,
-            &account.user_id
+            &account.user_id,
+            &device_id
         )?
         .run()
         .await?;
@@ -1097,15 +1489,28 @@ pub(super) async fn remote_computer_signal_drain(
     let rows = worker::query!(
         &database,
         "SELECT signal_id, sender_role, kind, payload_json, created_at
-         FROM remote_computer_signals
-         WHERE user_id = ?1 AND session_id = ?2 AND sender_role <> ?3
-           AND signal_id > ?4 AND expires_at > ?5
-         ORDER BY signal_id ASC LIMIT 128",
+         FROM remote_computer_signals signal
+         WHERE signal.user_id = ?1 AND signal.session_id = ?2 AND signal.sender_role <> ?3
+           AND signal.signal_id > ?4 AND signal.expires_at > ?5
+           AND EXISTS (
+               SELECT 1 FROM remote_computer_sessions s
+               JOIN remote_computer_clients c
+                 ON c.client_id = s.client_id AND c.device_id = s.device_id
+                AND c.user_id = s.user_id
+               JOIN remote_computers d
+                 ON d.device_id = s.device_id AND d.user_id = s.user_id
+               WHERE s.session_id = signal.session_id AND s.user_id = signal.user_id
+                 AND s.device_id = ?6 AND s.state <> 'closed' AND s.expires_at > ?5
+                 AND c.revoked_at IS NULL AND c.client_token_hash IS NOT NULL
+                 AND d.revoked_at IS NULL
+           )
+         ORDER BY signal.signal_id ASC LIMIT 128",
         &account.user_id,
         &input.session_id,
         &input.receiver_role,
         after,
-        now
+        now,
+        &device_id
     )?
     .all()
     .await?
@@ -1128,10 +1533,12 @@ pub(super) async fn remote_computer_signal_drain(
         worker::query!(
             &database,
             "UPDATE remote_computer_clients SET last_seen_at = ?1
-             WHERE client_id = ?2 AND user_id = ?3",
+             WHERE client_id = ?2 AND user_id = ?3 AND device_id = ?4
+               AND revoked_at IS NULL",
             now,
             &session.client_id,
-            &account.user_id
+            &account.user_id,
+            &device_id
         )?
         .run()
         .await?;

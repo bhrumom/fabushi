@@ -1,0 +1,64 @@
+project_id: FAB-P0001
+project_key: TFI
+legacy_project_ids:
+  - FABUSHI-TELEGRAM-FUSION
+name: Fabushi Telegram 全量融合
+slug: telegram-fabushi-integration
+version: v1.4
+baseline_date: 2026-08-22
+status: IMPLEMENTATION_ACTIVE
+current_stage: M3
+source_of_truth: source/完整telegram融合进fabushi.txt
+authoritative_path: projects/telegram-fabushi-integration
+architecture:
+  core_language: Rust
+  canonical_messaging_core: native/mahayana-messaging
+  desktop: Electron
+  ios: Native + UniFFI
+  android: Native + UniFFI/JNI
+  protocol: Self-hosted, versioned, event-driven
+  protocol_version: 2
+  local_first: true
+  ai_native: true
+  miniapp_foreground_agent_interface: WebMCP
+  miniapp_backend_runtime: Mahayana Rust Host
+  telegram_api_dependency: false
+status_model:
+  - NOT_STARTED
+  - IN_PROGRESS
+  - IMPLEMENTED
+  - TESTED
+  - E2E_VERIFIED
+  - RELEASED
+active_work:
+  - task: M3-DESKTOP-001
+    branch: feat/telegram-m3-desktop-ux
+    state: IN_PROGRESS
+  - task: M8-WEBMCP-001
+    branch: feat/tfi-webmcp-miniapp-runtime
+    state: TESTING
+  - task: TFI-GOV-002
+    state: IN_PROGRESS
+completed_stage_evidence:
+  M0: PR-1987
+  M1: M1-ACCEPT-001
+  M2: M2-ACCEPT-001
+governance:
+  repository: bhrumom/fabushi
+  authoritative_branch: main
+  authoritative_path: projects/telegram-fabushi-integration
+  external_mirrors_are_authoritative: false
+  task_record_required_before_completion: true
+  new_independent_workstream_requires_project_folder: true
+  protected_merge_queue_required: true
+
+latest_release:
+  version: 1.1.0
+  date: 2026-09-01
+  release_train: M11-MOBILE-001
+  product_source_sha: 82ddb78653ecdc47c95bf1a372389adff9f24d09
+  release_control_sha: 3f7cddc0bc09802d9a3d142cab7f9a56c573c07c
+  desktop_tag: desktop-1.1.0-3f7cddc0bc09
+  android_tag: android-v1.1.0-262432005
+  apple_tag: apple-v1.1.0-2026.8.3133
+  evidence: projects/telegram-fabushi-integration/evidence/M11-MOBILE-001/README.md

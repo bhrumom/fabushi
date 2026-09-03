@@ -401,6 +401,8 @@ export class SelfHostedMessagingClientV2 {
   private identityResolved = false;
   private identityPromise: Promise<void> | null = null;
   private lastIdentityFailureAtMs = 0;
+  private currentActorDisplayName = '当前用户';
+  private currentActorUsername: string | undefined;
 
   constructor(transport: MahayanaHostTransport, options: { actorId?: string; deviceId?: string; sessionId?: string } = {}) {
     this.transport = transport;
@@ -464,19 +466,32 @@ export class SelfHostedMessagingClientV2 {
     await this.execute({ type: 'upsertProfile', actor });
   }
 
-  async ensureCurrentActor(displayName = '当前用户'): Promise<void> {
+  async ensureCurrentActor(displayName?: string, username?: string): Promise<void> {
+    const normalizedDisplayName = displayName?.trim();
+    if (normalizedDisplayName) this.currentActorDisplayName = normalizedDisplayName;
+    if (username !== undefined) this.currentActorUsername = username.trim() || undefined;
+    await this.ensureNativeIdentity();
     await this.ensureActor({
       id: this.actorId,
       kind: 'human',
-      displayName,
+      displayName: this.currentActorDisplayName,
+      ...(this.currentActorUsername ? { username: this.currentActorUsername } : {}),
       capabilities: ['messages', 'groups', 'channels', 'calls', 'payments', 'miniApps'],
       presence: { status: 'online', lastSeenAtMs: Date.now() },
       verified: false,
     });
   }
 
-  async sync(limit = 1000): Promise<void> {
-    await this.execute({ type: 'sync', cursor: null, limit });
+  async sync(limit = 1000, cursor: string | null = null): Promise<void> {
+    await this.execute({ type: 'sync', cursor, limit });
+  }
+
+  startTyping(conversationId: string, action = 'typing'): Promise<void> {
+    return this.execute({ type: 'startTyping', conversationId, action });
+  }
+
+  stopTyping(conversationId: string): Promise<void> {
+    return this.execute({ type: 'stopTyping', conversationId });
   }
 
   async createConversation(kind: ConversationKind, title: string, description = '', participantActorIds: string[] = []): Promise<MessagingConversation> {

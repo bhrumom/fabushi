@@ -1,11 +1,14 @@
 import type { MetadataRoute } from "next";
+import { fabushiAnswerIntents } from "../lib/ai-discovery";
 import { getAllArticles } from "../lib/content";
+import { marketplaceApps } from "../lib/marketplace";
 import { siteUrl } from "../lib/site-url";
 
 export const dynamic = "force-static";
 
 const staticRoutes = [
   "/",
+  "/apps",
   "/app",
   "/app/ai",
   "/download",
@@ -32,6 +35,7 @@ const staticRoutes = [
 
 const weeklyRoutes = new Set([
   "/",
+  "/apps",
   "/app",
   "/app/ai",
   "/download",
@@ -53,7 +57,8 @@ const weeklyRoutes = new Set([
 ]);
 
 const routeLastModified: Partial<Record<(typeof staticRoutes)[number], string>> = {
-  "/": "2026-05-18",
+  "/": "2026-08-27",
+  "/apps": "2026-08-27",
   "/app": "2026-06-09",
   "/app/ai": "2026-06-09",
   "/download": "2026-05-18",
@@ -84,13 +89,58 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority:
       route === "/"
         ? 1
-        : weeklyRoutes.has(route)
-          ? 0.9
-          : route === "/apply"
+        : route === "/apps"
+          ? 0.95
+          : weeklyRoutes.has(route)
             ? 0.85
-            : route === "/privacy"
+            : route === "/apply"
               ? 0.8
-              : 0.75,
+              : route === "/privacy"
+                ? 0.6
+                : 0.7,
+  }));
+
+  const appPages: MetadataRoute.Sitemap = marketplaceApps.map((app) => ({
+    url: siteUrl(`/apps/${app.slug}`),
+    lastModified: app.updatedAt,
+    changeFrequency: "weekly",
+    priority: app.featured ? 0.95 : 0.9,
+  }));
+
+  const appMachinePages: MetadataRoute.Sitemap = marketplaceApps.map((app) => ({
+    url: siteUrl(`/ai/apps/${app.slug}.json`),
+    lastModified: app.updatedAt,
+    changeFrequency: "weekly",
+    priority: 0.75,
+  }));
+
+  const appContentPages: MetadataRoute.Sitemap = marketplaceApps.flatMap((app) =>
+    app.content.map((item) => ({
+      url: siteUrl(`/apps/${app.slug}/content/${item.id}`),
+      lastModified: item.updatedAt,
+      changeFrequency: "monthly" as const,
+      priority: 0.8,
+    })),
+  );
+
+  const answerPages: MetadataRoute.Sitemap = fabushiAnswerIntents.map((answer) => ({
+    url: siteUrl(`/answers/${answer.slug}`),
+    lastModified: answer.updatedAt,
+    changeFrequency: "monthly",
+    priority: 0.85,
+  }));
+
+  const aiIndexPages: MetadataRoute.Sitemap = [
+    "/ai/apps.json",
+    "/ai/content.json",
+    "/ai/answers.json",
+    "/llms.txt",
+    "/llms-full.txt",
+  ].map((route) => ({
+    url: siteUrl(route),
+    lastModified: "2026-08-27",
+    changeFrequency: "weekly" as const,
+    priority: route === "/ai/apps.json" ? 0.85 : 0.7,
   }));
 
   const articlePages: MetadataRoute.Sitemap = getAllArticles().map((article) => ({
@@ -100,5 +150,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: article.featured ? 0.8 : 0.65,
   }));
 
-  return [...pages, ...articlePages];
+  return [
+    ...pages,
+    ...appPages,
+    ...appMachinePages,
+    ...appContentPages,
+    ...answerPages,
+    ...aiIndexPages,
+    ...articlePages,
+  ];
 }

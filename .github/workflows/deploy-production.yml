@@ -29,7 +29,7 @@ env:
 
 jobs:
   resolve-source:
-    name: Resolve Worker source
+    name: Resolve Worker source and deployment impact
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
@@ -37,6 +37,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
+      should_deploy: ${{ steps.impact.outputs.should_deploy }}
     steps:
       - name: Resolve source commit
         id: source
@@ -54,10 +55,46 @@ jobs:
           fi
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "Resolved Worker source: $source_sha"
+      - name: Check whether Worker deployment inputs changed
+        id: impact
+        uses: actions/github-script@v7
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          FORCE_DEPLOY: ${{ github.event_name == 'workflow_dispatch' }}
+        with:
+          script: |
+            if (process.env.FORCE_DEPLOY === 'true') {
+              core.setOutput('should_deploy', 'true');
+              core.info('Manual dispatch explicitly requests a Worker deployment.');
+              return;
+            }
+
+            const { data: commit } = await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: process.env.SOURCE_SHA,
+              per_page: 100,
+            });
+            const files = (commit.files || []).map((file) => file.filename);
+            const safetyLimitReached = files.length >= 300;
+            const relevant = files.some((filename) =>
+              filename.startsWith('fabushi/web/') ||
+              filename.startsWith('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/'),
+            );
+            const shouldDeploy = safetyLimitReached || relevant;
+            core.setOutput('should_deploy', shouldDeploy ? 'true' : 'false');
+            await core.summary
+              .addHeading('Worker deployment impact')
+              .addRaw(`source=${process.env.SOURCE_SHA}\n`)
+              .addRaw(`changed_files=${files.length}\n`)
+              .addRaw(`should_deploy=${shouldDeploy}\n`)
+              .addRaw(safetyLimitReached ? 'reason=300-file safety limit reached; fail-safe deploy\n' : '')
+              .write();
 
   deploy-staging:
     name: Deploy staging Worker
     needs: resolve-source
+    if: needs.resolve-source.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -154,7 +191,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
           AUTH_SYSTEM_MAIL_URL: ${{ secrets.AUTH_SYSTEM_MAIL_URL }}
           AUTH_SYSTEM_MAIL_TOKEN: ${{ secrets.AUTH_SYSTEM_MAIL_TOKEN }}
-          AUTH_SYSTEM_MAIL_ENABLED: ${{ secrets.AUTH_SYSTEM_MAIL_ENABLED }}
         shell: bash
         run: |
           set -euo pipefail
@@ -162,7 +198,8 @@ jobs:
           [ -n "${AUTH_SYSTEM_MAIL_TOKEN:-}" ]
           printf '%s' "$AUTH_SYSTEM_MAIL_URL" | npx --yes wrangler@latest secret put AUTH_SYSTEM_MAIL_URL --config wrangler.development.ci.toml --env development
           printf '%s' "$AUTH_SYSTEM_MAIL_TOKEN" | npx --yes wrangler@latest secret put AUTH_SYSTEM_MAIL_TOKEN --config wrangler.development.ci.toml --env development
-          printf '%s' "${AUTH_SYSTEM_MAIL_ENABLED:-false}" | npx --yes wrangler@latest secret put AUTH_SYSTEM_MAIL_ENABLED --config wrangler.development.ci.toml --env development
+          # URL + token are required immediately above, so keep registration email enabled on every deployment.
+          printf '%s' 'true' | npx --yes wrangler@latest secret put AUTH_SYSTEM_MAIL_ENABLED --config wrangler.development.ci.toml --env development
 
   staging-e2e:
     name: Staging API E2E and smoke gate
@@ -279,7 +316,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
           AUTH_SYSTEM_MAIL_URL: ${{ secrets.AUTH_SYSTEM_MAIL_URL }}
           AUTH_SYSTEM_MAIL_TOKEN: ${{ secrets.AUTH_SYSTEM_MAIL_TOKEN }}
-          AUTH_SYSTEM_MAIL_ENABLED: ${{ secrets.AUTH_SYSTEM_MAIL_ENABLED }}
         shell: bash
         run: |
           set -euo pipefail
@@ -287,7 +323,8 @@ jobs:
           [ -n "${AUTH_SYSTEM_MAIL_TOKEN:-}" ]
           printf '%s' "$AUTH_SYSTEM_MAIL_URL" | npx --yes wrangler@latest secret put AUTH_SYSTEM_MAIL_URL --env production
           printf '%s' "$AUTH_SYSTEM_MAIL_TOKEN" | npx --yes wrangler@latest secret put AUTH_SYSTEM_MAIL_TOKEN --env production
-          printf '%s' "${AUTH_SYSTEM_MAIL_ENABLED:-false}" | npx --yes wrangler@latest secret put AUTH_SYSTEM_MAIL_ENABLED --env production
+          # URL + token are required immediately above, so keep registration email enabled on every deployment.
+          printf '%s' 'true' | npx --yes wrangler@latest secret put AUTH_SYSTEM_MAIL_ENABLED --env production
       - name: Deploy production Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
@@ -312,3 +349,16 @@ jobs:
           test -s /tmp/production-health.json
           status=$(curl -sS -o /tmp/production-auth.json -w '%{http_code}' "$PRODUCTION_API_URL/api/auth/user-info")
           test "$status" = "401" -o "$status" = "403"
+
+          browser_start_status=$(curl -sS -o /tmp/production-browser-start.json -w '%{http_code}' \
+            -H 'content-type: application/json' \
+            --data '{"platform":"desktop"}' \
+            "$PRODUCTION_API_URL/api/auth/browser/start")
+          test "$browser_start_status" = "200"
+          jq -e '.attemptId and .pollSecret and .loginUrl' /tmp/production-browser-start.json >/dev/null
+          ! grep -Fq 'This Cloudflare Worker is an API backend only.' /tmp/production-browser-start.json
+          login_url=$(jq -er '.loginUrl' /tmp/production-browser-start.json)
+          case "$login_url" in
+            "$PRODUCTION_API_URL/api/auth/browser/portal"*) ;;
+            *) echo "Production browser login escaped canonical API origin: $login_url" >&2; exit 1 ;;
+          esac

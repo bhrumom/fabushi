@@ -8,7 +8,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 const MAHAYANA_EDGE = 'mahayana-host';
 const NATIVE_EDGE = 'native-desktop';
 const MAHAYANA_RUNTIME_EVENT = 'runtime-event';
+const EDGE_CONTRACT_VERSION = 1;
 const NATIVE_EVENTS = new Set([
+  'app-agent-surface-request',
   'mcp-auth-completed',
   'focus-agent',
   'cloud-agent-open',
@@ -71,18 +73,61 @@ function subscribeEdge(edge, eventName, listener) {
   return () => ipcRenderer.off(channel, forward);
 }
 
+// Runtime bootstrap events are one-shot projections emitted by the Rust Host.
+// Keep one permanent preload listener so React surface transitions cannot drop
+// them across any number of HostClient/Messenger transport subscriptions. Retain
+// only the newest idempotent projection for the current authenticated account;
+// transient deltas remain live-only and account boundaries clear the snapshots.
+const MAHAYANA_REPLAYABLE_EVENTS = new Set([
+  'host.ready',
+  'conversation.listed',
+  'bot.listed',
+  'group.listed',
+  'settings.changed',
+]);
+const mahayanaRuntimeListeners = new Set();
+const mahayanaReplay = new Map();
+const MAHAYANA_REPLAY_RESET_METHODS = new Set([
+  'feature.auth.browserStart',
+  'feature.auth.passwordLogin',
+  'feature.auth.oauthStart',
+  'feature.auth.logout',
+]);
+
+function clearMahayanaReplay() {
+  mahayanaReplay.clear();
+}
+const mahayanaRuntimeChannel = eventChannel(MAHAYANA_EDGE, MAHAYANA_RUNTIME_EVENT);
+ipcRenderer.on(mahayanaRuntimeChannel, (_event, payload) => {
+  if (MAHAYANA_REPLAYABLE_EVENTS.has(payload?.type)) {
+    mahayanaReplay.set(payload.type, payload);
+  }
+  for (const listener of mahayanaRuntimeListeners) listener(payload);
+});
+
 const mahayana = Object.freeze({
-  invoke(method, params = {}) {
-    return invokeEdge(MAHAYANA_EDGE, method, params);
+  contractVersion: EDGE_CONTRACT_VERSION,
+  async invoke(method, params = {}) {
+    if (MAHAYANA_REPLAY_RESET_METHODS.has(method)) clearMahayanaReplay();
+    try {
+      return await invokeEdge(MAHAYANA_EDGE, method, params);
+    } finally {
+      if (method === 'feature.auth.logout') clearMahayanaReplay();
+    }
   },
   subscribe(listener) {
-    return subscribeEdge(MAHAYANA_EDGE, MAHAYANA_RUNTIME_EVENT, listener);
+    if (typeof listener !== 'function') return () => {};
+    mahayanaRuntimeListeners.add(listener);
+    const replay = Array.from(mahayanaReplay.values());
+    for (const payload of replay) listener(payload);
+    return () => mahayanaRuntimeListeners.delete(listener);
   },
 });
 
 contextBridge.exposeInMainWorld('mahayana', mahayana);
 
 contextBridge.exposeInMainWorld('fabushiNative', Object.freeze({
+  contractVersion: EDGE_CONTRACT_VERSION,
   invoke(method, params = {}) {
     return invokeEdge(NATIVE_EDGE, method, params);
   },
@@ -98,14 +143,7 @@ contextBridge.exposeInMainWorld('fabushiNative', Object.freeze({
 }));
 
 contextBridge.exposeInMainWorld('fabushi', Object.freeze({
-  // Compatibility facade while HostClient call sites migrate to the explicit
-  // Mahayana and native desktop bridges.
-  invoke(method, params = {}) {
-    return mahayana.invoke(method, params);
-  },
-  subscribe(listener) {
-    return mahayana.subscribe(listener);
-  },
+  contractVersion: EDGE_CONTRACT_VERSION,
   pickFile() {
     return ipcRenderer.invoke('fabushi:pick-file');
   },
@@ -120,5 +158,8 @@ contextBridge.exposeInMainWorld('fabushi', Object.freeze({
   },
   windowFocused() {
     return ipcRenderer.invoke('fabushi:window-focused');
+  },
+  registerMiniAppDocument(pluginId, html) {
+    return ipcRenderer.invoke('fabushi:register-miniapp-document', { pluginId, html });
   },
 }));

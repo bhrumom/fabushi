@@ -1,10 +1,12 @@
-use crate::actor::{Actor, ActorId, ActorKind, Presence};
+use crate::actor::{Actor, ActorId, ActorKind, Participant, ParticipantRole, Presence};
 use crate::bot::{BotExecution, BotInvocation, BotProfile, BotRegistry};
 use crate::community::{
     CommunityError, CommunityMember, CommunityState, ForumTopicState, InviteLink, JoinRequest,
     MemberStatus,
 };
-use crate::conversation::{Conversation, ConversationFolder, ConversationId, NotificationSettings};
+use crate::conversation::{
+    Conversation, ConversationDraft, ConversationFolder, ConversationId, NotificationSettings,
+};
 use crate::message::{
     ClientMessageId, DeliveryState, Message, MessageContent, MessageId, ReactionSummary,
 };
@@ -36,6 +38,19 @@ pub enum Command {
     UpsertConversation {
         conversation: Conversation,
     },
+    UpdateConversationInfo {
+        conversation_id: ConversationId,
+        title: String,
+        description: Option<String>,
+    },
+    SetConversationParticipant {
+        conversation_id: ConversationId,
+        participant: Participant,
+    },
+    RemoveConversationParticipant {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
+    },
     ArchiveConversation {
         conversation_id: ConversationId,
         archived: bool,
@@ -43,6 +58,14 @@ pub enum Command {
     PinConversation {
         conversation_id: ConversationId,
         pinned: bool,
+    },
+    SetMarkedUnread {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
+        marked_unread: bool,
+    },
+    SetDraft {
+        draft: ConversationDraft,
     },
     SetConversationNotifications {
         conversation_id: ConversationId,
@@ -111,6 +134,12 @@ pub enum Command {
         conversation_id: ConversationId,
         message_id: MessageId,
         pinned: bool,
+    },
+    VotePoll {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        actor_id: ActorId,
+        option_ids: Vec<String>,
     },
     CreateInvoice {
         invoice: Invoice,
@@ -243,6 +272,19 @@ pub enum Event {
     ConversationUpserted {
         conversation: Conversation,
     },
+    ConversationInfoUpdated {
+        conversation_id: ConversationId,
+        title: String,
+        description: Option<String>,
+    },
+    ConversationParticipantUpserted {
+        conversation_id: ConversationId,
+        participant: Participant,
+    },
+    ConversationParticipantRemoved {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
+    },
     ConversationArchived {
         conversation_id: ConversationId,
         archived: bool,
@@ -250,6 +292,14 @@ pub enum Event {
     ConversationPinned {
         conversation_id: ConversationId,
         pinned: bool,
+    },
+    ConversationMarkedUnread {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
+        marked_unread: bool,
+    },
+    DraftChanged {
+        draft: ConversationDraft,
     },
     ConversationNotificationsUpdated {
         conversation_id: ConversationId,
@@ -300,6 +350,12 @@ pub enum Event {
         message_id: MessageId,
         pinned: bool,
     },
+    PollVoteChanged {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        actor_id: ActorId,
+        option_ids: Vec<String>,
+    },
     InvoiceCreated {
         invoice: Invoice,
     },
@@ -347,6 +403,11 @@ pub struct MessagingState {
     pub conversations: BTreeMap<ConversationId, Conversation>,
     pub folders: BTreeMap<String, ConversationFolder>,
     pub messages: BTreeMap<ConversationId, BTreeMap<MessageId, Message>>,
+    pub read_cursors: BTreeMap<ConversationId, BTreeMap<ActorId, MessageId>>,
+    pub poll_votes:
+        BTreeMap<ConversationId, BTreeMap<MessageId, BTreeMap<ActorId, BTreeSet<String>>>>,
+    pub marked_unread_by_actor: BTreeMap<ConversationId, BTreeSet<ActorId>>,
+    pub drafts: BTreeMap<ConversationId, BTreeMap<ActorId, ConversationDraft>>,
     pub invoices: BTreeMap<String, Invoice>,
     pub orders: BTreeMap<String, PaymentOrder>,
     pub wallet: WalletLedger,
@@ -368,6 +429,8 @@ pub enum EngineError {
     InvalidConversation,
     #[error("conversation {0:?} does not exist")]
     ConversationNotFound(ConversationId),
+    #[error("conversation participant data is invalid")]
+    InvalidConversationParticipant,
     #[error("message {message_id:?} does not exist in conversation {conversation_id:?}")]
     MessageNotFound {
         conversation_id: ConversationId,
@@ -382,8 +445,21 @@ pub enum EngineError {
     InvalidClientMessageId,
     #[error("message id list must not be empty")]
     EmptyMessageList,
+    #[error("poll vote is invalid")]
+    InvalidPollVote,
     #[error("message is protected from forwarding")]
     ProtectedContent,
+    #[error("actor {actor_id:?} is not a participant of conversation {conversation_id:?}")]
+    SenderNotParticipant {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
+    },
+    #[error("conversation {0:?} does not allow sending messages")]
+    MessageSendPermissionDenied(ConversationId),
+    #[error("conversation {0:?} does not allow sending media")]
+    MediaSendPermissionDenied(ConversationId),
+    #[error("conversation {0:?} does not allow sending polls")]
+    PollSendPermissionDenied(ConversationId),
     #[error("secret conversations must contain exactly two participants")]
     InvalidSecretConversation,
     #[error("secret conversations only accept encrypted secret content or service messages")]
@@ -404,6 +480,12 @@ pub enum EngineError {
     CommunityNotFound(ConversationId),
     #[error("community administration permission denied")]
     CommunityPermissionDenied,
+    #[error("community {0:?} member is not allowed to send messages")]
+    CommunitySendRestricted(ConversationId),
+    #[error("community {0:?} member is not allowed to send media")]
+    CommunityMediaRestricted(ConversationId),
+    #[error("community {0:?} member is not allowed to send polls")]
+    CommunityPollRestricted(ConversationId),
     #[error(transparent)]
     Community(#[from] CommunityError),
     #[error("bot operation permission denied")]
@@ -441,24 +523,61 @@ pub struct MessagingEngine {
     state: MessagingState,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum CommunityAdminAction {
+    ChangeInfo,
+    InviteMembers,
+    BanMembers,
+    ManageTopics,
+    AddAdmins,
+}
+
+fn is_community_owner(community: &CommunityState, actor_id: &ActorId) -> bool {
+    community
+        .members
+        .get(actor_id)
+        .is_some_and(|member| matches!(member.status, MemberStatus::Owner))
+}
+
 fn require_community_admin(
     community: &CommunityState,
     actor_id: &ActorId,
+    action: CommunityAdminAction,
 ) -> Result<(), EngineError> {
     let allowed = community.members.get(actor_id).is_some_and(|member| {
-        matches!(member.status, MemberStatus::Owner)
-            || (matches!(member.status, MemberStatus::Administrator)
-                && (member.admin_rights.change_info
-                    || member.admin_rights.ban_members
-                    || member.admin_rights.invite_members
-                    || member.admin_rights.manage_topics
-                    || member.admin_rights.add_admins))
+        if matches!(member.status, MemberStatus::Owner) {
+            return true;
+        }
+        if !matches!(member.status, MemberStatus::Administrator) {
+            return false;
+        }
+        match action {
+            CommunityAdminAction::ChangeInfo => member.admin_rights.change_info,
+            CommunityAdminAction::InviteMembers => member.admin_rights.invite_members,
+            CommunityAdminAction::BanMembers => member.admin_rights.ban_members,
+            CommunityAdminAction::ManageTopics => member.admin_rights.manage_topics,
+            CommunityAdminAction::AddAdmins => member.admin_rights.add_admins,
+        }
     });
     if allowed {
         Ok(())
     } else {
         Err(EngineError::CommunityPermissionDenied)
     }
+}
+
+fn message_content_uses_media(content: &MessageContent) -> bool {
+    matches!(
+        content,
+        MessageContent::Photo { .. }
+            | MessageContent::Video { .. }
+            | MessageContent::Animation { .. }
+            | MessageContent::Audio { .. }
+            | MessageContent::Voice { .. }
+            | MessageContent::VideoNote { .. }
+            | MessageContent::Document { .. }
+            | MessageContent::Sticker { .. }
+    )
 }
 
 fn wallet_account_id(actor_id: &ActorId) -> WalletAccountId {
@@ -527,6 +646,52 @@ impl MessagingEngine {
                 }
                 Ok(vec![Event::ConversationUpserted { conversation }])
             }
+            Command::UpdateConversationInfo {
+                conversation_id,
+                title,
+                description,
+            } => {
+                self.require_conversation(&conversation_id)?;
+                if title.trim().is_empty() || title.trim().len() > 200 {
+                    return Err(EngineError::InvalidConversationParticipant);
+                }
+                Ok(vec![Event::ConversationInfoUpdated {
+                    conversation_id,
+                    title: title.trim().to_string(),
+                    description: description
+                        .map(|value| value.trim().to_string())
+                        .filter(|value| !value.is_empty()),
+                }])
+            }
+            Command::SetConversationParticipant {
+                conversation_id,
+                participant,
+            } => {
+                let conversation = self.require_conversation(&conversation_id)?;
+                self.require_actor(&participant.actor_id)?;
+                if conversation.owner_id.as_ref() == Some(&participant.actor_id)
+                    && !matches!(participant.role, ParticipantRole::Owner)
+                {
+                    return Err(EngineError::InvalidConversationParticipant);
+                }
+                Ok(vec![Event::ConversationParticipantUpserted {
+                    conversation_id,
+                    participant,
+                }])
+            }
+            Command::RemoveConversationParticipant {
+                conversation_id,
+                actor_id,
+            } => {
+                let conversation = self.require_conversation(&conversation_id)?;
+                if conversation.owner_id.as_ref() == Some(&actor_id) {
+                    return Err(EngineError::InvalidConversationParticipant);
+                }
+                Ok(vec![Event::ConversationParticipantRemoved {
+                    conversation_id,
+                    actor_id,
+                }])
+            }
             Command::ArchiveConversation {
                 conversation_id,
                 archived,
@@ -546,6 +711,24 @@ impl MessagingEngine {
                     conversation_id,
                     pinned,
                 }])
+            }
+            Command::SetMarkedUnread {
+                conversation_id,
+                actor_id,
+                marked_unread,
+            } => {
+                self.require_conversation(&conversation_id)?;
+                self.require_actor(&actor_id)?;
+                Ok(vec![Event::ConversationMarkedUnread {
+                    conversation_id,
+                    actor_id,
+                    marked_unread,
+                }])
+            }
+            Command::SetDraft { draft } => {
+                self.require_conversation(&draft.conversation_id)?;
+                self.require_actor(&draft.actor_id)?;
+                Ok(vec![Event::DraftChanged { draft }])
             }
             Command::SetConversationNotifications {
                 conversation_id,
@@ -574,6 +757,66 @@ impl MessagingEngine {
             } => {
                 let conversation = self.require_conversation(&conversation_id)?;
                 self.require_actor(&sender_id)?;
+                let sender_is_participant = conversation
+                    .participants
+                    .iter()
+                    .any(|participant| participant.actor_id == sender_id)
+                    || conversation.owner_id.as_ref() == Some(&sender_id);
+                if !sender_is_participant {
+                    return Err(EngineError::SenderNotParticipant {
+                        conversation_id: conversation_id.clone(),
+                        actor_id: sender_id.clone(),
+                    });
+                }
+                if !conversation.permissions.can_send_messages {
+                    return Err(EngineError::MessageSendPermissionDenied(
+                        conversation_id.clone(),
+                    ));
+                }
+                if message_content_uses_media(&content) && !conversation.permissions.can_send_media
+                {
+                    return Err(EngineError::MediaSendPermissionDenied(
+                        conversation_id.clone(),
+                    ));
+                }
+                if matches!(&content, MessageContent::Poll { .. })
+                    && !conversation.permissions.can_send_polls
+                {
+                    return Err(EngineError::PollSendPermissionDenied(
+                        conversation_id.clone(),
+                    ));
+                }
+                if let Some(member) = self
+                    .state
+                    .communities
+                    .get(&conversation_id)
+                    .and_then(|community| community.members.get(&sender_id))
+                {
+                    if matches!(member.status, MemberStatus::Left | MemberStatus::Banned)
+                        || (matches!(member.status, MemberStatus::Restricted)
+                            && member.restrictions.send_messages)
+                    {
+                        return Err(EngineError::CommunitySendRestricted(
+                            conversation_id.clone(),
+                        ));
+                    }
+                    if message_content_uses_media(&content)
+                        && matches!(member.status, MemberStatus::Restricted)
+                        && member.restrictions.send_media
+                    {
+                        return Err(EngineError::CommunityMediaRestricted(
+                            conversation_id.clone(),
+                        ));
+                    }
+                    if matches!(&content, MessageContent::Poll { .. })
+                        && matches!(member.status, MemberStatus::Restricted)
+                        && member.restrictions.send_polls
+                    {
+                        return Err(EngineError::CommunityPollRestricted(
+                            conversation_id.clone(),
+                        ));
+                    }
+                }
                 let is_secret_conversation = matches!(
                     conversation.kind,
                     crate::conversation::ConversationKind::Secret
@@ -806,6 +1049,41 @@ impl MessagingEngine {
                     pinned,
                 }])
             }
+            Command::VotePoll {
+                conversation_id,
+                message_id,
+                actor_id,
+                option_ids,
+            } => {
+                self.require_actor(&actor_id)?;
+                let message = self.require_message(&conversation_id, &message_id)?;
+                let (valid_ids, multiple_answers) = match &message.content {
+                    MessageContent::Poll {
+                        options,
+                        multiple_answers,
+                        ..
+                    } => (
+                        options
+                            .iter()
+                            .map(|option| option.id.clone())
+                            .collect::<BTreeSet<_>>(),
+                        *multiple_answers,
+                    ),
+                    _ => return Err(EngineError::InvalidPollVote),
+                };
+                let selected = option_ids.into_iter().collect::<BTreeSet<_>>();
+                if (!multiple_answers && selected.len() > 1)
+                    || selected.iter().any(|id| !valid_ids.contains(id))
+                {
+                    return Err(EngineError::InvalidPollVote);
+                }
+                Ok(vec![Event::PollVoteChanged {
+                    conversation_id,
+                    message_id,
+                    actor_id,
+                    option_ids: selected.into_iter().collect(),
+                }])
+            }
             Command::CreateInvoice { invoice } => {
                 if !invoice.is_valid() {
                     return Err(EngineError::InvalidInvoice);
@@ -1016,7 +1294,7 @@ impl MessagingEngine {
                     return Err(EngineError::CommunityPermissionDenied);
                 }
                 if let Some(existing) = self.state.communities.get(&community.conversation_id) {
-                    require_community_admin(existing, &actor_id)?;
+                    require_community_admin(existing, &actor_id, CommunityAdminAction::ChangeInfo)?;
                 } else if conversation.owner_id.as_ref() != Some(&actor_id)
                     && !conversation.participants.iter().any(|participant| {
                         participant.actor_id == actor_id
@@ -1039,7 +1317,26 @@ impl MessagingEngine {
                     .get(&conversation_id)
                     .cloned()
                     .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
-                require_community_admin(&community, &actor_id)?;
+                let caller_is_owner = is_community_owner(&community, &actor_id);
+                let target_is_owner = community
+                    .members
+                    .get(&member.actor_id)
+                    .is_some_and(|existing| matches!(existing.status, MemberStatus::Owner));
+                if (target_is_owner || matches!(member.status, MemberStatus::Owner))
+                    && !caller_is_owner
+                {
+                    return Err(EngineError::CommunityPermissionDenied);
+                }
+                let action = match member.status {
+                    MemberStatus::Owner | MemberStatus::Administrator => {
+                        CommunityAdminAction::AddAdmins
+                    }
+                    MemberStatus::Restricted | MemberStatus::Left | MemberStatus::Banned => {
+                        CommunityAdminAction::BanMembers
+                    }
+                    MemberStatus::Member => CommunityAdminAction::InviteMembers,
+                };
+                require_community_admin(&community, &actor_id, action)?;
                 community.upsert_member(member);
                 Ok(vec![Event::CommunityChanged { community }])
             }
@@ -1052,7 +1349,11 @@ impl MessagingEngine {
                     .ok_or_else(|| {
                         EngineError::CommunityNotFound(invite.conversation_id.clone())
                     })?;
-                require_community_admin(&community, &actor_id)?;
+                require_community_admin(
+                    &community,
+                    &actor_id,
+                    CommunityAdminAction::InviteMembers,
+                )?;
                 if invite.creator_id != actor_id
                     || invite.id.trim().is_empty()
                     || invite.token.trim().is_empty()
@@ -1074,7 +1375,11 @@ impl MessagingEngine {
                     .get(&conversation_id)
                     .cloned()
                     .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
-                require_community_admin(&community, &actor_id)?;
+                require_community_admin(
+                    &community,
+                    &actor_id,
+                    CommunityAdminAction::InviteMembers,
+                )?;
                 community.revoke_invite(&invite_id)?;
                 Ok(vec![Event::CommunityChanged { community }])
             }
@@ -1106,7 +1411,11 @@ impl MessagingEngine {
                     .get(&conversation_id)
                     .cloned()
                     .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
-                require_community_admin(&community, &actor_id)?;
+                require_community_admin(
+                    &community,
+                    &actor_id,
+                    CommunityAdminAction::InviteMembers,
+                )?;
                 if approved {
                     community.approve_join(&requester_id, &actor_id, decided_at_ms)?;
                 } else {
@@ -1124,7 +1433,7 @@ impl MessagingEngine {
                     .get(&topic.conversation_id)
                     .cloned()
                     .ok_or_else(|| EngineError::CommunityNotFound(topic.conversation_id.clone()))?;
-                require_community_admin(&community, &actor_id)?;
+                require_community_admin(&community, &actor_id, CommunityAdminAction::ManageTopics)?;
                 if topic.id.trim().is_empty() {
                     return Err(EngineError::CommunityPermissionDenied);
                 }
@@ -1142,7 +1451,7 @@ impl MessagingEngine {
                     .get(&conversation_id)
                     .cloned()
                     .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
-                require_community_admin(&community, &actor_id)?;
+                require_community_admin(&community, &actor_id, CommunityAdminAction::ManageTopics)?;
                 community.topics.remove(&topic_id);
                 Ok(vec![Event::CommunityChanged { community }])
             }
@@ -1295,6 +1604,51 @@ impl MessagingEngine {
                     .conversations
                     .insert(conversation.id.clone(), conversation);
             }
+            Event::ConversationInfoUpdated {
+                conversation_id,
+                title,
+                description,
+            } => {
+                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
+                    conversation.title = title;
+                    conversation.description = description;
+                }
+            }
+            Event::ConversationParticipantUpserted {
+                conversation_id,
+                participant,
+            } => {
+                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
+                    if let Some(existing) = conversation
+                        .participants
+                        .iter_mut()
+                        .find(|item| item.actor_id == participant.actor_id)
+                    {
+                        *existing = participant;
+                    } else {
+                        conversation.participants.push(participant);
+                    }
+                }
+            }
+            Event::ConversationParticipantRemoved {
+                conversation_id,
+                actor_id,
+            } => {
+                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
+                    conversation
+                        .participants
+                        .retain(|participant| participant.actor_id != actor_id);
+                }
+                if let Some(cursors) = self.state.read_cursors.get_mut(&conversation_id) {
+                    cursors.remove(&actor_id);
+                }
+                if let Some(drafts) = self.state.drafts.get_mut(&conversation_id) {
+                    drafts.remove(&actor_id);
+                }
+                if let Some(marked) = self.state.marked_unread_by_actor.get_mut(&conversation_id) {
+                    marked.remove(&actor_id);
+                }
+            }
             Event::ConversationArchived {
                 conversation_id,
                 archived,
@@ -1309,6 +1663,44 @@ impl MessagingEngine {
             } => {
                 if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
                     conversation.pinned = pinned;
+                }
+            }
+            Event::ConversationMarkedUnread {
+                conversation_id,
+                actor_id,
+                marked_unread,
+            } => {
+                let actors = self
+                    .state
+                    .marked_unread_by_actor
+                    .entry(conversation_id.clone())
+                    .or_default();
+                if marked_unread {
+                    actors.insert(actor_id.clone());
+                } else {
+                    actors.remove(&actor_id);
+                }
+                if actors.is_empty() {
+                    self.state.marked_unread_by_actor.remove(&conversation_id);
+                }
+                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
+                    conversation.marked_unread = marked_unread;
+                }
+            }
+            Event::DraftChanged { draft } => {
+                if draft.text.trim().is_empty() && draft.reply_to_message_id.is_none() {
+                    if let Some(by_actor) = self.state.drafts.get_mut(&draft.conversation_id) {
+                        by_actor.remove(&draft.actor_id);
+                        if by_actor.is_empty() {
+                            self.state.drafts.remove(&draft.conversation_id);
+                        }
+                    }
+                } else {
+                    self.state
+                        .drafts
+                        .entry(draft.conversation_id.clone())
+                        .or_default()
+                        .insert(draft.actor_id.clone(), draft);
                 }
             }
             Event::ConversationNotificationsUpdated {
@@ -1406,9 +1798,22 @@ impl MessagingEngine {
             }
             Event::ConversationRead {
                 conversation_id,
+                actor_id,
                 message_id,
-                ..
             } => {
+                self.state
+                    .read_cursors
+                    .entry(conversation_id.clone())
+                    .or_default()
+                    .insert(actor_id.clone(), message_id.clone());
+                if let Some(actors) = self.state.marked_unread_by_actor.get_mut(&conversation_id) {
+                    actors.remove(&actor_id);
+                    if actors.is_empty() {
+                        self.state.marked_unread_by_actor.remove(&conversation_id);
+                    }
+                }
+                // Keep legacy snapshot fields coherent for older readers. Actor-specific
+                // clients receive the authoritative read state from the projected sync view.
                 if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
                     conversation.last_read_message_id = Some(message_id.0);
                     conversation.unread_count = 0;
@@ -1453,6 +1858,44 @@ impl MessagingEngine {
                         .retain(|id| id != &message_id.0);
                     if pinned {
                         conversation.pinned_message_ids.push(message_id.0);
+                    }
+                }
+            }
+            Event::PollVoteChanged {
+                conversation_id,
+                message_id,
+                actor_id,
+                option_ids,
+            } => {
+                let selected = option_ids.into_iter().collect::<BTreeSet<_>>();
+                let by_message = self
+                    .state
+                    .poll_votes
+                    .entry(conversation_id.clone())
+                    .or_default();
+                let by_actor = by_message.entry(message_id.clone()).or_default();
+                if selected.is_empty() {
+                    by_actor.remove(&actor_id);
+                } else {
+                    by_actor.insert(actor_id, selected);
+                }
+                if let Some(message) = self
+                    .state
+                    .messages
+                    .get_mut(&conversation_id)
+                    .and_then(|messages| messages.get_mut(&message_id))
+                {
+                    if let MessageContent::Poll { options, .. } = &mut message.content {
+                        for option in options {
+                            option.voter_count = u32::try_from(
+                                by_actor
+                                    .values()
+                                    .filter(|votes| votes.contains(&option.id))
+                                    .count(),
+                            )
+                            .unwrap_or(u32::MAX);
+                            option.chosen = false;
+                        }
                     }
                 }
             }

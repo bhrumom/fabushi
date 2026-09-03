@@ -53,6 +53,9 @@ const DEFAULT_API_BASE_URL: &str = "https://api.ombhrum.com";
 const MAHAYANA_ACCOUNT_SESSION_SECRET: &str = "MAHAYANA_ACCOUNT_SESSION";
 const MAHAYANA_TEST_ACCOUNT_TOKEN_ENV: &str = "MAHAYANA_TEST_ACCOUNT_TOKEN";
 const MAHAYANA_TEST_ACCOUNT_MARKER: &str = "test-account-login.sha256";
+const FABUSHI_CI_ACCOUNT_SESSION_FILE_ENV: &str = "FABUSHI_CI_ACCOUNT_SESSION_FILE";
+const GITHUB_ACTIONS_ENV: &str = "GITHUB_ACTIONS";
+const CI_ACCOUNT_SESSION_MAX_BYTES: u64 = 64 * 1024;
 const ACCESS_TOKEN_REFRESH_SKEW_SECONDS: i64 = 60;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -343,7 +346,7 @@ fn default_surface_bots() -> Vec<BotSummary> {
             notifications_enabled: true,
             notify_on_updates: true,
             unread: false,
-            conversation_id: Some("codex:agent:assistant".into()),
+            conversation_id: Some("mahayana-ai:agent:assistant".into()),
         },
         BotSummary {
             id: "research-bot".into(),
@@ -498,6 +501,20 @@ fn safe_skill_directory_name(skill_id: &str) -> Result<String, ProductError> {
     Ok(value.to_string())
 }
 
+fn product_auth_secrets_namespace(configured: Option<&str>) -> LocalSecretsNamespace {
+    match configured.map(str::trim) {
+        Some("fabushi-desktop-v2") => LocalSecretsNamespace::FabushiDesktopAuth,
+        _ => LocalSecretsNamespace::MahayanaAuth,
+    }
+}
+
+fn product_managed_secrets_namespace(configured: Option<&str>) -> LocalSecretsNamespace {
+    match configured.map(str::trim) {
+        Some("fabushi-desktop-v2") => LocalSecretsNamespace::FabushiDesktopManagedSecrets,
+        _ => LocalSecretsNamespace::ManagedSecrets,
+    }
+}
+
 pub fn default_mahayana_home() -> PathBuf {
     if let Some(path) = env::var_os("MAHAYANA_HOME")
         .filter(|value| !value.is_empty())
@@ -573,12 +590,16 @@ impl MahayanaProductClient {
             secrets_manager: SecretsManager::new_with_namespace(
                 mahayana_home.clone(),
                 SecretsBackendKind::Local,
-                LocalSecretsNamespace::MahayanaAuth,
+                product_auth_secrets_namespace(
+                    env::var("MAHAYANA_AUTH_STORAGE_NAMESPACE").ok().as_deref(),
+                ),
             ),
             managed_secrets: SecretsManager::new_with_namespace(
                 mahayana_home,
                 SecretsBackendKind::Local,
-                LocalSecretsNamespace::ManagedSecrets,
+                product_managed_secrets_namespace(
+                    env::var("MAHAYANA_AUTH_STORAGE_NAMESPACE").ok().as_deref(),
+                ),
             ),
         };
         client.import_legacy_session_if_needed();
@@ -596,112 +617,6 @@ impl MahayanaProductClient {
         let name = managed_secret_name(secret_request_id)?;
         self.managed_secrets
             .get(&SecretScope::Global, &name)
-            .map_err(secrets_error)
-    }
-
-    /// Returns a credential bound to one trusted connector field. The target
-    /// is hashed into the encrypted secret name, so neither connector ids nor
-    /// field names become a plaintext storage filename.
-    pub fn connector_secret(
-        &self,
-        connector: &str,
-        field: &str,
-    ) -> Result<Option<String>, ProductError> {
-        let name = connector_secret_name(connector, field)?;
-        self.managed_secrets
-            .get(&SecretScope::Global, &name)
-            .map_err(secrets_error)
-    }
-
-    pub fn connector_secret_for_platform(
-        &self,
-        connector: &str,
-        platform: &str,
-        field: &str,
-    ) -> Result<Option<String>, ProductError> {
-        let name = connector_secret_name_for_platform(connector, platform, field)?;
-        self.managed_secrets
-            .get(&SecretScope::Global, &name)
-            .map_err(secrets_error)
-    }
-
-    /// Stores a credential for the trusted connector final hop. The value is
-    /// accepted only by the Rust-owned host and is never returned to UI/model
-    /// callers.
-    pub fn store_connector_secret(
-        &self,
-        connector: &str,
-        field: &str,
-        value: &str,
-    ) -> Result<(), ProductError> {
-        if value.trim().is_empty() {
-            return Err(ProductError::State("secret value must not be empty".into()));
-        }
-        let name = connector_secret_name(connector, field)?;
-        self.managed_secrets
-            .set(&SecretScope::Global, &name, value)
-            .map_err(secrets_error)
-    }
-
-    pub fn store_connector_secret_for_platform(
-        &self,
-        connector: &str,
-        platform: &str,
-        field: &str,
-        value: &str,
-    ) -> Result<(), ProductError> {
-        if value.trim().is_empty() {
-            return Err(ProductError::State("secret value must not be empty".into()));
-        }
-        let name = connector_secret_name_for_platform(connector, platform, field)?;
-        self.managed_secrets
-            .set(&SecretScope::Global, &name, value)
-            .map_err(secrets_error)
-    }
-
-    /// Removes a credential bound to one connector field without exposing the
-    /// previous value.
-    pub fn revoke_connector_secret(
-        &self,
-        connector: &str,
-        field: &str,
-    ) -> Result<bool, ProductError> {
-        let name = connector_secret_name(connector, field)?;
-        self.managed_secrets
-            .delete(&SecretScope::Global, &name)
-            .map_err(secrets_error)
-    }
-
-    pub fn revoke_connector_secret_for_platform(
-        &self,
-        connector: &str,
-        platform: &str,
-        field: &str,
-    ) -> Result<bool, ProductError> {
-        let name = connector_secret_name_for_platform(connector, platform, field)?;
-        self.managed_secrets
-            .delete(&SecretScope::Global, &name)
-            .map_err(secrets_error)
-    }
-
-    /// Stores a user-provided Agent credential in the encrypted managed
-    /// namespace. The value is accepted only at the Rust host boundary; this
-    /// method intentionally returns no secret material to the caller.
-    pub fn store_managed_secret(
-        &self,
-        secret_request_id: &str,
-        value: &str,
-    ) -> Result<(), ProductError> {
-        let secret_request_id = secret_request_id.trim();
-        if secret_request_id.is_empty() {
-            return Err(ProductError::InvalidParameter("secretRequestId"));
-        }
-        if value.trim().is_empty() {
-            return Err(ProductError::State("secret value must not be empty".into()));
-        }
-        let name = managed_secret_name(secret_request_id)?;
-        self.managed_secrets
-            .set(&SecretScope::Global, &name, value)
             .map_err(secrets_error)
     }
 
@@ -760,6 +675,53 @@ impl MahayanaProductClient {
         }
     }
 
+    /// Validates an explicitly provisioned GitHub Actions account session.
+    /// The session is short-lived, contains no refresh token, and is read from
+    /// a private file owned by the workflow. Ordinary application launches do
+    /// not accept this path, even if an inherited environment variable exists.
+    pub fn bootstrap_ci_test_account_session(&self) -> Result<bool, ProductError> {
+        if env::var(GITHUB_ACTIONS_ENV).ok().as_deref() != Some("true") {
+            return Ok(false);
+        }
+        let Some(path) =
+            env::var_os(FABUSHI_CI_ACCOUNT_SESSION_FILE_ENV).filter(|value| !value.is_empty())
+        else {
+            return Ok(false);
+        };
+        load_ci_account_session_file(Path::new(&path), now_seconds())?;
+        Ok(true)
+    }
+
+    /// Returns the current account access credential to the trusted desktop
+    /// main process so the installed application can register its own remote
+    /// device. Refresh credentials never leave the Rust-owned session store.
+    pub fn device_agent_session(&self) -> Result<Value, ProductError> {
+        let session = self.required_session()?;
+        let access_token = self.active_session_token(session)?;
+        let current = self.required_session()?;
+        let session_id = optional_string(&current, "sessionId")
+            .ok_or_else(|| ProductError::Session("account session is missing sessionId".into()))?;
+        let device_id = optional_string(&current, "deviceId")
+            .ok_or_else(|| ProductError::Session("account session is missing deviceId".into()))?;
+        let user = current.get("user").cloned().unwrap_or(Value::Null);
+        let user_id = current
+            .get("userId")
+            .cloned()
+            .or_else(|| user.get("id").cloned())
+            .ok_or_else(|| ProductError::Session("account session is missing userId".into()))?;
+        Ok(json!({
+            "accessToken": access_token,
+            "accessTokenExpiresAt": explicit_expiration_seconds(&current),
+            "sessionId": session_id,
+            "deviceId": device_id,
+            "username": current.get("username").cloned().unwrap_or(Value::Null),
+            "userId": user_id,
+            "user": user,
+            "provider": current.get("provider").cloned().unwrap_or(Value::String("official".into())),
+            "ciRunner": current.get("ciRunner").and_then(Value::as_bool).unwrap_or(false),
+        }))
+    }
+
     /// Stores the environment-provisioned smoke-test credential in the same
     /// encrypted Mahayana session backend used by normal account logins. On a
     /// headless CI runner without an OS keyring, only a SHA-256 login marker is
@@ -813,8 +775,9 @@ impl MahayanaProductClient {
         if let Some(platform) = platform {
             parameters.push(("platform", platform));
         }
-        let token = self.optional_authorization_token(&Value::Null)?;
-        self.get_json("/v1/marketplace/plugins", &parameters, token.as_deref())
+        // Public marketplace discovery must never be coupled to account-token
+        // refresh. A revoked login must not hide publicly approved Mini Apps.
+        self.get_json("/v1/marketplace/plugins", &parameters, None)
     }
 
     pub fn marketplace_release_metadata(
@@ -824,11 +787,10 @@ impl MahayanaProductClient {
     ) -> Result<Value, ProductError> {
         let plugin_id = safe_path_identifier(plugin_id, "pluginId")?;
         let version = safe_marketplace_version(version)?;
-        let token = self.optional_authorization_token(&Value::Null)?;
         self.get_json(
             &format!("/v1/marketplace/plugins/{plugin_id}/releases/{version}"),
             &[],
-            token.as_deref(),
+            None,
         )
     }
 
@@ -840,18 +802,13 @@ impl MahayanaProductClient {
     ) -> Result<Vec<u8>, ProductError> {
         let plugin_id = safe_path_identifier(plugin_id, "pluginId")?;
         let version = safe_marketplace_version(version)?;
-        let token = self.optional_authorization_token(&Value::Null)?;
         let client = http_client()?;
-        let mut request = client
+        let response = client
             .get(format!(
                 "{}/v1/marketplace/plugins/{plugin_id}/releases/{version}/download",
                 self.api_base_url
             ))
-            .header("Accept", "application/gzip, application/octet-stream");
-        if let Some(token) = token {
-            request = request.bearer_auth(token);
-        }
-        let response = request
+            .header("Accept", "application/gzip, application/octet-stream")
             .send()
             .map_err(|error| ProductError::Transport(error.to_string()))?;
         if !response.status().is_success() {
@@ -1566,7 +1523,13 @@ impl MahayanaProductClient {
                 value,
                 ..
             } => {
-                self.store_managed_secret(&secret_request_id, &value)?;
+                if value.is_empty() {
+                    return Err(ProductError::State("secret value must not be empty".into()));
+                }
+                let name = managed_secret_name(&secret_request_id)?;
+                self.managed_secrets
+                    .set(&SecretScope::Global, &name, &value)
+                    .map_err(secrets_error)?;
                 // Never echo the secret or its encrypted storage key. The
                 // opaque request id is the only renderer-visible handle.
                 json!({"provided": true, "secretRequestId": secret_request_id})
@@ -1849,13 +1812,21 @@ impl MahayanaProductClient {
     fn auth_status(&self, request: &Value) -> Result<Value, ProductError> {
         let command_token = access_token(request);
         let session = self.load_session()?;
-        let Some(token) = (match command_token {
+        let token = match command_token {
             Some(token) => Some(token.to_string()),
-            None => session
-                .clone()
-                .map(|session| self.active_session_token(session))
-                .transpose()?,
-        }) else {
+            None => match session.clone() {
+                Some(session) => match self.active_session_token(session) {
+                    Ok(token) => Some(token),
+                    Err(error) if terminal_session_error(&error) => {
+                        self.remove_session()?;
+                        None
+                    }
+                    Err(error) => return Err(error),
+                },
+                None => None,
+            },
+        };
+        let Some(token) = token else {
             return Ok(json!({
                 "@type": "mahayana.auth.status",
                 "loggedIn": false,
@@ -2416,7 +2387,14 @@ impl MahayanaProductClient {
         if let Some(device_id) = optional_string(&session, "deviceId") {
             body["deviceId"] = Value::String(device_id.to_string());
         }
-        let response = self.post_json("/api/auth/refresh", body, None)?;
+        let response = match self.post_json("/api/auth/refresh", body, None) {
+            Ok(response) => response,
+            Err(error) if terminal_session_error(&error) => {
+                self.remove_session()?;
+                return Err(error);
+            }
+            Err(error) => return Err(error),
+        };
         let refreshed_token = access_token(&response).map(str::to_string).ok_or_else(|| {
             ProductError::Response("refresh response did not include an access token".to_string())
         })?;
@@ -2426,11 +2404,32 @@ impl MahayanaProductClient {
     }
 
     fn load_session(&self) -> Result<Option<Value>, ProductError> {
+        if let Some(path) =
+            env::var_os(FABUSHI_CI_ACCOUNT_SESSION_FILE_ENV).filter(|value| !value.is_empty())
+        {
+            if env::var(GITHUB_ACTIONS_ENV).ok().as_deref() != Some("true") {
+                return Err(ProductError::Session(
+                    "CI account session files are accepted only inside GitHub Actions".into(),
+                ));
+            }
+            return load_ci_account_session_file(Path::new(&path), now_seconds()).map(Some);
+        }
         let name = account_session_secret_name()?;
-        let stored = self
-            .secrets_manager
-            .get(&SecretScope::Global, &name)
-            .map_err(secrets_error)?;
+        let stored = match self.secrets_manager.get(&SecretScope::Global, &name) {
+            Ok(stored) => stored,
+            Err(error) if unreadable_auth_store_error(&error) => {
+                // A mobile app update can preserve the encrypted auth file while
+                // the OS keyring entry is rotated or becomes unavailable. The
+                // old session is unrecoverable in that state, so quarantine only
+                // the auth namespace and continue as signed out. Managed/requested
+                // secrets use an independent namespace and are left untouched.
+                self.secrets_manager
+                    .quarantine_unreadable_store()
+                    .map_err(secrets_error)?;
+                None
+            }
+            Err(error) => return Err(secrets_error(error)),
+        };
         if let Some(raw) = stored {
             return serde_json::from_str(&raw)
                 .map(Some)
@@ -2738,6 +2737,8 @@ fn safe_marketplace_platform(value: &str) -> Result<&str, ProductError> {
         "desktop" => Ok("desktop"),
         "mobile" => Ok("mobile"),
         "web" => Ok("web"),
+        "ios" => Ok("ios"),
+        "android" => Ok("android"),
         _ => Err(ProductError::InvalidParameter("platform")),
     }
 }
@@ -2797,42 +2798,84 @@ fn managed_secret_name(secret_request_id: &str) -> Result<SecretName, ProductErr
     SecretName::new(&format!("MAHAYANA_REQUESTED_SECRET_{digest:X}")).map_err(secrets_error)
 }
 
-fn connector_secret_name(connector: &str, field: &str) -> Result<SecretName, ProductError> {
-    let connector = validate_connector_secret_target(connector, "connector")?;
-    let field = validate_connector_secret_target(field, "field")?;
-    let target = format!("{connector}\0{field}");
-    let digest = sha2::Sha256::digest(target.as_bytes());
-    SecretName::new(&format!("MAHAYANA_CONNECTOR_SECRET_{digest:X}")).map_err(secrets_error)
+fn ci_session_identifier(value: Option<&Value>) -> Option<String> {
+    match value {
+        Some(Value::String(value)) if !value.trim().is_empty() && value.len() <= 200 => {
+            Some(value.trim().to_string())
+        }
+        Some(Value::Number(value)) => Some(value.to_string()),
+        _ => None,
+    }
 }
 
-fn connector_secret_name_for_platform(
-    connector: &str,
-    platform: &str,
-    field: &str,
-) -> Result<SecretName, ProductError> {
-    let connector = validate_connector_secret_target(connector, "connector")?;
-    let platform = validate_connector_secret_target(platform, "platform")?;
-    let field = validate_connector_secret_target(field, "field")?;
-    let target = format!("{connector}\0{platform}\0{field}");
-    let digest = sha2::Sha256::digest(target.as_bytes());
-    SecretName::new(&format!("MAHAYANA_CONNECTOR_PLATFORM_SECRET_{digest:X}"))
-        .map_err(secrets_error)
-}
-
-fn validate_connector_secret_target<'a>(
-    value: &'a str,
-    parameter: &'static str,
-) -> Result<&'a str, ProductError> {
-    let value = value.trim();
-    if value.is_empty()
-        || value.chars().count() > 160
-        || !value.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | ':' | '/' | '-')
-        })
-    {
-        return Err(ProductError::InvalidParameter(parameter));
+fn validate_ci_account_session(value: Value, now: i64) -> Result<Value, ProductError> {
+    let token = access_token(&value)
+        .ok_or_else(|| ProductError::Session("CI account session is missing accessToken".into()))?;
+    let token_is_safe = (32..=16 * 1024).contains(&token.len())
+        && !token
+            .bytes()
+            .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control());
+    let session_id = optional_string(&value, "sessionId").unwrap_or_default();
+    let device_id = optional_string(&value, "deviceId").unwrap_or_default();
+    let username = optional_string(&value, "username").unwrap_or_default();
+    let user_id = ci_session_identifier(value.get("userId"));
+    let nested_user_id = ci_session_identifier(value.get("user").and_then(|user| user.get("id")));
+    let expires_at = explicit_expiration_seconds(&value).unwrap_or_default();
+    let valid = value.get("provider").and_then(Value::as_str) == Some("github-actions")
+        && value.get("ciRunner").and_then(Value::as_bool) == Some(true)
+        && value.get("tokenType").and_then(Value::as_str) == Some("Bearer")
+        && value.get("refreshToken").is_none()
+        && token_is_safe
+        && session_id.starts_with("ci-runner:")
+        && device_id.starts_with("gha-")
+        && device_id.ends_with("-interactive")
+        && !username.is_empty()
+        && username.chars().count() <= 320
+        && user_id.is_some()
+        && user_id == nested_user_id
+        && expires_at > now.saturating_add(30)
+        && expires_at <= now.saturating_add(5 * 60 * 60);
+    if !valid {
+        return Err(ProductError::Session(
+            "CI account session failed its provenance, identity, or lifetime contract".into(),
+        ));
     }
     Ok(value)
+}
+
+fn load_ci_account_session_file(path: &Path, now: i64) -> Result<Value, ProductError> {
+    let metadata = std::fs::symlink_metadata(path).map_err(|error| {
+        ProductError::Session(format!("read CI account session metadata: {error}"))
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(ProductError::Session(
+            "CI account session path must be a regular non-symlink file".into(),
+        ));
+    }
+    if metadata.len() == 0 || metadata.len() > CI_ACCOUNT_SESSION_MAX_BYTES {
+        return Err(ProductError::Session(
+            "CI account session file has an invalid size".into(),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err(ProductError::Session(
+                "CI account session file must not be readable by group or other users".into(),
+            ));
+        }
+    }
+    let bytes = std::fs::read(path)
+        .map_err(|error| ProductError::Session(format!("read CI account session: {error}")))?;
+    if bytes.len() as u64 > CI_ACCOUNT_SESSION_MAX_BYTES {
+        return Err(ProductError::Session(
+            "CI account session file exceeds the size limit".into(),
+        ));
+    }
+    let value = serde_json::from_slice::<Value>(&bytes)
+        .map_err(|error| ProductError::Session(format!("parse CI account session: {error}")))?;
+    validate_ci_account_session(value, now)
 }
 
 fn merge_refreshed_session(session: Value, response: Value, access_token: &str) -> Value {
@@ -2931,6 +2974,14 @@ fn validate_surface_draft(draft: &MessageDraft) -> Result<(), ProductError> {
     Ok(())
 }
 
+fn unreadable_auth_store_error(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        let message = cause.to_string();
+        message.contains("failed to decrypt secrets file")
+            || message.contains("failed to decode secrets file at")
+    })
+}
+
 fn secrets_error(error: anyhow::Error) -> ProductError {
     ProductError::Session(error.to_string())
 }
@@ -2953,6 +3004,7 @@ fn typed_session(
     );
     output.insert("provider".to_string(), Value::String(provider.to_string()));
     output.insert("sessionStored".to_string(), Value::Bool(session_stored));
+    output.insert("loggedIn".to_string(), Value::Bool(session_stored));
     strip_credentials(&mut output);
     Ok(Value::Object(output))
 }
@@ -3185,6 +3237,15 @@ impl std::fmt::Display for ProductError {
 
 impl std::error::Error for ProductError {}
 
+fn terminal_session_error(error: &ProductError) -> bool {
+    matches!(
+        error,
+        ProductError::NotLoggedIn
+            | ProductError::SessionExpired
+            | ProductError::HttpStatus { status: 401, .. }
+    )
+}
+
 pub fn redact_secrets(value: &Value) -> Value {
     match value {
         Value::Object(object) => {
@@ -3289,6 +3350,67 @@ mod tests {
     }
 
     #[test]
+    fn marketplace_browse_is_public_and_omits_authorization() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind marketplace test server");
+        let address = listener.local_addr().expect("marketplace test address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept marketplace request");
+            let mut request = [0_u8; 4096];
+            let size = stream.read(&mut request).expect("read marketplace request");
+            let request = String::from_utf8_lossy(&request[..size]);
+            assert!(request.starts_with("GET /v1/marketplace/plugins?q=global&platform=desktop "));
+            assert!(!request.to_ascii_lowercase().contains("authorization:"));
+            let body = r#"{"plugins":[{"pluginId":"global-dharma","displayName":"全球法布施"}]}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write marketplace response");
+        });
+
+        let unique = format!(
+            "mahayana-public-marketplace-test-{}-{}",
+            std::process::id(),
+            surface_now_millis()
+        );
+        let root = std::env::temp_dir().join(unique);
+        let client = MahayanaProductClient::new_with_surface_state_path(
+            format!("http://{address}"),
+            root.join("session.json"),
+            root.join("product-surface.json"),
+        );
+        let catalog = client
+            .marketplace_browse(Some("global"), Some("desktop"))
+            .expect("public marketplace must not require account authorization");
+        assert_eq!(catalog["plugins"][0]["pluginId"], "global-dharma");
+        server.join().expect("join marketplace test server");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn terminal_session_errors_are_classified_for_local_eviction() {
+        assert!(terminal_session_error(&ProductError::NotLoggedIn));
+        assert!(terminal_session_error(&ProductError::SessionExpired));
+        assert!(terminal_session_error(&ProductError::HttpStatus {
+            status: 401,
+            message: "refresh_token_reused".into(),
+        }));
+        assert!(!terminal_session_error(&ProductError::HttpStatus {
+            status: 503,
+            message: "upstream unavailable".into(),
+        }));
+        assert!(!terminal_session_error(&ProductError::Transport(
+            "timeout".into()
+        )));
+    }
+
+    #[test]
     fn marketplace_site_manifest_must_match_release_metadata() {
         let digest = "a".repeat(64);
         let manifest = json!({
@@ -3355,14 +3477,51 @@ mod tests {
             Err(ProductError::InvalidParameter("packageSha256"))
         );
         assert_eq!(safe_marketplace_platform("desktop"), Ok("desktop"));
+        assert_eq!(safe_marketplace_platform("ios"), Ok("ios"));
+        assert_eq!(safe_marketplace_platform("android"), Ok("android"));
         assert_eq!(
-            safe_marketplace_platform("android"),
-            Err(ProductError::InvalidParameter("platform"))
+            safe_marketplace_platforms(&[
+                "desktop".into(),
+                "ios".into(),
+                "android".into(),
+                "desktop".into(),
+                "cli".into(),
+            ]),
+            Ok(vec!["desktop", "ios", "android", "cli"])
         );
+    }
+
+    #[test]
+    fn ci_account_session_requires_short_lived_github_actions_provenance() {
+        let now = now_seconds();
+        let session = json!({
+            "accessToken": "a".repeat(64),
+            "tokenType": "Bearer",
+            "accessTokenExpiresAt": now + 4 * 60 * 60,
+            "sessionId": "ci-runner:12345:1",
+            "deviceId": "gha-12345-1-interactive",
+            "username": "linked-github-user",
+            "userId": "42",
+            "user": {"id": "42", "username": "linked-github-user"},
+            "provider": "github-actions",
+            "ciRunner": true,
+        });
         assert_eq!(
-            safe_marketplace_platforms(&["desktop".into(), "desktop".into(), "cli".into()]),
-            Ok(vec!["desktop", "cli"])
+            validate_ci_account_session(session.clone(), now),
+            Ok(session.clone())
         );
+        let mut with_refresh = session.clone();
+        with_refresh["refreshToken"] = Value::String("forbidden".into());
+        assert!(validate_ci_account_session(with_refresh, now).is_err());
+        let mut wrong_device = session.clone();
+        wrong_device["deviceId"] = Value::String("desktop-user-device".into());
+        assert!(validate_ci_account_session(wrong_device, now).is_err());
+        let mut wrong_user = session.clone();
+        wrong_user["user"]["id"] = Value::String("43".into());
+        assert!(validate_ci_account_session(wrong_user, now).is_err());
+        let mut too_long = session;
+        too_long["accessTokenExpiresAt"] = Value::Number((now + 6 * 60 * 60).into());
+        assert!(validate_ci_account_session(too_long, now).is_err());
     }
 
     #[test]
@@ -3393,10 +3552,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(session["sessionStored"], true);
+        assert_eq!(session["loggedIn"], true);
         assert_eq!(session["user"]["username"], "tester");
         assert!(session.get("token").is_none());
         assert!(session.get("accessToken").is_none());
         assert!(session.get("refreshToken").is_none());
+    }
+
+    #[test]
+    fn desktop_auth_storage_uses_prompt_free_namespace() {
+        assert_eq!(
+            product_auth_secrets_namespace(Some("fabushi-desktop-v2")),
+            LocalSecretsNamespace::FabushiDesktopAuth
+        );
+        assert_eq!(
+            product_auth_secrets_namespace(None),
+            LocalSecretsNamespace::MahayanaAuth
+        );
+        assert_eq!(
+            product_managed_secrets_namespace(Some("fabushi-desktop-v2")),
+            LocalSecretsNamespace::FabushiDesktopManagedSecrets
+        );
+        assert_eq!(
+            product_managed_secrets_namespace(None),
+            LocalSecretsNamespace::ManagedSecrets
+        );
     }
 
     #[test]
@@ -3465,40 +3645,6 @@ mod tests {
         assert_eq!(
             managed_secret_name("  "),
             Err(ProductError::InvalidParameter("secretRequestId"))
-        );
-    }
-
-    #[test]
-    fn connector_secret_names_are_stable_and_target_scoped() {
-        let github_token = connector_secret_name("github", "token").expect("connector secret");
-        let github_api_key = connector_secret_name("github", "api_key").expect("connector secret");
-        assert!(
-            github_token
-                .as_str()
-                .starts_with("MAHAYANA_CONNECTOR_SECRET_")
-        );
-        assert_ne!(github_token, github_api_key);
-        assert_eq!(
-            connector_secret_name(" github ", " token ").expect("trimmed target"),
-            github_token
-        );
-        assert_eq!(
-            connector_secret_name("github", "token/value").expect("slash target"),
-            connector_secret_name("github", "token/value").expect("slash target")
-        );
-        assert_ne!(
-            connector_secret_name("slack", "token").expect("connector secret"),
-            github_token
-        );
-        assert_ne!(
-            connector_secret_name_for_platform("github", "desktop", "token")
-                .expect("desktop connector secret"),
-            connector_secret_name_for_platform("github", "mobile", "token")
-                .expect("mobile connector secret")
-        );
-        assert_eq!(
-            connector_secret_name("", "token"),
-            Err(ProductError::InvalidParameter("connector"))
         );
     }
 

@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fabushi_store}
+      POSTGRES_USER: ${POSTGRES_USER:-fabushi_store}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fabushi_store} -d ${POSTGRES_DB:-fabushi_store}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fabushi_store}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-fabushi_store}?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      COOKIE_SECRET: ${COOKIE_SECRET:?COOKIE_SECRET is required}
+      MEDUSA_BACKEND_URL: https://shop-api.ombhrum.com
+      STORE_CORS: https://shop.ombhrum.com
+      ADMIN_CORS: https://shop-api.ombhrum.com
+      AUTH_CORS: https://shop.ombhrum.com,https://shop-api.ombhrum.com
+    ports:
+      - "127.0.0.1:9000:9000"
+
+  storefront:
+    build:
+      context: .
+      dockerfile: Dockerfile.storefront
+      args:
+        NEXT_PUBLIC_MEDUSA_BACKEND_URL: https://shop-api.ombhrum.com
+        NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: ${MEDUSA_PUBLISHABLE_KEY:?MEDUSA_PUBLISHABLE_KEY is required}
+        NEXT_PUBLIC_DEFAULT_REGION: ${NEXT_PUBLIC_DEFAULT_REGION:-gb}
+        NEXT_PUBLIC_BASE_URL: https://shop.ombhrum.com
+        NEXT_PUBLIC_STRIPE_KEY: ${NEXT_PUBLIC_STRIPE_KEY:-}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_MEDUSA_BACKEND_URL: https://shop-api.ombhrum.com
+      NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: ${MEDUSA_PUBLISHABLE_KEY:?MEDUSA_PUBLISHABLE_KEY is required}
+      NEXT_PUBLIC_DEFAULT_REGION: ${NEXT_PUBLIC_DEFAULT_REGION:-gb}
+      NEXT_PUBLIC_BASE_URL: https://shop.ombhrum.com
+      NEXT_PUBLIC_STRIPE_KEY: ${NEXT_PUBLIC_STRIPE_KEY:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+
+volumes:
+  postgres-data:
+  redis-data:

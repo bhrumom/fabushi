@@ -1,0 +1,220 @@
+Fabushi Telegram 全量融合总计划
+版本：v1.0
+更新日期：2026-08-22
+状态：执行规划基线
+
+============================================================
+一、总目标
+============================================================
+
+把 Telegram 桌面端的核心产品能力与完整通信体验，以“自主协议 + 自建服务 + Rust 核心”的方式融合进 Fabushi，最终形成 Fabushi 自己的通信、联系人、Bot、AI Agent、Mini App、支付与实时音视频体系。
+
+这不是简单嵌入 Telegram、调用 Telegram API、套壳 Telegram 客户端，也不是把 Fabushi 做成 Telegram 的第三方客户端。目标是：
+
+1. Fabushi 拥有自己的账号体系、联系人体系、消息协议、服务端、同步系统、媒体系统、Bot/Agent 系统、支付系统和 Mini App 平台。
+2. 桌面端在交互完整度上达到 Telegram Desktop/Unigram 同类成熟度，同时保持 Fabushi 自己的品牌、信息架构和 AI 产品方向。
+3. 通信内核优先使用 Rust，实现跨平台、高性能、低内存、可测试、可复用。
+4. 桌面 Electron、iOS 原生、Android 原生共享同一套 Rust 通信核心和协议定义，避免三套通信逻辑。
+5. 联系人与 AI Bot/Agent 统一进入同一套会话与联系人框架：人与人、人与 Agent、Agent 与 Agent 都可以使用统一消息总线。
+6. Mini Apps、Bot、支付、AI 工具调用、文件、实时音视频等都成为 Fabushi 平台能力，而不是外部拼装模块。
+7. 所有服务均支持自主部署，不依赖 Telegram 官方 API 或 Telegram 基础设施。
+8. 在功能对标完成后继续优化，使性能、AI 协作能力、开发者能力、跨端一致性和自动化测试优于传统 IM 架构。
+
+说明：
+- “完整融合”指功能、交互范式和工程能力对标，不要求复制 Telegram 商标、品牌资源、受限制的专有资产或不兼容许可代码。
+- 可参考开源实现的公开架构思想与行为，但实际进入 Fabushi 的代码必须通过许可证审查，并尽量重构为 Fabushi 自有模块与命名。
+
+
+============================================================
+二、最终产品形态
+============================================================
+
+Fabushi 的最终通信产品由 8 个统一层组成：
+
+1. Fabushi Identity
+   - 用户身份
+   - 设备身份
+   - 联系人
+   - 组织/群组/频道身份
+   - Bot/Agent 身份
+   - Mini App 开发者身份
+
+2. Mahayana Messaging Core（Rust）
+   - 会话模型
+   - 消息模型
+   - 本地数据库
+   - 同步引擎
+   - 网络协议
+   - 发送队列
+   - 离线队列
+   - 消息状态机
+   - 搜索索引
+   - 媒体索引
+   - 权限模型
+
+3. Fabushi Realtime Network
+   - 自建长连接
+   - 消息路由
+   - Presence
+   - typing/read state
+   - 多设备同步
+   - 推送
+   - 文件传输
+   - WebRTC/实时音视频信令
+
+4. Fabushi Social Layer
+   - 私聊
+   - 群聊
+   - 超级群组
+   - 频道
+   - 论坛/Topic
+   - Story/动态能力（作为后期阶段）
+   - 联系人
+   - 黑名单
+   - 用户名/搜索
+
+5. Fabushi Agent Network
+   - AI 联系人
+   - Bot
+   - Agent
+   - Agent-to-Agent 通信
+   - 工具调用
+   - 工作流
+   - 多 Agent 协作
+   - 会话上下文与权限隔离
+
+6. Fabushi Mini Apps
+   - Web Mini App runtime
+   - JS SDK
+   - 权限系统
+   - Bot/Agent bridge
+   - 支付 bridge
+   - 文件与系统 bridge
+   - 安全沙箱
+
+7. Fabushi Pay
+   - 商户
+   - 订单
+   - 支付意图
+   - 支付提供商适配层
+   - 虚拟商品
+   - 实物商品
+   - 退款
+   - 对账
+   - Webhook
+   - 平台抽成/开发者结算（如后续启用）
+
+8. Fabushi Client Experience
+   - Electron 桌面端
+   - iOS 原生
+   - Android 原生
+   - 同一 Rust Core
+   - 同一协议
+   - 同一设计语言
+
+
+============================================================
+三、架构原则
+============================================================
+
+A. Rust First
+- 网络、协议、加密、消息状态机、本地存储、同步、媒体、搜索、队列使用 Rust。
+- UI 不重复实现通信逻辑。
+- Electron 通过 Node-API/IPC 调用 Rust Core。
+- iOS 通过 UniFFI/Swift bindings 调用 Rust Core。
+- Android 通过 UniFFI/JNI/Kotlin bindings 调用 Rust Core。
+
+B. Protocol First
+- 先定义协议与状态机，再写 UI。
+- 所有客户端使用同一份 protobuf/serde schema 或等价 IDL。
+- 协议版本化，支持向后兼容。
+
+C. Local-First
+- 本地数据库保存会话、消息、草稿、索引、媒体元数据。
+- UI 首屏优先读取本地数据。
+- 后台增量同步。
+- 断网仍可查看历史消息、草稿和已缓存媒体。
+
+D. Event Driven
+- 服务端以事件日志和增量同步为基础。
+- 客户端通过统一事件流更新状态。
+- 避免 UI 直接耦合具体后端接口。
+
+E. AI Native
+- AI Agent 不是外挂聊天页面，而是通信网络一等公民。
+- Agent 与联系人共享会话模型，但权限、运行环境和工具调用必须隔离。
+
+F. Self Hosted
+- 核心通信能力必须可部署在 Fabushi 自己的服务器/VPS/云环境。
+- 不依赖 Telegram API、Telegram Bot API 或 Telegram MTProto 网络。
+
+G. Secure by Default
+- 传输加密、设备信任、密钥轮换、敏感权限、支付权限、Mini App 权限从第一阶段设计，而不是上线前补。
+
+
+============================================================
+四、建议仓库模块 / Rust Workspace
+============================================================
+
+建议在现有 Fabushi workspace 中建立统一通信域，最终结构可按项目实际目录调整：
+
+crates/
+  fabushi-protocol/           # 所有协议类型、版本与编码
+  fabushi-identity/           # 用户、设备、身份、联系人
+  fabushi-crypto/             # 密钥、签名、E2EE 基础能力
+  fabushi-transport/          # WebSocket/QUIC/HTTP fallback
+  fabushi-sync/               # 多设备增量同步引擎
+  fabushi-messaging/          # 消息状态机与业务逻辑
+  fabushi-conversations/      # 私聊/群/频道/Topic
+  fabushi-presence/           # 在线、输入、已读、最后上线
+  fabushi-media/              # 上传、下载、缓存、缩略图
+  fabushi-search/             # 本地/服务端搜索
+  fabushi-notifications/      # 推送与通知事件
+  fabushi-call-core/          # 通话会话与 WebRTC bridge
+  fabushi-agent-network/      # Bot/Agent/Agent-to-Agent
+  fabushi-miniapp-core/       # Mini App 权限与 bridge
+  fabushi-pay-core/           # 订单、支付意图、商户协议
+  fabushi-storage/            # SQLite/数据库抽象
+  fabushi-client-sdk/         # 对 Electron/iOS/Android 暴露统一 API
+  fabushi-testkit/            # 协议仿真、断网、延迟、乱序测试
+
+services/
+  identity-service/
+  gateway-service/
+  message-service/
+  sync-service/
+  presence-service/
+  contact-service/
+  group-service/
+  channel-service/
+  media-service/
+  search-service/
+  notification-service/
+  call-signaling-service/
+  agent-service/
+  miniapp-service/
+  payment-service/
+  moderation-service/
+
+apps/
+  desktop-electron/
+  ios/
+  android/
+
+协议定义：
+  proto/ 或 protocol/
+    common
+    identity
+    conversation
+    message
+    media
+    sync
+    call
+    miniapp
+    payment
+    agent
+
+
+============================================================
+五、统一数据模型
+============================================================

@@ -10,6 +10,8 @@ on:
   workflow_run:
     workflows:
       - CI
+      - Messaging Product Gate
+      - Electron desktop quality gate
     types:
       - completed
   workflow_dispatch:
@@ -33,19 +35,21 @@ permissions:
 
 jobs:
   automerge:
-    name: Merge explicitly authorized green PRs
+    name: Authorize green PRs for protected merge
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Evaluate and merge authorized PR
+      - name: Evaluate and arm authorized PR
         uses: actions/github-script@v7
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const autoMergeLabel = 'automerge';
-            const requiredWorkflowName = 'CI';
             const requiredConclusion = 'success';
+            const baseRequiredWorkflow = 'CI';
+            const messagingWorkflow = 'Messaging Product Gate';
+            const electronWorkflow = 'Electron desktop quality gate';
             const sensitivePathPrefixes = [
               '.github/workflows/',
               '.github/actions/',
@@ -63,6 +67,62 @@ jobs:
               /^fabushi\/web\/.*alipay.*\.js$/,
             ];
 
+            const electronPathPrefixes = [
+              'desktop/',
+              'frontend/apps/web/src/app/host/',
+              'frontend/apps/web/src/lib/fabushi-runtime/',
+              'frontend/apps/web/src/lib/mahayana-host/',
+              'frontend/packages/shared/',
+              'third_party/mahayana/codex-rs/',
+              'mahayana-app-host/',
+              'mahayana-app-host-desktop/',
+              'mahayana-feature-host/',
+              'mahayana-host/',
+              'mahayana-host-protocol/',
+              'mahayana-product/',
+            ];
+            const electronExactPaths = new Set([
+              'contracts/automation/cross-platform-journeys.json',
+              'third_party/mahayana/mahayana-rs/Cargo.toml',
+              'Cargo.lock',
+              '.github/scripts/assert-native-electron-canonical.sh',
+              '.github/scripts/assert-electron-feature-host-bridge.sh',
+              '.github/scripts/assert-fabushi-desktop-architecture.py',
+              '.github/scripts/assert-native-desktop-edge-parity.py',
+              '.github/scripts/assert-auth-entry-flow.py',
+              '.github/scripts/assert-bot-mark-motion.py',
+              '.github/scripts/assert-product-ui-contracts.py',
+              '.github/scripts/assert-native-capability-semantics.py',
+              '.github/workflows/electron-desktop.yml',
+            ]);
+
+            const messagingPathPrefixes = [
+              'native/mahayana-messaging/',
+              'desktop/src/messaging-',
+              'desktop/src/selfhosted-messaging-',
+              'third_party/mahayana/mahayana-rs/mahayana-host-protocol/',
+              'third_party/mahayana/mahayana-rs/mahayana-feature-host/',
+              'third_party/mahayana/mahayana-rs/mahayana-social/',
+            ];
+            const messagingExactPaths = new Set([
+              'desktop/src/main.tsx',
+              'desktop/src/webrtc-call-controller.ts',
+              'desktop/electron/messaging-signaling-client.cjs',
+              'desktop/electron/messaging-signaling-client.test.cjs',
+              'desktop/electron/main.cjs',
+              'desktop/electron/preload.cjs',
+              'desktop/electron/native-edge.cjs',
+              'desktop/src/edge/contracts/native-capabilities.ts',
+              'frontend/apps/web/src/lib/fabushi-runtime/native-desktop.ts',
+              'desktop/e2e/messenger.spec.ts',
+              '.github/scripts/assert-electron-feature-host-bridge.sh',
+              '.github/workflows/messaging-product-gate.yml',
+            ]);
+
+            function pathMatches(filename, prefixes, exactPaths) {
+              return exactPaths.has(filename) || prefixes.some((prefix) => filename.startsWith(prefix));
+            }
+
             async function findPr() {
               if (context.eventName === 'pull_request') {
                 return context.payload.pull_request;
@@ -77,7 +137,7 @@ jobs:
               if (context.eventName === 'workflow_run') {
                 const workflowRun = context.payload.workflow_run;
                 if (workflowRun.conclusion !== requiredConclusion) {
-                  core.info(`CI conclusion is ${workflowRun.conclusion}; skipping.`);
+                  core.info(`${workflowRun.name} conclusion is ${workflowRun.conclusion}; skipping.`);
                   return null;
                 }
                 const { data: pulls } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
@@ -91,18 +151,40 @@ jobs:
               return null;
             }
 
-            async function hasSuccessfulCi(headSha) {
+            async function hasSuccessfulWorkflow(headSha, workflowName) {
               const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
                 owner,
                 repo,
-                workflow_id: 'ci.yml',
                 head_sha: headSha,
                 status: 'completed',
-                per_page: 10,
+                per_page: 100,
               });
               return runs.workflow_runs.some(
-                (run) => run.name === requiredWorkflowName && run.conclusion === requiredConclusion,
+                (run) => run.name === workflowName && run.conclusion === requiredConclusion,
               );
+            }
+
+            async function getChangedFiles(pull_number) {
+              return github.paginate(github.rest.pulls.listFiles, {
+                owner,
+                repo,
+                pull_number,
+                per_page: 100,
+              });
+            }
+
+            async function requiredWorkflowsForPull(pull_number) {
+              const files = await getChangedFiles(pull_number);
+              const filenames = files.map((file) => file.filename);
+              const required = [baseRequiredWorkflow];
+
+              if (filenames.some((filename) => pathMatches(filename, messagingPathPrefixes, messagingExactPaths))) {
+                required.push(messagingWorkflow);
+              }
+              if (filenames.some((filename) => pathMatches(filename, electronPathPrefixes, electronExactPaths))) {
+                required.push(electronWorkflow);
+              }
+              return required;
             }
 
             async function hasSensitiveChanges(pull_number) {
@@ -111,17 +193,26 @@ jobs:
                 core.info(`Bypassing sensitive changes check for PR #${pull_number} due to [automerge-force] in title.`);
                 return false;
               }
-              const files = await github.paginate(github.rest.pulls.listFiles, {
-                owner,
-                repo,
-                pull_number,
-                per_page: 100,
-              });
+              const files = await getChangedFiles(pull_number);
               return files.some((file) => {
                 const filename = file.filename;
                 return sensitivePathPrefixes.some((prefix) => filename.startsWith(prefix)) ||
                   sensitivePathPatterns.some((pattern) => pattern.test(filename));
               });
+            }
+
+            async function getProtectedMergeState(pullNumber) {
+              return github.graphql(
+                `query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      id
+                      mergeQueueEntry { position }
+                    }
+                  }
+                }`,
+                { owner, repo, number: pullNumber },
+              );
             }
 
             const pr = await findPr();
@@ -151,7 +242,7 @@ jobs:
                 owner,
                 repo,
                 issue_number: pr.number,
-                body: 'Automerge skipped: this PR changes protected CI/CD, auth, payment, deployment, or database files and needs a human merge.',
+                body: 'Automerge skipped: this PR changes protected CI/CD, auth, payment, deployment, or database files and needs explicit human authorization before entering the merge queue.',
               });
               core.info(`PR #${pr.number} touches sensitive paths; skipping.`);
               return;
@@ -163,24 +254,39 @@ jobs:
               return;
             }
 
-            if (!(await hasSuccessfulCi(freshPr.head.sha))) {
-              core.info(`PR #${pr.number} head ${freshPr.head.sha} does not have a successful CI run yet.`);
+            const requiredWorkflows = await requiredWorkflowsForPull(freshPr.number);
+            const missingWorkflows = [];
+            for (const workflowName of requiredWorkflows) {
+              if (!(await hasSuccessfulWorkflow(freshPr.head.sha, workflowName))) {
+                missingWorkflows.push(workflowName);
+              }
+            }
+            if (missingWorkflows.length > 0) {
+              core.info(`PR #${pr.number} head ${freshPr.head.sha} is still waiting for: ${missingWorkflows.join(', ')}`);
               return;
             }
 
-            await github.rest.pulls.merge({
-              owner,
-              repo,
-              pull_number: pr.number,
-              merge_method: 'squash',
-              commit_title: freshPr.title,
-              commit_message: `Automerge PR #${pr.number} after successful CI.`,
-              sha: freshPr.head.sha,
-            });
+            const state = await getProtectedMergeState(pr.number);
+            const protectedPr = state.repository.pullRequest;
+            if (protectedPr.mergeQueueEntry) {
+              core.info(`PR #${pr.number} is already in the merge queue at position ${protectedPr.mergeQueueEntry.position}.`);
+              return;
+            }
+
+            const enqueued = await github.graphql(
+              `mutation($pullRequestId: ID!) {
+                enqueuePullRequest(input: { pullRequestId: $pullRequestId }) {
+                  mergeQueueEntry { position }
+                }
+              }`,
+              { pullRequestId: protectedPr.id },
+            );
+            const position = enqueued.enqueuePullRequest?.mergeQueueEntry?.position;
+            core.info(`PR #${pr.number} entered the protected merge queue at position ${position ?? 'unknown'}.`);
 
             await github.rest.issues.createComment({
               owner,
               repo,
               issue_number: pr.number,
-              body: `Automerge completed after successful ${requiredWorkflowName}. CD will run from main and gate production through staging E2E and native install smoke tests.`,
+              body: `Protected merge queue authorized after successful product gates: ${requiredWorkflows.join(', ')}. PR entered the queue${position ? ` at position ${position}` : ''}; merge-group revalidation now owns the final merge into main.`,
             });

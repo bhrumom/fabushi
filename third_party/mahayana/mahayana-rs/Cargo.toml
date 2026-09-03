@@ -8,6 +8,7 @@ members = [
     "mahayana-app-host",
     "mahayana-app-host-desktop",
     "mahayana-app-host-mobile",
+    "mahayana-auth",
     "mahayana-conversation",
     "mahayana-core",
     "mahayana-computer",
@@ -37,8 +38,10 @@ members = [
     "mahayana-js-runtime",
     "mahayana-product",
     "mahayana-runtime",
+    "mahayana-secrets",
     "mahayana-social",
     "mahayana-telegram",
+    "mahayana-test-driver-protocol",
     "mahayana-tool-host",
     "mahayana-unified-app-host",
     "mahayana-web",
@@ -88,6 +91,7 @@ mahayana-agent = { path = "mahayana-agent" }
 mahayana-agent-kernel-bridge = { path = "mahayana-agent-kernel-bridge" }
 mahayana-agent-responses = { path = "mahayana-agent-responses" }
 mahayana-app-host = { path = "mahayana-app-host" }
+mahayana-auth = { path = "mahayana-auth" }
 mahayana-conversation = { path = "mahayana-conversation" }
 mahayana-core = { path = "mahayana-core" }
 mahayana-computer = { path = "mahayana-computer" }
@@ -115,8 +119,10 @@ mahayana-plugin-runtime = { path = "mahayana-plugin-runtime" }
 mahayana-js-runtime = { path = "mahayana-js-runtime" }
 mahayana-product = { package = "mahayana-platform-client", path = "mahayana-product" }
 mahayana-runtime = { path = "mahayana-runtime" }
+mahayana-secrets = { path = "mahayana-secrets" }
 mahayana-social = { path = "mahayana-social" }
 mahayana-telegram = { path = "mahayana-telegram" }
+mahayana-test-driver-protocol = { path = "mahayana-test-driver-protocol" }
 mahayana-tool-host = { path = "mahayana-tool-host" }
 mahayana-workspace-engine = { path = "mahayana-workspace-engine" }
 mahayana-unified-app-host = { path = "mahayana-unified-app-host" }

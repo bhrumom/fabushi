@@ -1,6 +1,10 @@
 import { existsSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
 
+const hostServerCommand = process.env.FABUSHI_HOST_PREBUILT === "1"
+  ? "cd ../../frontend && corepack pnpm --filter @fabushi/host preview:e2e"
+  : "cd ../../frontend && corepack pnpm --filter @fabushi/host build && corepack pnpm --filter @fabushi/host preview:e2e";
+
 const chromiumExecutable = [
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -26,6 +30,7 @@ export default defineConfig({
   ],
   use: {
     baseURL: "http://127.0.0.1:4173",
+    reducedMotion: "reduce",
     launchOptions: chromiumExecutable
       ? { executablePath: chromiumExecutable }
       : undefined,
@@ -36,8 +41,7 @@ export default defineConfig({
   webServer: {
     // Exercise the exact production bundle consumed by Tauri instead of a
     // development-only transform pipeline.
-    command:
-      "cd ../../frontend && corepack pnpm --filter @fabushi/host build && corepack pnpm --filter @fabushi/host preview:e2e",
+    command: hostServerCommand,
     url: "http://127.0.0.1:4173/",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

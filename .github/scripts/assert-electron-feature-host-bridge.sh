@@ -34,6 +34,13 @@ methods=(
   feature.auth.oauthStart
   feature.auth.oauthPoll
   feature.auth.logout
+  feature.marketplace.browse
+  feature.marketplace.release
+  feature.plugin.install
+  feature.plugin.uninstall
+  feature.plugin.active
+  feature.plugin.listInstalled
+  feature.plugin.uiDocument
 )
 
 for method in "${methods[@]}"; do
@@ -44,10 +51,14 @@ done
 
 grep -Fq "defineEdge('mahayana-host'" "$edge" || { echo "Mahayana edge descriptor is not declared" >&2; exit 1; }
 grep -Fq "['runtime-event']" "$edge" || { echo "Mahayana runtime-event declaration is missing" >&2; exit 1; }
-grep -Fq 'const allowedHostMethods = new Set(Object.keys(MAHAYANA_EDGE.methods));' "$main" || { echo "Electron main does not derive its compatibility allowlist from MAHAYANA_EDGE" >&2; exit 1; }
+if grep -Fq "ipcMain.handle('fabushi:host'" "$main"; then
+  echo "Electron main must not expose the retired generic fabushi:host IPC channel" >&2
+  exit 1
+fi
 grep -Fq 'Object.keys(MAHAYANA_EDGE.methods).map((method)' "$main" || { echo "Electron main does not derive edge handlers from MAHAYANA_EDGE" >&2; exit 1; }
 grep -Fq 'serveMainEdge(ipcMain, MAHAYANA_EDGE, handlers' "$main" || { echo "Electron main does not serve MAHAYANA_EDGE through the shared edge runtime" >&2; exit 1; }
-grep -Fq "host.request('feature.receive', {})" "$main" || { echo "Electron main runtime event pump is missing" >&2; exit 1; }
+grep -Fq "host.request('feature.receive', { timeoutMs: 500 })" "$main" || { echo "Electron main runtime event pump must use a bounded long poll" >&2; exit 1; }
+grep -Fq 'receive_with_timeout(Duration::from_millis(timeout_ms))' "$app_host" || { echo "Rust app host must forward bounded feature.receive timeoutMs" >&2; exit 1; }
 grep -Fq "mahayanaEdgeServer.emit(win.webContents, 'runtime-event', event)" "$main" || { echo "Electron main runtime event push is missing" >&2; exit 1; }
 
 if grep -Eq "require\(['\"]\./" "$preload"; then
@@ -55,9 +66,16 @@ if grep -Eq "require\(['\"]\./" "$preload"; then
   exit 1
 fi
 grep -Fq "const MAHAYANA_EDGE = 'mahayana-host';" "$preload" || { echo "Electron preload Mahayana edge name is missing" >&2; exit 1; }
+grep -Fq 'const EDGE_CONTRACT_VERSION = 1;' "$preload" || { echo "Electron preload edge contract version is missing" >&2; exit 1; }
+grep -Fq 'contractVersion: EDGE_CONTRACT_VERSION' "$preload" || { echo "Electron preload does not expose the edge contract version" >&2; exit 1; }
 grep -Fq 'return `fabushi-edge:${edge}:call:${method}`;' "$preload" || { echo "Electron preload edge call-channel construction is missing" >&2; exit 1; }
 grep -Fq "contextBridge.exposeInMainWorld('mahayana', mahayana)" "$preload" || { echo "Electron preload does not expose the Mahayana bridge" >&2; exit 1; }
-grep -Fq 'return subscribeEdge(MAHAYANA_EDGE, MAHAYANA_RUNTIME_EVENT, listener);' "$preload" || { echo "Electron preload runtime-event subscription is missing" >&2; exit 1; }
+grep -Fq 'ipcRenderer.on(mahayanaRuntimeChannel' "$preload" || { echo "Electron preload permanent runtime-event listener is missing" >&2; exit 1; }
+grep -Fq "'conversation.listed'" "$preload" || { echo "Electron preload conversation bootstrap replay is missing" >&2; exit 1; }
+grep -Fq "'bot.listed'" "$preload" || { echo "Electron preload bot bootstrap replay is missing" >&2; exit 1; }
+grep -Fq "'group.listed'" "$preload" || { echo "Electron preload group bootstrap replay is missing" >&2; exit 1; }
+grep -Fq 'const replay = Array.from(mahayanaReplay.values());' "$preload" || { echo "Electron preload bootstrap replay snapshot is missing" >&2; exit 1; }
+grep -Fq 'for (const payload of replay) listener(payload);' "$preload" || { echo "Electron preload bootstrap replay handoff is missing" >&2; exit 1; }
 grep -Fq "contextBridge.exposeInMainWorld('fabushiNative'" "$preload" || { echo "Electron preload native desktop bridge is missing" >&2; exit 1; }
 
 grep -Fq 'new ElectronMahayanaHostTransport()' "$mock_transport" || {
@@ -68,16 +86,21 @@ grep -Fq 'isElectronMahayanaHostAvailable()' "$host_client" || {
   echo "Host UI does not select production mode for Electron" >&2
   exit 1
 }
+grep -Fq 'window.mahayana?.contractVersion === ELECTRON_EDGE_CONTRACT_VERSION' "$electron_transport" || { echo "Electron transport does not bind to the versioned Mahayana bridge" >&2; exit 1; }
+if grep -Fq 'window.fabushi?.invoke' "$electron_transport"; then
+  echo "Electron transport must not route Host calls through the generic Fabushi shell facade" >&2
+  exit 1
+fi
 grep -Fq "ipcMain.handle('fabushi:window-focused'" "$main" || { echo "window focus IPC missing" >&2; exit 1; }
 grep -Fq "ipcMain.handle('fabushi:open-system-settings'" "$main" || { echo "system settings IPC missing" >&2; exit 1; }
 grep -Fq 'openSystemSettings(pane)' "$preload" || { echo "system settings preload bridge missing" >&2; exit 1; }
 grep -Fq 'windowFocused()' "$preload" || { echo "window focus preload bridge missing" >&2; exit 1; }
 
-if grep -Fq "import HostClient from '../../frontend/apps/web/src/app/host/host-client'" "$desktop_renderer" && grep -Fq '<HostClient />' "$desktop_renderer"; then
+if grep -Fq "import HostClient from '../../frontend/apps/web/src/app/host/host-client'" "$desktop_renderer" && grep -Eq '<HostClient([[:space:]][^>]*)? */>' "$desktop_renderer"; then
   :
 elif test -n "$desktop_shell" && test -f "$desktop_shell" \
   && grep -Fq "import HostClient from '../../frontend/apps/web/src/app/host/host-client'" "$desktop_shell" \
-  && grep -Fq '<HostClient />' "$desktop_shell"; then
+  && grep -Eq '<HostClient([[:space:]][^>]*)? */>' "$desktop_shell"; then
   :
 else
   echo "Canonical Electron renderer does not reuse and render the shared HostClient directly or through the approved Messenger shell" >&2
@@ -89,6 +112,11 @@ if grep -Fq 'MahayanaProductClient::default()' "$app_host"; then
   echo "Electron Rust app host must not probe the shared Mahayana container during startup" >&2
   exit 1
 fi
+if test -n "$desktop_shell" && grep -Fq 'defaultMiniApps' "$desktop_shell"; then
+  echo "Unified Messenger must discover Mini Apps from the online marketplace, not a bundled defaultMiniApps registry" >&2
+  exit 1
+fi
+
 for file in "$desktop_renderer" ${desktop_shell:+"$desktop_shell"}; do
   if grep -Eq 'PluginRuntimeApp|desktop-mode-switch|open-plugin-runtime|open-agent-host' "$file"; then
     echo "Canonical Electron renderer must not expose the retired PluginRuntime surface: $file" >&2

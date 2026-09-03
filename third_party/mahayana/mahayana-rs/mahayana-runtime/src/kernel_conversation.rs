@@ -10,28 +10,24 @@ use mahayana_core::{
 };
 use mahayana_kernel::{
     ApprovalResolution, Capability, CapabilitySet, EngineBackend, ExecutionPolicy, KernelError,
-    KernelEvent, KernelEventSink, OpenSessionRequest, OperationId as KernelOperationId, RiskLevel,
-    RunRequest, RuntimeProfile, SessionId, SharedKernelEventSink,
+    KernelEvent, KernelEventSink, OpenSessionRequest, OperationId as KernelOperationId, RunRequest,
+    RuntimeProfile, SessionId, SharedKernelEventSink,
 };
 use serde_json::{Value, json};
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex as AsyncMutex;
-
-use super::{load_conversation_history, persist_conversation_history};
-
-pub const MAHAYANA_AI_CONVERSATION_ID: &str = "mahayana-ai:agent:assistant";
 
 pub struct KernelConversationProvider {
     backend: Arc<dyn EngineBackend>,
     profile: BuildProfile,
     workspace_root: Option<String>,
     model: Option<String>,
-    history_path: Mutex<Option<PathBuf>>,
-    session_ids: AsyncMutex<HashMap<String, SessionId>>,
+    session_id: AsyncMutex<Option<SessionId>>,
     history: Arc<Mutex<Vec<Message>>>,
+    history_path: Option<PathBuf>,
 }
 
 impl KernelConversationProvider {
@@ -42,33 +38,27 @@ impl KernelConversationProvider {
         model: Option<String>,
         history_path: Option<PathBuf>,
     ) -> Self {
+        let history = history_path
+            .as_deref()
+            .map(load_history)
+            .unwrap_or_default();
         Self {
             backend,
             profile,
             workspace_root,
             model,
-            history: Arc::new(Mutex::new(load_conversation_history(
-                history_path.as_deref(),
-            ))),
-            history_path: Mutex::new(history_path),
-            session_ids: AsyncMutex::new(HashMap::new()),
+            session_id: AsyncMutex::new(None),
+            history: Arc::new(Mutex::new(history)),
+            history_path,
         }
-    }
-
-    fn history_path_snapshot(&self) -> Result<Option<PathBuf>, ConversationError> {
-        self.history_path
-            .lock()
-            .map(|path| path.clone())
-            .map_err(|_| ConversationError::Provider("kernel history path mutex poisoned".into()))
     }
 
     async fn session_id(
         &self,
         conversation_id: &ConversationId,
     ) -> Result<SessionId, ConversationError> {
-        let key = conversation_id.as_str().to_string();
-        let mut session_ids = self.session_ids.lock().await;
-        if let Some(session_id) = session_ids.get(&key) {
+        let mut session_id = self.session_id.lock().await;
+        if let Some(session_id) = session_id.as_ref() {
             return Ok(session_id.clone());
         }
         let history = self
@@ -77,19 +67,18 @@ impl KernelConversationProvider {
             .map_err(|_| ConversationError::Provider("kernel history mutex poisoned".into()))?
             .iter()
             .filter(|message| &message.conversation_id == conversation_id)
-            .map(|message| {
-                json!({
-                    "role": match message.role {
-                        MessageRole::User => "user",
-                        MessageRole::Assistant => "assistant",
-                        MessageRole::Contact => "user",
-                        MessageRole::MiniApp => "assistant",
-                        MessageRole::System => "system",
-                    },
-                    "content": message.text,
-                })
-            })
+            .map(|message| json!({
+                "id": message.id.as_str(),
+                "role": match &message.role { MessageRole::Assistant => "assistant", _ => "user" },
+                "content": message.text.as_str(),
+                "createdAtMs": message.created_at_ms,
+            }))
             .collect::<Vec<_>>();
+        let transcript_updated_at_ms = history
+            .last()
+            .and_then(|message| message.get("createdAtMs"))
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
         let created = self
             .backend
             .open_session(OpenSessionRequest {
@@ -98,12 +87,13 @@ impl KernelConversationProvider {
                 model: self.model.clone(),
                 metadata: json!({
                     "conversationId": conversation_id.as_str(),
-                    "history": history,
+                    "bootstrapHistory": history,
+                    "transcriptUpdatedAtMs": transcript_updated_at_ms,
                 }),
             })
             .await
             .map_err(kernel_error)?;
-        session_ids.insert(key, created.clone());
+        *session_id = Some(created.clone());
         Ok(created)
     }
 }
@@ -142,7 +132,6 @@ impl ConversationProvider for KernelConversationProvider {
         events: SharedConversationEventSink,
     ) -> Result<(), ConversationError> {
         let session_id = self.session_id(&request.conversation_id).await?;
-        let history_path = self.history_path_snapshot()?;
         let user_message = Message {
             id: request
                 .client_message_id
@@ -156,13 +145,11 @@ impl ConversationProvider for KernelConversationProvider {
             metadata: json!({"runtime": "mahayana-kernel"}),
         };
         if !request.hidden {
-            let mut history = self
-                .history
+            self.history
                 .lock()
-                .map_err(|_| ConversationError::Provider("kernel history mutex poisoned".into()))?;
-            history.push(user_message);
-            persist_conversation_history(history_path.as_deref(), &history)
-                .map_err(ConversationError::Provider)?;
+                .map_err(|_| ConversationError::Provider("kernel history mutex poisoned".into()))?
+                .push(user_message);
+            persist_history(&self.history, self.history_path.as_deref()).map_err(kernel_error)?;
         }
 
         let kernel_operation_id = KernelOperationId::from_string(request.operation_id.as_str());
@@ -171,9 +158,7 @@ impl ConversationProvider for KernelConversationProvider {
             operation_id: request.operation_id,
             events,
             history: Arc::clone(&self.history),
-            history_path,
-            tool_steps: Mutex::new(HashMap::new()),
-            tool_sequence: Mutex::new(0),
+            history_path: self.history_path.clone(),
         });
         self.backend
             .run(
@@ -198,6 +183,16 @@ impl ConversationProvider for KernelConversationProvider {
             .map_err(kernel_error)
     }
 
+    async fn reset_session(&self) -> Result<(), ConversationError> {
+        self.backend.reset_session().map_err(kernel_error)?;
+        *self.session_id.lock().await = None;
+        self.history
+            .lock()
+            .map_err(|_| ConversationError::Provider("kernel history mutex poisoned".into()))?
+            .clear();
+        persist_history(&self.history, self.history_path.as_deref()).map_err(kernel_error)
+    }
+
     async fn resolve_approval(
         &self,
         request: ResolveApprovalRequest,
@@ -214,32 +209,6 @@ impl ConversationProvider for KernelConversationProvider {
             .await
             .map_err(kernel_error)
     }
-
-    async fn reset_session(&self) -> Result<(), ConversationError> {
-        self.backend.reset_session().map_err(kernel_error)?;
-        self.session_ids.lock().await.clear();
-        let mut history = self
-            .history
-            .lock()
-            .map_err(|_| ConversationError::Provider("kernel history mutex poisoned".into()))?;
-        history.clear();
-        Ok(())
-    }
-
-    async fn set_history_path(&self, path: Option<PathBuf>) -> Result<(), ConversationError> {
-        self.backend.reset_session().map_err(kernel_error)?;
-        self.session_ids.lock().await.clear();
-        let loaded = load_conversation_history(path.as_deref());
-        *self
-            .history
-            .lock()
-            .map_err(|_| ConversationError::Provider("kernel history mutex poisoned".into()))? =
-            loaded;
-        *self.history_path.lock().map_err(|_| {
-            ConversationError::Provider("kernel history path mutex poisoned".into())
-        })? = path;
-        Ok(())
-    }
 }
 
 struct RuntimeKernelEventBridge {
@@ -248,8 +217,6 @@ struct RuntimeKernelEventBridge {
     events: SharedConversationEventSink,
     history: Arc<Mutex<Vec<Message>>>,
     history_path: Option<PathBuf>,
-    tool_steps: Mutex<HashMap<String, Vec<String>>>,
-    tool_sequence: Mutex<u64>,
 }
 
 impl RuntimeKernelEventBridge {
@@ -278,35 +245,6 @@ impl RuntimeKernelEventBridge {
             metadata,
         })
     }
-
-    fn start_tool_step(&self, tool: &str) -> Result<String, KernelError> {
-        let sequence = {
-            let mut sequence = self
-                .tool_sequence
-                .lock()
-                .map_err(|_| KernelError::Backend("tool sequence mutex poisoned".into()))?;
-            *sequence = sequence.saturating_add(1);
-            *sequence
-        };
-        let step_id = format!("tool:{tool}:{sequence}");
-        self.tool_steps
-            .lock()
-            .map_err(|_| KernelError::Backend("tool step mutex poisoned".into()))?
-            .entry(tool.to_string())
-            .or_default()
-            .push(step_id.clone());
-        Ok(step_id)
-    }
-
-    fn finish_tool_step(&self, tool: &str) -> Result<String, KernelError> {
-        Ok(self
-            .tool_steps
-            .lock()
-            .map_err(|_| KernelError::Backend("tool step mutex poisoned".into()))?
-            .get_mut(tool)
-            .and_then(|steps| steps.pop())
-            .unwrap_or_else(|| format!("tool:{tool}:completed")))
-    }
 }
 
 impl KernelEventSink for RuntimeKernelEventBridge {
@@ -328,39 +266,38 @@ impl KernelEventSink for RuntimeKernelEventBridge {
                     created_at_ms: now_ms(),
                     metadata: json!({"runtime": "mahayana-kernel"}),
                 };
-                let mut history = self
-                    .history
+                self.history
                     .lock()
-                    .map_err(|_| KernelError::Backend("kernel history mutex poisoned".into()))?;
-                history.push(message.clone());
-                persist_conversation_history(self.history_path.as_deref(), &history)
-                    .map_err(KernelError::Backend)?;
+                    .map_err(|_| KernelError::Backend("kernel history mutex poisoned".into()))?
+                    .push(message.clone());
+                persist_history(&self.history, self.history_path.as_deref())?;
                 self.emit_runtime(RuntimeEvent::MessageCompleted {
                     operation_id: self.operation_id.clone(),
                     message,
                 })
             }
             KernelEvent::UsageUpdated {
+                total_tokens,
                 input_tokens,
+                cached_input_tokens,
                 output_tokens,
+                reasoning_output_tokens,
                 ..
-            } => {
-                let total_tokens = input_tokens.saturating_add(output_tokens);
-                self.emit_runtime(RuntimeEvent::ModelUsageUpdated {
-                    operation_id: self.operation_id.clone(),
-                    usage: ModelTokenUsageSnapshot {
-                        total: None,
-                        last: ModelTokenUsage {
-                            total_tokens: i64::try_from(total_tokens).unwrap_or(i64::MAX),
-                            input_tokens: i64::try_from(input_tokens).unwrap_or(i64::MAX),
-                            cached_input_tokens: 0,
-                            output_tokens: i64::try_from(output_tokens).unwrap_or(i64::MAX),
-                            reasoning_output_tokens: 0,
-                        },
-                        model_context_window: None,
+            } => self.emit_runtime(RuntimeEvent::ModelUsageUpdated {
+                operation_id: self.operation_id.clone(),
+                usage: ModelTokenUsageSnapshot {
+                    total: None,
+                    last: ModelTokenUsage {
+                        total_tokens: i64::try_from(total_tokens).unwrap_or(i64::MAX),
+                        input_tokens: i64::try_from(input_tokens).unwrap_or(i64::MAX),
+                        cached_input_tokens: i64::try_from(cached_input_tokens).unwrap_or(i64::MAX),
+                        output_tokens: i64::try_from(output_tokens).unwrap_or(i64::MAX),
+                        reasoning_output_tokens: i64::try_from(reasoning_output_tokens)
+                            .unwrap_or(i64::MAX),
                     },
-                })
-            }
+                    model_context_window: None,
+                },
+            }),
             KernelEvent::Activity {
                 kind,
                 title,
@@ -380,45 +317,33 @@ impl KernelEventSink for RuntimeKernelEventBridge {
                     .unwrap_or(RuntimeActivityStatus::Running);
                 self.activity(step_id, kind, title, detail, status, Some(metadata))
             }
-            KernelEvent::ToolStarted { tool, .. } if tool == "send_message" => Ok(()),
             KernelEvent::ToolStarted {
                 tool, arguments, ..
-            } => {
-                let step_id = self.start_tool_step(&tool)?;
-                self.activity(
-                    step_id,
-                    "tool".into(),
-                    format!("调用工具 · {tool}"),
-                    None,
-                    RuntimeActivityStatus::Running,
-                    Some(json!({"tool": tool, "arguments": arguments})),
-                )
-            }
-            KernelEvent::ToolCompleted { tool, .. } if tool == "send_message" => Ok(()),
+            } => self.activity(
+                format!("tool:{tool}"),
+                "tool".into(),
+                format!("Running {tool}"),
+                None,
+                RuntimeActivityStatus::Running,
+                Some(json!({"tool": tool, "arguments": arguments})),
+            ),
             KernelEvent::ToolCompleted {
                 tool,
                 output,
                 success,
                 ..
-            } => {
-                let step_id = self.finish_tool_step(&tool)?;
-                self.activity(
-                    step_id,
-                    "tool".into(),
-                    format!("工具完成 · {tool}"),
-                    Some(if success {
-                        "执行成功".into()
-                    } else {
-                        "执行失败".into()
-                    }),
-                    if success {
-                        RuntimeActivityStatus::Completed
-                    } else {
-                        RuntimeActivityStatus::Failed
-                    },
-                    Some(json!({"tool": tool, "output": output, "success": success})),
-                )
-            }
+            } => self.activity(
+                format!("tool:{tool}"),
+                "tool".into(),
+                format!("Completed {tool}"),
+                None,
+                if success {
+                    RuntimeActivityStatus::Completed
+                } else {
+                    RuntimeActivityStatus::Failed
+                },
+                Some(json!({"tool": tool, "output": output, "success": success})),
+            ),
             KernelEvent::ApprovalRequested {
                 approval_id,
                 title,
@@ -504,4 +429,64 @@ fn now_ms() -> i64 {
         .as_millis()
         .try_into()
         .unwrap_or(i64::MAX)
+}
+
+fn load_history(path: &Path) -> Vec<Message> {
+    let Ok(bytes) = std::fs::read(path) else {
+        return Vec::new();
+    };
+    serde_json::from_slice::<Vec<Message>>(&bytes).unwrap_or_default()
+}
+
+fn persist_history(
+    history: &Arc<Mutex<Vec<Message>>>,
+    path: Option<&Path>,
+) -> Result<(), KernelError> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    let bytes = {
+        let history = history
+            .lock()
+            .map_err(|_| KernelError::Backend("kernel history mutex poisoned".into()))?;
+        let start = history.len().saturating_sub(1_000);
+        serde_json::to_vec(&history[start..])
+            .map_err(|error| KernelError::Backend(error.to_string()))?
+    };
+    let parent = path
+        .parent()
+        .ok_or_else(|| KernelError::Backend("kernel history path has no parent".into()))?;
+    std::fs::create_dir_all(parent).map_err(|error| KernelError::Backend(error.to_string()))?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let temporary = path.with_extension(format!("json.{}.{nonce}.tmp", std::process::id()));
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(&temporary)
+        .map_err(|error| KernelError::Backend(error.to_string()))?;
+    file.write_all(&bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|error| KernelError::Backend(error.to_string()))?;
+    replace_file(&temporary, path)
+}
+
+fn replace_file(temporary: &Path, destination: &Path) -> Result<(), KernelError> {
+    match std::fs::rename(temporary, destination) {
+        Ok(()) => Ok(()),
+        Err(_error) if destination.exists() => {
+            std::fs::remove_file(destination)
+                .map_err(|remove_error| KernelError::Backend(remove_error.to_string()))?;
+            std::fs::rename(temporary, destination)
+                .map_err(|rename_error| KernelError::Backend(rename_error.to_string()))
+        }
+        Err(error) => Err(KernelError::Backend(error.to_string())),
+    }
 }

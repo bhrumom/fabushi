@@ -1,11 +1,43 @@
+import AuthenticationServices
 import Foundation
 import Observation
+import UIKit
 
-struct MarketplacePlugin: Identifiable, Equatable {
+enum MobileChatRole: String, Equatable {
+    case user
+    case assistant
+}
+
+enum MobileChatEntryKind: String, Equatable {
+    case message
+    case action
+    case thinking
+}
+
+struct MobileChatMessage: Identifiable, Equatable {
+    let id: String
+    let role: MobileChatRole
+    var text: String
+    var kind: MobileChatEntryKind = .message
+    var operationId: String?
+    var actionTitle: String?
+    var actionDetail: String?
+    var actionStatus: String?
+    var createdAt = Date()
+}
+
+struct MiniAppToolContract: Equatable, Sendable {
+    let name: String
+    let description: String
+    let approval: String
+}
+
+struct MarketplacePlugin: Identifiable, Equatable, Sendable {
     let pluginId: String
     let displayName: String
     let description: String
     let latestVersion: String?
+    let tools: [MiniAppToolContract]
     var id: String { pluginId }
 }
 
@@ -14,6 +46,19 @@ struct PluginPermissionRequest: Identifiable, Equatable {
     let runtime: String
     let permissions: [String]
     var id: String { pluginId }
+}
+
+private final class BrowserAuthPresentationContext: NSObject, ASWebAuthenticationPresentationContextProviding {
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        if let keyWindow = scenes.flatMap(\.windows).first(where: \.isKeyWindow) {
+            return keyWindow
+        }
+        if let window = scenes.flatMap(\.windows).first {
+            return window
+        }
+        return ASPresentationAnchor()
+    }
 }
 
 @MainActor
@@ -26,11 +71,156 @@ final class MarketplaceModel {
     var plugins: [MarketplacePlugin] = []
     var permissionRequest: PluginPermissionRequest?
     var featureHostSmokeStatus: String?
+    var authResolved = false
+    var loggedIn = false
+    var accountName = "Fabushi"
+    var accountEmail = ""
+    var onboardingStep: Int
+    var browserLoginAttemptId: String?
+    var browserLoginURL: URL?
+    var loginBusy = false
+    var loginError: String?
+    var chatDraft = ""
+    var chatMessages: [MobileChatMessage] = []
+    var chatBusy = false
+    var activeOperationId: String?
 
     private let host: MahayanaHost
+    private let onboardingKey = "fabushi.mobile.onboarding-complete.v1"
+    @ObservationIgnored private let browserAuthPresentationContext = BrowserAuthPresentationContext()
+    @ObservationIgnored private var webAuthenticationSession: ASWebAuthenticationSession?
 
     init(host: MahayanaHost) {
         self.host = host
+        onboardingStep = UserDefaults.standard.bool(forKey: onboardingKey) ? 3 : 0
+    }
+
+    func initializeApp() async {
+        authResolved = false
+        do {
+            let result = try await host.request(method: "feature.auth.status")
+            applyAuth(result.value as? [String: Any])
+            authResolved = true
+            if loggedIn { await refresh() }
+        } catch {
+            authResolved = true
+            message = "账号状态加载失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func applyAuth(_ object: [String: Any]?, defaultLoggedIn: Bool = false) {
+        loggedIn = object?["loggedIn"] as? Bool ?? defaultLoggedIn
+        guard let user = object?["user"] as? [String: Any] else {
+            accountName = "Fabushi"
+            accountEmail = ""
+            return
+        }
+        accountName = (user["nickname"] as? String)
+            ?? (user["username"] as? String)
+            ?? (user["email"] as? String)
+            ?? "Fabushi"
+        accountEmail = user["email"] as? String ?? ""
+    }
+
+    func advanceOnboarding() {
+        onboardingStep = min(3, onboardingStep + 1)
+        if onboardingStep == 3 { UserDefaults.standard.set(true, forKey: onboardingKey) }
+    }
+
+    func retreatOnboarding() { onboardingStep = max(0, onboardingStep - 1) }
+
+    func beginBrowserLogin() async {
+        guard !loginBusy else { return }
+        loginBusy = true
+        loginError = nil
+        do {
+            let result = try await host.request(method: "feature.auth.browserStart")
+            guard let object = result.value as? [String: Any],
+                  let attemptId = object["attemptId"] as? String,
+                  let loginURLString = (object["loginUrl"] as? String) ?? (object["authorizationUrl"] as? String),
+                  let loginURL = URL(string: loginURLString)
+            else { throw MahayanaHost.HostError.invalidResponse }
+            browserLoginAttemptId = attemptId
+            browserLoginURL = loginURL
+            loginBusy = false
+            if loginURLString.hasPrefix("about:blank#fabushi-test-browser-login") {
+                await completeBrowserLogin(attemptId: attemptId)
+            } else {
+                presentBrowserLogin(loginURL)
+            }
+        } catch {
+            browserLoginAttemptId = nil
+            browserLoginURL = nil
+            loginBusy = false
+            loginError = error.localizedDescription
+        }
+    }
+
+    func reopenBrowserLogin() async {
+        guard let attemptId = browserLoginAttemptId else { return }
+        do {
+            let result = try await host.request(method: "feature.auth.browserReopen", params: ["attemptId": attemptId])
+            guard let object = result.value as? [String: Any],
+                  let loginURLString = (object["loginUrl"] as? String) ?? (object["authorizationUrl"] as? String),
+                  let loginURL = URL(string: loginURLString)
+            else { throw MahayanaHost.HostError.invalidResponse }
+            browserLoginURL = loginURL
+            if loginURLString.hasPrefix("about:blank#fabushi-test-browser-login") {
+                await completeBrowserLogin(attemptId: attemptId)
+            } else {
+                presentBrowserLogin(loginURL)
+            }
+        } catch { loginError = error.localizedDescription }
+    }
+
+    func cancelBrowserLogin() async {
+        webAuthenticationSession?.cancel()
+        webAuthenticationSession = nil
+        await cancelBrowserLoginAttempt()
+    }
+
+    private func cancelBrowserLoginAttempt() async {
+        guard let attemptId = browserLoginAttemptId else { return }
+        do {
+            _ = try await host.request(method: "feature.auth.browserCancel", params: ["attemptId": attemptId])
+        } catch { loginError = error.localizedDescription }
+        browserLoginAttemptId = nil
+        browserLoginURL = nil
+        loginBusy = false
+        message = "登录授权已取消"
+    }
+
+    private func presentBrowserLogin(_ loginURL: URL) {
+        webAuthenticationSession?.cancel()
+        let session = ASWebAuthenticationSession(
+            url: loginURL,
+            callbackURLScheme: "fabushi"
+        ) { [weak self] callbackURL, error in
+            Task { @MainActor in
+                guard let self else { return }
+                self.webAuthenticationSession = nil
+                if let callbackURL {
+                    self.handleDeepLink(callbackURL)
+                    return
+                }
+                if let authError = error as? ASWebAuthenticationSessionError, authError.code == .canceledLogin {
+                    await self.cancelBrowserLoginAttempt()
+                    return
+                }
+                if let error {
+                    self.loginError = error.localizedDescription
+                    self.message = "登录页面未能完成，请重试"
+                }
+            }
+        }
+        session.presentationContextProvider = browserAuthPresentationContext
+        session.prefersEphemeralWebBrowserSession = false
+        webAuthenticationSession = session
+        if !session.start() {
+            webAuthenticationSession = nil
+            loginError = "无法打开应用内登录页面"
+            message = "登录页面未能打开，请重试"
+        }
     }
 
     func runFeatureHostSmokeIfRequested() async {
@@ -164,6 +354,30 @@ final class MarketplaceModel {
         throw MahayanaHost.HostError.requestFailed("未收到 FeatureHost 事件 \(expectedType)")
     }
 
+    func handleDeepLink(_ url: URL) {
+        guard url.scheme?.lowercased() == "fabushi",
+              url.user == nil,
+              url.password == nil,
+              url.port == nil,
+              url.host?.lowercased() == "auth"
+        else { return }
+        let parts = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
+        guard parts == ["complete"], let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
+        let allowedNames = Set(["attemptId", "status"])
+        var params: [String: String] = [:]
+        for item in components.queryItems ?? [] {
+            guard allowedNames.contains(item.name), params[item.name] == nil, let value = item.value else { return }
+            params[item.name] = value
+        }
+        let attemptId = params["attemptId"] ?? ""
+        let status = (params["status"] ?? "completed").lowercased()
+        guard attemptId.range(of: "^[A-Za-z0-9_-]{8,96}$", options: .regularExpression) != nil,
+              ["completed", "cancelled", "failed"].contains(status)
+        else { return }
+        message = status == "completed" ? "登录授权已完成，正在同步账号状态" : "登录授权状态：\(status)"
+        if status == "completed" { Task { await completeBrowserLogin(attemptId: attemptId) } }
+    }
+
     func completeBrowserLogin(attemptId: String) async {
         message = "登录授权已完成，正在通过 Rust Host 同步账号状态"
         do {
@@ -178,6 +392,15 @@ final class MarketplaceModel {
             }
             switch status {
             case "completed":
+                if let auth = object["auth"] as? [String: Any] {
+                    applyAuth(auth, defaultLoggedIn: true)
+                } else {
+                    loggedIn = true
+                }
+                browserLoginAttemptId = nil
+                browserLoginURL = nil
+                webAuthenticationSession = nil
+                loginError = nil
                 await refresh()
                 message = "登录成功，账号状态已同步"
             case "cancelled":
@@ -192,23 +415,171 @@ final class MarketplaceModel {
         }
     }
 
+    func logout() async {
+        if let operationId = activeOperationId {
+            _ = try? await host.request(method: "feature.interrupt", params: ["operationId": operationId])
+        }
+        do {
+            let result = try await host.request(method: "feature.auth.logout")
+            applyAuth(result.value as? [String: Any])
+        } catch {
+            message = "退出登录失败：\(error.localizedDescription)"
+            return
+        }
+        loggedIn = false
+        chatMessages = []
+        activeOperationId = nil
+        chatBusy = false
+        message = "已退出登录"
+    }
+
+    func sendChat() async {
+        let text = chatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, loggedIn, !chatBusy else { return }
+        chatDraft = ""
+        chatBusy = true
+        let requestId = "ios-chat-\(UUID().uuidString.lowercased())"
+        chatMessages.append(MobileChatMessage(id: requestId, role: .user, text: text))
+        do {
+            let accepted = try await executeFeatureCommand(
+                type: "chat.send",
+                requestId: requestId,
+                fields: ["text": text, "agentId": "mahayana-assistant", "mode": "agent"]
+            )
+            let operationId = accepted["operationId"] as? String ?? requestId
+            activeOperationId = operationId
+            chatMessages.append(MobileChatMessage(
+                id: "thinking:\(operationId)", role: .assistant, text: "", kind: .thinking, operationId: operationId,
+                actionTitle: "正在思考", actionStatus: "running"
+            ))
+            await pumpChatEvents(operationId: operationId)
+        } catch is CancellationError {
+            // View-driven cancellation is a normal lifecycle path.
+        } catch {
+            message = "发送失败：\(error.localizedDescription)"
+        }
+        chatBusy = false
+        activeOperationId = nil
+    }
+
+    func stopChat() async {
+        guard let operationId = activeOperationId else { return }
+        _ = try? await host.request(method: "feature.interrupt", params: ["operationId": operationId])
+    }
+
+    private func pumpChatEvents(operationId: String) async {
+        for _ in 0..<1800 {
+            if Task.isCancelled { return }
+            do {
+                let result = try await host.request(method: "feature.receive")
+                guard let event = result.value as? [String: Any], let type = event["type"] as? String else {
+                    try? await Task.sleep(nanoseconds: 80_000_000)
+                    continue
+                }
+                switch type {
+                case "model.routed":
+                    guard (event["operationId"] as? String ?? operationId) == operationId else { continue }
+                    let provider = event["provider"] as? String ?? ""
+                    let model = event["model"] as? String ?? ""
+                    upsertAction(operationId: operationId, stepId: "model-route", title: "选择模型", detail: [provider, model].filter { !$0.isEmpty }.joined(separator: " · "), status: "completed")
+                case "operation.started":
+                    guard event["operationId"] as? String == operationId else { continue }
+                    if !chatMessages.contains(where: { $0.kind == .thinking && $0.operationId == operationId }) {
+                        chatMessages.append(MobileChatMessage(id: "thinking:\(operationId)", role: .assistant, text: "", kind: .thinking, operationId: operationId, actionTitle: event["label"] as? String ?? "正在思考", actionStatus: "running"))
+                    }
+                case "chat.message":
+                    let eventOperationId = event["operationId"] as? String ?? operationId
+                    guard eventOperationId == operationId else { continue }
+                    let role = (event["role"] as? String) == "user" ? MobileChatRole.user : .assistant
+                    let eventText = event["text"] as? String ?? ""
+                    if role == .assistant {
+                        removeThinking(operationId: operationId)
+                        upsertAssistantMessage(operationId: operationId, text: eventText, append: false)
+                    } else if !chatMessages.contains(where: { $0.role == .user && $0.text == eventText }) {
+                        chatMessages.append(MobileChatMessage(id: "user:\(UUID().uuidString)", role: .user, text: eventText))
+                    }
+                case "chat.delta":
+                    guard event["operationId"] as? String == operationId else { continue }
+                    removeThinking(operationId: operationId)
+                    upsertAssistantMessage(operationId: operationId, text: event["delta"] as? String ?? "", append: true)
+                case "agent.step":
+                    let eventOperationId = event["operationId"] as? String ?? operationId
+                    guard eventOperationId == operationId else { continue }
+                    let title = event["title"] as? String ?? "助手动作"
+                    let stepId = event["stepId"] as? String ?? "step-\(UUID().uuidString)"
+                    upsertAction(operationId: operationId, stepId: stepId, title: title, detail: event["detail"] as? String, status: event["status"] as? String ?? "completed")
+                case "operation.completed", "operation.interrupted":
+                    guard event["operationId"] as? String == operationId else { continue }
+                    removeThinking(operationId: operationId)
+                    settleActions(operationId: operationId, status: type == "operation.completed" ? "completed" : "failed")
+                    return
+                case "operation.failed":
+                    guard event["operationId"] as? String == operationId else { continue }
+                    removeThinking(operationId: operationId)
+                    settleActions(operationId: operationId, status: "failed")
+                    message = event["message"] as? String ?? "本次任务失败"
+                    return
+                default:
+                    break
+                }
+            } catch {
+                message = "消息流中断：\(error.localizedDescription)"
+                return
+            }
+            try? await Task.sleep(nanoseconds: 80_000_000)
+        }
+        if chatBusy { message = "任务仍在后台运行，稍后会继续同步事件" }
+    }
+
+    private func removeThinking(operationId: String) {
+        chatMessages.removeAll { $0.kind == .thinking && $0.operationId == operationId }
+    }
+
+    private func settleActions(operationId: String, status: String) {
+        for index in chatMessages.indices where chatMessages[index].kind == .action &&
+            chatMessages[index].operationId == operationId &&
+            chatMessages[index].actionStatus == "running" {
+            chatMessages[index].actionStatus = status
+        }
+    }
+
+    private func upsertAssistantMessage(operationId: String, text: String, append: Bool) {
+        guard !text.isEmpty else { return }
+        if let index = chatMessages.lastIndex(where: { $0.kind == .message && $0.role == .assistant && $0.operationId == operationId }) {
+            if append { chatMessages[index].text += text } else { chatMessages[index].text = text }
+            return
+        }
+        chatMessages.append(MobileChatMessage(id: "assistant:\(operationId)", role: .assistant, text: text, operationId: operationId))
+    }
+
+    private func upsertAction(operationId: String, stepId: String, title: String, detail: String?, status: String) {
+        let id = "action:\(operationId):\(stepId)"
+        let entry = MobileChatMessage(id: id, role: .assistant, text: "", kind: .action, operationId: operationId, actionTitle: title, actionDetail: detail, actionStatus: status)
+        if let index = chatMessages.firstIndex(where: { $0.id == id }) { chatMessages[index] = entry } else { chatMessages.append(entry) }
+    }
+
     func refresh() async {
         loading = true
         defer { loading = false }
         do {
             let result = try await host.request(
-                method: "marketplace.browse",
+                method: "feature.marketplace.browse",
                 params: ["query": query.isEmpty ? NSNull() : query, "platform": "ios"]
             )
             let object = result.value as? [String: Any]
             let rows = object?["plugins"] as? [[String: Any]] ?? []
             plugins = rows.compactMap { item in
                 guard let id = item["pluginId"] as? String, !id.isEmpty else { return nil }
+                let source = item["source"] as? [String: Any]
+                let commands = source?["commands"] as? [[String: Any]]
+                    ?? item["commands"] as? [[String: Any]]
+                    ?? []
                 return MarketplacePlugin(
                     pluginId: id,
                     displayName: item["displayName"] as? String ?? id,
                     description: item["description"] as? String ?? "无描述",
-                    latestVersion: item["latestVersion"] as? String
+                    latestVersion: item["latestVersion"] as? String,
+                    tools: commands.compactMap(Self.toolContract(from:))
                 )
             }
             message = "原生 iOS · Rust Host 已连接"
@@ -226,14 +597,14 @@ final class MarketplaceModel {
         message = "正在安装 \(plugin.pluginId)@\(version)…"
         do {
             let metadata = try await host.request(
-                method: "marketplace.release",
+                method: "feature.marketplace.release",
                 params: ["pluginId": plugin.pluginId, "version": version]
             )
             guard let release = (metadata.value as? [String: Any])?["releaseManifest"] as? [String: Any] else {
                 throw MahayanaHost.HostError.invalidResponse
             }
             let installed = try await host.request(
-                method: "plugin.install",
+                method: "feature.plugin.install",
                 params: ["release": release, "platform": "ios"]
             )
             guard let object = installed.value as? [String: Any] else {
@@ -309,5 +680,48 @@ final class MarketplaceModel {
             message = "\(pluginId) 已安装但启动失败：\(error.localizedDescription)"
         }
         installingPluginId = nil
+    }
+
+    func loadLocalMiniAppHtml(pluginId: String) async -> String? {
+        do {
+            let result = try await host.request(
+                method: "feature.plugin.uiDocument",
+                params: ["pluginId": pluginId]
+            )
+            let html = (result.value as? [String: Any])?["html"] as? String
+            return html?.isEmpty == false ? html : nil
+        } catch {
+            return nil
+        }
+    }
+
+    func callRuntimeTool(pluginId: String, name: String, arguments: [String: Any]) async throws -> Any {
+        guard name.range(of: #"^[A-Za-z0-9_.-]{1,128}$"#, options: .regularExpression) != nil else {
+            throw MahayanaHost.HostError.requestFailed("Invalid WebMCP tool name")
+        }
+        let result = try await host.request(
+            method: "runtime.call",
+            params: [
+                "pluginId": pluginId,
+                "name": name,
+                "arguments": arguments,
+            ]
+        )
+        return result.value
+    }
+
+    private static func toolContract(from command: [String: Any]) -> MiniAppToolContract? {
+        let name = ((command["tool"] as? String) ?? (command["name"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty,
+              name.range(of: #"^[A-Za-z0-9_.-]{1,128}$"#, options: .regularExpression) != nil
+        else { return nil }
+        let description = ((command["description"] as? String) ?? name)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return MiniAppToolContract(
+            name: name,
+            description: description.isEmpty ? name : description,
+            approval: (command["approval"] as? String) ?? "none"
+        )
     }
 }

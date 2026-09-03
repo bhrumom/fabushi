@@ -1,5 +1,8 @@
 import {
   forwardRef,
+  useEffect,
+  useState,
+  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
 } from "react";
@@ -14,6 +17,10 @@ export type BotMarkState =
   | "thinking"
   | "searching"
   | "working"
+  | "tool-running"
+  | "speaking"
+  | "result"
+  | "error"
   | "excited"
   | "surprised"
   | "suspicious"
@@ -90,19 +97,75 @@ type BotMarkProps = {
   emphasis?: boolean;
   spinSignal?: number;
   badgeColor?: string;
+  animated?: boolean;
   paused?: boolean;
   shape?: BotMarkShape;
   color?: BotMarkColor;
   eyeColor?: string;
 };
 
-const IDENTITY_SHAPES: readonly BotMarkShape[] = [
-  "blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop",
-];
-
 const COLORS: readonly BotMarkColor[] = [
   "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray",
 ];
+
+const AMBIENT_MOTION_STATES = new Set<BotMarkState>([
+  "idle", "sleeping", "drowsy", "bored", "powering-down",
+]);
+
+const botIdentityAliases = new Map<string, string>();
+const botIdentityListeners = new Set<() => void>();
+let botIdentityVersion = 0;
+
+export function canonicalBotIdentity(botId: string): string {
+  let current = botId.trim() || "mahayana-assistant";
+  const seen = new Set<string>();
+  while (!seen.has(current)) {
+    seen.add(current);
+    const aliased = botIdentityAliases.get(current);
+    if (!aliased || aliased === current) break;
+    current = aliased;
+  }
+
+  const workbench = /^workbench:(.+)$/u.exec(current);
+  if (workbench?.[1]) return `bot:${workbench[1]}`;
+  const peerBot = /^peer:(?:bot|agent):(.+)$/u.exec(current);
+  if (peerBot?.[1]) return `bot:${peerBot[1]}`;
+  return current;
+}
+
+export function registerBotIdentityAlias(alias: string, canonical: string): void {
+  const normalizedAlias = alias.trim();
+  if (!normalizedAlias) return;
+  const normalizedCanonical = canonicalBotIdentity(canonical);
+  if (!normalizedCanonical || normalizedAlias === normalizedCanonical) return;
+  if (botIdentityAliases.get(normalizedAlias) === normalizedCanonical) return;
+  botIdentityAliases.set(normalizedAlias, normalizedCanonical);
+  botIdentityVersion += 1;
+  botIdentityListeners.forEach((listener) => listener());
+}
+
+export function registerBotIdentityAliases(
+  aliases: ReadonlyArray<{ alias: string; canonical: string }>,
+): void {
+  aliases.forEach(({ alias, canonical }) => registerBotIdentityAlias(alias, canonical));
+}
+
+function subscribeBotIdentity(listener: () => void): () => void {
+  botIdentityListeners.add(listener);
+  return () => botIdentityListeners.delete(listener);
+}
+
+function botIdentitySnapshot(): number {
+  return botIdentityVersion;
+}
+
+export function botMarkMotionTier(
+  state: BotMarkState,
+  emphasis = false,
+  followPointer = false,
+): "ambient" | "active" {
+  return !emphasis && !followPointer && AMBIENT_MOTION_STATES.has(state) ? "ambient" : "active";
+}
 
 const COLOR_VALUES: Record<BotMarkColor, { light: string; dark: string }> = {
   black: { light: "#000000", dark: "#FFFFFF" },
@@ -136,23 +199,21 @@ function identityRandom(seed: number): () => number {
   };
 }
 
-function shapeHash(value: string): number {
-  let hash = hashIdentity(value);
-  hash = Math.imul(hash ^ hash >>> 16, 73244475);
-  hash = Math.imul(hash ^ hash >>> 13, 3266489909);
-  return (hash ^ hash >>> 16) >>> 0;
+/**
+ * The default body remains visually stable for dense lists. Persisted shape
+ * overrides still support richer persona silhouettes in profile/hero surfaces.
+ */
+export function botMarkShape(_botId: string): BotMarkShape {
+  return "blob";
 }
 
-export function botMarkShape(botId: string): BotMarkShape {
-  return IDENTITY_SHAPES[shapeHash(botId) % IDENTITY_SHAPES.length] ?? "blob";
-}
-
-export function botMarkShapeIndex(botId: string): number {
-  return shapeHash(botId) % IDENTITY_SHAPES.length;
+export function botMarkShapeIndex(_botId: string): number {
+  return 0;
 }
 
 export function botMarkColorId(botId: string): BotMarkColor {
-  const seed = (hashIdentity(botId) ^ Math.imul(1, 2654435769)) >>> 0;
+  const identity = canonicalBotIdentity(botId);
+  const seed = (hashIdentity(identity) ^ Math.imul(1, 2654435769)) >>> 0;
   const index = Math.floor(identityRandom((seed ^ 2654435769) >>> 0)() * COLORS.length);
   return COLORS[index] ?? "gray";
 }
@@ -160,6 +221,27 @@ export function botMarkColorId(botId: string): BotMarkColor {
 export function botMarkColor(botId: string): string {
   const value = COLOR_VALUES[botMarkColorId(botId)];
   return `light-dark(${value.light}, ${value.dark})`;
+}
+
+function useAvatarMotionAllowed(): boolean {
+  const read = () => {
+    if (typeof document === "undefined" || typeof window === "undefined") return true;
+    return document.visibilityState === "visible" && document.hasFocus();
+  };
+  const [allowed, setAllowed] = useState(read);
+  useEffect(() => {
+    const update = () => setAllowed(read());
+    document.addEventListener("visibilitychange", update);
+    window.addEventListener("focus", update);
+    window.addEventListener("blur", update);
+    update();
+    return () => {
+      document.removeEventListener("visibilitychange", update);
+      window.removeEventListener("focus", update);
+      window.removeEventListener("blur", update);
+    };
+  }, []);
+  return allowed;
 }
 
 export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
@@ -175,6 +257,7 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
     emphasis = false,
     spinSignal = 0,
     badgeColor,
+    animated = true,
     paused = false,
     shape: shapeOverride,
     color: colorOverride,
@@ -182,8 +265,12 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
   },
   ref,
 ) {
-  const shape = shapeOverride ?? botMarkShape(botId);
-  const color = colorOverride ?? botMarkColorId(botId);
+  useSyncExternalStore(subscribeBotIdentity, botIdentitySnapshot, botIdentitySnapshot);
+  const identityId = canonicalBotIdentity(botId);
+  const motionAllowed = useAvatarMotionAllowed();
+  const effectivePaused = paused || !animated || !motionAllowed;
+  const shape = shapeOverride ?? botMarkShape(identityId);
+  const color = colorOverride ?? botMarkColorId(identityId);
   const style = {
     width: size,
     height: size,
@@ -195,11 +282,14 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
     <span
       className={`${styles.botMark} ${className}`.trim()}
       data-bot-id={botId}
+      data-canonical-bot-id={identityId}
       data-agent-state={state}
-      data-paused={paused || undefined}
+      data-paused={effectivePaused || undefined}
       data-shape={shape}
       data-color={color}
-      data-engine="grok-mark"
+      data-motion-tier={botMarkMotionTier(state, emphasis, followPointer)}
+      data-engine="fabushi-motion-v3"
+      data-renderer="fabushi-owned-svg-runtime"
       style={style}
       aria-label={label}
       aria-hidden={label ? undefined : true}
@@ -207,7 +297,7 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
     >
       <FabushiBotMarkEngine
         ref={ref}
-        botId={botId}
+        botId={identityId}
         state={state}
         size={size}
         shape={shape}
@@ -217,7 +307,7 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
         emphasis={emphasis}
         spinSignal={spinSignal}
         badgeColor={badgeColor}
-        paused={paused}
+        paused={effectivePaused}
         eyeColor={eyeColor}
       />
       {children}

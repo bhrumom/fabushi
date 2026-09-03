@@ -1,0 +1,26 @@
+project_id: FAB-P0009
+project_key: RDF
+legacy_project_ids: []
+name: RustDesk -> Fabushi 核心能力融合
+slug: rustdesk-fabushi-fusion
+status: active
+repository: bhrumom/fabushi
+authoritative_branch: main
+authoritative_path: projects/rustdesk-fabushi-fusion
+owner: Fabushi engineering
+reviewers: []
+current_stage: M1-device-presence
+created_at: 2026-09-01
+updated_at: 2026-09-01
+risk_tier: tier-0
+security_classification: confidential
+target_finish: null
+related_projects:
+  - grok-bot-fabushi-integration
+  - mahayana-sovereign-runtime
+  - fabushi-account-access-control
+source_systems:
+  - GitHub:bhrumom/fabushi
+  - GitHub:rustdesk/rustdesk@f28ac38ccfa662fd06639a062e0d06249860b142
+  - GitHub:rustdesk/hbb_common@b2b1ac453d1d694046f63be20d792d608dac1c93
+  - GitHub:rustdesk/rustdesk-server@a7736be5e40f85bfc141120dce587e836e5d4b80

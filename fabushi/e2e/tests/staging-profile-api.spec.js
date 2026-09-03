@@ -25,6 +25,20 @@ function safeProjectName(testInfo) {
 test.describe('staging profile API flow', () => {
   test.describe.configure({ mode: 'serial' });
 
+  test('browser-first auth gateway returns the canonical handoff payload', async ({ request }) => {
+    env('STAGING_API_URL');
+    const response = await request.post(apiUrl('/api/auth/browser/start'), {
+      data: { platform: 'desktop' }
+    });
+    const text = await response.text();
+    expect(response.status(), `browser-first auth failed: ${text}`).toBe(200);
+    expect(text).not.toContain('This Cloudflare Worker is an API backend only.');
+    const body = JSON.parse(text);
+    expect(body.attemptId).toBeTruthy();
+    expect(body.pollSecret).toBeTruthy();
+    expect(body.loginUrl).toMatch(/^https:\/\/api\.ombhrum\.com\/api\/auth\/browser\//);
+  });
+
   test('logs in with username, email, and phone, then updates profile fields and exercises username rename rollback', async ({ request }, testInfo) => {
     for (const name of requiredEnv) env(name);
 
@@ -48,7 +62,17 @@ test.describe('staging profile API flow', () => {
       });
       if (response.status() === 401) {
         const text = await response.text();
-        test.skip(text.includes('用户不存在'), `staging test account is unavailable: ${text}`);
+        let errorCode = '';
+        try {
+          errorCode = JSON.parse(text)?.error || '';
+        } catch {
+          // Preserve compatibility with the legacy text response while the
+          // account control plane finishes migrating its staging fixture.
+        }
+        test.skip(
+          errorCode === 'invalid_credentials' || text.includes('用户不存在') || text.includes('账号或密码错误'),
+          `staging password fixture is unavailable or stale: ${text}`
+        );
       }
       expect(response.status(), `login failed for ${identifier}: ${await response.text()}`).toBe(200);
       const body = await response.json();

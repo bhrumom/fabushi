@@ -12,6 +12,7 @@ use chrono::TimeZone;
 use chrono::Timelike;
 use chrono::Utc;
 
+use fabushi_messaging_core::BlobId;
 use fabushi_messaging_core::ClientEnvelope as MessagingClientEnvelope;
 use fabushi_messaging_core::FileBlobStore;
 use fabushi_messaging_core::JsonFileStateStore;
@@ -22,9 +23,8 @@ use mahayana_core::ApprovalDecision as RuntimeApprovalDecision;
 #[cfg(feature = "production")]
 use mahayana_core::ApprovalId;
 #[cfg(feature = "production")]
-use mahayana_core::CODEX_ASSISTANT_CONVERSATION_ID;
-#[cfg(feature = "production")]
 use mahayana_core::ConversationId;
+use mahayana_core::MAHAYANA_AI_CONVERSATION_ID;
 #[cfg(feature = "production")]
 use mahayana_core::MessageRole as RuntimeMessageRole;
 #[cfg(feature = "production")]
@@ -65,11 +65,14 @@ use mahayana_host_protocol::AutoReviewRule;
 use mahayana_host_protocol::AutomationSummary;
 use mahayana_host_protocol::AutomationTrigger;
 use mahayana_host_protocol::BotSummary;
+use mahayana_host_protocol::COMPUTER_CONTROL_PROTOCOL_VERSION;
 use mahayana_host_protocol::CapabilitySummary;
 use mahayana_host_protocol::CommandAccepted;
 use mahayana_host_protocol::ComputerActionResult;
 use mahayana_host_protocol::ComputerControlOrigin;
+use mahayana_host_protocol::ComputerControlTarget;
 use mahayana_host_protocol::ComputerSnapshot;
+use mahayana_host_protocol::ComputerTargetKind;
 use mahayana_host_protocol::ConnectorAccountSummary;
 use mahayana_host_protocol::ConnectorStatus;
 use mahayana_host_protocol::ConnectorSummary;
@@ -135,7 +138,6 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::OnceLock;
-#[cfg(feature = "production")]
 use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -167,6 +169,8 @@ struct PendingApproval {
 const GROUP_MAX_MEMBER_TURNS: usize = 10;
 const GROUP_MAX_ROUNDS: usize = 3;
 const GROUP_PROMPT_HISTORY_LIMIT: usize = 24;
+const REMOTE_DEVICE_SECRET_MAX_ENTRIES: usize = 256;
+const REMOTE_DEVICE_SECRET_MAX_BYTES: u64 = 256 * 1024;
 
 #[derive(Debug, Clone)]
 struct GroupRunState {
@@ -199,6 +203,7 @@ struct RemoteComputerLocalSession {
     device_id: String,
     client_id: String,
     expires_at_seconds: i64,
+    generation: u64,
 }
 
 #[derive(Debug)]
@@ -292,13 +297,16 @@ pub struct FeatureHostController {
     bot_state_path: Option<PathBuf>,
     group_state_path: Option<PathBuf>,
     peer_messages_path: Option<PathBuf>,
-    account_scope_path: Option<PathBuf>,
-    active_account_id: Mutex<Option<String>>,
     settings_path: Option<PathBuf>,
     remote_device_state_path: Option<PathBuf>,
+    test_auth_state_path: Option<PathBuf>,
     memory_root_path: Option<PathBuf>,
     workflow_root_path: Option<PathBuf>,
     teach_recording: Mutex<Option<TeachCaptureProcess>>,
+    /// The authenticated account currently owning in-memory feature state.
+    /// This is deliberately not a credential; it is only an identity marker
+    /// used to prevent transcript/state reuse across account boundaries.
+    active_account_id: Mutex<Option<String>>,
     state: Mutex<FeatureState>,
 }
 
@@ -306,7 +314,7 @@ impl FeatureHostController {
     pub fn create(config: HostConfig, platform: SurfacePlatform) -> Result<Self, FeatureHostError> {
         validate_config(&config)?;
         match config.mode {
-            HostMode::Test => Ok(Self::create_test_backend(config, platform)),
+            HostMode::Test => Ok(Self::create_test_backend(config, platform, None)),
             HostMode::Production => {
                 #[cfg(feature = "production")]
                 {
@@ -320,7 +328,13 @@ impl FeatureHostController {
         }
     }
 
-    fn create_test_backend(config: HostConfig, platform: SurfacePlatform) -> Self {
+    fn create_test_backend(
+        config: HostConfig,
+        platform: SurfacePlatform,
+        test_data_dir: Option<&Path>,
+    ) -> Self {
+        let test_auth_state_path =
+            test_data_dir.map(|data_dir| data_dir.join("test-auth-session.json"));
         let memory_root_path = Some(std::env::temp_dir().join(format!(
             "fabushi-feature-host-memory-{}-{}",
             config.profile_id,
@@ -337,6 +351,9 @@ impl FeatureHostController {
             platform,
         };
         let mut state = FeatureState::default();
+        if let Some(path) = test_auth_state_path.as_deref() {
+            state.auth_user = load_test_auth_user(path);
+        }
         sync_computer_control_policy(&state.settings);
         state.events.push_back(HostEvent::HostReady {
             timestamp: timestamp(),
@@ -351,13 +368,13 @@ impl FeatureHostController {
             bot_state_path: None,
             group_state_path: None,
             peer_messages_path: None,
-            account_scope_path: None,
-            active_account_id: Mutex::new(None),
             settings_path: None,
             remote_device_state_path: None,
+            test_auth_state_path,
             memory_root_path,
             workflow_root_path,
             teach_recording: Mutex::new(None),
+            active_account_id: Mutex::new(None),
             state: Mutex::new(state),
         }
     }
@@ -370,7 +387,12 @@ impl FeatureHostController {
     ) -> Result<Self, FeatureHostError> {
         validate_config(&config)?;
         if config.mode == HostMode::Test {
-            return Ok(Self::create_test_backend(config, platform));
+            let test_data_dir = host_config.runtime.data_dir.clone();
+            return Ok(Self::create_test_backend(
+                config,
+                platform,
+                test_data_dir.as_deref(),
+            ));
         }
         let automation_path = host_config.automation_path.clone().or_else(|| {
             host_config
@@ -394,11 +416,6 @@ impl FeatureHostController {
             .data_dir
             .as_ref()
             .map(|data_dir| data_dir.join("peer-messages.json"));
-        let account_scope_path = host_config
-            .runtime
-            .data_dir
-            .as_ref()
-            .map(|data_dir| data_dir.join("account-scope.json"));
         let settings_path = host_config
             .runtime
             .data_dir
@@ -428,6 +445,11 @@ impl FeatureHostController {
         let mut state = FeatureState::default();
         if let Some(path) = settings_path.as_deref() {
             state.settings = load_product_host_settings(path);
+            // The bundled Computer Use MCP independently rereads this canonical
+            // policy before every tool call. Persist defaults during startup so
+            // a first-run profile is explicit rather than relying on fail-open
+            // behavior while the settings UI has not yet written the file.
+            persist_product_host_settings(path, &state.settings)?;
         }
         if let Some(path) = remote_device_state_path.as_deref() {
             state.remote_computer_device_secrets = load_remote_computer_device_secrets(path);
@@ -437,7 +459,7 @@ impl FeatureHostController {
             timestamp: timestamp(),
             info: info.clone(),
         });
-        Ok(Self {
+        let controller = Self {
             config,
             info,
             runtime: Some(runtime),
@@ -445,15 +467,21 @@ impl FeatureHostController {
             bot_state_path,
             group_state_path,
             peer_messages_path,
-            account_scope_path,
-            active_account_id: Mutex::new(None),
             settings_path,
             remote_device_state_path,
+            test_auth_state_path: None,
             memory_root_path,
             workflow_root_path,
             teach_recording: Mutex::new(None),
+            active_account_id: Mutex::new(None),
             state: Mutex::new(state),
-        })
+        };
+        controller.ensure_account_boundary(&controller.auth_status()?)?;
+        controller.state()?.events.push_back(HostEvent::HostReady {
+            timestamp: timestamp(),
+            info: controller.info.clone(),
+        });
+        Ok(controller)
     }
 
     pub fn info(&self) -> HostInfo {
@@ -487,16 +515,17 @@ impl FeatureHostController {
                     // account from the Rust-owned session is immediate and
                     // lets an offline macOS launch remain signed in. Network
                     // operations still validate the token at their boundary.
-                    let runtime = self.runtime()?;
-                    let session = match runtime
+                    let session = if let Ok(session) = self
+                        .runtime()?
                         .product_execute("mahayana.auth.session.restore", &json!({}))
                     {
-                        Ok(session) => session,
-                        Err(_) => runtime
+                        session
+                    } else {
+                        self.runtime()?
                             .product_execute("mahayana.auth.status", &json!({}))
-                            .map_err(FeatureHostError::from)?,
+                            .map_err(FeatureHostError::from)?
                     };
-                    self.sync_account_scope(&session)?;
+                    self.ensure_account_boundary(&session)?;
                     Ok(session)
                 }
                 #[cfg(not(feature = "production"))]
@@ -519,17 +548,20 @@ impl FeatureHostController {
         let device_id = required(device_id, "device id")?;
         let session_id = required(session_id, "session id")?;
         let auth = self.auth_status()?;
-        let auth = auth_payload(&auth);
         if auth.get("loggedIn").and_then(Value::as_bool) != Some(true) {
             return Err(FeatureHostError::Contract(
                 "messaging access requires an authenticated Fabushi account session".into(),
             ));
         }
-        let actor_id = auth_account_id(&auth)
-            .map(|account_id| actor_id_for_account_id(&account_id))
-            .ok_or_else(|| {
-                FeatureHostError::Contract("authenticated account has no stable user id".into())
-            })?;
+        let user_id = stable_authenticated_account_id(&auth).ok_or_else(|| {
+            FeatureHostError::Contract("authenticated account has no stable user id".into())
+        })?;
+        let digest = Sha256::digest(user_id.as_bytes());
+        let account_fingerprint = digest[..16]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let actor_id = ActorId::new(format!("human:account:{account_fingerprint}"));
         let mut scopes = std::collections::BTreeSet::new();
         for scope in requested_scopes {
             let parsed = match scope.as_str() {
@@ -560,7 +592,8 @@ impl FeatureHostController {
         let ttl_ms = ttl_ms.clamp(5 * 60 * 1000, 30 * 24 * 60 * 60 * 1000);
         let expires_at_ms = now_ms.saturating_add(ttl_ms);
         let root = self
-            .active_account_root(self.memory_root_path.as_deref())
+            .memory_root_path
+            .as_deref()
             .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))?;
         let access_store = FileAccessTokenStore::new(root.join("_messaging").join("access.json"));
         let grant_id = format!("grant:{}", Uuid::new_v4().simple());
@@ -603,7 +636,10 @@ impl FeatureHostController {
                     "username": username,
                     "nickname": "本地测试用户",
                 });
-                self.state()?.auth_user = Some(user.clone());
+                {
+                    self.state()?.auth_user = Some(user.clone());
+                }
+                self.persist_test_auth_user(Some(&user))?;
                 Ok(json!({
                     "@type": "mahayana.auth.session",
                     "loggedIn": true,
@@ -622,9 +658,7 @@ impl FeatureHostController {
                             &json!({"username": username, "password": password}),
                         )
                         .map_err(FeatureHostError::from)?;
-                    self.runtime()?.reset_runtime_session()?;
-                    self.reset_account_bound_state(true)?;
-                    self.sync_account_scope(&response)?;
+                    self.ensure_account_boundary(&response)?;
                     return Ok(response);
                 }
                 #[cfg(not(feature = "production"))]
@@ -647,7 +681,7 @@ impl FeatureHostController {
                     .runtime()?
                     .product_execute(
                         "mahayana.auth.browser.start",
-                        &json!({"platform": "desktop"}),
+                        &json!({"platform": browser_login_platform(self.info.platform)}),
                     )
                     .map_err(FeatureHostError::from);
                 #[cfg(not(feature = "production"))]
@@ -711,7 +745,10 @@ impl FeatureHostController {
                     "email": "browser@example.test",
                     "nickname": "Browser 测试用户",
                 });
-                self.state()?.auth_user = Some(user.clone());
+                {
+                    self.state()?.auth_user = Some(user.clone());
+                }
+                self.persist_test_auth_user(Some(&user))?;
                 Ok(json!({
                     "status": "completed",
                     "provider": "browser",
@@ -732,14 +769,12 @@ impl FeatureHostController {
                             &json!({"attemptId": attempt_id}),
                         )
                         .map_err(FeatureHostError::from)?;
-                    if response
-                        .pointer("/auth/loggedIn")
+                    if auth_payload(&response)
+                        .get("loggedIn")
                         .and_then(Value::as_bool)
                         == Some(true)
                     {
-                        self.runtime()?.reset_runtime_session()?;
-                        self.reset_account_bound_state(true)?;
-                        self.sync_account_scope(&response)?;
+                        self.ensure_account_boundary(&response)?;
                     }
                     return Ok(response);
                 }
@@ -801,7 +836,10 @@ impl FeatureHostController {
                     "email": "oauth@example.test",
                     "nickname": "OAuth 测试用户",
                 });
-                self.state()?.auth_user = Some(user.clone());
+                {
+                    self.state()?.auth_user = Some(user.clone());
+                }
+                self.persist_test_auth_user(Some(&user))?;
                 Ok(json!({
                     "attemptId": attempt_id,
                     "status": "completed",
@@ -822,14 +860,12 @@ impl FeatureHostController {
                             &json!({"attemptId": attempt_id}),
                         )
                         .map_err(FeatureHostError::from)?;
-                    if response
-                        .pointer("/auth/loggedIn")
+                    if auth_payload(&response)
+                        .get("loggedIn")
                         .and_then(Value::as_bool)
                         == Some(true)
                     {
-                        self.runtime()?.reset_runtime_session()?;
-                        self.reset_account_bound_state(true)?;
-                        self.sync_account_scope(&response)?;
+                        self.ensure_account_boundary(&response)?;
                     }
                     return Ok(response);
                 }
@@ -842,7 +878,10 @@ impl FeatureHostController {
     pub fn logout(&self) -> Result<Value, FeatureHostError> {
         match self.config.mode {
             HostMode::Test => {
-                self.reset_account_bound_state(false)?;
+                {
+                    self.state()?.auth_user = None;
+                }
+                self.persist_test_auth_user(None)?;
                 Ok(json!({
                     "@type": "mahayana.auth.session",
                     "loggedIn": false,
@@ -852,11 +891,8 @@ impl FeatureHostController {
             HostMode::Production => {
                 #[cfg(feature = "production")]
                 {
-                    let runtime = self.runtime()?;
-                    runtime.reset_runtime_session()?;
-                    let response = runtime.clear_session()?;
-                    self.reset_account_bound_state(false)?;
-                    self.sync_account_scope(&response)?;
+                    let response = self.runtime()?.clear_session()?;
+                    self.ensure_account_boundary(&response)?;
                     return Ok(response);
                 }
                 #[cfg(not(feature = "production"))]
@@ -1028,44 +1064,33 @@ impl FeatureHostController {
         request_id: String,
         envelope: Value,
     ) -> Result<CommandAccepted, FeatureHostError> {
-        let expected_actor_id = if matches!(self.config.mode, HostMode::Production) {
-            let auth = self.auth_status()?;
-            let auth = auth_payload(&auth);
-            if auth.get("loggedIn").and_then(Value::as_bool) != Some(true) {
-                return Err(FeatureHostError::Contract(
-                    "messaging commands require an authenticated Fabushi account session".into(),
-                ));
-            }
-            let actor_id = auth_account_id(auth)
-                .map(|account_id| actor_id_for_account_id(&account_id))
-                .ok_or_else(|| {
-                    FeatureHostError::Contract(
-                        "authenticated account has no stable messaging actor id".into(),
-                    )
-                })?;
-            Some(actor_id)
-        } else {
-            None
-        };
+        self.execute_messaging_sync(request_id.clone(), envelope)?;
+        Ok(CommandAccepted {
+            request_id,
+            operation_id: None,
+        })
+    }
+
+    /// Executes one messaging envelope against the exact same persistent
+    /// `MessagingService` used by desktop and also returns the resulting server
+    /// envelopes to native shells. The envelopes are still projected onto the
+    /// regular FeatureHost event queue, so desktop/event-driven consumers retain
+    /// their existing behavior while iOS and Android can update synchronously.
+    pub fn execute_messaging_sync(
+        &self,
+        request_id: String,
+        envelope: Value,
+    ) -> Result<Vec<Value>, FeatureHostError> {
         static MESSAGING_IO_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         let _io_guard = MESSAGING_IO_LOCK
             .get_or_init(|| Mutex::new(()))
             .lock()
             .map_err(|_| FeatureHostError::Contract("messaging storage lock is poisoned".into()))?;
-        let root = self
-            .active_account_root(self.memory_root_path.as_deref())
-            .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))?;
         let client_envelope: MessagingClientEnvelope =
             serde_json::from_value(envelope).map_err(|error| {
                 FeatureHostError::Contract(format!("invalid messaging envelope: {error}"))
             })?;
-        if let Some(expected_actor_id) = expected_actor_id {
-            if client_envelope.context.actor_id != expected_actor_id {
-                return Err(FeatureHostError::Contract(
-                    "messaging actor does not match the authenticated Fabushi account".into(),
-                ));
-            }
-        }
+        let root = self.messaging_root_for(&client_envelope)?;
         let messaging_root = root.join("_messaging");
         let store = JsonFileStateStore::new(messaging_root.join("snapshot.json"));
         let mut service = MessagingService::load_with_blob_store(
@@ -1076,19 +1101,43 @@ impl FeatureHostController {
         let responses = service
             .handle(client_envelope, now_millis())
             .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
+        let envelopes = responses
+            .into_iter()
+            .map(|response| {
+                serde_json::to_value(response)
+                    .map_err(|error| FeatureHostError::Contract(error.to_string()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let mut state = self.state()?;
-        for response in responses {
+        for envelope in &envelopes {
             state.events.push_back(HostEvent::MessagingEvent {
                 timestamp: timestamp(),
                 request_id: request_id.clone(),
-                envelope: serde_json::to_value(response)
-                    .map_err(|error| FeatureHostError::Contract(error.to_string()))?,
+                envelope: envelope.clone(),
             });
         }
-        Ok(CommandAccepted {
-            request_id,
-            operation_id: None,
-        })
+        Ok(envelopes)
+    }
+
+    pub fn read_messaging_blob_range(
+        &self,
+        blob_id: &str,
+        offset: u64,
+        length: u64,
+    ) -> Result<(fabushi_messaging_core::BlobMetadata, Vec<u8>), FeatureHostError> {
+        let root = self
+            .active_account_root(self.memory_root_path.as_deref())
+            .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))?;
+        let blob_id = BlobId::new(blob_id.to_string())
+            .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
+        let store = FileBlobStore::new(root.join("_messaging").join("blobs"));
+        let metadata = store
+            .metadata(&blob_id)
+            .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
+        let bytes = store
+            .read_range(&blob_id, offset, length.min(1024 * 1024))
+            .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
+        Ok((metadata, bytes))
     }
 
     fn execute_automation(
@@ -1751,7 +1800,7 @@ impl FeatureHostController {
                 let root = self
                     .active_account_root(self.memory_root_path.as_deref())
                     .ok_or_else(|| {
-                    FeatureHostError::Contract("teach recording storage is unavailable".into())
+                        FeatureHostError::Contract("teach recording storage is unavailable".into())
                     })?;
                 let started_at_ms = now_millis();
                 let session_dir = root
@@ -1984,7 +2033,8 @@ impl FeatureHostController {
         markdown: &str,
     ) -> Result<WorkflowSummary, FeatureHostError> {
         let workflow_root = self
-            .active_account_root(self.workflow_root_path.as_deref())
+            .workflow_root_path
+            .as_deref()
             .ok_or_else(|| FeatureHostError::Contract("workflow storage is unavailable".into()))?;
         let body = clamp_block(markdown, 100_000);
         if body.is_empty() {
@@ -2042,7 +2092,7 @@ impl FeatureHostController {
             file_path: file_path.to_string_lossy().to_string(),
         };
         if let Some(agent_root) = self.active_account_root(self.memory_root_path.as_deref()) {
-            let _ = set_workflow_enabled(agent_root, agent_id, &workflow.id, true);
+            let _ = set_workflow_enabled(&agent_root, agent_id, &workflow.id, true);
         }
         Ok(workflow)
     }
@@ -2449,9 +2499,17 @@ impl FeatureHostController {
                     });
             }
             FeatureCommand::ComputerScreenshot {
-                origin, session_id, ..
+                origin,
+                session_id,
+                target,
+                ..
             } => {
-                self.ensure_computer_origin_allowed(origin, session_id.as_deref(), &settings)?;
+                self.ensure_computer_origin_allowed(
+                    origin,
+                    session_id.as_deref(),
+                    &target,
+                    &settings,
+                )?;
                 let snapshot = if self.config.mode == HostMode::Test {
                     test_computer_snapshot()
                 } else {
@@ -2481,11 +2539,17 @@ impl FeatureHostController {
                 origin,
                 agent_id,
                 session_id,
+                target,
                 action,
                 then,
                 ..
             } => {
-                self.ensure_computer_origin_allowed(origin, session_id.as_deref(), &settings)?;
+                self.ensure_computer_origin_allowed(
+                    origin,
+                    session_id.as_deref(),
+                    &target,
+                    &settings,
+                )?;
                 let audit_agent_id = agent_id
                     .as_deref()
                     .filter(|id| is_safe_memory_agent_id(id))
@@ -2557,27 +2621,39 @@ impl FeatureHostController {
         let remote_enabled = self.state()?.settings.remote_control_enabled;
         let (method, action, payload, local_transition) = match command {
             FeatureCommand::RemoteComputerRegister {
-                device_id, label, ..
+                device_id,
+                label,
+                provider,
+                platform,
+                app_version,
+                capabilities,
+                ..
             } => {
-                if !remote_enabled {
-                    return Err(FeatureHostError::Contract(
-                        "enable remote computer control before creating a pairing code".into(),
-                    ));
-                }
+                // Registration is device presence, not authorization to control.
+                // Keeping it available while remote control is disabled lets the
+                // signed-in account discover this installed desktop. Session
+                // polling, activation, signaling, screenshots, and input remain
+                // gated below by `remote_control_enabled`.
                 let device_secret = self.remote_device_secret(&device_id, true)?;
+                let provider = provider.unwrap_or_else(|| "fabushi-webrtc".to_string());
+                let platform = platform.unwrap_or_else(|| "unknown".to_string());
+                let app_version = app_version.unwrap_or_else(|| "unknown".to_string());
                 (
                     "mahayana.remote.computer.register",
                     "registered",
-                    json!({"deviceId": device_id, "label": label, "deviceSecret": device_secret}),
+                    json!({
+                        "deviceId": device_id,
+                        "label": label,
+                        "deviceSecret": device_secret,
+                        "provider": provider,
+                        "platform": platform,
+                        "appVersion": app_version,
+                        "capabilities": capabilities,
+                    }),
                     None,
                 )
             }
             FeatureCommand::RemoteComputerHeartbeat { device_id, .. } => {
-                if !remote_enabled {
-                    return Err(FeatureHostError::Contract(
-                        "remote computer control is disabled".into(),
-                    ));
-                }
                 let device_secret = self.remote_device_secret(&device_id, false)?;
                 (
                     "mahayana.remote.computer.heartbeat",
@@ -2702,12 +2778,12 @@ impl FeatureHostController {
             _ => unreachable!("non-remote-computer command routed to remote computer executor"),
         };
 
-        let data = if self.config.mode == HostMode::Test {
+        let mut data = if self.config.mode == HostMode::Test {
             match action {
                 "registered" => json!({
                     "deviceId": payload.get("deviceId"),
                     "label": payload.get("label"),
-                    "pairingCode": "AB12CD34",
+                    "pairingCode": "AB12CD34EF56",
                     "pairingExpiresAt": now_millis() / 1000 + 600,
                 }),
                 "heartbeat" => json!({"ok": true, "lastSeenAt": now_millis() / 1000}),
@@ -2763,14 +2839,24 @@ impl FeatureHostController {
                         .and_then(Value::as_str)
                         .unwrap_or_default()
                         .to_string();
-                    self.state()?.remote_computer_sessions.insert(
-                        id,
-                        RemoteComputerLocalSession {
-                            device_id,
-                            client_id,
-                            expires_at_seconds,
-                        },
-                    );
+                    let generation = {
+                        let mut state = self.state()?;
+                        state.sequence = state.sequence.saturating_add(1);
+                        let generation = state.sequence;
+                        state.remote_computer_sessions.insert(
+                            id,
+                            RemoteComputerLocalSession {
+                                device_id,
+                                client_id,
+                                expires_at_seconds,
+                                generation,
+                            },
+                        );
+                        generation
+                    };
+                    if let Some(object) = data.as_object_mut() {
+                        object.insert("generation".into(), json!(generation));
+                    }
                 }
                 "close" => {
                     self.state()?.remote_computer_sessions.remove(&id);
@@ -2802,8 +2888,20 @@ impl FeatureHostController {
         &self,
         origin: ComputerControlOrigin,
         session_id: Option<&str>,
+        target: &ComputerControlTarget,
         settings: &ProductHostSettings,
     ) -> Result<(), FeatureHostError> {
+        if target.protocol_version != COMPUTER_CONTROL_PROTOCOL_VERSION {
+            return Err(FeatureHostError::Contract(format!(
+                "unsupported computer-control protocol version: {}",
+                target.protocol_version
+            )));
+        }
+        if target.kind != ComputerTargetKind::Desktop {
+            return Err(FeatureHostError::Contract(
+                "desktop computer action cannot target a window or browser tab; use the target-specific capability".into(),
+            ));
+        }
         match origin {
             ComputerControlOrigin::LocalUi => {
                 if !settings.local_execution {
@@ -2838,6 +2936,17 @@ impl FeatureHostController {
                 if session.device_id.trim().is_empty() || session.client_id.trim().is_empty() {
                     return Err(FeatureHostError::Contract(
                         "remote computer session metadata is invalid".into(),
+                    ));
+                }
+                if target.device_id.as_deref() != Some(session.device_id.as_str()) {
+                    return Err(FeatureHostError::Contract(
+                        "remote computer target device does not match the active paired session"
+                            .into(),
+                    ));
+                }
+                if target.generation != session.generation {
+                    return Err(FeatureHostError::Contract(
+                        "remote computer target generation is stale or mismatched".into(),
                     ));
                 }
             }
@@ -2899,7 +3008,8 @@ impl FeatureHostController {
             )));
         }
         let root = self
-            .active_account_root(self.memory_root_path.as_deref())
+            .memory_root_path
+            .as_deref()
             .ok_or_else(|| FeatureHostError::Contract("memory storage is unavailable".into()))?;
         let memory_dir = root.join(&agent_id).join("memory");
         match action {
@@ -3023,10 +3133,12 @@ impl FeatureHostController {
     ) -> Result<CommandAccepted, FeatureHostError> {
         let request_id = command.request_id().to_string();
         let workflow_root = self
-            .active_account_root(self.workflow_root_path.as_deref())
+            .workflow_root_path
+            .as_deref()
             .ok_or_else(|| FeatureHostError::Contract("workflow storage is unavailable".into()))?;
         let agent_root = self
-            .active_account_root(self.memory_root_path.as_deref())
+            .memory_root_path
+            .as_deref()
             .ok_or_else(|| FeatureHostError::Contract("agent storage is unavailable".into()))?;
         let agent_id = match &command {
             FeatureCommand::WorkflowList { agent_id, .. }
@@ -3466,7 +3578,7 @@ impl FeatureHostController {
         let agent_root = self
             .active_account_root(self.memory_root_path.as_deref())
             .ok_or_else(|| {
-            FeatureHostError::Contract("attachment storage is unavailable".into())
+                FeatureHostError::Contract("attachment storage is unavailable".into())
             })?;
         match command {
             FeatureCommand::AttachmentUpload {
@@ -3729,7 +3841,8 @@ impl FeatureHostController {
                 let limit = limit.clamp(1, AGENT_CONTENT_SEARCH_MAX_RESULTS);
                 let bots = self.state()?.bots.values().cloned().collect::<Vec<_>>();
                 let mut matches = Vec::new();
-                if let Some(agent_root) = self.active_account_root(self.memory_root_path.as_deref()) {
+                if let Some(agent_root) = self.active_account_root(self.memory_root_path.as_deref())
+                {
                     for bot in bots {
                         collect_agent_media_matches(
                             &agent_root.join(&bot.id).join("attachments"),
@@ -4057,7 +4170,8 @@ impl FeatureHostController {
                     )));
                 }
                 let records = self
-                    .active_account_root(self.memory_root_path.as_deref())
+                    .memory_root_path
+                    .as_deref()
                     .map(|root| {
                         read_action_audit(
                             &root.join(&agent_id).join("audit.jsonl"),
@@ -5054,30 +5168,6 @@ impl FeatureHostController {
         &self,
         command: FeatureCommand,
     ) -> Result<CommandAccepted, FeatureHostError> {
-        if let FeatureCommand::SecretProvide {
-            secret_request_id,
-            value,
-            ..
-        } = &command
-        {
-            let secret_request_id = required(secret_request_id.clone(), "secretRequestId")?;
-            let value = value.clone();
-            if value.trim().is_empty() {
-                return Err(FeatureHostError::Contract(
-                    "secretValue must not be empty".into(),
-                ));
-            }
-            self.runtime()?
-                .provide_secret(secret_request_id.clone(), value)?;
-            self.state()?.events.push_back(HostEvent::SecretProvided {
-                timestamp: timestamp(),
-                secret_request_id,
-            });
-            return Ok(CommandAccepted {
-                request_id: command.request_id().to_string(),
-                operation_id: None,
-            });
-        }
         if let Some(accepted) = self.execute_live_product_surface_production(&command)? {
             return Ok(accepted);
         }
@@ -5397,13 +5487,20 @@ impl FeatureHostController {
     }
 
     pub fn receive(&self) -> Result<Option<HostEvent>, FeatureHostError> {
+        self.receive_with_timeout(Duration::ZERO)
+    }
+
+    pub fn receive_with_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<Option<HostEvent>, FeatureHostError> {
         self.fire_due_automation()?;
         if let Some(event) = self.state()?.events.pop_front() {
             return Ok(Some(event));
         }
         match self.config.mode {
             HostMode::Test => Ok(None),
-            HostMode::Production => self.receive_production(),
+            HostMode::Production => self.receive_production(timeout),
         }
     }
 
@@ -5427,18 +5524,25 @@ impl FeatureHostController {
         Ok(())
     }
 
+    fn persist_test_auth_user(&self, user: Option<&Value>) -> Result<(), FeatureHostError> {
+        let Some(path) = self.test_auth_state_path.as_deref() else {
+            return Ok(());
+        };
+        persist_test_auth_user(path, user)
+    }
+
     fn persist_automations(
         &self,
         automations: &BTreeMap<String, AutomationSummary>,
     ) -> Result<(), FeatureHostError> {
-        let Some(path) = self.active_account_path(self.automation_path.as_deref()) else {
+        let Some(path) = self.active_account_root(self.automation_path.as_deref()) else {
             return Ok(());
         };
         persist_automations(&path, automations)
     }
 
     fn persist_bots(&self, bots: &BTreeMap<String, BotSummary>) -> Result<(), FeatureHostError> {
-        let Some(path) = self.active_account_path(self.bot_state_path.as_deref()) else {
+        let Some(path) = self.active_account_root(self.bot_state_path.as_deref()) else {
             return Ok(());
         };
         persist_bots(&path, bots)
@@ -5448,89 +5552,159 @@ impl FeatureHostController {
         &self,
         groups: &BTreeMap<String, GroupSummary>,
     ) -> Result<(), FeatureHostError> {
-        let Some(path) = self.active_account_path(self.group_state_path.as_deref()) else {
+        let Some(path) = self.active_account_root(self.group_state_path.as_deref()) else {
             return Ok(());
         };
         persist_groups(&path, groups)
     }
 
     fn persist_peer_messages(&self, messages: &[AgentPeerMessage]) -> Result<(), FeatureHostError> {
-        let Some(path) = self.active_account_path(self.peer_messages_path.as_deref()) else {
+        let Some(path) = self.active_account_root(self.peer_messages_path.as_deref()) else {
             return Ok(());
         };
         persist_peer_messages(&path, messages)
     }
 
-    fn active_account_path(&self, base: Option<&Path>) -> Option<PathBuf> {
-        self.active_account_root(base)
-    }
-
     fn active_account_root(&self, base: Option<&Path>) -> Option<PathBuf> {
         let base = base?;
-        let account_id = self
-            .active_account_id
-            .lock()
-            .ok()
-            .and_then(|account| account.clone());
-        match account_id {
-            Some(account_id) => Some(account_scoped_path(base, &account_id)),
-            None if matches!(self.config.mode, HostMode::Test) => Some(base.to_path_buf()),
-            None => None,
+        #[cfg(feature = "production")]
+        {
+            let account_id = self
+                .active_account_id
+                .lock()
+                .ok()
+                .and_then(|account| account.clone())?;
+            return Some(account_scoped_path(base, &account_id));
+        }
+        #[cfg(not(feature = "production"))]
+        {
+            Some(base.to_path_buf())
         }
     }
 
     #[cfg(feature = "production")]
-    fn account_conversation_history_path(
+    fn messaging_root_for(
         &self,
-        account_id: Option<&str>,
-    ) -> Option<PathBuf> {
-        let data_dir = self
-            .account_scope_path
-            .as_deref()?
-            .parent()?
-            .to_path_buf();
-        let base = data_dir
-            .join("conversations")
-            .join("mahayana-ai.json");
-        account_id.map(|account_id| account_scoped_path(&base, account_id))
+        envelope: &MessagingClientEnvelope,
+    ) -> Result<PathBuf, FeatureHostError> {
+        let auth = auth_payload(&self.auth_status()?);
+        if auth.get("loggedIn").and_then(Value::as_bool) != Some(true) {
+            return Err(FeatureHostError::Contract(
+                "messaging commands require an authenticated Fabushi account session".into(),
+            ));
+        }
+        let account_id = auth_account_id(auth).ok_or_else(|| {
+            FeatureHostError::Contract("authenticated account has no stable user id".into())
+        })?;
+        let expected_actor = actor_id_for_account_id(&account_id);
+        if envelope.context.actor_id != expected_actor {
+            return Err(FeatureHostError::Contract(
+                "messaging actor does not match the authenticated Fabushi account".into(),
+            ));
+        }
+        let base = self
+            .memory_root_path
+            .as_deref()
+            .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))?;
+        Ok(account_scoped_path(base, &account_id))
     }
 
-    fn load_account_bound_state(&self, account_id: Option<&str>) -> Result<(), FeatureHostError> {
-        let (automations, bots, groups, peer_messages) = if let Some(account_id) = account_id {
+    #[cfg(not(feature = "production"))]
+    fn messaging_root_for(
+        &self,
+        _envelope: &MessagingClientEnvelope,
+    ) -> Result<PathBuf, FeatureHostError> {
+        self.memory_root_path
+            .clone()
+            .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))
+    }
+
+    #[cfg(feature = "production")]
+    fn ensure_account_boundary(&self, response: &Value) -> Result<(), FeatureHostError> {
+        let auth = auth_payload(response);
+        let logged_in = auth.get("loggedIn").and_then(Value::as_bool) == Some(true);
+        let next_account_id = logged_in.then(|| auth_account_id(auth)).flatten();
+        let changed = {
+            let active = self
+                .active_account_id
+                .lock()
+                .map_err(|_| FeatureHostError::StatePoisoned)?;
+            *active != next_account_id
+        };
+        if changed {
+            self.runtime()?.reset_session()?;
+            let account_id = next_account_id.as_deref();
             let automations = self
                 .automation_path
                 .as_deref()
-                .map(|path| load_automations(&account_scoped_path(path, account_id)))
+                .map(|path| {
+                    account_id
+                        .map(|id| load_automations(&account_scoped_path(path, id)))
+                        .unwrap_or_default()
+                })
                 .unwrap_or_default();
             let mut bots = default_bots();
-            if let Some(path) = self.bot_state_path.as_deref() {
+            if let (Some(path), Some(account_id)) = (self.bot_state_path.as_deref(), account_id) {
                 bots.extend(load_bots(&account_scoped_path(path, account_id)));
             }
             let groups = self
                 .group_state_path
                 .as_deref()
-                .map(|path| load_groups(&account_scoped_path(path, account_id)))
+                .map(|path| {
+                    account_id
+                        .map(|id| load_groups(&account_scoped_path(path, id)))
+                        .unwrap_or_default()
+                })
                 .unwrap_or_default();
             let peer_messages = self
                 .peer_messages_path
                 .as_deref()
-                .map(|path| load_peer_messages(&account_scoped_path(path, account_id)))
+                .map(|path| {
+                    account_id
+                        .map(|id| load_peer_messages(&account_scoped_path(path, id)))
+                        .unwrap_or_default()
+                })
                 .unwrap_or_default();
-            (automations, bots, groups, peer_messages)
-        } else {
-            (
-                BTreeMap::new(),
-                default_bots(),
-                BTreeMap::new(),
-                Vec::new(),
-            )
-        };
-
+            let remote_device_secrets = self
+                .remote_device_state_path
+                .as_deref()
+                .map(|path| {
+                    account_id
+                        .map(|id| {
+                            load_remote_computer_device_secrets(&account_scoped_path(path, id))
+                        })
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            let mut state = self.state()?;
+            state.events.clear();
+            state.pending_approvals.clear();
+            state.operations.clear();
+            state.operation_agents.clear();
+            state.background_operations.clear();
+            state.automations = automations;
+            state.bots = bots;
+            state.peer_messages = peer_messages;
+            state.groups.clear();
+            state.groups = groups;
+            state.group_runs.clear();
+            state.group_operations.clear();
+            state.remote_computer_device_secrets = remote_device_secrets;
+            state.auth_user = None;
+            state.session_active = logged_in;
+            drop(state);
+            *self
+                .active_account_id
+                .lock()
+                .map_err(|_| FeatureHostError::StatePoisoned)? = next_account_id.clone();
+        }
         let mut state = self.state()?;
-        state.automations = automations;
-        state.bots = bots;
-        state.groups = groups;
-        state.peer_messages = peer_messages;
+        state.session_active = logged_in;
+        state.auth_user = if logged_in {
+            auth.get("user").cloned()
+        } else {
+            None
+        };
         Ok(())
     }
 
@@ -5538,10 +5712,10 @@ impl FeatureHostController {
         &self,
         secrets: &BTreeMap<String, String>,
     ) -> Result<(), FeatureHostError> {
-        let Some(path) = self.remote_device_state_path.as_deref() else {
+        let Some(path) = self.active_account_root(self.remote_device_state_path.as_deref()) else {
             return Ok(());
         };
-        persist_remote_computer_device_secrets(path, secrets)
+        persist_remote_computer_device_secrets(&path, secrets)
     }
 
     fn remote_device_secret(
@@ -5561,6 +5735,11 @@ impl FeatureHostController {
         if !create {
             return Err(FeatureHostError::Contract(
                 "remote computer must be registered by this desktop before use".into(),
+            ));
+        }
+        if state.remote_computer_device_secrets.len() >= REMOTE_DEVICE_SECRET_MAX_ENTRIES {
+            return Err(FeatureHostError::Contract(
+                "too many local remote computer device identities are stored; reset an old profile before registering another".into(),
             ));
         }
         let secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
@@ -5674,6 +5853,22 @@ impl FeatureHostController {
             .ok_or(FeatureHostError::ProductionUnavailable)
     }
 
+    #[cfg(feature = "production")]
+    fn require_authenticated_account(&self) -> Result<(), FeatureHostError> {
+        let auth = auth_payload(&self.auth_status()?);
+        if auth.get("loggedIn").and_then(Value::as_bool) != Some(true) {
+            return Err(FeatureHostError::Contract(
+                "this operation requires an authenticated Fabushi account session".into(),
+            ));
+        }
+        if auth_account_id(auth).is_none() {
+            return Err(FeatureHostError::Contract(
+                "authenticated account has no stable user id".into(),
+            ));
+        }
+        Ok(())
+    }
+
     #[cfg(not(feature = "production"))]
     fn execute_production(
         &self,
@@ -5683,7 +5878,10 @@ impl FeatureHostController {
     }
 
     #[cfg(not(feature = "production"))]
-    fn receive_production(&self) -> Result<Option<HostEvent>, FeatureHostError> {
+    fn receive_production(
+        &self,
+        _timeout: Duration,
+    ) -> Result<Option<HostEvent>, FeatureHostError> {
         Err(FeatureHostError::ProductionUnavailable)
     }
 
@@ -5718,13 +5916,16 @@ impl FeatureHostController {
             let new_messages = group_messages_since_member_last_spoke(&group.messages, &member.id);
             let system_prompt = build_group_member_system_prompt(&member, &group, &peers);
             let turn_prompt = build_group_turn_prompt(&member, &group, &peers, new_messages);
-            let memory_prompt = self
-                .active_account_root(self.memory_root_path.as_deref())
+            let account_memory_root = self.active_account_root(self.memory_root_path.as_deref());
+            let account_workflow_root =
+                self.active_account_root(self.workflow_root_path.as_deref());
+            let memory_prompt = account_memory_root
+                .as_deref()
                 .map(|root| render_memory_system_prompt(&root.join(&member.id).join("memory")))
                 .unwrap_or_default();
             let workflow_catalog = match (
-                self.active_account_root(self.workflow_root_path.as_deref()),
-                self.active_account_root(self.memory_root_path.as_deref()),
+                account_workflow_root.as_deref(),
+                account_memory_root.as_deref(),
             ) {
                 (Some(workflow_root), Some(agent_root)) => {
                     render_workflow_catalog(workflow_root, agent_root, &member.id)
@@ -6174,44 +6375,6 @@ impl FeatureHostController {
                 status,
                 metadata,
             } => {
-                if kind == "secret-request" {
-                    let metadata =
-                        metadata
-                            .as_ref()
-                            .and_then(Value::as_object)
-                            .ok_or_else(|| {
-                                FeatureHostError::Contract(
-                                    "secret request activity is missing metadata".into(),
-                                )
-                            })?;
-                    let secret_request_id = metadata
-                        .get("secretRequestId")
-                        .and_then(Value::as_str)
-                        .filter(|value| !value.trim().is_empty())
-                        .ok_or_else(|| {
-                            FeatureHostError::Contract(
-                                "secret request activity is missing request id".into(),
-                            )
-                        })?
-                        .to_string();
-                    let label = metadata
-                        .get("label")
-                        .and_then(Value::as_str)
-                        .filter(|value| !value.trim().is_empty())
-                        .unwrap_or("Secure credential")
-                        .to_string();
-                    return Ok(Some(HostEvent::TranscriptCard {
-                        timestamp: timestamp(),
-                        entry_id: format!("secret-request:{secret_request_id}"),
-                        operation_id: Some(operation_id.to_string()),
-                        card: TranscriptCard::SecretRequest {
-                            request_id: secret_request_id,
-                            label,
-                            description: detail,
-                            provided: false,
-                        },
-                    }));
-                }
                 let operation_id = operation_id.to_string();
                 let agent_id = {
                     let state = self.state()?;
@@ -6530,9 +6693,12 @@ impl FeatureHostController {
     }
 
     #[cfg(feature = "production")]
-    fn receive_production(&self) -> Result<Option<HostEvent>, FeatureHostError> {
-        for _ in 0..16 {
-            let Some(event) = self.runtime()?.receive(Duration::from_millis(1))? else {
+    fn receive_production(&self, timeout: Duration) -> Result<Option<HostEvent>, FeatureHostError> {
+        for index in 0..16 {
+            // Block only for the first runtime event. Once awakened, drain already-queued
+            // events without adding latency between streamed events.
+            let receive_timeout = if index == 0 { timeout } else { Duration::ZERO };
+            let Some(event) = self.runtime()?.receive(receive_timeout)? else {
                 return Ok(None);
             };
             if let Some(event) = self.translate_runtime_event(event)? {
@@ -6703,23 +6869,6 @@ impl FeatureHostController {
     }
 
     #[cfg(feature = "production")]
-    fn require_authenticated_account(&self) -> Result<(), FeatureHostError> {
-        let response = self.auth_status()?;
-        let auth = auth_payload(&response);
-        if auth.get("loggedIn").and_then(Value::as_bool) != Some(true) {
-            return Err(FeatureHostError::Contract(
-                "this operation requires an authenticated Fabushi account session".into(),
-            ));
-        }
-        if auth_account_id(auth).is_none() {
-            return Err(FeatureHostError::Contract(
-                "authenticated account has no stable user id".into(),
-            ));
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "production")]
     fn production_chat(
         &self,
         request_id: String,
@@ -6738,11 +6887,6 @@ impl FeatureHostController {
                 .bots
                 .get(agent_id)
                 .and_then(|bot| bot.conversation_id.clone())
-        } else {
-            None
-        };
-        let bot_profile = if let Some(agent_id) = agent_id.as_deref() {
-            self.state()?.bots.get(agent_id).cloned()
         } else {
             None
         };
@@ -6796,7 +6940,7 @@ impl FeatureHostController {
         let conversation_id = requested_conversation_id
             .map(ConversationId)
             .or_else(|| bot_conversation_id.map(ConversationId))
-            .unwrap_or_else(|| ConversationId(CODEX_ASSISTANT_CONVERSATION_ID.to_string()));
+            .unwrap_or_else(|| ConversationId(MAHAYANA_AI_CONVERSATION_ID.to_string()));
         let (provider, routed_model) = match self.runtime()?.execute(RuntimeCommand::Status)? {
             RuntimeResponse::Status(status) => (
                 format!("{:?}", status.model_provider).to_lowercase(),
@@ -6806,17 +6950,6 @@ impl FeatureHostController {
         };
         let mut runtime_text =
             compose_agent_input(&text, mode, mode_statement.as_deref(), &attachments);
-        if let Some(bot) = bot_profile {
-            let title = bot.title.trim();
-            let description = bot.description.trim();
-            runtime_text = format!(
-                "[Bot profile]\nName: {}\nTitle: {}\nDescription: {}\nAct as this named Bot throughout the turn. Keep the profile's purpose and tone, while following the product's safety and tool rules.\n\n[Current turn]\n{}",
-                bot.name.trim(),
-                if title.is_empty() { "AI Bot" } else { title },
-                if description.is_empty() { "No additional description." } else { description },
-                runtime_text,
-            );
-        }
         if let Some(mcp_context) = self.mcp_instruction_context()? {
             runtime_text = format!(
                 "{mcp_context}
@@ -6836,9 +6969,12 @@ impl FeatureHostController {
                     );
                 }
             }
+            let account_workflow_root =
+                self.active_account_root(self.workflow_root_path.as_deref());
+            let account_memory_root = self.active_account_root(self.memory_root_path.as_deref());
             if let (Some(workflow_root), Some(agent_root)) = (
-                self.active_account_root(self.workflow_root_path.as_deref()),
-                self.active_account_root(self.memory_root_path.as_deref()),
+                account_workflow_root.as_deref(),
+                account_memory_root.as_deref(),
             ) {
                 let workflow_catalog =
                     render_workflow_catalog(workflow_root, agent_root, memory_agent_id);
@@ -6866,6 +7002,18 @@ impl FeatureHostController {
                 .clone()
                 .unwrap_or_else(|| "mahayana-assistant".into()),
         );
+        state.events.push_back(HostEvent::ChatMessage {
+            timestamp: timestamp(),
+            role: MessageRole::User,
+            text,
+            operation_id: None,
+        });
+        state.events.push_back(HostEvent::OperationStarted {
+            timestamp: timestamp(),
+            operation_id: operation_id.clone(),
+            label: "chat-response".into(),
+            interruptible: true,
+        });
         state.events.push_back(HostEvent::ModelRouted {
             timestamp: timestamp(),
             operation_id: operation_id.clone(),
@@ -6888,18 +7036,6 @@ impl FeatureHostController {
                 total: None,
             });
         }
-        state.events.push_back(HostEvent::ChatMessage {
-            timestamp: timestamp(),
-            role: MessageRole::User,
-            text,
-            operation_id: None,
-        });
-        state.events.push_back(HostEvent::OperationStarted {
-            timestamp: timestamp(),
-            operation_id: operation_id.clone(),
-            label: "chat-response".into(),
-            interruptible: true,
-        });
         Ok(CommandAccepted {
             request_id,
             operation_id: Some(operation_id),
@@ -7177,7 +7313,7 @@ impl FeatureHostController {
             }
             FeatureCommand::ConversationList { query, .. } => {
                 let mut conversations = vec![ConversationSummary {
-                    id: "codex:agent:assistant".into(),
+                    id: MAHAYANA_AI_CONVERSATION_ID.into(),
                     title: "大乘助手".into(),
                     kind: "codex".into(),
                     pinned: true,
@@ -7215,7 +7351,7 @@ impl FeatureHostController {
                     title: "大乘助手".into(),
                     kind: "agent".into(),
                     mention: "@agent.mahayana".into(),
-                    conversation_id: "codex:agent:assistant".into(),
+                    conversation_id: MAHAYANA_AI_CONVERSATION_ID.into(),
                     provider: "codex".into(),
                     plugin_id: None,
                     description: "大乘共享智能代理".into(),
@@ -7350,108 +7486,6 @@ impl FeatureHostController {
                 "automation and product-surface commands are intercepted before test dispatch"
             ),
         }
-    }
-
-    fn sync_account_scope(&self, response: &Value) -> Result<(), FeatureHostError> {
-        let auth = response
-            .get("auth")
-            .filter(|value| value.is_object())
-            .unwrap_or(response);
-        let logged_in = auth
-            .get("loggedIn")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let account_id = auth_account_id(auth);
-        let active_account_id = self
-            .active_account_id
-            .lock()
-            .map_err(|_| FeatureHostError::StatePoisoned)?
-            .clone();
-        let stored_account_id = self
-            .account_scope_path
-            .as_deref()
-            .and_then(load_account_scope);
-        let account_active = logged_in && account_id.is_some();
-        let scope_changed = active_account_id != account_id || account_id != stored_account_id;
-
-        // A missing marker is treated as untrusted legacy data. Clear it before
-        // the first account-scoped session so old users cannot inherit a prior
-        // account's transcript, Bot, group, or peer-message files.
-        if !account_active || scope_changed {
-            #[cfg(feature = "production")]
-            if let Some(runtime) = self.runtime.as_ref() {
-                runtime.reset_runtime_session()?;
-            }
-            self.reset_account_bound_state(account_active)?;
-            {
-                let mut active = self
-                    .active_account_id
-                    .lock()
-                    .map_err(|_| FeatureHostError::StatePoisoned)?;
-                *active = if account_active {
-                    account_id.clone()
-                } else {
-                    None
-                };
-            }
-            self.load_account_bound_state(if account_active {
-                account_id.as_deref()
-            } else {
-                None
-            })?;
-
-            #[cfg(feature = "production")]
-            if let Some(runtime) = self.runtime.as_ref() {
-                runtime.set_conversation_history_path(
-                    self.account_conversation_history_path(if account_active {
-                        account_id.as_deref()
-                    } else {
-                        None
-                    }),
-                )?;
-            }
-        }
-
-        {
-            let mut state = self.state()?;
-            state.session_active = account_active;
-            state.auth_user = if account_active {
-                auth.get("user").cloned()
-            } else {
-                None
-            };
-        }
-        if let Some(path) = self.account_scope_path.as_deref() {
-            persist_account_scope(
-                path,
-                if account_active {
-                    account_id.as_deref()
-                } else {
-                    None
-                },
-            )?;
-        }
-        Ok(())
-    }
-
-    fn reset_account_bound_state(&self, active: bool) -> Result<(), FeatureHostError> {
-        let mut state = self.state()?;
-        state.events.clear();
-        state.pending_approvals.clear();
-        state.operations.clear();
-        state.operation_agents.clear();
-        state.background_operations.clear();
-        state.subagents.clear();
-        state.async_tasks.clear();
-        state.peer_messages.clear();
-        state.automations.clear();
-        state.bots = default_bots();
-        state.groups.clear();
-        state.group_runs.clear();
-        state.group_operations.clear();
-        state.auth_user = None;
-        state.session_active = active;
-        Ok(())
     }
 
     fn state(&self) -> Result<MutexGuard<'_, FeatureState>, FeatureHostError> {
@@ -8238,7 +8272,7 @@ fn default_bots() -> BTreeMap<String, BotSummary> {
             notifications_enabled: true,
             notify_on_updates: true,
             unread: false,
-            conversation_id: Some("codex:agent:assistant".into()),
+            conversation_id: Some(MAHAYANA_AI_CONVERSATION_ID.into()),
         },
         BotSummary {
             id: "research-bot".into(),
@@ -10819,72 +10853,6 @@ fn load_product_host_settings(path: &Path) -> ProductHostSettings {
     settings
 }
 
-fn auth_account_id(auth: &Value) -> Option<String> {
-    let user = auth.get("user")?.as_object()?;
-    ["id", "userId", "username", "email"]
-        .into_iter()
-        .find_map(|key| user.get(key))
-        .and_then(|value| match value {
-            Value::String(value) if !value.trim().is_empty() => Some(value.trim().to_string()),
-            Value::Number(value) => Some(value.to_string()),
-            _ => None,
-        })
-}
-
-fn auth_payload(response: &Value) -> &Value {
-    response
-        .get("auth")
-        .filter(|value| value.is_object())
-        .unwrap_or(response)
-}
-
-fn account_fingerprint(account_id: &str) -> String {
-    Sha256::digest(account_id.as_bytes())[..16]
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-fn actor_id_for_account_id(account_id: &str) -> ActorId {
-    ActorId::new(format!("human:account:{}", account_fingerprint(account_id)))
-}
-
-fn account_scoped_path(base: &Path, account_id: &str) -> PathBuf {
-    let parent = base.parent().unwrap_or_else(|| Path::new("."));
-    let file_name = base
-        .file_name()
-        .unwrap_or_else(|| std::ffi::OsStr::new("state.json"));
-    parent
-        .join("accounts")
-        .join(account_fingerprint(account_id))
-        .join(file_name)
-}
-
-fn load_account_scope(path: &Path) -> Option<String> {
-    let bytes = std::fs::read(path).ok()?;
-    let value = serde_json::from_slice::<Value>(&bytes).ok()?;
-    value
-        .get("accountId")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .filter(|value| !value.trim().is_empty())
-}
-
-fn persist_account_scope(path: &Path, account_id: Option<&str>) -> Result<(), FeatureHostError> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| {
-            FeatureHostError::Contract(format!("create account scope directory: {error}"))
-        })?;
-    }
-    let temp = path.with_extension("json.tmp");
-    let data = serde_json::to_vec_pretty(&json!({"accountId": account_id}))
-        .map_err(|error| FeatureHostError::Contract(format!("serialize account scope: {error}")))?;
-    std::fs::write(&temp, data)
-        .map_err(|error| FeatureHostError::Contract(format!("write account scope: {error}")))?;
-    std::fs::rename(&temp, path)
-        .map_err(|error| FeatureHostError::Contract(format!("commit account scope: {error}")))
-}
-
 fn persist_product_host_settings(
     path: &Path,
     settings: &ProductHostSettings,
@@ -10903,18 +10871,35 @@ fn persist_product_host_settings(
         .map_err(|error| FeatureHostError::Contract(format!("commit host settings: {error}")))
 }
 
+fn valid_remote_computer_device_secret(device_id: &str, secret: &str) -> bool {
+    is_safe_memory_agent_id(device_id)
+        && secret.len() >= 48
+        && secret.len() <= 256
+        && secret.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 fn load_remote_computer_device_secrets(path: &Path) -> BTreeMap<String, String> {
-    std::fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<BTreeMap<String, String>>(&bytes).ok())
-        .unwrap_or_default()
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return BTreeMap::new();
+    };
+    if metadata.len() > REMOTE_DEVICE_SECRET_MAX_BYTES {
+        return BTreeMap::new();
+    }
+    let Ok(bytes) = std::fs::read(path) else {
+        return BTreeMap::new();
+    };
+    if bytes.len() as u64 > REMOTE_DEVICE_SECRET_MAX_BYTES {
+        return BTreeMap::new();
+    }
+    let Ok(secrets) = serde_json::from_slice::<BTreeMap<String, String>>(&bytes) else {
+        return BTreeMap::new();
+    };
+    if secrets.len() > REMOTE_DEVICE_SECRET_MAX_ENTRIES {
+        return BTreeMap::new();
+    }
+    secrets
         .into_iter()
-        .filter(|(device_id, secret)| {
-            is_safe_memory_agent_id(device_id)
-                && secret.len() >= 48
-                && secret.len() <= 256
-                && secret.bytes().all(|byte| byte.is_ascii_hexdigit())
-        })
+        .filter(|(device_id, secret)| valid_remote_computer_device_secret(device_id, secret))
         .collect()
 }
 
@@ -10922,6 +10907,16 @@ fn persist_remote_computer_device_secrets(
     path: &Path,
     secrets: &BTreeMap<String, String>,
 ) -> Result<(), FeatureHostError> {
+    if secrets.len() > REMOTE_DEVICE_SECRET_MAX_ENTRIES
+        || secrets
+            .iter()
+            .any(|(device_id, secret)| !valid_remote_computer_device_secret(device_id, secret))
+    {
+        return Err(FeatureHostError::Contract(
+            "remote device secret state exceeds its safe entry limit or contains invalid data"
+                .into(),
+        ));
+    }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
             FeatureHostError::Contract(format!("create remote device directory: {error}"))
@@ -10931,6 +10926,11 @@ fn persist_remote_computer_device_secrets(
     let bytes = serde_json::to_vec_pretty(secrets).map_err(|error| {
         FeatureHostError::Contract(format!("serialize remote device secret: {error}"))
     })?;
+    if bytes.len() as u64 > REMOTE_DEVICE_SECRET_MAX_BYTES {
+        return Err(FeatureHostError::Contract(
+            "remote device secret state exceeds its safe byte limit".into(),
+        ));
+    }
     std::fs::write(&temp, bytes).map_err(|error| {
         FeatureHostError::Contract(format!("write remote device secret: {error}"))
     })?;
@@ -10976,6 +10976,34 @@ mod remote_device_secret_tests {
                 & 0o777;
             assert_eq!(mode, 0o600);
         }
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn remote_device_secret_state_limits_fail_closed() {
+        let path = std::env::temp_dir().join(format!(
+            "fabushi-remote-device-secret-limit-test-{}-{}.json",
+            std::process::id(),
+            now_millis()
+        ));
+        std::fs::write(
+            &path,
+            vec![b'x'; REMOTE_DEVICE_SECRET_MAX_BYTES as usize + 1],
+        )
+        .expect("write oversized device secret state");
+        assert!(load_remote_computer_device_secrets(&path).is_empty());
+
+        let secret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
+        let too_many = (0..=REMOTE_DEVICE_SECRET_MAX_ENTRIES)
+            .map(|index| (format!("fabushi-device-{index}"), secret.clone()))
+            .collect::<BTreeMap<_, _>>();
+        assert!(persist_remote_computer_device_secrets(&path, &too_many).is_err());
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&too_many).expect("serialize oversized map"),
+        )
+        .expect("write oversized entry map");
+        assert!(load_remote_computer_device_secrets(&path).is_empty());
         let _ = std::fs::remove_file(path);
     }
 }
@@ -11118,6 +11146,52 @@ fn persist_groups(
         .map_err(|error| FeatureHostError::Contract(format!("write group store: {error}")))?;
     std::fs::rename(&temp, path)
         .map_err(|error| FeatureHostError::Contract(format!("commit group store: {error}")))?;
+    Ok(())
+}
+
+fn load_test_auth_user(path: &Path) -> Option<Value> {
+    let bytes = std::fs::read(path).ok()?;
+    let stored = serde_json::from_slice::<Value>(&bytes).ok()?;
+    if stored.get("version").and_then(Value::as_u64) != Some(1) {
+        return None;
+    }
+    stored.get("user").filter(|user| user.is_object()).cloned()
+}
+
+fn persist_test_auth_user(path: &Path, user: Option<&Value>) -> Result<(), FeatureHostError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            FeatureHostError::Contract(format!("create test auth directory: {error}"))
+        })?;
+    }
+    let temp = path.with_extension("json.tmp");
+    if let Some(user) = user {
+        let data = serde_json::to_vec_pretty(&json!({
+            "version": 1,
+            "user": user,
+        }))
+        .map_err(|error| {
+            FeatureHostError::Contract(format!("serialize test auth state: {error}"))
+        })?;
+        std::fs::write(&temp, data).map_err(|error| {
+            FeatureHostError::Contract(format!("write test auth state: {error}"))
+        })?;
+        std::fs::rename(&temp, path).map_err(|error| {
+            FeatureHostError::Contract(format!("commit test auth state: {error}"))
+        })?;
+        return Ok(());
+    }
+
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(FeatureHostError::Contract(format!(
+                "clear test auth state: {error}"
+            )));
+        }
+    }
+    let _ = std::fs::remove_file(temp);
     Ok(())
 }
 
@@ -11355,6 +11429,93 @@ fn test_computer_snapshot() -> ComputerSnapshot {
     }
 }
 
+fn stable_identity_component(value: Option<&Value>) -> Option<String> {
+    match value? {
+        Value::String(value) => {
+            let value = value.trim();
+            if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            }
+        }
+        Value::Number(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+fn browser_login_platform(platform: SurfacePlatform) -> &'static str {
+    match platform {
+        SurfacePlatform::Ios | SurfacePlatform::Android => "mobile",
+        SurfacePlatform::Wasm => "web",
+        SurfacePlatform::Mock | SurfacePlatform::Electron => "desktop",
+    }
+}
+
+fn stable_authenticated_account_id(auth: &Value) -> Option<String> {
+    const ID_KEYS: [&str; 8] = [
+        "principalId",
+        "principal_id",
+        "id",
+        "userId",
+        "user_id",
+        "userNo",
+        "user_no",
+        "username",
+    ];
+
+    auth.get("user")
+        .and_then(Value::as_object)
+        .and_then(|user| {
+            ID_KEYS
+                .iter()
+                .find_map(|key| stable_identity_component(user.get(*key)))
+        })
+        .or_else(|| {
+            ID_KEYS
+                .iter()
+                .find_map(|key| stable_identity_component(auth.get(*key)))
+        })
+}
+
+#[cfg(feature = "production")]
+fn auth_payload(response: &Value) -> &Value {
+    response
+        .get("auth")
+        .filter(|value| value.is_object())
+        .unwrap_or(response)
+}
+
+#[cfg(feature = "production")]
+fn auth_account_id(auth: &Value) -> Option<String> {
+    stable_authenticated_account_id(auth)
+}
+
+#[cfg(feature = "production")]
+fn account_fingerprint(account_id: &str) -> String {
+    Sha256::digest(account_id.as_bytes())[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+#[cfg(feature = "production")]
+fn account_scoped_path(base: &Path, account_id: &str) -> PathBuf {
+    base.parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("accounts")
+        .join(account_fingerprint(account_id))
+        .join(
+            base.file_name()
+                .unwrap_or_else(|| std::ffi::OsStr::new("state.json")),
+        )
+}
+
+#[cfg(feature = "production")]
+fn actor_id_for_account_id(account_id: &str) -> ActorId {
+    ActorId::new(format!("human:account:{}", account_fingerprint(account_id)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -11396,6 +11557,64 @@ mod tests {
             events.push(event);
         }
         events
+    }
+
+    #[test]
+    fn browser_login_platform_maps_native_surfaces_to_mobile() {
+        assert_eq!(browser_login_platform(SurfacePlatform::Ios), "mobile");
+        assert_eq!(browser_login_platform(SurfacePlatform::Android), "mobile");
+        assert_eq!(browser_login_platform(SurfacePlatform::Wasm), "web");
+        assert_eq!(browser_login_platform(SurfacePlatform::Electron), "desktop");
+    }
+
+    #[test]
+    fn remote_computer_target_rejects_stale_generation_and_wrong_device() {
+        let controller = controller();
+        {
+            let mut state = controller.state().expect("state");
+            state.remote_computer_sessions.insert(
+                "session-1".into(),
+                RemoteComputerLocalSession {
+                    device_id: "desktop-a".into(),
+                    client_id: "phone-a".into(),
+                    expires_at_seconds: now_millis() / 1_000 + 60,
+                    generation: 7,
+                },
+            );
+        }
+        let settings = ProductHostSettings {
+            remote_control_enabled: true,
+            ..Default::default()
+        };
+        let stale = ComputerControlTarget::remote_desktop("desktop-a", 6);
+        assert!(matches!(
+            controller.ensure_computer_origin_allowed(
+                ComputerControlOrigin::RemoteMobile,
+                Some("session-1"),
+                &stale,
+                &settings,
+            ),
+            Err(FeatureHostError::Contract(message)) if message.contains("generation")
+        ));
+        let wrong = ComputerControlTarget::remote_desktop("desktop-b", 7);
+        assert!(matches!(
+            controller.ensure_computer_origin_allowed(
+                ComputerControlOrigin::RemoteMobile,
+                Some("session-1"),
+                &wrong,
+                &settings,
+            ),
+            Err(FeatureHostError::Contract(message)) if message.contains("device")
+        ));
+        let current = ComputerControlTarget::remote_desktop("desktop-a", 7);
+        controller
+            .ensure_computer_origin_allowed(
+                ComputerControlOrigin::RemoteMobile,
+                Some("session-1"),
+                &current,
+                &settings,
+            )
+            .expect("current target accepted");
     }
 
     #[test]
@@ -12228,6 +12447,43 @@ mod tests {
     }
 
     #[test]
+    fn stable_messaging_account_identity_accepts_numeric_and_legacy_session_ids() {
+        assert_eq!(
+            stable_authenticated_account_id(&json!({
+                "loggedIn": true,
+                "user": {"id": 42, "username": "ignored"},
+            }))
+            .as_deref(),
+            Some("42")
+        );
+        assert_eq!(
+            stable_authenticated_account_id(&json!({
+                "loggedIn": true,
+                "user": {},
+                "userId": 77,
+                "username": "legacy-user",
+            }))
+            .as_deref(),
+            Some("77")
+        );
+        assert_eq!(
+            stable_authenticated_account_id(&json!({
+                "loggedIn": true,
+                "user": {"username": "  legacy-name  "},
+            }))
+            .as_deref(),
+            Some("legacy-name")
+        );
+        assert_eq!(
+            stable_authenticated_account_id(&json!({
+                "loggedIn": true,
+                "user": {"nickname": "No stable identifier"},
+            })),
+            None
+        );
+    }
+
+    #[test]
     fn messaging_access_is_issued_only_from_authenticated_account_session() {
         let controller = controller();
         let error = controller
@@ -12346,6 +12602,74 @@ mod tests {
             cancelled_controller.auth_status().unwrap()["loggedIn"],
             false
         );
+    }
+
+    #[cfg(feature = "production")]
+    #[test]
+    fn test_backend_restores_browser_session_across_controller_restart_and_logout_clears_it() {
+        let root = std::env::temp_dir().join(format!(
+            "fabushi-feature-host-returning-auth-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create returning auth root");
+        let host_config = || HostCreateConfig {
+            runtime: mahayana_core::RuntimeConfig {
+                data_dir: Some(root.join("runtime")),
+                ..Default::default()
+            },
+            product_session_path: Some(root.join("product-session.json")),
+            inherit_installed_plugins: Some(false),
+            ..Default::default()
+        };
+        let config = || HostConfig {
+            profile_id: "returning-auth".into(),
+            mode: HostMode::Test,
+        };
+
+        let first = FeatureHostController::create_with_host_config(
+            config(),
+            SurfacePlatform::Electron,
+            host_config(),
+        )
+        .expect("create first test Host");
+        let attempt = first.browser_login_start().expect("start browser login");
+        first
+            .browser_login_poll(
+                attempt["attemptId"]
+                    .as_str()
+                    .expect("attempt id")
+                    .to_string(),
+            )
+            .expect("complete browser login");
+        assert_eq!(first.auth_status().unwrap()["loggedIn"], true);
+        drop(first);
+
+        let reopened = FeatureHostController::create_with_host_config(
+            config(),
+            SurfacePlatform::Electron,
+            host_config(),
+        )
+        .expect("reopen test Host");
+        let restored = reopened.auth_status().expect("restore browser session");
+        assert_eq!(restored["loggedIn"], true);
+        assert_eq!(restored["user"]["id"], "fast-e2e-browser-user");
+        let persisted = std::fs::read_to_string(root.join("runtime/test-auth-session.json"))
+            .expect("read persisted test auth state");
+        assert!(!persisted.contains("accessToken"));
+        assert!(!persisted.contains("refreshToken"));
+
+        reopened.logout().expect("logout returning account");
+        drop(reopened);
+        let after_logout = FeatureHostController::create_with_host_config(
+            config(),
+            SurfacePlatform::Electron,
+            host_config(),
+        )
+        .expect("reopen after logout");
+        assert_eq!(after_logout.auth_status().unwrap()["loggedIn"], false);
+        assert!(!root.join("runtime/test-auth-session.json").exists());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -12655,7 +12979,7 @@ mod tests {
         )
         .expect("create production event Host");
         let operation_id = OperationId("operation-1".into());
-        let conversation_id = ConversationId(CODEX_ASSISTANT_CONVERSATION_ID.into());
+        let conversation_id = ConversationId(MAHAYANA_AI_CONVERSATION_ID.into());
 
         let delta = controller
             .translate_runtime_event(RuntimeEvent::MessageDelta {

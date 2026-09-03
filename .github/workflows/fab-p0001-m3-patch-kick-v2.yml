@@ -1,0 +1,93 @@
+name: FAB-P0001 M3 canonical patch kick v2
+# retrigger: 2026-08-23T00:19Z after workflow exists on default branch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fab-p0001-m3-patch-kick-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.repository == 'bhrumom/fabushi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out canonical main driver
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          path: driver
+          fetch-depth: 1
+
+      - name: Check out exact M3 closure branch
+        uses: actions/checkout@v5
+        with:
+          ref: fix/fab-p0001-m3-e2e-closure
+          path: target
+          fetch-depth: 1
+
+      - name: Reuse canonical M3 patch implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+
+          workspace = Path(os.environ['GITHUB_WORKSPACE'])
+          driver = workspace / 'driver/.github/workflows/fab-p0001-m3-unread-patch-driver.yml'
+          target = workspace / 'target'
+          text = driver.read_text()
+          start_marker = "          python3 - <<'PY'\n"
+          end_marker = "          PY\n"
+          if start_marker not in text:
+              raise SystemExit('canonical M3 driver Python start marker missing')
+          body = text.split(start_marker, 1)[1]
+          if end_marker not in body:
+              raise SystemExit('canonical M3 driver Python end marker missing')
+          body = body.split(end_marker, 1)[0]
+          lines = body.splitlines()
+          code = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          old_cwd = Path.cwd()
+          try:
+              os.chdir(target)
+              exec(compile(code, str(driver), 'exec'), {'__name__': '__main__'})
+          finally:
+              os.chdir(old_cwd)
+          PYTHON
+
+          git -C target diff --check
+
+      - name: Commit exact patch back to M3 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd target
+          if git diff --quiet; then
+            echo "No patch required."
+            exit 0
+          fi
+          changed="$(git diff --name-only)"
+          printf '%s\n' "$changed"
+          while IFS= read -r path; do
+            case "$path" in
+              native/mahayana-messaging/src/engine.rs|native/mahayana-messaging/src/service.rs|native/mahayana-messaging/tests/typing_contract.rs|native/mahayana-messaging/tests/unread_projection_contract.rs|desktop/src/messaging-shell-v2.tsx|desktop/e2e/messenger.spec.ts) ;;
+              *) echo "Unexpected changed path: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
+          git config user.name "fabushi-ci"
+          git config user.email "fabushi-ci@users.noreply.github.com"
+          git add \
+            native/mahayana-messaging/src/engine.rs \
+            native/mahayana-messaging/src/service.rs \
+            native/mahayana-messaging/tests/typing_contract.rs \
+            native/mahayana-messaging/tests/unread_projection_contract.rs \
+            desktop/src/messaging-shell-v2.tsx \
+            desktop/e2e/messenger.spec.ts
+          git commit -m "fix(tfi): close M3 unread typing and reload semantics"
+          git push origin HEAD:fix/fab-p0001-m3-e2e-closure
