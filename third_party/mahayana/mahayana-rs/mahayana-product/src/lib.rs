@@ -575,7 +575,10 @@ impl MahayanaProductClient {
         surface_state_path: impl Into<PathBuf>,
     ) -> Self {
         Self::new_with_surface_state_path_and_optional_passphrase(
-            api_base_url, session_path, surface_state_path, None,
+            api_base_url,
+            session_path,
+            surface_state_path,
+            None,
         )
     }
 
@@ -586,7 +589,10 @@ impl MahayanaProductClient {
         storage_passphrase: impl Into<String>,
     ) -> Self {
         Self::new_with_surface_state_path_and_optional_passphrase(
-            api_base_url, session_path, surface_state_path, Some(storage_passphrase.into()),
+            api_base_url,
+            session_path,
+            surface_state_path,
+            Some(storage_passphrase.into()),
         )
     }
 
@@ -600,7 +606,10 @@ impl MahayanaProductClient {
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_API_BASE_URL.to_string());
         Self::new_with_surface_state_path_and_storage_passphrase(
-            api_base_url, session_path, surface_state_path, storage_passphrase,
+            api_base_url,
+            session_path,
+            surface_state_path,
+            storage_passphrase,
         )
     }
 

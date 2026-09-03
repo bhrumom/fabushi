@@ -2991,5 +2991,4 @@ mod tests {
         assert_eq!(value["card"]["miniAppId"], "counter-demo");
         assert_eq!(value["card"]["name"], "Counter");
     }
-
 }

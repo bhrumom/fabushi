@@ -126,12 +126,14 @@ impl MahayanaHost {
         ) {
             (Some(session_path), Some(surface_state_path)) => {
                 match config.product_storage_passphrase.clone() {
-                    Some(passphrase) => MahayanaProductClient::new_with_surface_state_path_and_storage_passphrase(
-                        api_base_url.clone(),
-                        session_path,
-                        surface_state_path,
-                        passphrase,
-                    ),
+                    Some(passphrase) => {
+                        MahayanaProductClient::new_with_surface_state_path_and_storage_passphrase(
+                            api_base_url.clone(),
+                            session_path,
+                            surface_state_path,
+                            passphrase,
+                        )
+                    }
                     None => MahayanaProductClient::new_with_surface_state_path(
                         api_base_url.clone(),
                         session_path,

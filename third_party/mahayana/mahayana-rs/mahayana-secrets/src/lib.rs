@@ -146,7 +146,9 @@ struct FixedCredentialStore {
 
 impl fmt::Debug for FixedCredentialStore {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("FixedCredentialStore").finish_non_exhaustive()
+        formatter
+            .debug_struct("FixedCredentialStore")
+            .finish_non_exhaustive()
     }
 }
 
@@ -156,7 +158,10 @@ impl CredentialStore for FixedCredentialStore {
     }
 
     fn save(&self, _service: &str, _account: &str, value: &str) -> Result<()> {
-        anyhow::ensure!(value == self.passphrase.as_ref(), "platform passphrase mismatch");
+        anyhow::ensure!(
+            value == self.passphrase.as_ref(),
+            "platform passphrase mismatch"
+        );
         Ok(())
     }
 }
@@ -226,7 +231,9 @@ impl SecretsManager {
                 backend: Arc::new(LocalSecretsBackend::new_with_store(
                     home,
                     namespace,
-                    Arc::new(FixedCredentialStore { passphrase: Arc::from(passphrase.into()) }),
+                    Arc::new(FixedCredentialStore {
+                        passphrase: Arc::from(passphrase.into()),
+                    }),
                 )),
             },
         }
@@ -832,7 +839,8 @@ mod tests {
     }
 
     #[test]
-    fn injected_platform_passphrase_restores_encrypted_session_after_manager_recreation() -> Result<()> {
+    fn injected_platform_passphrase_restores_encrypted_session_after_manager_recreation()
+    -> Result<()> {
         let root = temporary_root("platform-passphrase");
         let name = SecretName::new("MAHAYANA_ACCOUNT_SESSION")?;
         let first = SecretsManager::new_with_namespace_and_passphrase(
@@ -859,5 +867,4 @@ mod tests {
         fs::remove_dir_all(root)?;
         Ok(())
     }
-
 }

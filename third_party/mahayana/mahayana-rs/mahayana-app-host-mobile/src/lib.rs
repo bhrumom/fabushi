@@ -27,7 +27,6 @@ pub unsafe extern "C" fn mahayana_app_host_create(
     }
 }
 
-
 /// Creates a production native app-host with a stable storage passphrase supplied
 /// by the platform Keychain/Keystore bridge. The passphrase is consumed in memory
 /// and never written to the Rust app-data directory.

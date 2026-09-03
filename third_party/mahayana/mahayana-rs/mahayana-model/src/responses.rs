@@ -81,11 +81,10 @@ impl ModelRuntime for ResponsesModelRuntime {
 
         let config = self.config.clone();
         let stream_events = events.clone();
-        let payload = tokio::task::spawn_blocking(move || {
-            request_response(&config, request, &stream_events)
-        })
-        .await
-        .map_err(|error| ModelError::Inference(format!("model task failed: {error}")))??;
+        let payload =
+            tokio::task::spawn_blocking(move || request_response(&config, request, &stream_events))
+                .await
+                .map_err(|error| ModelError::Inference(format!("model task failed: {error}")))??;
 
         if let Some(usage) = extract_usage(&payload) {
             events.emit(ModelEvent::Usage(usage))?;
@@ -251,7 +250,11 @@ struct ChatStreamState {
 #[derive(Debug)]
 enum AnthropicBlockStream {
     Text(String),
-    Tool { id: String, name: String, arguments: String },
+    Tool {
+        id: String,
+        name: String,
+        arguments: String,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -343,8 +346,9 @@ fn process_sse_frame(
     if data.trim().is_empty() || data.trim() == "[DONE]" {
         return Ok(());
     }
-    let payload: Value = serde_json::from_str(data)
-        .map_err(|error| ModelError::Inference(format!("model stream returned invalid JSON: {error}")))?;
+    let payload: Value = serde_json::from_str(data).map_err(|error| {
+        ModelError::Inference(format!("model stream returned invalid JSON: {error}"))
+    })?;
     if let Some(error) = payload.get("error") {
         let message = error
             .get("message")
@@ -423,7 +427,9 @@ fn process_chat_frame(
     {
         state.usage = usage.clone();
     }
-    if let Some(delta) = payload.pointer("/choices/0/delta/content").and_then(Value::as_str)
+    if let Some(delta) = payload
+        .pointer("/choices/0/delta/content")
+        .and_then(Value::as_str)
         && !delta.is_empty()
     {
         state.text.push_str(delta);
@@ -479,7 +485,9 @@ fn finish_chat_stream(state: ChatStreamState) -> Value {
 }
 
 fn merge_usage(target: &mut Map<String, Value>, incoming: &Value) {
-    let Some(incoming) = incoming.as_object() else { return; };
+    let Some(incoming) = incoming.as_object() else {
+        return;
+    };
     for (key, value) in incoming {
         target.insert(key.clone(), value.clone());
     }
@@ -510,8 +518,13 @@ fn process_anthropic_frame(
             let block = payload.get("content_block").unwrap_or(&Value::Null);
             match block.get("type").and_then(Value::as_str) {
                 Some("text") => {
-                    let text = block.get("text").and_then(Value::as_str).unwrap_or_default();
-                    state.blocks.insert(index, AnthropicBlockStream::Text(text.to_string()));
+                    let text = block
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    state
+                        .blocks
+                        .insert(index, AnthropicBlockStream::Text(text.to_string()));
                 }
                 Some("tool_use") => {
                     let arguments = block
@@ -520,11 +533,22 @@ fn process_anthropic_frame(
                         .and_then(|value| serde_json::to_string(value).ok())
                         .filter(|value| value != "{}")
                         .unwrap_or_default();
-                    state.blocks.insert(index, AnthropicBlockStream::Tool {
-                        id: block.get("id").and_then(Value::as_str).unwrap_or("tool").to_string(),
-                        name: block.get("name").and_then(Value::as_str).unwrap_or("tool").to_string(),
-                        arguments,
-                    });
+                    state.blocks.insert(
+                        index,
+                        AnthropicBlockStream::Tool {
+                            id: block
+                                .get("id")
+                                .and_then(Value::as_str)
+                                .unwrap_or("tool")
+                                .to_string(),
+                            name: block
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .unwrap_or("tool")
+                                .to_string(),
+                            arguments,
+                        },
+                    );
                 }
                 _ => {}
             }
@@ -534,9 +558,16 @@ fn process_anthropic_frame(
             let delta = payload.get("delta").unwrap_or(&Value::Null);
             match delta.get("type").and_then(Value::as_str) {
                 Some("text_delta") => {
-                    let text = delta.get("text").and_then(Value::as_str).unwrap_or_default();
+                    let text = delta
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
                     if !text.is_empty() {
-                        match state.blocks.entry(index).or_insert_with(|| AnthropicBlockStream::Text(String::new())) {
+                        match state
+                            .blocks
+                            .entry(index)
+                            .or_insert_with(|| AnthropicBlockStream::Text(String::new()))
+                        {
                             AnthropicBlockStream::Text(buffer) => buffer.push_str(text),
                             AnthropicBlockStream::Tool { .. } => {}
                         }
@@ -544,8 +575,13 @@ fn process_anthropic_frame(
                     }
                 }
                 Some("input_json_delta") => {
-                    let partial = delta.get("partial_json").and_then(Value::as_str).unwrap_or_default();
-                    if let Some(AnthropicBlockStream::Tool { arguments, .. }) = state.blocks.get_mut(&index) {
+                    let partial = delta
+                        .get("partial_json")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    if let Some(AnthropicBlockStream::Tool { arguments, .. }) =
+                        state.blocks.get_mut(&index)
+                    {
                         arguments.push_str(partial);
                     }
                 }
@@ -575,7 +611,11 @@ fn finish_anthropic_stream(state: AnthropicStreamState) -> Value {
         .into_values()
         .map(|block| match block {
             AnthropicBlockStream::Text(text) => json!({"type":"text", "text":text}),
-            AnthropicBlockStream::Tool { id, name, arguments } => {
+            AnthropicBlockStream::Tool {
+                id,
+                name,
+                arguments,
+            } => {
                 let input = serde_json::from_str::<Value>(&arguments).unwrap_or_else(|_| json!({}));
                 json!({"type":"tool_use", "id":id, "name":name, "input":input})
             }
@@ -1048,9 +1088,12 @@ mod tests {
     #[test]
     fn responses_sse_emits_multiple_deltas_before_completion() {
         let stream = concat!(
-            r#"data: {"type":"response.output_text.delta","delta":"你"}"#, "\n\n",
-            r#"data: {"type":"response.output_text.delta","delta":"好"}"#, "\n\n",
-            r#"data: {"type":"response.completed","response":{"id":"resp-1","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"你好"}]}],"usage":{"input_tokens":2,"output_tokens":2,"total_tokens":4}}}"#, "\n\n",
+            r#"data: {"type":"response.output_text.delta","delta":"你"}"#,
+            "\n\n",
+            r#"data: {"type":"response.output_text.delta","delta":"好"}"#,
+            "\n\n",
+            r#"data: {"type":"response.completed","response":{"id":"resp-1","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"你好"}]}],"usage":{"input_tokens":2,"output_tokens":2,"total_tokens":4}}}"#,
+            "\n\n",
             "data: [DONE]\n\n",
         );
         let sink = std::sync::Arc::new(RecordingSink::default());
@@ -1069,9 +1112,12 @@ mod tests {
     #[test]
     fn chat_completion_sse_reassembles_text_tool_calls_and_usage() {
         let stream = concat!(
-            r#"data: {"id":"chat-1","choices":[{"delta":{"content":"查"}}]}"#, "\n\n",
-            r#"data: {"id":"chat-1","choices":[{"delta":{"content":"询","tool_calls":[{"index":0,"id":"call-1","function":{"name":"search","arguments":"{\"q\":"}}]}}]}"#, "\n\n",
-            r#"data: {"id":"chat-1","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"法\"}"}}]}}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#, "\n\n",
+            r#"data: {"id":"chat-1","choices":[{"delta":{"content":"查"}}]}"#,
+            "\n\n",
+            r#"data: {"id":"chat-1","choices":[{"delta":{"content":"询","tool_calls":[{"index":0,"id":"call-1","function":{"name":"search","arguments":"{\"q\":"}}]}}]}"#,
+            "\n\n",
+            r#"data: {"id":"chat-1","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"法\"}"}}]}}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#,
+            "\n\n",
             "data: [DONE]\n\n",
         );
         let sink = std::sync::Arc::new(RecordingSink::default());
@@ -1092,12 +1138,24 @@ mod tests {
     #[test]
     fn anthropic_sse_emits_text_deltas_and_preserves_usage() {
         let stream = concat!(
-            "event: message_start\n", r#"data: {"type":"message_start","message":{"id":"msg-1","usage":{"input_tokens":4}}}"#, "\n\n",
-            "event: content_block_start\n", r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#, "\n\n",
-            "event: content_block_delta\n", r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"善"}}"#, "\n\n",
-            "event: content_block_delta\n", r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"哉"}}"#, "\n\n",
-            "event: message_delta\n", r#"data: {"type":"message_delta","usage":{"output_tokens":2}}"#, "\n\n",
-            "event: message_stop\n", r#"data: {"type":"message_stop"}"#, "\n\n",
+            "event: message_start\n",
+            r#"data: {"type":"message_start","message":{"id":"msg-1","usage":{"input_tokens":4}}}"#,
+            "\n\n",
+            "event: content_block_start\n",
+            r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+            "\n\n",
+            "event: content_block_delta\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"善"}}"#,
+            "\n\n",
+            "event: content_block_delta\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"哉"}}"#,
+            "\n\n",
+            "event: message_delta\n",
+            r#"data: {"type":"message_delta","usage":{"output_tokens":2}}"#,
+            "\n\n",
+            "event: message_stop\n",
+            r#"data: {"type":"message_stop"}"#,
+            "\n\n",
         );
         let sink = std::sync::Arc::new(RecordingSink::default());
         let shared: SharedModelEventSink = sink.clone();
@@ -1111,5 +1169,4 @@ mod tests {
         assert_eq!(extract_output_text(&payload).as_deref(), Some("善哉"));
         assert_eq!(extract_usage(&payload).expect("usage").total_tokens, 6);
     }
-
 }
