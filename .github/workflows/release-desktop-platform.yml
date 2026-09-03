@@ -1,0 +1,240 @@
+name: Reusable desktop platform release
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      release_kind:
+        required: true
+        type: string
+      source_ref:
+        required: false
+        type: string
+        default: ''
+      release_tag:
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: ${{ inputs.platform }} ${{ inputs.release_kind }} release
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.release_kind == 'formal' && 120 || 45 }}
+    steps:
+      - name: Validate release lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ inputs.platform }}' in mac|win|linux) ;; *) exit 2 ;; esac
+          case '${{ inputs.release_kind }}' in test|formal) ;; *) exit 2 ;; esac
+          if [ '${{ inputs.release_kind }}' = formal ] && [ -z '${{ inputs.release_tag }}' ]; then
+            echo 'formal release requires release_tag' >&2
+            exit 2
+          fi
+
+      - name: Checkout selected source only
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref != '' && inputs.source_ref || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - id: version
+        name: Resolve test/formal version identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="$(node -p "require('./app-version.json').version")"
+          short="$(git rev-parse --short=12 HEAD)"
+          if [ '${{ inputs.release_kind }}' = test ]; then
+            version="${base}-test.${GITHUB_RUN_NUMBER}"
+            tag="desktop-${{ inputs.platform }}-test-${GITHUB_RUN_NUMBER}-${short}"
+          else
+            version="$base"
+            tag='${{ inputs.release_tag }}'
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+          printf 'Release kind=%s platform=%s version=%s source=%s\n' '${{ inputs.release_kind }}' '${{ inputs.platform }}' "$version" "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            chatgpt-vps-control/package-lock.json
+
+      - name: Install Electron dependencies
+        working-directory: desktop
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Install embedded Computer Use dependencies
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+
+      - name: Apply CI-only package version
+        working-directory: desktop
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: npm version "$RELEASE_VERSION" --no-git-tag-version --allow-same-version
+
+      - id: host-key
+        name: Compute reusable Host key
+        shell: bash
+        env:
+          SOURCE_HASH: ${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+        run: echo "hash=$SOURCE_HASH" >> "$GITHUB_OUTPUT"
+
+      - id: host-cache
+        name: Restore reusable Host binary
+        uses: actions/cache/restore@v4
+        with:
+          path: desktop/resources/bin
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v9-rust-1.97.1-${{ steps.host-key.outputs.hash }}
+
+      - name: Set up Rust on Host cache miss
+        if: steps.host-cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+
+      - name: Restore Rust build cache on Host cache miss
+        if: steps.host-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: release-desktop-${{ runner.os }}-v1
+
+      - name: Install Linux native dependencies on Host cache miss
+        if: inputs.platform == 'linux' && steps.host-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgbm-dev
+
+      - name: Build Host on cache miss
+        if: steps.host-cache.outputs.cache-hit != 'true'
+        working-directory: desktop
+        run: npm run build:host:ci
+
+      - name: Save reusable Host binary
+        if: steps.host-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: desktop/resources/bin
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v9-rust-1.97.1-${{ steps.host-key.outputs.hash }}
+
+      - name: Build renderer
+        working-directory: desktop
+        run: npm run build:renderer
+
+      - name: Build pinned offline ASR engine
+        run: node .github/scripts/build-offline-asr-engine.mjs
+
+      - name: Stage bundled Computer Use runtime
+        shell: bash
+        env:
+          CHATGPT_COMPUTER_HOME: ${{ github.workspace }}/desktop/resources/computer-control
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: node chatgpt-vps-control/bin/prepare-fabushi-bundle.js
+
+      - name: Install Developer ID identity for formal macOS release
+        if: inputs.platform == 'mac' && inputs.release_kind == 'formal'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          CONFIGURED_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          test -n "$MACOS_CERTIFICATE_P12_BASE64"
+          cert="$RUNNER_TEMP/fabushi-developer-id.p12"
+          keychain="$RUNNER_TEMP/fabushi-developer-id.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$cert"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          identity="$CONFIGURED_IDENTITY"
+          [ -n "$identity" ] || identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application/ {print $2; exit}')"
+          test -n "$identity"
+          echo "MACOS_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Package only the selected desktop platform
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.platform == 'mac' && inputs.release_kind == 'formal' && 'true' || 'false' }}
+          FABUSHI_MACOS_NOTARIZE: ${{ inputs.platform == 'mac' && inputs.release_kind == 'formal' && '1' || '0' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: npx electron-builder --${{ inputs.platform }} --publish never
+
+      - name: Install formal-release E2E diagnostics runtime
+        if: inputs.release_kind == 'formal'
+        working-directory: desktop
+        run: npx playwright install ffmpeg
+
+      - name: Run formal Linux packaged App E2E
+        if: inputs.release_kind == 'formal' && inputs.platform == 'linux'
+        working-directory: desktop
+        env:
+          FABUSHI_FEATURE_HOST_MODE: test
+          FABUSHI_E2E: '1'
+        run: xvfb-run -a npm run test:e2e
+
+      - name: Run formal macOS/Windows packaged App E2E
+        if: inputs.release_kind == 'formal' && inputs.platform != 'linux'
+        working-directory: desktop
+        env:
+          FABUSHI_FEATURE_HOST_MODE: test
+          FABUSHI_E2E: '1'
+        run: npm run test:e2e
+
+      - name: Upload selected-platform package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-${{ inputs.platform }}-${{ inputs.release_kind }}-${{ steps.version.outputs.version }}
+          path: desktop/release/**
+          if-no-files-found: error
+          retention-days: ${{ inputs.release_kind == 'formal' && 90 || 14 }}
+          compression-level: 1
+
+      - name: Publish GitHub test prerelease or formal release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          KIND: ${{ inputs.release_kind }}
+        run: |
+          set -euo pipefail
+          assets=()
+          while IFS= read -r -d '' asset; do assets+=("$asset"); done < <(find desktop/release -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.blockmap' -o -name 'latest*.yml' \) -print0)
+          test "${#assets[@]}" -gt 0
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refusing to mutate it." >&2
+            exit 1
+          fi
+          if [ "$KIND" = test ]; then
+            gh release create "$TAG" --target "$(git rev-parse HEAD)" --title "Fabushi ${{ inputs.platform }} test ${{ steps.version.outputs.version }}" --notes 'Test build: fast package lane, long application-driving E2E intentionally skipped.' --prerelease --latest=false "${assets[@]}"
+          else
+            gh release create "$TAG" --target "$(git rev-parse HEAD)" --title "Fabushi ${{ inputs.platform }} ${{ steps.version.outputs.version }}" --generate-notes --latest=false "${assets[@]}"
+          fi

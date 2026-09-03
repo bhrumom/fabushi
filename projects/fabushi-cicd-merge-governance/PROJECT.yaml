@@ -14,5 +14,5 @@ reviewers:
 risk_tier: tier-3
 security_classification: internal
 created_at: 2026-08-22
-updated_at: 2026-08-24
-current_stage: post-main-e2e-release-acceleration
+updated_at: 2026-09-03
+current_stage: test-formal-platform-release-lanes

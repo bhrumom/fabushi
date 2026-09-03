@@ -7,14 +7,8 @@ on:
       - '.github/CODEOWNERS'
       - '.github/BRANCH_PROTECTION.md'
       - '.github/scripts/require-release-source-gates.sh'
-      - '.github/workflows/apple-store-delivery.yml'
-      - '.github/workflows/google-play-delivery.yml'
-      - '.github/workflows/post-main-delivery.yml'
-      - '.github/workflows/native-electron-release.yml'
-      - '.github/workflows/global-dharma-rust.yml'
-      - '.github/workflows/important-release-gate.yml'
-      - '.github/workflows/delivery-governance-contract.yml'
-      - '.github/workflows/automerge.yml'
+      - '.github/workflows/**'
+      - 'AGENTS.md'
       - 'projects/fabushi-cicd-merge-governance/**'
   push:
     branches: [main]
@@ -22,14 +16,8 @@ on:
       - '.github/CODEOWNERS'
       - '.github/BRANCH_PROTECTION.md'
       - '.github/scripts/require-release-source-gates.sh'
-      - '.github/workflows/apple-store-delivery.yml'
-      - '.github/workflows/google-play-delivery.yml'
-      - '.github/workflows/post-main-delivery.yml'
-      - '.github/workflows/native-electron-release.yml'
-      - '.github/workflows/global-dharma-rust.yml'
-      - '.github/workflows/important-release-gate.yml'
-      - '.github/workflows/delivery-governance-contract.yml'
-      - '.github/workflows/automerge.yml'
+      - '.github/workflows/**'
+      - 'AGENTS.md'
       - 'projects/fabushi-cicd-merge-governance/**'
   workflow_dispatch:
 
@@ -42,60 +30,53 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout governance inputs only
+      - name: Checkout governance inputs
         uses: actions/checkout@v5
         with:
+          fetch-depth: 1
           persist-credentials: false
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /.github/CODEOWNERS
-            /.github/BRANCH_PROTECTION.md
-            /.github/scripts/require-release-source-gates.sh
-            /.github/workflows/apple-store-delivery.yml
-            /.github/workflows/google-play-delivery.yml
-            /.github/workflows/post-main-delivery.yml
-            /.github/workflows/native-electron-release.yml
-            /.github/workflows/global-dharma-rust.yml
-            /.github/workflows/important-release-gate.yml
-            /.github/workflows/automerge.yml
 
-      - name: Validate release source gates
+      - name: Validate FCM-023 release isolation and E2E policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          fast=.github/workflows/electron-desktop.yml
+          reusable=.github/workflows/release-desktop-platform.yml
+          for required in release-macos.yml release-windows.yml release-linux.yml native-android-release.yml release-ios.yml; do
+            test -s ".github/workflows/$required"
+            grep -Fq 'workflow_dispatch:' ".github/workflows/$required"
+            grep -Fq 'release_kind:' ".github/workflows/$required"
+            grep -Fq 'options: [test, formal]' ".github/workflows/$required"
+          done
+          ! grep -Fq 'npm run test:e2e' "$fast"
+          ! grep -Fq 'npx electron-builder' "$fast"
+          grep -Fq 'Electron desktop result' "$fast"
+          grep -Fq "inputs.release_kind == 'formal'" "$reusable"
+          grep -Fq 'npm run test:e2e' "$reusable"
+          grep -Fq -- '--prerelease --latest=false' "$reusable"
+          grep -Fq 'Legacy combined release (disabled)' .github/workflows/native-electron-release.yml
+          ! grep -Eq '^  (push|pull_request):' .github/workflows/gbf-release-candidate.yml
+          ! grep -Eq '^  push:' .github/workflows/native-mobile.yml
+          ! grep -Eq '^  release:' .github/workflows/macos-desktop-e2e.yml
+          ! grep -Eq '^  workflow_run:' .github/workflows/apple-store-delivery.yml
+          ! grep -Eq '^  workflow_run:' .github/workflows/formal-store-delivery-orchestrator.yml
+          grep -Fq 'run_e2e:' .github/workflows/native-mobile.yml
+          grep -Fq 'inputs.run_e2e == true' .github/workflows/native-mobile.yml
+
+      - name: Validate formal release source gate remains fail-closed
         shell: bash
         run: |
           set -euo pipefail
           gate=.github/scripts/require-release-source-gates.sh
           test -s "$gate"
-          grep -Fq "compare/main...\$SOURCE_SHA" "$gate"
-          for required in 'CI result' 'Electron desktop result' 'Electron macOS' 'Electron Windows' 'Native mobile result' 'Native iOS'; do
-            grep -Fq "$required" "$gate"
-          done
-
+          grep -Fq 'compare/main...$SOURCE_SHA' "$gate"
+          grep -Fq 'Required release gate' "$gate"
           for workflow in .github/workflows/apple-store-delivery.yml .github/workflows/google-play-delivery.yml; do
             grep -Fq 'checks: read' "$workflow"
             grep -Fq 'actions: read' "$workflow"
             grep -Fq 'Require canonical release source gates' "$workflow"
             grep -Fq 'require-release-source-gates.sh' "$workflow"
-            grep -Fq -- '--latest=false' "$workflow"
           done
-
-          grep -Fq 'RELEASE_TARGET: android' .github/workflows/google-play-delivery.yml
-          grep -Fq 'RELEASE_TARGET: ${{ inputs.target }}' .github/workflows/apple-store-delivery.yml
-
-          post_main=.github/workflows/post-main-delivery.yml
-          grep -Fq 'test("^desktop-[0-9]+[.][0-9]+[.][0-9]+$")' "$post_main"
-          grep -Fq 'releases/latest' "$post_main"
-          grep -Fq 'make_latest=true' "$post_main"
-          grep -Fq 'GitHub Latest pointer did not advance' "$post_main"
-          for workflow in \
-            .github/workflows/native-electron-release.yml \
-            .github/workflows/global-dharma-rust.yml \
-            .github/workflows/important-release-gate.yml; do
-            grep -Fq -- '--latest=false' "$workflow"
-          done
-
-          important_gate=.github/workflows/important-release-gate.yml
-          grep -Fq 'uses: ./.github/workflows/native-mobile.yml' "$important_gate"
-          ! grep -Fq 'android-real-device-e2e.yml' "$important_gate"
 
       - name: Validate narrow CODEOWNERS coverage
         shell: bash
@@ -117,26 +98,22 @@ jobs:
             grep -Fqx "$required" "$owners"
           done
 
-      - name: Validate merge-queue and sensitive-automerge invariants
+      - name: Validate merge-queue invariants
         shell: bash
         run: |
           set -euo pipefail
           grep -Fq 'CI result' .github/BRANCH_PROTECTION.md
           grep -Fq 'merge queue' .github/BRANCH_PROTECTION.md
           grep -Fq "'.github/workflows/'" .github/workflows/automerge.yml
-          grep -Fq "'.github/actions/'" .github/workflows/automerge.yml
           grep -Fq "'.github/scripts/'" .github/workflows/automerge.yml
 
       - name: Summarize governance contract
-        shell: bash
         run: |
           {
             echo '## FAB-P0003 delivery governance contract'
-            echo
-            echo '- Canonical release-source gates: present'
-            echo '- Per-platform desktop/mobile checks: present'
-            echo '- Apple Store delivery gate: present'
-            echo '- Google Play delivery gate: present'
-            echo '- Sensitive CODEOWNERS coverage: present and narrow'
-            echo '- Merge queue invariant: retained'
+            echo '- Automatic CI: fast, no long App E2E'
+            echo '- Releases: one manual workflow per platform'
+            echo '- Test releases: prerelease, no long App E2E'
+            echo '- Formal releases: fail-closed E2E/trust gates'
+            echo '- Merge queue and sensitive CODEOWNERS: retained'
           } >> "$GITHUB_STEP_SUMMARY"

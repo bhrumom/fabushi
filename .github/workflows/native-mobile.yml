@@ -17,10 +17,19 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-plugin-runtime/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-js-runtime/**'
       - '.github/workflows/native-mobile.yml'
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: Explicitly enable long simulator/device application E2E
+        required: false
+        type: boolean
+        default: false
   workflow_call:
+    inputs:
+      run_e2e:
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: native-mobile-${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
@@ -405,7 +414,7 @@ jobs:
             ios-derived-v6-${{ hashFiles('mobile/ios/project.yml') }}-
 
       - name: SwiftUI unit and simulated user UI tests
-        if: github.event_name != 'pull_request' && matrix.target == 'ios'
+        if: github.event_name != 'pull_request' && matrix.target == 'ios' && inputs.run_e2e == true
         working-directory: mobile/ios
         run: >-
           xcodebuild test

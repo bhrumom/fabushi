@@ -23,11 +23,6 @@ on:
         description: Apple build number. Leave empty to use UTC YYYY.MM.DD; override when rerunning on the same day.
         required: false
         type: string
-  workflow_run:
-    workflows:
-      - Native mobile quality gate
-    types: [completed]
-    branches: [main]
 
 concurrency:
   group: apple-store-delivery

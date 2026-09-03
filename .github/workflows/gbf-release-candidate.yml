@@ -1,10 +1,6 @@
 name: GBF release candidate regression
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/gbf-release-candidate.yml'
-      - 'projects/grok-bot-fabushi-integration/**'
   workflow_dispatch:
 
 permissions:

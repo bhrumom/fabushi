@@ -1,14 +1,19 @@
-name: Fabushi macOS hot package
+name: Release macOS
 
 on:
   workflow_dispatch:
     inputs:
       release_kind:
-        description: Fast test build skips long App E2E; formal requires it
-        required: false
+        description: Fast test build skips long App E2E; formal build requires it
+        required: true
         type: choice
         default: test
         options: [test, formal]
+      source_ref:
+        description: Branch/tag/SHA to package; blank uses the dispatched ref
+        required: false
+        type: string
+        default: ''
       release_tag:
         description: Required only for formal release
         required: false
@@ -24,7 +29,7 @@ jobs:
     with:
       platform: mac
       runner: macos-15
-      release_kind: ${{ inputs.release_kind || 'test' }}
-      source_ref: ''
-      release_tag: ${{ inputs.release_tag || '' }}
+      release_kind: ${{ inputs.release_kind }}
+      source_ref: ${{ inputs.source_ref }}
+      release_tag: ${{ inputs.release_tag }}
     secrets: inherit
