@@ -7349,12 +7349,12 @@ fn requests_runnable_mini_app(text: &str) -> bool {
         "交互应用",
     ]
     .iter()
-    .any(|marker| lower.contains(marker))
+    .any(|marker| lower.contains(*marker))
         && [
             "做", "创建", "生成", "实现", "开发", "build", "create", "make", "generate",
         ]
         .iter()
-        .any(|marker| lower.contains(marker))
+        .any(|marker| lower.contains(*marker))
 }
 
 fn safe_generated_mini_app_id(value: &str) -> Option<String> {
@@ -7388,7 +7388,7 @@ fn generated_mini_app_id(value: Option<&str>, html: &str) -> String {
     format!("generated-{suffix}")
 }
 
-fn fenced_block(text: &str, language: &str) -> Option<(usize, usize, &str)> {
+fn fenced_block<'a>(text: &'a str, language: &str) -> Option<(usize, usize, &'a str)> {
     let marker = format!("```{language}");
     let start = text.find(&marker)?;
     let content_start = text[start + marker.len()..]
