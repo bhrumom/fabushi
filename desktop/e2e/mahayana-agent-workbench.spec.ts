@@ -161,7 +161,7 @@ test('bot runs through Mahayana as a visible multi-step task and restores its ru
         },
       }));
     }, generatedOperationId);
-    const miniAppRun = page.locator(`[data-testid="agent-run"][data-run-id="operation:${generatedOperationId}"]`);
+    const miniAppRun = page.locator(`[data-testid="agent-inline-report"][data-run-id="operation:${generatedOperationId}"]`);
     await expect(miniAppRun).toHaveAttribute('data-status', 'running');
 
     await page.evaluate((operationId) => {
@@ -181,9 +181,9 @@ test('bot runs through Mahayana as a visible multi-step task and restores its ru
         },
       }));
     }, generatedOperationId);
-    const miniAppArtifact = miniAppRun.getByTestId('agent-miniapp-artifact');
+    const miniAppArtifact = miniAppRun.getByTestId('agent-inline-miniapp-artifact');
     await expect(miniAppArtifact).toContainText('生成计数器');
-    await miniAppArtifact.getByTestId('agent-miniapp-open').click();
+    await miniAppArtifact.getByTestId('agent-inline-miniapp-open').click();
     await expect(page.getByTestId('miniapp-dialog')).toBeVisible();
     await expect(page.getByTestId('miniapp-frame')).toHaveAttribute('title', 'generated-counter-e2e');
     await page.getByRole('button', { name: '关闭小程序' }).click();
