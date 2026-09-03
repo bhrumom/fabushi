@@ -1109,4 +1109,3 @@ export interface ApprovalResolution {
   approvalId: string;
   decision: "allow-once" | "allow-session" | "deny";
 }
-
