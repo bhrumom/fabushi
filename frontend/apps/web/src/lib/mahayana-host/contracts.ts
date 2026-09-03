@@ -578,6 +578,10 @@ export type TranscriptCard =
       kind: "spreadsheet";
       name: string;
       sheets: SpreadsheetSheet[];
+    }
+  | {
+      kind: "deliverable";
+      deliverable: MiniAppDeliverable;
     };
 
 export type UpdateState =
@@ -1077,8 +1081,24 @@ export type RuntimeEvent =
       code: string;
       message: string;
     })
+  | (EventBase & {
+      type: "artifact.delivered";
+      operationId?: string;
+      artifact: MiniAppDeliverable;
+    })
   | (EventBase & { type: "session.cleared" })
   | (EventBase & { type: "host.closed" });
+
+export interface MiniAppDeliverable {
+  id: string;
+  title: string;
+  version: string;
+  description: string;
+  icon?: string;
+  entryHtml: string;
+  files?: Record<string, string>;
+  createdAtMs: number;
+}
 
 export type ApprovalRequestedEvent = Extract<
   RuntimeEvent,
@@ -1089,3 +1109,4 @@ export interface ApprovalResolution {
   approvalId: string;
   decision: "allow-once" | "allow-session" | "deny";
 }
+

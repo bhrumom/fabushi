@@ -167,6 +167,7 @@ type HostTranscriptEntry = {
   role: "user" | "assistant";
   text: string;
   operationId?: string;
+  streaming?: boolean;
   title?: string;
   detail?: string;
   status?: "running" | "completed" | "failed";
@@ -1133,23 +1134,28 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           setMessages((current) => {
             if (event.role === "assistant" && event.operationId) {
               const index = current.findIndex(
-                (message) => message.kind === "message" && message.operationId === event.operationId,
+                (message) => message.kind === "message" && message.operationId === event.operationId && message.streaming,
               );
               if (index >= 0) {
                 return current.map((message, messageIndex) =>
                   messageIndex === index
-                    ? { ...message, kind: "message", text: event.text }
+                    ? { ...message, kind: "message", text: event.text, streaming: false }
                     : message,
                 );
               }
             }
+            if (event.role === "user" && current.some((message) =>
+              message.role === "user" && message.text === event.text &&
+              (!event.operationId || message.operationId === event.operationId))) return current;
             return [
               ...current,
               {
+                id: nextRequestId("message"),
                 kind: "message",
                 role: event.role,
                 text: event.text,
                 operationId: event.operationId,
+                streaming: false,
               },
             ];
           });
@@ -1171,22 +1177,24 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           setMessages((current) => current.filter((entry) => !(entry.kind === "thinking" && entry.operationId === event.operationId)));
           setMessages((current) => {
             const index = current.findIndex(
-              (message) => message.kind === "message" && message.operationId === event.operationId,
+              (message) => message.kind === "message" && message.operationId === event.operationId && message.streaming,
             );
             if (index < 0) {
               return [
                 ...current,
                 {
+                  id: `${event.operationId}:stream`,
                   kind: "message",
                   role: "assistant",
                   text: event.delta,
                   operationId: event.operationId,
+                  streaming: true,
                 },
               ];
             }
             return current.map((message, messageIndex) =>
               messageIndex === index
-                ? { ...message, kind: "message", text: `${message.text}${event.delta}` }
+                ? { ...message, kind: "message", text: `${message.text}${event.delta}`, streaming: true }
                 : message,
             );
           });

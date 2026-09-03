@@ -513,6 +513,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private readonly listeners = new Set<RuntimeEventListener>();
   private readonly installedPlugins = new Map<string, InstalledPluginPointer>();
   private readonly approvals = new Set<string>();
+  private readonly providedSecrets = new Set<string>();
   private status: HostStatus = "idle";
   private sequence = 0;
   private auth: AuthState = { loggedIn: false, provider: "test" };
@@ -692,14 +693,18 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           messages: isRichResultsGallery ? richResultsMessages() : [],
         });
         if (isRichResultsGallery) {
-          richResultsCards().forEach((card, index) => {
-            this.emit({
-              type: "transcript.card",
-              timestamp: now(),
-              entryId: `rich-results-card-${index + 1}`,
-              card,
+          richResultsCards()
+            .map((card) => card.kind === "secretRequest" && this.providedSecrets.has(card.requestId)
+              ? { ...card, provided: true }
+              : card)
+            .forEach((card, index) => {
+              this.emit({
+                type: "transcript.card",
+                timestamp: now(),
+                entryId: `rich-results-card-${index + 1}`,
+                card,
+              });
             });
-          });
         }
         return { requestId: command.requestId };
       }
@@ -1767,7 +1772,8 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         });
         return { requestId: command.requestId };
       case "secret.provide":
-        if (!command.value) throw new Error("Secret value must not be empty");
+        if (!command.value.trim()) throw new Error("Secret value must not be empty");
+        this.providedSecrets.add(command.secretRequestId);
         this.emit({
           type: "secret.provided",
           timestamp: now(),
