@@ -31,10 +31,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macOS native provider
+          - name: macOS x64 native provider
             os: macos-14
-            triplet: arm64-osx
-            target: aarch64-apple-darwin
+            triplet: x64-osx
+            target: x86_64-apple-darwin
             suffix: ''
           - name: Windows x64 native provider
             os: windows-2022
