@@ -355,12 +355,21 @@ function findRunIndex(
     const exact = snapshot.runs.findIndex((run) => run.requestId === requestId);
     if (exact >= 0) return exact;
   }
+
+  // Runtime events with a concrete operationId must never attach themselves to
+  // another already-bound active run. The only safe fallback is an active run
+  // that has not received its operationId yet (for example the request-created
+  // pending projection before feature.execute returns). Without this guard,
+  // overlapping operations can cross-contaminate each other's steps/cards.
+  const canReuseActiveRun = (run: AgentRunProjection) =>
+    activeStatuses(run.status) && (!operationId || !run.operationId);
+
   for (let index = snapshot.runs.length - 1; index >= 0; index -= 1) {
     const run = snapshot.runs[index];
-    if (run.conversationKey === snapshot.activeConversationKey && activeStatuses(run.status)) return index;
+    if (run.conversationKey === snapshot.activeConversationKey && canReuseActiveRun(run)) return index;
   }
   for (let index = snapshot.runs.length - 1; index >= 0; index -= 1) {
-    if (activeStatuses(snapshot.runs[index].status)) return index;
+    if (canReuseActiveRun(snapshot.runs[index])) return index;
   }
   return -1;
 }

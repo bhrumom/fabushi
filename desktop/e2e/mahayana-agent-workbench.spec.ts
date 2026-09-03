@@ -151,44 +151,53 @@ test('bot runs through Mahayana as a visible multi-step task and restores its ru
 
     const generatedOperationId = `generated-miniapp-e2e-${Date.now()}`;
     await page.evaluate((operationId) => {
-      const dispatchRuntimeEvent = (detail: Record<string, unknown>) => {
-        window.dispatchEvent(new CustomEvent('fabushi:mahayana-runtime-event', { detail }));
-      };
-      const timestamp = new Date().toISOString();
-      dispatchRuntimeEvent({
-        type: 'operation.started',
-        timestamp,
-        operationId,
-        label: 'Agent 生成小程序',
-        interruptible: false,
-      });
-      dispatchRuntimeEvent({
-        type: 'transcript.card',
-        timestamp,
-        entryId: `generated-miniapp:${operationId}`,
-        operationId,
-        card: {
-          kind: 'miniApp',
-          miniAppId: 'generated-counter-e2e',
-          name: '生成计数器',
-          description: 'Agent 生成的小程序验收',
-          html: '<!doctype html><html><body><button id="count">+1</button></body></html>',
+      window.dispatchEvent(new CustomEvent('fabushi:mahayana-runtime-event', {
+        detail: {
+          type: 'operation.started',
+          timestamp: new Date().toISOString(),
+          operationId,
+          label: 'Agent 生成小程序',
+          interruptible: false,
         },
-      });
-      dispatchRuntimeEvent({
-        type: 'operation.completed',
-        timestamp,
-        operationId,
-      });
+      }));
     }, generatedOperationId);
     const miniAppRun = page.locator(`[data-testid="agent-run"][data-run-id="operation:${generatedOperationId}"]`);
-    await expect(miniAppRun).toHaveAttribute('data-status', 'completed');
+    await expect(miniAppRun).toHaveAttribute('data-status', 'running');
+
+    await page.evaluate((operationId) => {
+      window.dispatchEvent(new CustomEvent('fabushi:mahayana-runtime-event', {
+        detail: {
+          type: 'transcript.card',
+          timestamp: new Date().toISOString(),
+          entryId: `generated-miniapp:${operationId}`,
+          operationId,
+          card: {
+            kind: 'miniApp',
+            miniAppId: 'generated-counter-e2e',
+            name: '生成计数器',
+            description: 'Agent 生成的小程序验收',
+            html: '<!doctype html><html><body><button id="count">+1</button></body></html>',
+          },
+        },
+      }));
+    }, generatedOperationId);
     const miniAppArtifact = miniAppRun.getByTestId('agent-miniapp-artifact');
     await expect(miniAppArtifact).toContainText('生成计数器');
     await miniAppArtifact.getByTestId('agent-miniapp-open').click();
     await expect(page.getByTestId('miniapp-dialog')).toBeVisible();
     await expect(page.getByTestId('miniapp-frame')).toHaveAttribute('title', 'generated-counter-e2e');
     await page.getByRole('button', { name: '关闭小程序' }).click();
+
+    await page.evaluate((operationId) => {
+      window.dispatchEvent(new CustomEvent('fabushi:mahayana-runtime-event', {
+        detail: {
+          type: 'operation.completed',
+          timestamp: new Date().toISOString(),
+          operationId,
+        },
+      }));
+    }, generatedOperationId);
+    await expect(miniAppRun).toHaveAttribute('data-status', 'completed');
 
     const persistedRunId = await run.getAttribute('data-run-id');
     expect(persistedRunId).toBeTruthy();
