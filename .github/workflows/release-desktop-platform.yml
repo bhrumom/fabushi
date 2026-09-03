@@ -151,6 +151,7 @@ jobs:
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           CONFIGURED_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          CONFIGURED_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           test -n "$MACOS_CERTIFICATE_P12_BASE64"
@@ -166,13 +167,19 @@ jobs:
           identity="$CONFIGURED_IDENTITY"
           [ -n "$identity" ] || identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application/ {print $2; exit}')"
           test -n "$identity"
+          team_id="$CONFIGURED_TEAM_ID"
+          [ -n "$team_id" ] || team_id="$(printf '%s\n' "$identity" | sed -nE 's/.*\(([A-Z0-9]{10})\)$/\1/p')"
+          if ! [[ "$team_id" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "Unable to derive the 10-character Apple Team ID from the Developer ID identity." >&2
+            exit 1
+          fi
           echo "MACOS_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "APPLE_TEAM_ID=$team_id" >> "$GITHUB_ENV"
 
       - name: Stage bundled Computer Use runtime
         shell: bash
         env:
           CHATGPT_COMPUTER_HOME: ${{ github.workspace }}/desktop/resources/computer-control
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           export CHATGPT_COMPUTER_CODESIGN_IDENTITY="${MACOS_CODESIGN_IDENTITY:-}"
@@ -186,7 +193,6 @@ jobs:
           FABUSHI_MACOS_SIGNED: ${{ inputs.platform == 'mac' && '1' || '0' }}
           FABUSHI_MACOS_NOTARIZE: ${{ inputs.platform == 'mac' && inputs.release_kind == 'formal' && '1' || '0' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
@@ -195,8 +201,6 @@ jobs:
 
       - name: Verify packaged Computer Use runtime and signing boundary
         shell: bash
-        env:
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           args=(--release-root desktop/release --platform '${{ inputs.platform }}')
