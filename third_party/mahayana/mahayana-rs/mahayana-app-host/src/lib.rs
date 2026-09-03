@@ -110,11 +110,13 @@ impl AppHost {
         let feature_root = feature_host_root(&app_data_dir);
         let feature = create_feature_host(&app_data_dir, feature_mode, storage_passphrase.clone())?;
         let product = match storage_passphrase {
-            Some(passphrase) => MahayanaProductClient::new_with_default_api_base_url_and_storage_passphrase(
-                feature_root.join("account-session.json"),
-                feature_root.join("product-surface.json"),
-                passphrase,
-            ),
+            Some(passphrase) => {
+                MahayanaProductClient::new_with_default_api_base_url_and_storage_passphrase(
+                    feature_root.join("account-session.json"),
+                    feature_root.join("product-surface.json"),
+                    passphrase,
+                )
+            }
             None => MahayanaProductClient::new_with_default_api_base_url(
                 feature_root.join("account-session.json"),
                 feature_root.join("product-surface.json"),

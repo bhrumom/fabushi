@@ -5987,17 +5987,20 @@ impl FeatureHostController {
                         None
                     }
                 } else {
-                    let expects_generated_mini_app = if message.role == RuntimeMessageRole::Assistant {
-                        self.state()?
-                            .generated_mini_app_operations
-                            .remove(&operation_id)
-                    } else {
-                        false
-                    };
+                    let expects_generated_mini_app =
+                        if message.role == RuntimeMessageRole::Assistant {
+                            self.state()?
+                                .generated_mini_app_operations
+                                .remove(&operation_id)
+                        } else {
+                            false
+                        };
                     let mut cards = transcript_cards_from_metadata(&message.metadata);
                     let mut message_text = message.text;
                     if message.role == RuntimeMessageRole::Assistant
-                        && !cards.iter().any(|card| matches!(card, TranscriptCard::MiniApp { .. }))
+                        && !cards
+                            .iter()
+                            .any(|card| matches!(card, TranscriptCard::MiniApp { .. }))
                         && let Some((card, visible_text)) = generated_mini_app_card_from_text(
                             &message_text,
                             expects_generated_mini_app,
@@ -6060,7 +6063,9 @@ impl FeatureHostController {
             } => Some(self.translate_runtime_approval(approval_id, title, details)?),
             RuntimeEvent::OperationCompleted { operation_id } => {
                 let operation_id = operation_id.to_string();
-                self.state()?.generated_mini_app_operations.remove(&operation_id);
+                self.state()?
+                    .generated_mini_app_operations
+                    .remove(&operation_id);
                 let group_context = self.state()?.group_operations.remove(&operation_id);
                 if let Some(context) = group_context {
                     let _ = self.advance_group_run_after_turn(&context)?;
@@ -6092,7 +6097,9 @@ impl FeatureHostController {
                 message,
             } => {
                 let operation_id = operation_id.to_string();
-                self.state()?.generated_mini_app_operations.remove(&operation_id);
+                self.state()?
+                    .generated_mini_app_operations
+                    .remove(&operation_id);
                 let group_context = self.state()?.group_operations.remove(&operation_id);
                 if let Some(context) = group_context {
                     let group = {
@@ -6828,7 +6835,9 @@ impl FeatureHostController {
         let mut state = self.state()?;
         state.operations.insert(operation_id.clone());
         if expects_generated_mini_app {
-            state.generated_mini_app_operations.insert(operation_id.clone());
+            state
+                .generated_mini_app_operations
+                .insert(operation_id.clone());
         }
         state.operation_agents.insert(
             operation_id.clone(),
@@ -7331,20 +7340,39 @@ const GENERATED_MINI_APP_MAX_BYTES: usize = 5 * 1024 * 1024;
 
 fn requests_runnable_mini_app(text: &str) -> bool {
     let lower = text.to_lowercase();
-    ["小程序", "mini app", "miniapp", "web app", "网页应用", "交互应用"]
+    [
+        "小程序",
+        "mini app",
+        "miniapp",
+        "web app",
+        "网页应用",
+        "交互应用",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+        && [
+            "做", "创建", "生成", "实现", "开发", "build", "create", "make", "generate",
+        ]
         .iter()
         .any(|marker| lower.contains(marker))
-        && ["做", "创建", "生成", "实现", "开发", "build", "create", "make", "generate"]
-            .iter()
-            .any(|marker| lower.contains(marker))
 }
 
 fn safe_generated_mini_app_id(value: &str) -> Option<String> {
     let value = value.trim().to_ascii_lowercase();
-    (2..=64).contains(&value.len())
+    (2..=64)
+        .contains(&value.len())
         .then_some(())
-        .filter(|_| value.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric))
-        .filter(|_| value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-'))
+        .filter(|_| {
+            value
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
+        })
+        .filter(|_| {
+            value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
         .map(|_| value)
 }
 
@@ -7368,7 +7396,11 @@ fn fenced_block(text: &str, language: &str) -> Option<(usize, usize, &str)> {
         .map(|offset| start + marker.len() + offset + 1)?;
     let closing_offset = text[content_start..].find("```")?;
     let end = content_start + closing_offset + 3;
-    Some((start, end, &text[content_start..content_start + closing_offset]))
+    Some((
+        start,
+        end,
+        &text[content_start..content_start + closing_offset],
+    ))
 }
 
 fn mini_app_visible_text(text: &str, start: usize, end: usize, name: &str) -> String {
@@ -13003,10 +13035,15 @@ mod tests {
     #[test]
     fn generated_mini_app_envelope_becomes_clickable_card_without_raw_source() {
         let text = "已完成。\n```fabushi-miniapp\n{\"id\":\"counter-demo\",\"name\":\"计数器\",\"description\":\"点击按钮计数\"}\n<!doctype html><html><body><button>+1</button></body></html>\n```";
-        let (card, visible) = generated_mini_app_card_from_text(text, false)
-            .expect("promote generated Mini App");
+        let (card, visible) =
+            generated_mini_app_card_from_text(text, false).expect("promote generated Mini App");
         match card {
-            TranscriptCard::MiniApp { mini_app_id, name, html, description } => {
+            TranscriptCard::MiniApp {
+                mini_app_id,
+                name,
+                html,
+                description,
+            } => {
                 assert_eq!(mini_app_id, "counter-demo");
                 assert_eq!(name, "计数器");
                 assert!(html.contains("<button>+1</button>"));
@@ -13024,5 +13061,4 @@ mod tests {
         assert!(generated_mini_app_card_from_text(text, false).is_none());
         assert!(generated_mini_app_card_from_text(text, true).is_some());
     }
-
 }
