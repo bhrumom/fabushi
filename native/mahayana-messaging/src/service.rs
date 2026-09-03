@@ -6,7 +6,7 @@ use crate::engine::{Command, EngineError, Event, MessagingEngine};
 use crate::message::{ClientMessageId, DeliveryState, Message, MessageContent, MessageId};
 use crate::payment::Money;
 use crate::protocol::{
-    ClientCommand, ClientEnvelope, ServerEnvelope, ServerEvent, FABUSHI_MESSAGING_PROTOCOL_VERSION,
+    ClientCommand, ClientEnvelope, FABUSHI_MESSAGING_PROTOCOL_VERSION, ServerEnvelope, ServerEvent,
 };
 use crate::search::{SearchIndex, SearchQuery};
 use crate::settlement::{SettlementError, SettlementVerifier, SignedSettlement};
@@ -545,7 +545,9 @@ impl<S: MessagingStateStore> MessagingService<S> {
                         if participant.role == crate::actor::ParticipantRole::Owner
                             && existing.owner_id.as_ref() != Some(&participant.actor_id)
                         {
-                            return Err(denied("conversation owner cannot be reassigned through participant management"));
+                            return Err(denied(
+                                "conversation owner cannot be reassigned through participant management",
+                            ));
                         }
                         if caller.role == crate::actor::ParticipantRole::Admin
                             && (matches!(

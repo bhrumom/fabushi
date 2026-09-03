@@ -84,10 +84,7 @@ pub trait ConversationProvider: Send + Sync {
     /// Switch the local transcript file used by a long-lived provider. The
     /// default is a no-op for providers whose history is remote or owned by a
     /// separate account boundary.
-    async fn set_history_path(
-        &self,
-        _path: Option<PathBuf>,
-    ) -> Result<(), ConversationError> {
+    async fn set_history_path(&self, _path: Option<PathBuf>) -> Result<(), ConversationError> {
         Ok(())
     }
 }
