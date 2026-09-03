@@ -18,6 +18,17 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 
+private data class OpenedMiniApp(val plugin: MarketplacePlugin, val htmlOverride: String? = null)
+
+private fun hardenGeneratedMiniAppDocument(html: String): String {
+    val policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; media-src data:; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'\">"
+    val head = Regex("<head>", RegexOption.IGNORE_CASE)
+    if (head.containsMatchIn(html)) return html.replaceFirst(head, "<head>$policy")
+    val root = Regex("<html>", RegexOption.IGNORE_CASE)
+    if (root.containsMatchIn(html)) return html.replaceFirst(root, "<html><head>$policy</head>")
+    return "<!doctype html><html><head>$policy</head><body>$html</body></html>"
+}
+
 class MainActivity : ComponentActivity() {
     private val deepLinks = MutableSharedFlow<Uri>(replay = 1, extraBufferCapacity = 31)
     private val updateModel: AndroidUpdateViewModel by viewModels()
@@ -33,7 +44,7 @@ class MainActivity : ComponentActivity() {
                 val state by model.state.collectAsState()
                 val messagingState by messagingModel.state.collectAsState()
                 val updateState by updateModel.state.collectAsState()
-                var openedMiniApp by remember { mutableStateOf<MarketplacePlugin?>(null) }
+                var openedMiniApp by remember { mutableStateOf<OpenedMiniApp?>(null) }
                 LaunchedEffect(model) {
                     deepLinks.collect { uri -> model.handleDeepLink(uri) }
                 }
@@ -52,8 +63,8 @@ class MainActivity : ComponentActivity() {
                 val active = openedMiniApp
                 if (active != null) {
                     MiniAppWebMcpSurface(
-                        plugin = active,
-                        loadLocalHtml = model::loadLocalMiniAppHtml,
+                        plugin = active.plugin,
+                        loadLocalHtml = { pluginId -> active.htmlOverride?.let(::hardenGeneratedMiniAppDocument) ?: model.loadLocalMiniAppHtml(pluginId) },
                         callRuntimeToolJson = model::callRuntimeToolJson,
                         onClose = { openedMiniApp = null },
                     )
@@ -63,7 +74,7 @@ class MainActivity : ComponentActivity() {
                         onQueryChange = model::setQuery,
                         onSearch = model::refresh,
                         onInstall = model::install,
-                        onOpen = { openedMiniApp = it },
+                        onOpen = { openedMiniApp = OpenedMiniApp(it) },
                         onApprovePermissions = model::approvePermissions,
                         onDenyPermissions = model::denyPermissions,
                         updateState = updateState,
@@ -111,6 +122,22 @@ class MainActivity : ComponentActivity() {
                         onChatDraftChange = model::setChatDraft,
                         onSendChat = model::sendChat,
                         onStopChat = model::stopChat,
+                        onOpenGeneratedMiniApp = { entry ->
+                            val id = entry.miniAppId
+                            val html = entry.miniAppHtml
+                            if (!id.isNullOrBlank() && !html.isNullOrBlank()) {
+                                openedMiniApp = OpenedMiniApp(
+                                    plugin = MarketplacePlugin(
+                                        pluginId = id,
+                                        displayName = entry.miniAppName ?: "生成的小程序",
+                                        description = entry.miniAppDescription ?: "Agent generated Mini App",
+                                        latestVersion = null,
+                                        tools = emptyList(),
+                                    ),
+                                    htmlOverride = html,
+                                )
+                            }
+                        },
                     )
                 }
             }

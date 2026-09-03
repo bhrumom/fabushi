@@ -57,3 +57,18 @@ Root cause: the shared BotMark engine kept its global `requestAnimationFrame` cl
 - preserve `prefers-reduced-motion` and per-mark pause semantics.
 
 Acceptance adds target-Mac background measurement after the packaged fix: renderer/GPU and `mahayana-app-host` must settle near idle rather than sustained double-digit CPU.
+
+## 2026-09-03 current-main energy regression continuation
+
+The user again reported severe desktop battery usage. Current-main inspection found that the avatar implementation had drifted from the intended shared-clock design: every `FabushiAvatarRuntime` instance owned its own `requestAnimationFrame` loop. A conversation/contact list with many animated Bot marks therefore registered many callbacks per display frame while the app was focused. Motion pause on blur/hidden still existed per mark, but the focused callback fan-out was unnecessarily expensive.
+
+This round restores the intended energy architecture without trading UI latency for lower wakeups:
+
+- `FabushiAvatarRuntime` now has one module-level shared frame scheduler for all live avatar instances;
+- shared dispatch is capped at approximately 30 FPS using one timer + one animation-frame synchronization point rather than one continuous rAF loop per avatar;
+- `BotMark` focus/visibility lifecycle is also shared, so the document has one `visibilitychange/focus/blur` subscription set rather than one set per avatar;
+- all avatar subscribers still detach when motion is paused/reduced and the shared clock stops completely when subscriber count reaches zero;
+- the Host event receive stays at the established bounded 500 ms long poll because the app-host request transport is serial. Extending it to tens of seconds would reduce wakeups by blocking auth/settings IPC and is therefore rejected;
+- after every Host receive, Electron yields one main-loop turn before re-entering the bounded blocking receive, preserving renderer IPC fairness during streamed events.
+
+New packaged acceptance: measure foreground idle and hidden/background renderer/GPU/app-host CPU/energy on the target Mac, verify the avatar runtime reports `data-frame-clock="shared-30fps"`, and compare against the previous double-digit renderer/GPU baseline. This task remains `in-progress` until the packaged measurement and exact-main release gate pass.

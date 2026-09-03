@@ -12,8 +12,10 @@ test('desktop background presence remains production-only while E2E can shut dow
   assert.match(source, /if \(!backgroundPersistenceEnabled\) app\.quit\(\);/);
 });
 
-test('runtime event pump yields between long-polls so renderer IPC cannot starve', () => {
+test('runtime event pump uses bounded blocking receive and yields to renderer IPC', () => {
   const pump = source.slice(source.indexOf('function startHostEventPump()'), source.indexOf('function installIpcHandlers()'));
-  assert.match(pump, /if \(event\) broadcastMahayanaEvent\(event\);\s*\/\/ Yield after every receive[\s\S]*?await sleep\(10\);/);
-  assert.doesNotMatch(pump, /else await sleep\(10\);/);
+  assert.match(source, /const HOST_EVENT_LONG_POLL_MS = 500;/);
+  assert.match(pump, /feature\.receive', \{ timeoutMs: HOST_EVENT_LONG_POLL_MS \}/);
+  assert.match(pump, /await new Promise\(\(resolve\) => setImmediate\(resolve\)\);/);
+  assert.doesNotMatch(pump, /sleep\(10\)/);
 });

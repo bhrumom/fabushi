@@ -1,4 +1,5 @@
 import {
+  AppWindow,
   Bot,
   CheckCircle2,
   ChevronDown,
@@ -951,6 +952,7 @@ function transcriptCardTitle(card: TranscriptCard): string {
     case 'event': return card.event.title;
     case 'pdf': return card.name;
     case 'spreadsheet': return card.name;
+    case 'miniApp': return card.name;
   }
 }
 
@@ -1058,7 +1060,22 @@ function RunCard({
           </div>
         ) : null}
 
-        {run.cards.map((item) => (
+        {run.cards.map((item) => item.card.kind === 'miniApp' ? (
+          <section className={`${styles.artifact} ${styles.miniAppArtifact}`} data-testid="agent-miniapp-artifact" key={item.id}>
+            <AppWindow size={20} />
+            <div>
+              <strong>{item.card.name}</strong>
+              <p>{item.card.description || '可直接运行的 Fabushi 小程序产物'}</p>
+              <button
+                type="button"
+                data-testid="agent-miniapp-open"
+                onClick={() => window.dispatchEvent(new CustomEvent('fabushi:open-generated-miniapp', { detail: item.card }))}
+              >
+                <AppWindow size={14} />打开小程序
+              </button>
+            </div>
+          </section>
+        ) : (
           <section className={styles.artifact} data-testid="agent-artifact" key={item.id}>
             <FileText size={18} />
             <div><strong>{transcriptCardTitle(item.card)}</strong><pre>{jsonPreview(item.card)}</pre></div>

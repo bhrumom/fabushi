@@ -12,6 +12,7 @@ enum MobileChatEntryKind: String, Equatable {
     case message
     case action
     case thinking
+    case miniApp
 }
 
 struct MobileChatMessage: Identifiable, Equatable {
@@ -23,6 +24,10 @@ struct MobileChatMessage: Identifiable, Equatable {
     var actionTitle: String?
     var actionDetail: String?
     var actionStatus: String?
+    var miniAppId: String? = nil
+    var miniAppName: String? = nil
+    var miniAppHtml: String? = nil
+    var miniAppDescription: String? = nil
     var createdAt = Date()
 }
 
@@ -498,6 +503,27 @@ final class MarketplaceModel {
                     } else if !chatMessages.contains(where: { $0.role == .user && $0.text == eventText }) {
                         chatMessages.append(MobileChatMessage(id: "user:\(UUID().uuidString)", role: .user, text: eventText))
                     }
+                case "transcript.card":
+                    let eventOperationId = event["operationId"] as? String ?? operationId
+                    guard eventOperationId == operationId,
+                          let card = event["card"] as? [String: Any],
+                          card["kind"] as? String == "miniApp",
+                          let miniAppId = card["miniAppId"] as? String, !miniAppId.isEmpty,
+                          let html = card["html"] as? String, !html.isEmpty
+                    else { continue }
+                    removeThinking(operationId: operationId)
+                    let entry = MobileChatMessage(
+                        id: "miniapp:\(operationId):\(miniAppId)",
+                        role: .assistant,
+                        text: "",
+                        kind: .miniApp,
+                        operationId: operationId,
+                        miniAppId: miniAppId,
+                        miniAppName: card["name"] as? String ?? "生成的小程序",
+                        miniAppHtml: html,
+                        miniAppDescription: card["description"] as? String
+                    )
+                    if let index = chatMessages.firstIndex(where: { $0.id == entry.id }) { chatMessages[index] = entry } else { chatMessages.append(entry) }
                 case "chat.delta":
                     guard event["operationId"] as? String == operationId else { continue }
                     removeThinking(operationId: operationId)

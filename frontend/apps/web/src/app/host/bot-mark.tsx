@@ -1,7 +1,6 @@
 import {
   forwardRef,
   useEffect,
-  useState,
   useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
@@ -223,25 +222,43 @@ export function botMarkColor(botId: string): string {
   return `light-dark(${value.light}, ${value.dark})`;
 }
 
-function useAvatarMotionAllowed(): boolean {
-  const read = () => {
-    if (typeof document === "undefined" || typeof window === "undefined") return true;
-    return document.visibilityState === "visible" && document.hasFocus();
+const avatarMotionLifecycleListeners = new Set<() => void>();
+let avatarMotionLifecycleInstalled = false;
+
+function avatarMotionAllowedSnapshot(): boolean {
+  if (typeof document === "undefined" || typeof window === "undefined") return true;
+  return document.visibilityState === "visible" && document.hasFocus();
+}
+
+function notifyAvatarMotionLifecycle(): void {
+  for (const listener of [...avatarMotionLifecycleListeners]) listener();
+}
+
+function subscribeAvatarMotionLifecycle(listener: () => void): () => void {
+  avatarMotionLifecycleListeners.add(listener);
+  if (!avatarMotionLifecycleInstalled && typeof document !== "undefined" && typeof window !== "undefined") {
+    avatarMotionLifecycleInstalled = true;
+    document.addEventListener("visibilitychange", notifyAvatarMotionLifecycle);
+    window.addEventListener("focus", notifyAvatarMotionLifecycle);
+    window.addEventListener("blur", notifyAvatarMotionLifecycle);
+  }
+  return () => {
+    avatarMotionLifecycleListeners.delete(listener);
+    if (avatarMotionLifecycleListeners.size === 0 && avatarMotionLifecycleInstalled) {
+      avatarMotionLifecycleInstalled = false;
+      document.removeEventListener("visibilitychange", notifyAvatarMotionLifecycle);
+      window.removeEventListener("focus", notifyAvatarMotionLifecycle);
+      window.removeEventListener("blur", notifyAvatarMotionLifecycle);
+    }
   };
-  const [allowed, setAllowed] = useState(read);
-  useEffect(() => {
-    const update = () => setAllowed(read());
-    document.addEventListener("visibilitychange", update);
-    window.addEventListener("focus", update);
-    window.addEventListener("blur", update);
-    update();
-    return () => {
-      document.removeEventListener("visibilitychange", update);
-      window.removeEventListener("focus", update);
-      window.removeEventListener("blur", update);
-    };
-  }, []);
-  return allowed;
+}
+
+function useAvatarMotionAllowed(): boolean {
+  return useSyncExternalStore(
+    subscribeAvatarMotionLifecycle,
+    avatarMotionAllowedSnapshot,
+    () => true,
+  );
 }
 
 export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
