@@ -262,18 +262,45 @@ api_path.write_text(api)
 
 test_path = Path('chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js')
 tests = test_path.read_text()
+old_default_test = '''test("session grant defaults are returned to desktop and mobile clients", () => {
+  const worker = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs");
+  assert.match(worker, /"permissions": \\{"display": true, "input": true, "clipboard": false, "fileTransfer": false, "audio": false\\}/);
+  const api = source("frontend/apps/web/src/lib/remote-computer/remote-api.ts");
+  assert.match(api, /normalizeRemoteControlPermissions/);
+  assert.match(api, /permissions: normalizeRemoteControlPermissions\\(raw\\.permissions\\)!/);
+});
+'''
+new_default_test = '''test("session grant defaults remain least privilege while responses use authoritative persisted grants", () => {
+  const worker = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs");
+  assert.match(worker, /fn default_remote_control_permissions/);
+  assert.match(worker, /display: true/);
+  assert.match(worker, /input: true/);
+  assert.match(worker, /clipboard: false/);
+  assert.match(worker, /file_transfer: false/);
+  assert.match(worker, /audio: false/);
+  assert.match(worker, /JOIN remote_computer_session_grants g/);
+  assert.match(worker, /"clipboard": row\\.allow_clipboard != 0/);
+  const api = source("frontend/apps/web/src/lib/remote-computer/remote-api.ts");
+  assert.match(api, /normalizeRemoteControlPermissions/);
+  assert.match(api, /permissions: normalizeRemoteControlPermissions\\(raw\\.permissions\\)!/);
+});
+'''
+if old_default_test in tests:
+    tests = tests.replace(old_default_test, new_default_test, 1)
+elif new_default_test not in tests:
+    raise SystemExit('session grant default contract marker changed')
 addition = '''\ntest("requested provider grants are persisted before activation and cannot be widened in place", () => {
   const worker = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs");
   const migration = source("third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0020_remote_computer_requested_grants.sql");
   const api = source("frontend/apps/web/src/lib/remote-computer/remote-api.ts");
   assert.match(worker, /permissions: RemoteComputerPermissionsRequest/);
-  assert.match(worker, /input\.permissions\.clipboard as i64/);
+  assert.match(worker, /input\\.permissions\\.clipboard as i64/);
   assert.match(worker, /JOIN remote_computer_session_grants g/);
-  assert.match(worker, /row\.allow_file_transfer != 0/);
-  assert.match(migration, /NEW\.allow_clipboard/);
-  assert.match(migration, /NEW\.allow_file_transfer/);
-  assert.match(migration, /NEW\.allow_audio/);
-  assert.match(api, /JSON\.stringify\(\{ clientId, clientToken, permissions \}\)/);
+  assert.match(worker, /row\\.allow_file_transfer != 0/);
+  assert.match(migration, /NEW\\.allow_clipboard/);
+  assert.match(migration, /NEW\\.allow_file_transfer/);
+  assert.match(migration, /NEW\\.allow_audio/);
+  assert.match(api, /JSON\\.stringify\\(\\{ clientId, clientToken, permissions \\}\\)/);
 });
 '''
 if 'requested provider grants are persisted before activation' not in tests:
