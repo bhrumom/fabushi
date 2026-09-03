@@ -7,7 +7,7 @@
 - Tracking issue: `#2155`
 - Reference baseline: `bhrum/grok-bot-0.18-reconstructed@a9f633e09d49a85829b8236331b9e21f7e612634`
 - Canonical implementation: `bhrumom/fabushi`
-- Active manual branch: `fix/gbf805-manual-parity-closure`
+- Active implementation branch: `fix/gbf805-product-parity-20260903`
 
 ## Objective
 
@@ -155,3 +155,28 @@ The implementation is being exercised only by normal product/CI workflows, not b
 ## Completion rule
 
 `GBF-805` may be marked `RELEASED` only after every required closure above has objective evidence on canonical `main` and the exact tested release. Missing visual, persistence, entitlement, packaged E2E, update-discovery or provenance evidence is a blocker, not a documentation exception.
+
+
+## 2026-09-03 parity round — session, true streaming, generated Mini App, energy
+
+This continuation is sourced from `source/2026-09-03-session-streaming-miniapp-energy.md`. Completion now additionally requires all five reported user-visible failures to be closed in packaged builds:
+
+1. mobile full-process relaunch restores the authenticated session through AAC-004's Keychain/Keystore-backed encrypted Rust store;
+2. desktop avatar/profile navigation exposes `退出登录` directly and exercises the same canonical logout/cache-clear boundary;
+3. OpenAI Responses, OpenAI-compatible Chat Completions and Anthropic providers request/consume SSE and emit multiple real `chat.delta` events before terminal completion rather than converting one completed body into a fake single delta;
+4. Agent-produced self-contained Mini Apps become structured `miniApp` transcript artifacts, render an `打开小程序` action and reuse Fabushi's isolated Mini App surface across desktop/iOS/Android instead of exposing the final HTML as a JSON/code `<pre>`;
+5. MSR-106 verifies current-main avatar motion is one shared 30 FPS scheduler with shared focus/visibility lifecycle and target-Mac packaged energy evidence.
+
+Targeted unit/source/E2E regressions are part of this branch, but this task remains `IN_PROGRESS` until GitHub Actions, protected main, exact-main packaged/mobile/visual/energy evidence and Release are all green.
+
+## Real macOS test-build review — 2026-09-03
+
+`1.2.14-test.152` was exercised on the target Mac. The round found release-blocking runtime problems rather than a clean parity proof: the ad-hoc-signed test Host triggers a Keychain password prompt for `com.ombhrum.fabushi.auth.v2`, Host calls then time out, Agent send fails after the timeout, logout remains `退出中…`, and the requested clean test-account login cannot be reached. The selected `fabushi test` connector independently returns an account-connection 400. Mahayana visual identity also still differs between Messenger (`peer:conversation:mahayana-ai:agent:assistant`) and Workbench (`bot:mahayana-assistant`), and near-idle Electron GPU/renderer CPU remains high. Full evidence: `evidence/GBF-805/mac-test-1.2.14-test.152-product-review-20260903.md`.
+
+GBF-805 remains `IN_PROGRESS`; do not recalibrate formal E2E around this broken runtime state. First restore a safe signed/isolated test auth boundary and Host responsiveness, then rerun the real-device journey.
+
+## 2026-09-03 continuation acceptance — fix Mac test until clean
+
+Source: `source/2026-09-03-mac-test-fix-until-clean.md`.
+
+This continuation is not accepted by source changes alone. Required real-device closure is: signed Mac test Host/auth boundary -> successful logout -> protected test-account login -> successful Mahayana send -> functional Mini App marketplace -> `fabushi test` connector device discovery/control -> restart/session recovery -> stable canonical Mahayana Bot identity -> materially reduced idle/near-idle CPU. Heavy build/package validation remains GitHub Actions only and only the macOS test lane may be dispatched.

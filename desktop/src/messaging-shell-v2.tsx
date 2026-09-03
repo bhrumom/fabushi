@@ -13,6 +13,7 @@ import {
   Forward,
   Image,
   Link2,
+  LogOut,
   MapPin,
   MessageCircle,
   Mic,
@@ -803,6 +804,21 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
   const agentRequestPendingRef = useRef(false);
   const remoteControlEnabledRef = useRef(hostSettings.remoteControlEnabled);
   remoteControlEnabledRef.current = hostSettings.remoteControlEnabled;
+
+  useEffect(() => {
+    const openGeneratedMiniApp = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind?: string; miniAppId?: string; name?: string; html?: string }>).detail;
+      if (detail?.kind !== 'miniApp' || !detail.miniAppId || !detail.name || !detail.html) return;
+      const id = detail.miniAppId;
+      const title = detail.name;
+      const preparedHtml = miniAppCloudBridgeDocument(prepareDesktopMiniAppWebMcpDocument(id, detail.html));
+      void window.fabushi.registerMiniAppDocument(id, preparedHtml)
+        .then((url) => setMiniApp({ id, title, url }))
+        .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+    };
+    window.addEventListener('fabushi:open-generated-miniapp', openGeneratedMiniApp);
+    return () => window.removeEventListener('fabushi:open-generated-miniapp', openGeneratedMiniApp);
+  }, []);
 
   useEffect(() => {
     activePeerKeyRef.current = activePeerKey;
@@ -1706,25 +1722,29 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     const conversationIds = new Set(conversations.map((conversation) => conversation.id));
     const botPeers = bots
       .filter((bot) => !bot.conversationId || !conversationIds.has(bot.conversationId))
-      .map((bot): PeerItem => ({
-        key: `legacy:bot:${bot.id}`,
-        id: bot.id,
-        source: 'legacy',
-        actorId: bot.id,
-        conversationId: bot.conversationId,
-        kind: 'bot',
-        title: bot.name,
-        subtitle: bot.description || bot.title || 'AI Bot',
-        unread: bot.unread ? 1 : 0,
-        pinned: pinnedPeerKeys.has(`legacy:bot:${bot.id}`),
-        archived: archivedPeerKeys.has(`legacy:bot:${bot.id}`),
-        updatedAtMs: 0,
-        avatar: bot.avatar,
-        miniAppId: miniAppByBotId.get(bot.id)?.miniAppId,
-        miniAppCommands: miniAppByBotId.get(bot.id)?.commands,
-        miniAppMenuButtonText: miniAppByBotId.get(bot.id)?.menuButtonText,
-        miniAppCalls: miniAppByBotId.get(bot.id)?.calls,
-      }));
+      .map((bot): PeerItem => {
+        const projection = miniAppByBotId.get(bot.id);
+        const key = projection ? `miniapp:bot:${projection.miniAppId}` : `legacy:bot:${bot.id}`;
+        return {
+          key,
+          id: bot.id,
+          source: 'legacy',
+          actorId: bot.id,
+          conversationId: bot.conversationId,
+          kind: 'bot',
+          title: bot.name,
+          subtitle: bot.description || bot.title || 'AI Bot',
+          unread: bot.unread ? 1 : 0,
+          pinned: pinnedPeerKeys.has(key),
+          archived: archivedPeerKeys.has(key),
+          updatedAtMs: 0,
+          avatar: bot.avatar,
+          miniAppId: projection?.miniAppId,
+          miniAppCommands: projection?.commands,
+          miniAppMenuButtonText: projection?.menuButtonText,
+          miniAppCalls: projection?.calls,
+        };
+      });
     const existingBotIds = new Set(botPeers.map((peer) => peer.actorId ?? peer.id));
     const accountBotPeers = accountBots
       .filter((entry) => entry?.bot?.id && !existingBotIds.has(entry.bot.id))
@@ -1733,8 +1753,10 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         const projection = miniAppSource
           ? miniAppBotProjections.find((candidate) => candidate.miniAppId === miniAppSource.sourceId)
           : miniAppByBotId.get(entry.bot.id);
+        const miniAppId = miniAppSource?.sourceId ?? projection?.miniAppId;
+        const key = miniAppId ? `miniapp:bot:${miniAppId}` : `account:bot:${entry.bot.id}`;
         return {
-          key: `account:bot:${entry.bot.id}`,
+          key,
           id: entry.bot.id,
           source: 'legacy',
           kind: 'bot',
@@ -1743,10 +1765,10 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           actorId: entry.bot.id,
           conversationId: entry.bot.conversationId,
           unread: 0,
-          pinned: pinnedPeerKeys.has(`account:bot:${entry.bot.id}`),
-          archived: archivedPeerKeys.has(`account:bot:${entry.bot.id}`),
+          pinned: pinnedPeerKeys.has(key),
+          archived: archivedPeerKeys.has(key),
           updatedAtMs: entry.updatedAtMs ?? 0,
-          miniAppId: miniAppSource?.sourceId,
+          miniAppId,
           miniAppCommands: projection?.commands,
           miniAppMenuButtonText: projection?.menuButtonText ?? (miniAppSource ? '打开小程序' : undefined),
           miniAppCalls: projection?.calls,
@@ -2898,7 +2920,7 @@ async function saveInvoiceDialog() {
           <SectionPanel section={section} onOpenMiniApp={openMiniApp} onInstallMiniApp={installMiniApp} onUninstallMiniApp={uninstallMiniApp} miniApps={marketplaceApps} installedMiniApps={installedMiniApps} miniAppQuery={miniAppQuery} onMiniAppQuery={setMiniAppQuery} miniAppLoading={miniAppLoading} miniAppBusy={miniAppBusy} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} settings={{ category: settingsCategory, onCategory: setSettingsCategory }} />
         )}
         <div className={styles.sidebarFooter}>
-          {profileMenuOpen ? <ProfileNavigationMenu section={section} onNavigate={navigateFromProfile} /> : null}
+          {profileMenuOpen ? <ProfileNavigationMenu section={section} onNavigate={navigateFromProfile} onLogout={onLogout} /> : null}
           {isActionableDesktopUpdateState(desktopUpdateState) ? <button
             type="button"
             className={styles.updateCloudButton}
@@ -3152,7 +3174,7 @@ async function saveInvoiceDialog() {
   );
 }
 
-function ProfileNavigationMenu({ section, onNavigate }: { section: MessengerSection; onNavigate: (section: MessengerSection) => void }) {
+function ProfileNavigationMenu({ section, onNavigate, onLogout }: { section: MessengerSection; onNavigate: (section: MessengerSection) => void; onLogout: () => Promise<void> }) {
   const items: Array<{ section: MessengerSection; label: string; icon: React.ReactNode }> = [
     { section: 'chats', label: '聊天', icon: <MessageCircle size={17} /> },
     { section: 'contacts', label: '联系人', icon: <Users size={17} /> },
@@ -3170,6 +3192,7 @@ function ProfileNavigationMenu({ section, onNavigate }: { section: MessengerSect
   return <div className={styles.profileNavigationMenu} data-testid="profile-navigation-menu" onClick={(event) => event.stopPropagation()}>
     <header><BotMark botId="fabushi:navigation" state="idle" size={34} label="Fabushi" /><div><strong>Fabushi</strong><small>统一导航</small></div></header>
     <div>{items.map((item) => <button key={item.section} type="button" title={item.label} data-active={section === item.section} onClick={() => onNavigate(item.section)}>{item.icon}<span>{item.label}</span></button>)}</div>
+    <button className={styles.profileNavigationLogout} data-testid="profile-logout" type="button" onClick={() => void onLogout()}><LogOut size={17} /><span>退出登录</span></button>
   </div>;
 }
 
@@ -3523,7 +3546,7 @@ function MiniAppDialog({ app, onClose }: { app: { id: string; title: string; url
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [app.id]);
-  return <div className={styles.backdrop} onMouseDown={onClose}><section className={styles.miniAppDialog} onMouseDown={(event) => event.stopPropagation()}><header><div><strong>{app.title}</strong><small>Mini App · 已安装线上包 · 账号云同步</small></div><button type="button" onClick={onClose}><X size={17} /></button></header><iframe ref={frameRef} title={app.id} sandbox="allow-scripts allow-forms" src={app.url} /></section></div>;
+  return <div className={styles.backdrop} data-testid="miniapp-dialog" onMouseDown={onClose}><section className={styles.miniAppDialog} onMouseDown={(event) => event.stopPropagation()}><header><div><strong>{app.title}</strong><small>Mini App · Fabushi 安全容器 · 账号云同步</small></div><button type="button" aria-label="关闭小程序" onClick={onClose}><X size={17} /></button></header><iframe ref={frameRef} data-testid="miniapp-frame" title={app.id} sandbox="allow-scripts allow-forms" src={app.url} /></section></div>;
 }
 
 type PaymentUiState = {

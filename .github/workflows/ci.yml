@@ -415,6 +415,8 @@ jobs:
             /.github/workflows/computer-control-security.yml
             /.github/workflows/electron-desktop.yml
             /.github/workflows/electron-macos-hot-package.yml
+            /.github/workflows/gbf-rollback-drill.yml
+            /.github/workflows/release-desktop-platform.yml
             /.github/workflows/native-electron-release.yml
             /.github/workflows/platform-control-plane.yml
             /chatgpt-vps-control/**
@@ -437,8 +439,11 @@ jobs:
             /frontend/apps/web/src/lib/mahayana-host/**
             /frontend/apps/web/src/lib/remote-computer/**
             /mobile/android/app/src/main/java/com/ombhrum/fabushi/RemoteComputerSurface.kt
+            /mobile/android/app/src/main/java/com/ombhrum/fabushi/core/MahayanaHost.kt
             /mobile/ios/Fabushi/RemoteComputerSurface.swift
+            /mobile/ios/Fabushi/MahayanaHost.swift
             /third_party/mahayana/mahayana-rs/mahayana-app-host/Cargo.toml
+            /third_party/mahayana/mahayana-rs/mahayana-app-host-mobile/src/lib.rs
             /third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs
             /third_party/mahayana/mahayana-rs/mahayana-agent-codex/Cargo.toml
             /third_party/mahayana/mahayana-rs/mahayana-agent-codex/src/**
@@ -448,6 +453,7 @@ jobs:
             /third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs
             /third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
             /third_party/mahayana/mahayana-rs/mahayana-runtime/src/lib.rs
+            /third_party/mahayana/mahayana-rs/mahayana-secrets/src/lib.rs
             /third_party/mahayana/mahayana-rs/mahayana-kernel/src/resilience.rs
             /third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0014_remote_computer_client_tokens.sql
             /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs

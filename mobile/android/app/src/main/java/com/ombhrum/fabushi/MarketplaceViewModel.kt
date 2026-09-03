@@ -37,7 +37,7 @@ data class PermissionRequest(
 )
 
 enum class MobileChatRole { USER, ASSISTANT }
-enum class MobileChatEntryKind { MESSAGE, ACTION, THINKING }
+enum class MobileChatEntryKind { MESSAGE, ACTION, THINKING, MINI_APP }
 
 data class MobileChatMessage(
     val id: String,
@@ -48,6 +48,10 @@ data class MobileChatMessage(
     val actionTitle: String? = null,
     val actionDetail: String? = null,
     val actionStatus: String? = null,
+    val miniAppId: String? = null,
+    val miniAppName: String? = null,
+    val miniAppHtml: String? = null,
+    val miniAppDescription: String? = null,
 )
 
 data class MarketplaceUiState(
@@ -336,6 +340,36 @@ class MarketplaceViewModel(application: Application) : AndroidViewModel(applicat
                     if (event.optString("role") == "assistant") {
                         removeChatThinking(operationId)
                         upsertAssistantMessage(operationId, event.optString("text"), append = false)
+                    }
+                }
+                "transcript.card" -> {
+                    val eventOperationId = event.optString("operationId").ifBlank { operationId }
+                    if (eventOperationId == operationId) {
+                        val card = event.optJSONObject("card")
+                        if (card?.optString("kind") == "miniApp") {
+                            removeChatThinking(operationId)
+                            val miniAppId = card.optString("miniAppId")
+                            val name = card.optString("name").ifBlank { "生成的小程序" }
+                            val html = card.optString("html")
+                            if (miniAppId.isNotBlank() && html.isNotBlank()) {
+                                val entry = MobileChatMessage(
+                                    id = "miniapp:$operationId:$miniAppId",
+                                    role = MobileChatRole.ASSISTANT,
+                                    text = "",
+                                    kind = MobileChatEntryKind.MINI_APP,
+                                    operationId = operationId,
+                                    miniAppId = miniAppId,
+                                    miniAppName = name,
+                                    miniAppHtml = html,
+                                    miniAppDescription = card.optString("description").ifBlank { null },
+                                )
+                                val current = mutableState.value.chatMessages
+                                val index = current.indexOfFirst { it.id == entry.id }
+                                mutableState.value = mutableState.value.copy(
+                                    chatMessages = if (index < 0) current + entry else current.mapIndexed { itemIndex, item -> if (itemIndex == index) entry else item },
+                                )
+                            }
+                        }
                     }
                 }
                 "chat.delta" -> if (event.optString("operationId") == operationId) {

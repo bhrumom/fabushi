@@ -154,7 +154,7 @@ test('installed Mini App projects its Bot into Contacts/Bots and recovers Bot hi
     await expect(page.getByTestId('message-list').locator(':scope > article').last()).toContainText('natural-language');
 
     await page.getByTestId('miniapp-bot-open').click();
-    await expect(page.getByText('Mini App · 已安装线上包 · 账号云同步')).toBeVisible();
+    await expect(page.getByText('Mini App · Fabushi 安全容器 · 账号云同步')).toBeVisible();
     await expect(page.locator('iframe[title="global-dharma"]')).toBeVisible();
     await expect.poll(() => readWebMcpTools(page), { timeout: 15_000 }).toEqual(
       expect.arrayContaining(['status', 'start', 'stop', 'send']),

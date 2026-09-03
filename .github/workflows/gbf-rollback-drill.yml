@@ -1,12 +1,6 @@
 name: GBF rollback drill
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/gbf-rollback-drill.yml'
-      - '.github/workflows/native-electron-release.yml'
-      - '.github/workflows/post-main-delivery.yml'
-      - 'projects/grok-bot-fabushi-integration/**'
   workflow_dispatch:
 
 permissions:
@@ -92,18 +86,18 @@ jobs:
           sha256sum -c SHA256SUMS.rollback.txt
           echo "previous-good release checksums verified by content digest for $verified assets" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Require immutable-release and canonical-gate guards in the current release workflow
+      - name: Require immutable platform-release guards
         shell: bash
         run: |
           set -euo pipefail
-          release=.github/workflows/native-electron-release.yml
-          grep -q "Required release gate '" "$release"
-          grep -q "CI result" "$release"
-          grep -q "Electron desktop result" "$release"
-          grep -q "Native mobile result" "$release"
-          grep -q 'already exists; refusing to mutate an existing release' "$release"
+          release=.github/workflows/release-desktop-platform.yml
+          grep -q 'already exists; refusing to mutate it' "$release"
           grep -q 'gh release create' "$release"
-          echo 'current release workflow preserves immutable release semantics' >> "$GITHUB_STEP_SUMMARY"
+          grep -q -- '--prerelease --latest=false' "$release"
+          grep -q "inputs.release_kind == 'formal'" "$release"
+          grep -q 'npm run test:e2e' "$release"
+          grep -q 'Legacy combined release (disabled)' .github/workflows/native-electron-release.yml
+          echo 'current platform-isolated release workflows preserve immutable test/formal release semantics' >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:

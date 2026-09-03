@@ -64,8 +64,15 @@ for marker in required_engine:
 
 required_runtime = [
     'data-fabushi-avatar-runtime="v1"',
-    'requestAnimationFrame(tick)',
-    'cancelAnimationFrame(frame)',
+    'data-frame-clock="shared-30fps"',
+    'const SHARED_AVATAR_FRAME_INTERVAL_MS = 1000 / 30;',
+    'const sharedAvatarFrameListeners = new Set<SharedAvatarFrameListener>();',
+    'const AMBIENT_AVATAR_FRAME_INTERVAL_MS = 1000 / 4;',
+    'AMBIENT_AVATAR_STATES',
+    'nextSharedAvatarFrameDelay()',
+    'requestAnimationFrame((now) => {',
+    'cancelAnimationFrame(sharedAvatarAnimationFrame)',
+    'return subscribeSharedAvatarFrame(tick, frameInterval);',
     'prefers-reduced-motion: reduce',
     'personaPath(shape)',
     'linearGradient',
@@ -78,6 +85,19 @@ required_runtime = [
 for marker in required_runtime:
     if marker not in runtime:
         raise SystemExit(f'BotMark motion gate: Fabushi-owned runtime is incomplete: {marker}')
+
+for retired_loop in ['requestAnimationFrame(tick)', 'cancelAnimationFrame(frame)']:
+    if retired_loop in runtime:
+        raise SystemExit(f'BotMark motion gate: per-avatar frame loop returned: {retired_loop}')
+
+for shared_lifecycle_marker in [
+    'const avatarMotionLifecycleListeners = new Set<() => void>();',
+    'useSyncExternalStore(',
+    'subscribeAvatarMotionLifecycle',
+    'avatarMotionAllowedSnapshot',
+]:
+    if shared_lifecycle_marker not in component:
+        raise SystemExit(f'BotMark motion gate: shared focus/visibility lifecycle missing: {shared_lifecycle_marker}')
 
 # These terms identify the retired vendored/runtime paths. They are prohibited
 # from the production avatar implementation; documentation/evidence may still
@@ -118,6 +138,7 @@ required_aliases = [
     "event.type === 'botInvocationRequested'",
     "{ alias: `workbench:${botId}`, canonical }",
     "{ alias: `peer:conversation:${conversationId}`, canonical }",
+    "{ alias: 'peer:conversation:mahayana-ai:agent:assistant', canonical: 'bot:mahayana-assistant' }",
     'registerBotIdentityAliases(aliases)',
 ]
 for marker in required_aliases:
@@ -168,4 +189,4 @@ if 'className={styles.sidebarBotMark}' in host:
     if 'followPointer' in sidebar_region:
         raise SystemExit('BotMark motion gate: sidebar list marks must not attach pointer-follow listeners')
 
-print('BotMark motion gate passed: Fabushi-owned procedural SVG runtime, semantic Agent states, canonical identity, visibility pause, reduced-motion, and no upstream avatar/renderer dependency.')
+print('BotMark motion gate passed: Fabushi-owned procedural SVG runtime, shared 30 FPS frame clock, shared visibility lifecycle, semantic Agent states, canonical identity, reduced-motion, and no upstream avatar/renderer dependency.')
