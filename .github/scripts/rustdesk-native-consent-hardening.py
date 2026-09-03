@@ -57,6 +57,31 @@ replace_once(
 ''',
     "native user-presence consent",
 )
+replace_once(
+    main,
+    '''app.whenReady().then(async () => {
+  const rustDeskHostStatus = rustDeskHostDaemon.start();
+  if (rustDeskHostStatus.available) console.info(JSON.stringify({ type: 'fabushi.rustdesk-host.started', ...rustDeskHostStatus }));
+''',
+    '''app.whenReady().then(async () => {
+  const rustDeskHostStatus = rustDeskHostDaemon.start();
+  if (rustDeskHostStatus.available) {
+    console.info(JSON.stringify({ type: 'fabushi.rustdesk-host.started', ...rustDeskHostStatus }));
+    try {
+      // A crash can bypass normal session-close rotation. Invalidate any password
+      // left by the previous process before accepting a new Fabushi session.
+      await rotateTemporaryPassword({ app });
+      console.info(JSON.stringify({ type: 'fabushi.rustdesk-host.startup-credential-invalidated' }));
+    } catch (error) {
+      console.warn(JSON.stringify({
+        type: 'fabushi.rustdesk-host.startup-credential-invalidation-failed',
+        message: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
+''',
+    "startup stale credential invalidation",
+)
 
 desktop = Path("frontend/apps/web/src/lib/remote-computer/desktop-peer.ts")
 replace_once(
@@ -84,6 +109,16 @@ test("native RustDesk credentials require an Electron main-process user-presence
   assert.match(desktop, /clientLabel: entry\.session\.clientLabel/);
   assert.match(desktop, /grant: entry\.session\.permissions/);
 });
+
+test("RustDesk host startup invalidates credentials that could survive a crash", () => {
+  const main = source("desktop/electron/main.cjs");
+  assert.match(main, /rustDeskHostDaemon\.start\(\)/);
+  assert.match(main, /await rotateTemporaryPassword\(\{ app \}\)/);
+  assert.match(main, /rustdesk-host\.startup-credential-invalidated/);
+});
 '''
 if 'native RustDesk credentials require an Electron main-process user-presence confirmation' not in tests:
-    test.write_text(tests + addition, encoding="utf-8")
+    tests += addition
+elif 'RustDesk host startup invalidates credentials that could survive a crash' not in tests:
+    tests += addition[addition.index('\ntest("RustDesk host startup invalidates credentials that could survive a crash"'):]
+test.write_text(tests, encoding="utf-8")
