@@ -1722,25 +1722,29 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     const conversationIds = new Set(conversations.map((conversation) => conversation.id));
     const botPeers = bots
       .filter((bot) => !bot.conversationId || !conversationIds.has(bot.conversationId))
-      .map((bot): PeerItem => ({
-        key: `legacy:bot:${bot.id}`,
-        id: bot.id,
-        source: 'legacy',
-        actorId: bot.id,
-        conversationId: bot.conversationId,
-        kind: 'bot',
-        title: bot.name,
-        subtitle: bot.description || bot.title || 'AI Bot',
-        unread: bot.unread ? 1 : 0,
-        pinned: pinnedPeerKeys.has(`legacy:bot:${bot.id}`),
-        archived: archivedPeerKeys.has(`legacy:bot:${bot.id}`),
-        updatedAtMs: 0,
-        avatar: bot.avatar,
-        miniAppId: miniAppByBotId.get(bot.id)?.miniAppId,
-        miniAppCommands: miniAppByBotId.get(bot.id)?.commands,
-        miniAppMenuButtonText: miniAppByBotId.get(bot.id)?.menuButtonText,
-        miniAppCalls: miniAppByBotId.get(bot.id)?.calls,
-      }));
+      .map((bot): PeerItem => {
+        const projection = miniAppByBotId.get(bot.id);
+        const key = projection ? `miniapp:bot:${projection.miniAppId}` : `legacy:bot:${bot.id}`;
+        return {
+          key,
+          id: bot.id,
+          source: 'legacy',
+          actorId: bot.id,
+          conversationId: bot.conversationId,
+          kind: 'bot',
+          title: bot.name,
+          subtitle: bot.description || bot.title || 'AI Bot',
+          unread: bot.unread ? 1 : 0,
+          pinned: pinnedPeerKeys.has(key),
+          archived: archivedPeerKeys.has(key),
+          updatedAtMs: 0,
+          avatar: bot.avatar,
+          miniAppId: projection?.miniAppId,
+          miniAppCommands: projection?.commands,
+          miniAppMenuButtonText: projection?.menuButtonText,
+          miniAppCalls: projection?.calls,
+        };
+      });
     const existingBotIds = new Set(botPeers.map((peer) => peer.actorId ?? peer.id));
     const accountBotPeers = accountBots
       .filter((entry) => entry?.bot?.id && !existingBotIds.has(entry.bot.id))
@@ -1749,8 +1753,10 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         const projection = miniAppSource
           ? miniAppBotProjections.find((candidate) => candidate.miniAppId === miniAppSource.sourceId)
           : miniAppByBotId.get(entry.bot.id);
+        const miniAppId = miniAppSource?.sourceId ?? projection?.miniAppId;
+        const key = miniAppId ? `miniapp:bot:${miniAppId}` : `account:bot:${entry.bot.id}`;
         return {
-          key: `account:bot:${entry.bot.id}`,
+          key,
           id: entry.bot.id,
           source: 'legacy',
           kind: 'bot',
@@ -1759,10 +1765,10 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           actorId: entry.bot.id,
           conversationId: entry.bot.conversationId,
           unread: 0,
-          pinned: pinnedPeerKeys.has(`account:bot:${entry.bot.id}`),
-          archived: archivedPeerKeys.has(`account:bot:${entry.bot.id}`),
+          pinned: pinnedPeerKeys.has(key),
+          archived: archivedPeerKeys.has(key),
           updatedAtMs: entry.updatedAtMs ?? 0,
-          miniAppId: miniAppSource?.sourceId,
+          miniAppId,
           miniAppCommands: projection?.commands,
           miniAppMenuButtonText: projection?.menuButtonText ?? (miniAppSource ? '打开小程序' : undefined),
           miniAppCalls: projection?.calls,

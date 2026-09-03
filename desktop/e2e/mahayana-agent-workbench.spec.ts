@@ -149,9 +149,8 @@ test('bot runs through Mahayana as a visible multi-step task and restores its ru
     await expect(page.getByRole('article').filter({ hasText: '收到：请分析这个任务' }).last()).toBeVisible();
     await expect(page.locator('#mahayana-agent-header-avatar [data-agent-state="result"]')).toBeVisible();
 
-    const generatedRunId = await run.getAttribute('data-run-id');
-    expect(generatedRunId).toMatch(/^operation:/);
-    const generatedOperationId = generatedRunId!.replace(/^operation:/, '');
+    const generatedOperationId = await run.getAttribute('data-operation-id');
+    expect(generatedOperationId).toBeTruthy();
     await page.evaluate((operationId) => {
       window.dispatchEvent(new CustomEvent('fabushi:mahayana-runtime-event', {
         detail: {
@@ -168,7 +167,7 @@ test('bot runs through Mahayana as a visible multi-step task and restores its ru
           },
         },
       }));
-    }, generatedOperationId);
+    }, generatedOperationId!);
     const miniAppArtifact = run.getByTestId('agent-miniapp-artifact');
     await expect(miniAppArtifact).toContainText('生成计数器');
     await miniAppArtifact.getByTestId('agent-miniapp-open').click();
