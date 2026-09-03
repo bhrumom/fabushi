@@ -34,6 +34,11 @@ let hostEventPump = null;
 const messagingAccessCache = new Map();
 let messagingSignalingClient = null;
 
+function clearAccountBoundMessagingState() {
+  messagingAccessCache.clear();
+  messagingSignalingClient?.disconnect();
+}
+
 function normalizeMessagingAccessParams(params) {
   const deviceId = String(params?.deviceId || 'desktop:electron').trim();
   const sessionId = String(params?.sessionId || '').trim();
@@ -597,6 +602,7 @@ function installNativeEdge() {
     mutateNativeState,
     windowForEvent,
     broadcastNativeEvent,
+    clearAccountBoundMessagingState,
     markDeepLinksReady: () => deepLinkRouter.markReady(),
   }));
 
@@ -612,7 +618,17 @@ function installMahayanaEdge() {
   const handlers = Object.fromEntries(
     Object.keys(MAHAYANA_EDGE.methods).map((method) => [
       method,
-      async (params) => host.request(method, normalizeParams(params)),
+      async (params) => {
+        const result = await host.request(method, normalizeParams(params));
+        if (
+          method === 'feature.auth.logout' ||
+          (method.startsWith('feature.auth.') && method !== 'feature.auth.status' && result?.loggedIn === true) ||
+          result?.auth?.loggedIn === true
+        ) {
+          clearAccountBoundMessagingState();
+        }
+        return result;
+      },
     ]),
   );
 

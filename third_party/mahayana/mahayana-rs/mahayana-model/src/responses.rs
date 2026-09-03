@@ -2,6 +2,8 @@ use crate::{ModelError, ModelEvent, ModelRequest, ModelRuntime, ModelUsage, Shar
 use async_trait::async_trait;
 use mahayana_core::ModelProviderMode;
 use serde_json::{Value, json};
+use std::io::{BufRead, BufReader};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct ResponsesModelConfig {
@@ -45,12 +47,27 @@ impl ResponsesModelConfig {
 /// to `mahayana-native-engine` and the sovereign kernel.
 pub struct ResponsesModelRuntime {
     config: ResponsesModelConfig,
+    credential_resolver: Option<ModelCredentialResolver>,
 }
+
+/// Resolves the current product-account bearer token at inference time. The
+/// desktop host keeps this callback inside Rust so logging in or out cannot
+/// leave a model runtime holding the previous account's credential.
+pub type ModelCredentialResolver =
+    Arc<dyn Fn() -> Result<Option<String>, ModelError> + Send + Sync>;
 
 impl ResponsesModelRuntime {
     pub fn new(config: ResponsesModelConfig) -> Result<Self, ModelError> {
         config.validate()?;
-        Ok(Self { config })
+        Ok(Self {
+            config,
+            credential_resolver: None,
+        })
+    }
+
+    pub fn with_credential_resolver(mut self, resolver: ModelCredentialResolver) -> Self {
+        self.credential_resolver = Some(resolver);
+        self
     }
 }
 
@@ -68,13 +85,24 @@ impl ModelRuntime for ResponsesModelRuntime {
             return Err(ModelError::InvalidRequest("model must not be empty".into()));
         }
 
-        let config = self.config.clone();
-        let payload = tokio::task::spawn_blocking(move || request_response(&config, request))
-            .await
-            .map_err(|error| ModelError::Inference(format!("model task failed: {error}")))??;
+        let mut config = self.config.clone();
+        if let Some(resolver) = self.credential_resolver.as_ref() {
+            config.bearer_token = resolver()?;
+        }
+        let events_for_request = Arc::clone(&events);
+        let (payload, streamed_text) = tokio::task::spawn_blocking(move || {
+            request_response(&config, request, events_for_request)
+        })
+        .await
+        .map_err(|error| ModelError::Inference(format!("model task failed: {error}")))??;
 
-        if let Some(text) = extract_output_text(&payload) {
-            events.emit(ModelEvent::OutputTextDelta(text))?;
+        // Streaming SSE events have already been forwarded from the blocking
+        // reader. Only emit the final text for JSON/fallback endpoints so the
+        // native Agent never displays the same answer twice.
+        if !streamed_text {
+            if let Some(text) = extract_output_text(&payload) {
+                events.emit(ModelEvent::OutputTextDelta(text))?;
+            }
         }
         if let Some(usage) = extract_usage(&payload) {
             events.emit(ModelEvent::Usage(usage))?;
@@ -90,7 +118,8 @@ impl ModelRuntime for ResponsesModelRuntime {
 fn request_response(
     config: &ResponsesModelConfig,
     request: ModelRequest,
-) -> Result<Value, ModelError> {
+    events: SharedModelEventSink,
+) -> Result<(Value, bool), ModelError> {
     let endpoint = if config.base_url.ends_with("/responses") {
         config.base_url.clone()
     } else {
@@ -100,7 +129,7 @@ fn request_response(
     let mut body = json!({
         "model": request.model,
         "input": request.input,
-        "stream": false,
+        "stream": true,
     });
     for key in [
         "tools",
@@ -117,14 +146,154 @@ fn request_response(
         }
     }
 
-    let mut http = ureq::post(&endpoint).set("Accept", "application/json");
+    let mut http = ureq::post(&endpoint).set("Accept", "text/event-stream, application/json");
     if let Some(token) = config.bearer_token.as_deref() {
         http = http.set("Authorization", &format!("Bearer {token}"));
     }
     let response = http.send_json(body).map_err(redacted_http_error)?;
+    let content_type = response
+        .header("Content-Type")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if content_type.contains("text/event-stream") {
+        return request_stream(response, events);
+    }
+
     let payload: Value = response
         .into_json()
         .map_err(|_| ModelError::Inference("model endpoint returned invalid JSON".into()))?;
+    validate_response_payload(&payload)?;
+    Ok((payload, false))
+}
+
+fn request_stream(
+    response: ureq::Response,
+    events: SharedModelEventSink,
+) -> Result<(Value, bool), ModelError> {
+    let mut reader = BufReader::new(response.into_reader());
+    let mut data = String::new();
+    let mut streamed_text = false;
+    let mut accumulated_text = String::new();
+    let mut final_payload = None;
+
+    loop {
+        let mut line = String::new();
+        let read = reader
+            .read_line(&mut line)
+            .map_err(|error| ModelError::Inference(format!("model stream read failed: {error}")))?;
+        if read == 0 {
+            consume_sse_event(
+                &data,
+                &events,
+                &mut accumulated_text,
+                &mut streamed_text,
+                &mut final_payload,
+            )?;
+            break;
+        }
+
+        let line = line.trim_end_matches(['\r', '\n']);
+        if line.is_empty() {
+            consume_sse_event(
+                &data,
+                &events,
+                &mut accumulated_text,
+                &mut streamed_text,
+                &mut final_payload,
+            )?;
+            data.clear();
+            continue;
+        }
+        if line.starts_with(':') {
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("data:") {
+            if !data.is_empty() {
+                data.push('\n');
+            }
+            data.push_str(value.trim_start());
+        }
+    }
+
+    let payload = final_payload.unwrap_or_else(|| {
+        json!({
+            "id": "resp_local",
+            "object": "response",
+            "status": "completed",
+            "output": if accumulated_text.is_empty() {
+                Vec::<Value>::new()
+            } else {
+                vec![json!({
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": accumulated_text}],
+                })]
+            },
+        })
+    });
+    validate_response_payload(&payload)?;
+    Ok((payload, streamed_text))
+}
+
+fn consume_sse_event(
+    data: &str,
+    events: &SharedModelEventSink,
+    accumulated_text: &mut String,
+    streamed_text: &mut bool,
+    final_payload: &mut Option<Value>,
+) -> Result<(), ModelError> {
+    let data = data.trim();
+    if data.is_empty() || data == "[DONE]" {
+        return Ok(());
+    }
+    let payload: Value = serde_json::from_str(data).map_err(|error| {
+        ModelError::Inference(format!("model stream returned invalid JSON: {error}"))
+    })?;
+    let event_type = payload
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    match event_type {
+        "response.output_text.delta" => {
+            if let Some(delta) = payload.get("delta").and_then(Value::as_str) {
+                if !delta.is_empty() {
+                    accumulated_text.push_str(delta);
+                    *streamed_text = true;
+                    events.emit(ModelEvent::OutputTextDelta(delta.to_string()))?;
+                }
+            }
+        }
+        "response.completed" => {
+            let completed = payload.get("response").cloned();
+            *final_payload = completed.or(Some(payload));
+        }
+        "response.failed" => {
+            let message = payload
+                .pointer("/response/error/message")
+                .or_else(|| payload.pointer("/error/message"))
+                .and_then(Value::as_str)
+                .unwrap_or("model endpoint returned an error");
+            return Err(ModelError::Inference(message.to_string()));
+        }
+        _ => {
+            // Keep compatibility with an OpenAI-compatible upstream that
+            // forwards chat-completions chunks instead of Responses events.
+            if let Some(delta) = payload
+                .pointer("/choices/0/delta/content")
+                .and_then(Value::as_str)
+            {
+                if !delta.is_empty() {
+                    accumulated_text.push_str(delta);
+                    *streamed_text = true;
+                    events.emit(ModelEvent::OutputTextDelta(delta.to_string()))?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_response_payload(payload: &Value) -> Result<(), ModelError> {
     if let Some(error) = payload.get("error") {
         let message = error
             .get("message")
@@ -132,7 +301,7 @@ fn request_response(
             .unwrap_or("model endpoint returned an error");
         return Err(ModelError::Inference(message.to_string()));
     }
-    Ok(payload)
+    Ok(())
 }
 
 fn redacted_http_error(error: ureq::Error) -> ModelError {

@@ -53,8 +53,11 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -93,12 +96,18 @@ impl RuntimeBuilder {
             .first()
             .map(|path| path.to_string_lossy().to_string());
         let model = Some(self.config.model.model.clone());
+        let history_path = self
+            .config
+            .data_dir
+            .as_ref()
+            .map(|data_dir| data_dir.join("conversations").join("mahayana-ai.json"));
         self.providers
             .register(Arc::new(KernelConversationProvider::new(
                 backend,
                 self.config.build_profile,
                 workspace_root,
                 model,
+                history_path,
             )))?;
         Ok(self)
     }
@@ -169,12 +178,18 @@ pub struct MahayanaRuntime {
     providers: Arc<ProviderRegistry>,
     agent_backend: Option<Arc<dyn AgentBackend>>,
     async_runtime: tokio::runtime::Runtime,
-    event_tx: Sender<RuntimeEvent>,
-    event_rx: Receiver<RuntimeEvent>,
+    event_tx: Sender<RuntimeEventEnvelope>,
+    event_rx: Receiver<RuntimeEventEnvelope>,
+    session_generation: Arc<AtomicU64>,
     operations: Arc<Mutex<HashMap<OperationId, String>>>,
     approvals: Arc<Mutex<HashMap<ApprovalId, String>>>,
     official_miniapps: Mutex<OfficialMiniAppEngine>,
     approved_local_plugin_tools: Mutex<HashSet<(String, String)>>,
+}
+
+struct RuntimeEventEnvelope {
+    generation: u64,
+    event: RuntimeEvent,
 }
 
 impl MahayanaRuntime {
@@ -207,6 +222,7 @@ impl MahayanaRuntime {
             return Err(RuntimeError::RemoteModelNotCompiled);
         }
 
+        let session_generation = Arc::new(AtomicU64::new(0));
         let (event_tx, event_rx) = crossbeam_channel::bounded(1024);
         let runtime = Self {
             config,
@@ -215,6 +231,7 @@ impl MahayanaRuntime {
             async_runtime,
             event_tx,
             event_rx,
+            session_generation,
             operations: Arc::new(Mutex::new(HashMap::new())),
             approvals: Arc::new(Mutex::new(HashMap::new())),
             official_miniapps: Mutex::new(OfficialMiniAppEngine::default()),
@@ -222,8 +239,11 @@ impl MahayanaRuntime {
         };
         runtime
             .event_tx
-            .send(RuntimeEvent::Ready {
-                status: runtime.status(),
+            .send(RuntimeEventEnvelope {
+                generation: runtime.session_generation.load(Ordering::SeqCst),
+                event: RuntimeEvent::Ready {
+                    status: runtime.status(),
+                },
             })
             .map_err(|_| RuntimeError::EventConsumerClosed)?;
         Ok(runtime)
@@ -241,6 +261,49 @@ impl MahayanaRuntime {
             telemetry_enabled: self.config.telemetry_enabled,
             providers: self.providers.keys(),
         }
+    }
+
+    /// Reset all process-local conversation and Agent state before an account
+    /// logout or account switch. This prevents the next account from seeing
+    /// the previous account's prompt history, pending approvals, or session
+    /// context even though the host process remains alive.
+    pub fn reset_session(&self) -> Result<(), RuntimeError> {
+        self.session_generation.fetch_add(1, Ordering::SeqCst);
+        let providers = self.providers.providers();
+        self.async_runtime.block_on(async move {
+            for provider in providers {
+                provider.reset_session().await?;
+            }
+            Ok::<(), ConversationError>(())
+        })?;
+        if let Some(backend) = self.agent_backend.as_ref() {
+            backend
+                .reset_session()
+                .map_err(|error| RuntimeError::AgentBackend(error.to_string()))?;
+        }
+        lock(&self.operations)?.clear();
+        lock(&self.approvals)?.clear();
+        self.approved_local_plugin_tools
+            .lock()
+            .map_err(|_| RuntimeError::Synchronization("plugin approval map poisoned".into()))?
+            .clear();
+        Ok(())
+    }
+
+    /// Switch the local conversation transcript used by the long-lived kernel
+    /// provider without carrying the previous account's session into the new
+    /// account. The path is deliberately optional so logout can detach local
+    /// persistence while retaining each account's on-disk history.
+    pub fn set_conversation_history_path(&self, path: Option<PathBuf>) -> Result<(), RuntimeError> {
+        self.session_generation.fetch_add(1, Ordering::SeqCst);
+        let providers = self.providers.providers();
+        self.async_runtime.block_on(async move {
+            for provider in providers {
+                provider.set_history_path(path.clone()).await?;
+            }
+            Ok::<(), ConversationError>(())
+        })?;
+        Ok(())
     }
 
     pub fn execute(&self, command: RuntimeCommand) -> Result<RuntimeResponse, RuntimeError> {
@@ -582,9 +645,11 @@ impl MahayanaRuntime {
                 .then_with(|| left.id.cmp(&right.id))
         });
         for (provider, message) in degraded {
-            let _ = self
-                .event_tx
-                .send(RuntimeEvent::ProviderDegraded { provider, message });
+            let generation = self.session_generation.load(Ordering::SeqCst);
+            let _ = self.event_tx.send(RuntimeEventEnvelope {
+                generation,
+                event: RuntimeEvent::ProviderDegraded { provider, message },
+            });
         }
         Ok(conversations)
     }
@@ -602,6 +667,7 @@ impl MahayanaRuntime {
         let provider = self.providers.for_conversation(&conversation_id)?;
         let provider_key = provider.key().to_string();
         let operation_id = OperationId::generated("operation");
+        let generation = self.session_generation.load(Ordering::SeqCst);
         lock(&self.operations)?.insert(operation_id.clone(), provider_key.clone());
         let request = SendMessageRequest {
             conversation_id,
@@ -614,8 +680,11 @@ impl MahayanaRuntime {
             provider_key,
             event_tx: self.event_tx.clone(),
             approvals: Arc::clone(&self.approvals),
+            generation,
+            session_generation: Arc::clone(&self.session_generation),
         });
         let event_tx = self.event_tx.clone();
+        let session_generation = Arc::clone(&self.session_generation);
         let operations = Arc::clone(&self.operations);
         let task_operation_id = operation_id.clone();
         self.async_runtime.spawn(async move {
@@ -635,7 +704,9 @@ impl MahayanaRuntime {
                     message: error.to_string(),
                 },
             };
-            let _ = event_tx.send(event);
+            if session_generation.load(Ordering::SeqCst) == generation {
+                let _ = event_tx.send(RuntimeEventEnvelope { generation, event });
+            }
             if let Ok(mut operations) = operations.lock() {
                 operations.remove(&task_operation_id);
             }
@@ -644,10 +715,18 @@ impl MahayanaRuntime {
     }
 
     pub fn receive(&self, timeout: Duration) -> Result<Option<RuntimeEvent>, RuntimeError> {
-        match self.event_rx.recv_timeout(timeout) {
-            Ok(event) => Ok(Some(event)),
-            Err(RecvTimeoutError::Timeout) => Ok(None),
-            Err(RecvTimeoutError::Disconnected) => Err(RuntimeError::EventConsumerClosed),
+        let generation = self.session_generation.load(Ordering::SeqCst);
+        loop {
+            match self.event_rx.recv_timeout(timeout) {
+                Ok(envelope) if envelope.generation == generation => {
+                    return Ok(Some(envelope.event));
+                }
+                Ok(_) => continue,
+                Err(RecvTimeoutError::Timeout) => return Ok(None),
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err(RuntimeError::EventConsumerClosed);
+                }
+            }
         }
     }
 }
@@ -695,20 +774,31 @@ fn lock<T>(mutex: &Mutex<T>) -> Result<std::sync::MutexGuard<'_, T>, RuntimeErro
 
 struct RuntimeEventSink {
     provider_key: String,
-    event_tx: Sender<RuntimeEvent>,
+    event_tx: Sender<RuntimeEventEnvelope>,
     approvals: Arc<Mutex<HashMap<ApprovalId, String>>>,
+    generation: u64,
+    session_generation: Arc<AtomicU64>,
 }
 
 impl ConversationEventSink for RuntimeEventSink {
     fn emit(&self, event: RuntimeEvent) -> Result<(), ConversationError> {
+        if self.session_generation.load(Ordering::SeqCst) != self.generation {
+            return Ok(());
+        }
         if let RuntimeEvent::ApprovalRequested { approval_id, .. } = &event {
             self.approvals
                 .lock()
                 .map_err(|_| ConversationError::Provider("approval map poisoned".to_string()))?
                 .insert(approval_id.clone(), self.provider_key.clone());
         }
+        if self.session_generation.load(Ordering::SeqCst) != self.generation {
+            return Ok(());
+        }
         self.event_tx
-            .send(event)
+            .send(RuntimeEventEnvelope {
+                generation: self.generation,
+                event,
+            })
             .map_err(|_| ConversationError::EventConsumerClosed)
     }
 }
@@ -841,6 +931,16 @@ impl ConversationProvider for AgentConversationProvider {
             .await
             .map_err(agent_error)
     }
+
+    async fn reset_session(&self) -> Result<(), ConversationError> {
+        self.backend.reset_session().map_err(agent_error)?;
+        *self.thread_id.lock().await = None;
+        self.history
+            .lock()
+            .map_err(|_| ConversationError::Provider("history mutex poisoned".to_string()))?
+            .clear();
+        Ok(())
+    }
 }
 
 struct AgentEventBridge {
@@ -925,6 +1025,38 @@ fn now_ms() -> i64 {
         .as_millis()
         .try_into()
         .unwrap_or(i64::MAX)
+}
+
+const MAX_PERSISTED_CONVERSATION_MESSAGES: usize = 500;
+
+fn load_conversation_history(path: Option<&Path>) -> Vec<Message> {
+    let Some(path) = path else {
+        return Vec::new();
+    };
+    let Ok(bytes) = std::fs::read(path) else {
+        return Vec::new();
+    };
+    let Ok(mut messages) = serde_json::from_slice::<Vec<Message>>(&bytes) else {
+        return Vec::new();
+    };
+    messages.retain(|message| !message.text.trim().is_empty());
+    if messages.len() > MAX_PERSISTED_CONVERSATION_MESSAGES {
+        messages.drain(0..messages.len() - MAX_PERSISTED_CONVERSATION_MESSAGES);
+    }
+    messages
+}
+
+fn persist_conversation_history(path: Option<&Path>, messages: &[Message]) -> Result<(), String> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let temp = path.with_extension("json.tmp");
+    let data = serde_json::to_vec_pretty(messages).map_err(|error| error.to_string())?;
+    std::fs::write(&temp, data).map_err(|error| error.to_string())?;
+    std::fs::rename(&temp, path).map_err(|error| error.to_string())
 }
 
 #[derive(Debug, thiserror::Error)]

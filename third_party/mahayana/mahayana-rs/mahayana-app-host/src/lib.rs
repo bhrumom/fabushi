@@ -604,6 +604,11 @@ fn create_feature_host(
         product_session_path: Some(root.join("account-session.json")),
         product_surface_state_path: Some(root.join("product-surface.json")),
         automation_path: Some(root.join("automations.json")),
+        // The desktop FeatureHost owns its isolated Codex home. Inheriting the
+        // user's global MCP servers makes unrelated host-specific tools (for
+        // example ChatGPT's node_repl) mandatory for every Fabushi contact.
+        // Installed Fabushi plugins are loaded from this runtime's own config.
+        inherit_installed_plugins: Some(false),
         ..HostCreateConfig::default()
     };
     FeatureHostController::create_with_host_config(
