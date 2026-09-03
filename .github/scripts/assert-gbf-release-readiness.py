@@ -61,6 +61,7 @@ for marker in (
 for marker in (
     'export CHATGPT_COMPUTER_CODESIGN_IDENTITY=',
     'export CHATGPT_COMPUTER_TEAM_ID=',
+    'echo "APPLE_TEAM_ID=$team_id" >> "$GITHUB_ENV"',
     'Verify packaged Computer Use runtime and signing boundary',
     '--expected-mac-team',
 ):
