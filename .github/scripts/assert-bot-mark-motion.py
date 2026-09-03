@@ -67,9 +67,12 @@ required_runtime = [
     'data-frame-clock="shared-30fps"',
     'const SHARED_AVATAR_FRAME_INTERVAL_MS = 1000 / 30;',
     'const sharedAvatarFrameListeners = new Set<SharedAvatarFrameListener>();',
+    'const AMBIENT_AVATAR_FRAME_INTERVAL_MS = 1000 / 4;',
+    'AMBIENT_AVATAR_STATES',
+    'nextSharedAvatarFrameDelay()',
     'requestAnimationFrame((now) => {',
     'cancelAnimationFrame(sharedAvatarAnimationFrame)',
-    'return subscribeSharedAvatarFrame(tick);',
+    'return subscribeSharedAvatarFrame(tick, frameInterval);',
     'prefers-reduced-motion: reduce',
     'personaPath(shape)',
     'linearGradient',
@@ -135,6 +138,7 @@ required_aliases = [
     "event.type === 'botInvocationRequested'",
     "{ alias: `workbench:${botId}`, canonical }",
     "{ alias: `peer:conversation:${conversationId}`, canonical }",
+    "{ alias: 'peer:conversation:mahayana-ai:agent:assistant', canonical: 'bot:mahayana-assistant' }",
     'registerBotIdentityAliases(aliases)',
 ]
 for marker in required_aliases:

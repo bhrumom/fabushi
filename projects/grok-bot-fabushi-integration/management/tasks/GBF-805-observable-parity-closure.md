@@ -174,3 +174,9 @@ Targeted unit/source/E2E regressions are part of this branch, but this task rema
 `1.2.14-test.152` was exercised on the target Mac. The round found release-blocking runtime problems rather than a clean parity proof: the ad-hoc-signed test Host triggers a Keychain password prompt for `com.ombhrum.fabushi.auth.v2`, Host calls then time out, Agent send fails after the timeout, logout remains `退出中…`, and the requested clean test-account login cannot be reached. The selected `fabushi test` connector independently returns an account-connection 400. Mahayana visual identity also still differs between Messenger (`peer:conversation:mahayana-ai:agent:assistant`) and Workbench (`bot:mahayana-assistant`), and near-idle Electron GPU/renderer CPU remains high. Full evidence: `evidence/GBF-805/mac-test-1.2.14-test.152-product-review-20260903.md`.
 
 GBF-805 remains `IN_PROGRESS`; do not recalibrate formal E2E around this broken runtime state. First restore a safe signed/isolated test auth boundary and Host responsiveness, then rerun the real-device journey.
+
+## 2026-09-03 continuation acceptance — fix Mac test until clean
+
+Source: `source/2026-09-03-mac-test-fix-until-clean.md`.
+
+This continuation is not accepted by source changes alone. Required real-device closure is: signed Mac test Host/auth boundary -> successful logout -> protected test-account login -> successful Mahayana send -> functional Mini App marketplace -> `fabushi test` connector device discovery/control -> restart/session recovery -> stable canonical Mahayana Bot identity -> materially reduced idle/near-idle CPU. Heavy build/package validation remains GitHub Actions only and only the macOS test lane may be dispatched.

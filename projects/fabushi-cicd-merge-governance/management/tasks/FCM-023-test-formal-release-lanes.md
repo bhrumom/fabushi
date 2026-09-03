@@ -56,3 +56,10 @@ Wait for product review of this real test build, then recalibrate the inaccurate
 ## Product-review finding — 2026-09-03
 
 The first real Mac test artifact launched, but it is not yet a usable authentication/Agent test artifact. Because the `test` lane skipped the formal signing identity, the installed app and bundled `mahayana-app-host` are ad-hoc signed; macOS therefore prompts for the existing Fabushi auth Keychain item and the blocked Host channel causes `feature.*` timeouts. This means the fast lane still needs a safe Mac test-signing/keychain strategy before it can be the baseline used to recalibrate formal E2E. Long E2E remains disabled; do not work around this by granting an unsigned/ad-hoc Host permanent Keychain access.
+
+## FCM-023.8 — signed fast Mac test artifact
+
+- **Deliverable:** keep the fast Mac `test` lane but import/use the canonical Developer ID for the outer app and bundled executables, while continuing to skip notarization and long App E2E.
+- **Acceptance:** GitHub Actions fails closed when Mac signing credentials/identity are unavailable; produced test `.app` reports canonical identifiers and Team ID, launches without the ad-hoc Host Keychain prompt, and remains a prerelease rather than stable/latest.
+- **Verification:** static release-contract gate + Mac-only Actions package run + target-Mac `codesign`/Host/UI evidence.
+- **Status:** in-progress.

@@ -151,8 +151,8 @@ jobs:
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: node chatgpt-vps-control/bin/prepare-fabushi-bundle.js
 
-      - name: Install Developer ID identity for formal macOS release
-        if: inputs.platform == 'mac' && inputs.release_kind == 'formal'
+      - name: Install Developer ID identity for macOS release
+        if: inputs.platform == 'mac'
         shell: bash
         env:
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
@@ -178,7 +178,8 @@ jobs:
       - name: Package only the selected desktop platform
         working-directory: desktop
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.platform == 'mac' && inputs.release_kind == 'formal' && 'true' || 'false' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.platform == 'mac' && 'true' || 'false' }}
+          FABUSHI_MACOS_SIGNED: ${{ inputs.platform == 'mac' && '1' || '0' }}
           FABUSHI_MACOS_NOTARIZE: ${{ inputs.platform == 'mac' && inputs.release_kind == 'formal' && '1' || '0' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
