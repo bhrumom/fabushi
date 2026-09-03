@@ -415,6 +415,8 @@ jobs:
             /.github/workflows/computer-control-security.yml
             /.github/workflows/electron-desktop.yml
             /.github/workflows/electron-macos-hot-package.yml
+            /.github/workflows/gbf-rollback-drill.yml
+            /.github/workflows/release-desktop-platform.yml
             /.github/workflows/native-electron-release.yml
             /.github/workflows/platform-control-plane.yml
             /chatgpt-vps-control/**
