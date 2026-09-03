@@ -17,6 +17,7 @@ test('desktop updater quit is not blocked by App Agent Surface cleanup', () => {
   assert.match(source, /setDesktopUpdateInstallInProgress/);
   assert.match(source, /if \(desktopUpdateInstallationInProgress\) \{[\s\S]*?closingAppAgentSurface\.close\(\)/);
   assert.match(source, /event\.preventDefault\(\);[\s\S]*?closingAppAgentSurface\.close\(\)/);
+  assert.match(source, /autoUpdater\.quitAndInstall\(false, true\);[\s\S]*?app\.quit\(\);/);
 });
 
 test('runtime event pump yields between long-polls so renderer IPC cannot starve', () => {
