@@ -153,7 +153,15 @@ function reducedMotion(): boolean {
 }
 
 const SHARED_AVATAR_FRAME_INTERVAL_MS = 1000 / 30;
-type SharedAvatarFrameListener = (now: number) => void;
+const AMBIENT_AVATAR_FRAME_INTERVAL_MS = 1000 / 4;
+const AMBIENT_AVATAR_STATES = new Set<BotMarkState>([
+  "idle", "sleeping", "drowsy", "bored", "powering-down", "result", "error",
+]);
+type SharedAvatarFrameListener = {
+  callback: (now: number) => void;
+  intervalMs: () => number;
+  lastFrameAt: number;
+};
 const sharedAvatarFrameListeners = new Set<SharedAvatarFrameListener>();
 let sharedAvatarFrameTimer: ReturnType<typeof setTimeout> | null = null;
 let sharedAvatarAnimationFrame = 0;
@@ -169,6 +177,14 @@ function stopSharedAvatarFrameClock(): void {
   }
 }
 
+function nextSharedAvatarFrameDelay(): number {
+  let interval = AMBIENT_AVATAR_FRAME_INTERVAL_MS;
+  for (const subscription of sharedAvatarFrameListeners) {
+    interval = Math.min(interval, Math.max(SHARED_AVATAR_FRAME_INTERVAL_MS, subscription.intervalMs()));
+  }
+  return interval;
+}
+
 function scheduleSharedAvatarFrame(): void {
   if (sharedAvatarFrameListeners.size === 0 || sharedAvatarFrameTimer != null || sharedAvatarAnimationFrame) return;
   sharedAvatarFrameTimer = setTimeout(() => {
@@ -176,17 +192,34 @@ function scheduleSharedAvatarFrame(): void {
     if (sharedAvatarFrameListeners.size === 0 || typeof requestAnimationFrame !== "function") return;
     sharedAvatarAnimationFrame = requestAnimationFrame((now) => {
       sharedAvatarAnimationFrame = 0;
-      for (const listener of [...sharedAvatarFrameListeners]) listener(now);
+      for (const subscription of [...sharedAvatarFrameListeners]) {
+        const interval = Math.max(SHARED_AVATAR_FRAME_INTERVAL_MS, subscription.intervalMs());
+        if (subscription.lastFrameAt !== 0 && now - subscription.lastFrameAt + 1 < interval) continue;
+        subscription.lastFrameAt = now;
+        subscription.callback(now);
+      }
       scheduleSharedAvatarFrame();
     });
-  }, SHARED_AVATAR_FRAME_INTERVAL_MS);
+  }, nextSharedAvatarFrameDelay());
 }
 
-function subscribeSharedAvatarFrame(listener: SharedAvatarFrameListener): () => void {
-  sharedAvatarFrameListeners.add(listener);
+function wakeSharedAvatarFrameClock(): void {
+  if (sharedAvatarFrameTimer != null) {
+    clearTimeout(sharedAvatarFrameTimer);
+    sharedAvatarFrameTimer = null;
+  }
+  scheduleSharedAvatarFrame();
+}
+
+function subscribeSharedAvatarFrame(
+  callback: (now: number) => void,
+  intervalMs: () => number,
+): () => void {
+  const subscription: SharedAvatarFrameListener = { callback, intervalMs, lastFrameAt: 0 };
+  sharedAvatarFrameListeners.add(subscription);
   scheduleSharedAvatarFrame();
   return () => {
-    sharedAvatarFrameListeners.delete(listener);
+    sharedAvatarFrameListeners.delete(subscription);
     if (sharedAvatarFrameListeners.size === 0) stopSharedAvatarFrameClock();
   };
 }
@@ -223,9 +256,9 @@ export const FabushiAvatarRuntime = forwardRef<FabushiAvatarRuntimeHandle, Fabus
     const phaseOffset = useMemo(() => (hashIdentity(identity) % 10000) / 10000 * TAU, [identity]);
 
     useImperativeHandle(ref, () => ({
-      spin: (durationMs = 520) => { actionRef.current = { kind: "spin", startedAt: performance.now(), durationMs }; },
-      bounce: () => { actionRef.current = { kind: "bounce", startedAt: performance.now(), durationMs: 520 }; },
-      burst: () => { actionRef.current = { kind: "burst", startedAt: performance.now(), durationMs: 760 }; },
+      spin: (durationMs = 520) => { actionRef.current = { kind: "spin", startedAt: performance.now(), durationMs }; wakeSharedAvatarFrameClock(); },
+      bounce: () => { actionRef.current = { kind: "bounce", startedAt: performance.now(), durationMs: 520 }; wakeSharedAvatarFrameClock(); },
+      burst: () => { actionRef.current = { kind: "burst", startedAt: performance.now(), durationMs: 760 }; wakeSharedAvatarFrameClock(); },
     }), []);
 
     useEffect(() => {
@@ -273,8 +306,11 @@ export const FabushiAvatarRuntime = forwardRef<FabushiAvatarRuntimeHandle, Fabus
         face.setAttribute("transform", `translate(0 ${(-bob - bounce).toFixed(2)}) rotate(${(motion.tilt + spin).toFixed(2)} ${C} ${C})`);
         eyes.setAttribute("transform", `translate(${(gx * 4).toFixed(2)} ${(gy * 3).toFixed(2)}) scale(1 ${blinkScale.toFixed(3)})`);
       };
-      return subscribeSharedAvatarFrame(tick);
-    }, [emphasis, gaze, motion, paused, phaseOffset]);
+      const frameInterval = () => actionRef.current || emphasis || followPointer || !AMBIENT_AVATAR_STATES.has(state)
+        ? SHARED_AVATAR_FRAME_INTERVAL_MS
+        : AMBIENT_AVATAR_FRAME_INTERVAL_MS;
+      return subscribeSharedAvatarFrame(tick, frameInterval);
+    }, [emphasis, followPointer, gaze, motion, paused, phaseOffset, state]);
 
     const rootStyle: CSSProperties = {
       display: "block",

@@ -48,6 +48,31 @@ for marker in (
     if marker not in reusable:
         raise SystemExit(f'GBF release readiness: reusable desktop release missing {marker}')
 
+for marker in (
+    'Install Developer ID identity for macOS release',
+    "if: inputs.platform == 'mac'",
+    "CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.platform == 'mac' && 'true' || 'false' }}",
+    "FABUSHI_MACOS_SIGNED: ${{ inputs.platform == 'mac' && '1' || '0' }}",
+    "FABUSHI_MACOS_NOTARIZE: ${{ inputs.platform == 'mac' && inputs.release_kind == 'formal' && '1' || '0' }}",
+):
+    if marker not in reusable:
+        raise SystemExit(f'GBF release readiness: macOS test/formal signing contract missing {marker}')
+
+desktop_package = (root / 'desktop' / 'package.json').read_text(encoding='utf-8')
+if '"forceCodeSigning": true' not in desktop_package:
+    raise SystemExit('GBF release readiness: macOS package must fail closed instead of emitting an unsigned test artifact')
+
+mac_after_sign = (root / 'desktop' / 'scripts' / 'notarize-after-sign.cjs').read_text(encoding='utf-8')
+for marker in (
+    "const signedRelease = process.env.FABUSHI_MACOS_SIGNED === '1';",
+    "const notarizeRelease = process.env.FABUSHI_MACOS_NOTARIZE === '1';",
+    'restoreCanonicalNestedSignatures(context, appPath);',
+    'if (!notarizeRelease) return;',
+    "identifier: 'com.ombhrum.fabushi.mahayana-app-host'",
+):
+    if marker not in mac_after_sign:
+        raise SystemExit(f'GBF release readiness: signed fast Mac package hook missing {marker}')
+
 for name, target in (
     ('release-macos.yml', 'platform: mac'),
     ('release-windows.yml', 'platform: win'),
