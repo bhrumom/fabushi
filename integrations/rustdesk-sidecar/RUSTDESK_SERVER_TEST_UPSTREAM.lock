@@ -1,0 +1,4 @@
+repository=https://github.com/rustdesk/rustdesk-server.git
+commit=a7736be5e40f85bfc141120dce587e836e5d4b80
+license=AGPL-3.0-only
+purpose=ephemeral-github-actions-rendezvous-relay-e2e
