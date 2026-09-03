@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/scripts/rustdesk-native-session-orchestration.py'
+      - '.github/scripts/rustdesk-native-consent-hardening.py'
       - '.github/scripts/rustdesk-requested-grants-integration.py'
       - '.github/scripts/rustdesk-migration-v20-registration.py'
       - '.github/workflows/rustdesk-native-session-orchestration.yml'
@@ -49,6 +50,7 @@ jobs:
           python .github/scripts/rustdesk-requested-grants-integration.py
           python .github/scripts/rustdesk-migration-v20-registration.py
           python .github/scripts/rustdesk-native-session-orchestration.py
+          python .github/scripts/rustdesk-native-consent-hardening.py
       - name: Verify authoritative cloud grant materialization
         run: |
           grep -q 'RemoteComputerPermissionsRequest' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
@@ -59,6 +61,8 @@ jobs:
           grep -q 'createRustDeskHostSessionCredential' desktop/electron/main.cjs
           grep -q 'revokeRustDeskHostSessionCredential' desktop/electron/main.cjs
           grep -q 'rotateTemporaryPassword' desktop/electron/main.cjs
+          grep -q 'dialog.showMessageBox' desktop/electron/main.cjs
+          grep -q 'confirmation.response !== 1' desktop/electron/main.cjs
       - name: Verify active-session RustDesk orchestration materialization
         run: |
           grep -q 'type: "rustdesk.bootstrap"' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
