@@ -50,3 +50,4 @@
 | FCM-023.1 | Disable automatic long application-driving E2E and RC fan-out | yes | PR/main automatic jobs no longer launch Playwright/device UI release journeys | implemented |
 | FCM-023.2 | Add per-platform test/formal release workflows | yes | macOS/Windows/Linux/Android/iOS each have manual `release_kind` entry point | implemented |
 | FCM-023.3 | Deliver current macOS test build | yes | Mac-only test package artifact built and launched on target Mac | passed |
+| FCM-023.4 | Repair fast macOS test signing/runtime verification after real-device Keychain failure | yes | Developer ID imported before Computer Use staging; app/Host/helpers signed with canonical Team/IDs; package verifier passes; target Mac has no auth prompt/Host timeout | in-progress |

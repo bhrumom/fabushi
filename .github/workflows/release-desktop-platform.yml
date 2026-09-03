@@ -144,13 +144,6 @@ jobs:
       - name: Build pinned offline ASR engine
         run: node .github/scripts/build-offline-asr-engine.mjs
 
-      - name: Stage bundled Computer Use runtime
-        shell: bash
-        env:
-          CHATGPT_COMPUTER_HOME: ${{ github.workspace }}/desktop/resources/computer-control
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-        run: node chatgpt-vps-control/bin/prepare-fabushi-bundle.js
-
       - name: Install Developer ID identity for macOS release
         if: inputs.platform == 'mac'
         shell: bash
@@ -175,6 +168,17 @@ jobs:
           test -n "$identity"
           echo "MACOS_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
 
+      - name: Stage bundled Computer Use runtime
+        shell: bash
+        env:
+          CHATGPT_COMPUTER_HOME: ${{ github.workspace }}/desktop/resources/computer-control
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          export CHATGPT_COMPUTER_CODESIGN_IDENTITY="${MACOS_CODESIGN_IDENTITY:-}"
+          export CHATGPT_COMPUTER_TEAM_ID="${APPLE_TEAM_ID:-}"
+          node chatgpt-vps-control/bin/prepare-fabushi-bundle.js
+
       - name: Package only the selected desktop platform
         working-directory: desktop
         env:
@@ -188,6 +192,19 @@ jobs:
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
         run: npx electron-builder --${{ inputs.platform }} --publish never
+
+      - name: Verify packaged Computer Use runtime and signing boundary
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          args=(--release-root desktop/release --platform '${{ inputs.platform }}')
+          if [ '${{ inputs.platform }}' = mac ]; then
+            test -n "$APPLE_TEAM_ID"
+            args+=(--expected-mac-team "$APPLE_TEAM_ID")
+          fi
+          node .github/scripts/verify-packaged-computer-control.mjs "${args[@]}"
 
       - name: Install formal-release E2E diagnostics runtime
         if: inputs.release_kind == 'formal'
