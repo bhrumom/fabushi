@@ -1,5 +1,12 @@
 # 更新日志
 
+## [1.2.20] - 2026-09-04
+
+### macOS 更新安装时序修复
+- 修复 macOS 更新器在旧应用已退出、但 Squirrel.Mac 尚未完成 ZIP 拉取时被提前关闭，导致应用包仍停留在旧版本的问题。
+- 将 macOS 手动更新流程交给 Squirrel.Mac 完成拉取、替换与重启；其他平台保留显式退出兜底。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.20`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `26`。
+
 ## [1.2.19] - 2026-09-04
 
 ### macOS 更新器真实验收目标
