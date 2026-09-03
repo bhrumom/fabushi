@@ -1,0 +1,80 @@
+name: RustDesk managed infrastructure boundary
+
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/rustdesk-managed-infrastructure.py'
+      - '.github/workflows/rustdesk-managed-infrastructure.yml'
+      - 'integrations/rustdesk-sidecar/**'
+      - 'desktop/electron/rustdesk-*.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rustdesk-managed-infra-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  materialize-and-verify:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/rustdesk-fusion-route-negotiation
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Materialize fail-closed managed RustDesk boundary
+        run: python .github/scripts/rustdesk-managed-infrastructure.py
+      - name: Verify source boundary and credential isolation
+        run: |
+          grep -q 'Config::set_option("custom-rendezvous-server"' integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs
+          grep -q 'Config::set_option("key"' integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs
+          grep -q 'managed_network()?' integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs
+          grep -q 'std::process::exit(78)' integrations/rustdesk-sidecar/overlay/src/bin/fabushi_host_daemon.rs
+          grep -q 'managedNetworkConfig' desktop/electron/rustdesk-sidecar-process.cjs
+          grep -q 'Fabushi-managed RustDesk rendezvous is not configured' desktop/electron/rustdesk-sidecar-process.cjs
+          grep -q 'configured' desktop/electron/rustdesk-host-daemon-process.cjs
+          grep -q 'does not silently fall back to RustDesk public rendezvous infrastructure' integrations/rustdesk-sidecar/README.md
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const { cleanEnvironment, managedNetworkConfig } = require('./desktop/electron/rustdesk-sidecar-process.cjs');
+          const env = {
+            PATH: '/bin',
+            FABUSHI_RUSTDESK_RENDEZVOUS_SERVER: 'rd.example.invalid:21116',
+            FABUSHI_RUSTDESK_PUBLIC_KEY: '0123456789abcdef0123456789abcdef',
+            FABUSHI_ACCOUNT_TOKEN: 'must-not-cross',
+            AUTHORIZATION: 'Bearer must-not-cross',
+            COOKIE: 'must-not-cross',
+          };
+          assert.equal(managedNetworkConfig(env).configured, true);
+          assert.equal(managedNetworkConfig({}).configured, false);
+          assert.equal(managedNetworkConfig({ FABUSHI_RUSTDESK_RENDEZVOUS_SERVER: 'bad host', FABUSHI_RUSTDESK_PUBLIC_KEY: '0123456789abcdef' }).configured, false);
+          const clean = cleanEnvironment(env);
+          assert.equal(clean.FABUSHI_RUSTDESK_RENDEZVOUS_SERVER, env.FABUSHI_RUSTDESK_RENDEZVOUS_SERVER);
+          assert.equal(clean.FABUSHI_RUSTDESK_PUBLIC_KEY, env.FABUSHI_RUSTDESK_PUBLIC_KEY);
+          assert.equal(clean.FABUSHI_ACCOUNT_TOKEN, undefined);
+          assert.equal(clean.AUTHORIZATION, undefined);
+          assert.equal(clean.COOKIE, undefined);
+          NODE
+          node --test desktop/electron/rustdesk-sidecar-process.test.cjs desktop/electron/rustdesk-host-daemon-process.test.cjs
+      - name: Commit verified source to dedicated integration branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add integrations/rustdesk-sidecar/overlay/src/bin/fabushi_sidecar.rs integrations/rustdesk-sidecar/overlay/src/bin/fabushi_host_daemon.rs integrations/rustdesk-sidecar/README.md desktop/electron/rustdesk-sidecar-process.cjs desktop/electron/rustdesk-host-daemon-process.cjs
+          if git diff --cached --quiet; then
+            echo 'Managed infrastructure boundary already materialized.'
+            exit 0
+          fi
+          git commit -m 'feat(remote): require Fabushi-managed RustDesk rendezvous'
+          git push origin HEAD:codex/rustdesk-fusion-route-negotiation
