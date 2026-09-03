@@ -16,6 +16,7 @@ const { createAppAgentSurfaceServer } = require('./app-agent-surface-server.cjs'
 const { RemoteDeviceAgentSupervisor } = require('./remote-device-agent-supervisor.cjs');
 const { RustDeskSidecarProcess } = require('./rustdesk-sidecar-process.cjs');
 const { RustDeskHostDaemonProcess } = require('./rustdesk-host-daemon-process.cjs');
+const { rotateTemporaryPassword } = require('./rustdesk-host-bootstrap.cjs');
 
 const appDataOverride = process.env.FABUSHI_APP_DATA?.trim();
 if (appDataOverride) app.setPath('userData', path.resolve(appDataOverride));
@@ -120,6 +121,7 @@ function providerEnvironment(inferenceProvider) {
 const host = new MahayanaHostProcess({ providerEnvironment });
 const rustDeskSidecar = new RustDeskSidecarProcess({ app });
 const rustDeskHostDaemon = new RustDeskHostDaemonProcess({ app });
+const rustDeskIssuedHostSessions = new Set();
 let mahayanaEdgeServer = null;
 let nativeEdgeServer = null;
 let appAgentSurfaceServer = null;
@@ -692,6 +694,49 @@ function installNativeEdge() {
     },
     getRustDeskStatus() {
       return { available: Boolean(rustDeskSidecar.executablePath()), ready: rustDeskSidecar.ready, sessions: rustDeskSidecar.sessions.size, host: rustDeskHostDaemon.status() };
+    },
+    async createRustDeskHostSessionCredential(params) {
+      const sessionId = String(params?.sessionId || '');
+      if (!/^[A-Za-z0-9._:-]{1,160}$/.test(sessionId)) throw new Error('RustDesk host session id is invalid.');
+      if (rustDeskIssuedHostSessions.has(sessionId)) throw new Error('RustDesk host credential was already issued for this session.');
+      const grant = params?.grant && typeof params.grant === 'object' && !Array.isArray(params.grant) ? params.grant : null;
+      if (!grant || grant.display !== true || ['input', 'clipboard', 'fileTransfer', 'audio'].some((key) => typeof grant[key] !== 'boolean')) {
+        throw new Error('RustDesk host session grant is invalid.');
+      }
+      const clientLabel = String(params?.clientLabel || '已配对设备').trim().slice(0, 80) || '已配对设备';
+      const capabilities = [
+        '屏幕',
+        grant.input ? '输入控制' : null,
+        grant.clipboard ? '剪贴板' : null,
+        grant.fileTransfer ? '文件传输' : null,
+        grant.audio ? '音频' : null,
+      ].filter(Boolean).join('、');
+      const owner = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows().find((window) => !window.isDestroyed());
+      const confirmation = await dialog.showMessageBox(owner || undefined, {
+        type: 'warning',
+        title: '允许 RustDesk 原生远程连接？',
+        message: `${clientLabel} 请求切换到 RustDesk 原生数据通道`,
+        detail: `会话 ${sessionId.slice(0, 24)}…
+本次权限：${capabilities}
+
+只有点击“允许”后才会生成一次性 RustDesk 凭据；关闭或撤销会话会立即轮换失效。`,
+        buttons: ['拒绝', '允许'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      if (confirmation.response !== 1) throw new Error('RustDesk native session was denied by local user presence.');
+      const credential = await rotateTemporaryPassword({ app });
+      rustDeskIssuedHostSessions.add(sessionId);
+      return credential;
+    },
+    async revokeRustDeskHostSessionCredential(params) {
+      const sessionId = String(params?.sessionId || '');
+      if (!rustDeskIssuedHostSessions.delete(sessionId)) return false;
+      // Rotate again and discard the value so the credential previously sent over
+      // the authenticated DTLS data channel becomes unusable immediately.
+      await rotateTemporaryPassword({ app });
+      return true;
     },
     openRustDeskSession(params) {
       return rustDeskSidecar.open(params);
@@ -1335,7 +1380,20 @@ applyStartupNativePreferences();
 
 app.whenReady().then(async () => {
   const rustDeskHostStatus = rustDeskHostDaemon.start();
-  if (rustDeskHostStatus.available) console.info(JSON.stringify({ type: 'fabushi.rustdesk-host.started', ...rustDeskHostStatus }));
+  if (rustDeskHostStatus.available) {
+    console.info(JSON.stringify({ type: 'fabushi.rustdesk-host.started', ...rustDeskHostStatus }));
+    try {
+      // A crash can bypass normal session-close rotation. Invalidate any password
+      // left by the previous process before accepting a new Fabushi session.
+      await rotateTemporaryPassword({ app });
+      console.info(JSON.stringify({ type: 'fabushi.rustdesk-host.startup-credential-invalidated' }));
+    } catch (error) {
+      console.warn(JSON.stringify({
+        type: 'fabushi.rustdesk-host.startup-credential-invalidation-failed',
+        message: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
   installAppProtocol();
   installApplicationMenu();
   installAutoUpdaterEvents();

@@ -1,5 +1,6 @@
 import type { ComputerAction } from "../mahayana-host/contracts";
 import type { MobileControlSession, RemoteComputerApi, RemoteSignal } from "./remote-api";
+import { NativeRustDeskController, validateNativeRustDeskBootstrap } from "./native-rustdesk-controller";
 
 const CHANNEL_LABEL = "fabushi-computer-v1";
 const SIGNAL_POLL_MS = 650;
@@ -60,6 +61,7 @@ type DesktopMessage =
   | { type: "computer.frame.chunk"; id: string; index: number; data: string }
   | { type: "computer.frame.end"; id: string }
   | { type: "computer.closed" }
+  | { type: "rustdesk.bootstrap"; protocol: 1; sessionId: string; peerId: string; password: string; forceRelay: boolean; grant: MobileControlSession["permissions"] }
   | { type: "pong"; id?: string; at: number };
 
 function messageId(prefix: string): string {
@@ -92,6 +94,7 @@ export class MobileRemoteComputerPeer {
   private pendingRemoteCandidates: RTCIceCandidateInit[] = [];
   private pendingFrames = new Map<string, PendingFrame>();
   private pendingAiRequests = new Map<string, number>();
+  private readonly nativeRustDesk: NativeRustDeskController;
 
   constructor(options: MobileRemoteComputerPeerOptions) {
     this.api = options.api;
@@ -102,6 +105,11 @@ export class MobileRemoteComputerPeer {
     this.onFrame = options.onFrame;
     this.onError = options.onError;
     this.onAiAck = options.onAiAck;
+    this.nativeRustDesk = new NativeRustDeskController({
+      onFrame: (frame) => this.onFrame?.(frame),
+      onError: (message) => this.onError?.(message),
+      onReady: () => this.update({ phase: "connected", session: this.session }),
+    });
   }
 
   snapshot(): MobilePeerState {
@@ -190,6 +198,7 @@ export class MobileRemoteComputerPeer {
     this.snapshotPending = false;
     this.drainingSignals = false;
     this.pendingRemoteCandidates = [];
+    void this.nativeRustDesk.close();
     return session;
   }
 
@@ -200,6 +209,7 @@ export class MobileRemoteComputerPeer {
   }
 
   requestSnapshot(): string {
+    if (this.nativeRustDesk.active) return "rustdesk-streaming";
     if (this.snapshotPending) return "snapshot-pending";
     const id = messageId("snapshot");
     this.snapshotPending = true;
@@ -214,6 +224,10 @@ export class MobileRemoteComputerPeer {
 
   sendAction(action: ComputerAction, then: ComputerAction[] = []): string {
     const id = messageId("action");
+    if (this.nativeRustDesk.active && then.length === 0 && this.nativeRustDesk.supportsAction(action)) {
+      void this.nativeRustDesk.sendComputerAction(action).catch((cause) => this.onError?.(cause instanceof Error ? cause.message : String(cause)));
+      return id;
+    }
     this.send({ type: "computer.action", id, action, then });
     return id;
   }
@@ -289,6 +303,19 @@ export class MobileRemoteComputerPeer {
       if (message.protocol !== 1 || message.deviceId !== this.deviceId || !expectedSessionId || message.sessionId !== expectedSessionId) {
         this.fail(new Error("桌面端远程会话身份不匹配"));
       }
+      return;
+    }
+    if (message.type === "rustdesk.bootstrap") {
+      const session = this.session;
+      if (!session) return;
+      const bootstrap = validateNativeRustDeskBootstrap(message, session.sessionId, session.permissions);
+      if (!bootstrap) {
+        this.onError?.("RustDesk bootstrap failed session or permission validation");
+        return;
+      }
+      void this.nativeRustDesk.connect(bootstrap).catch((cause) => {
+        this.onError?.(cause instanceof Error ? cause.message : String(cause));
+      });
       return;
     }
     if (message.type === "computer.ai.ack") {
