@@ -88,6 +88,7 @@ type ConversationJournalMessage = {
   role: "user" | "assistant";
   text: string;
   createdAtMs: number;
+  streaming?: boolean;
 };
 
 type ConversationJournal = {
@@ -169,7 +170,8 @@ function isConversationJournalMessage(value: unknown): value is ConversationJour
     (candidate.role === "user" || candidate.role === "assistant") &&
     typeof candidate.text === "string" &&
     typeof candidate.createdAtMs === "number" &&
-    Number.isFinite(candidate.createdAtMs)
+    Number.isFinite(candidate.createdAtMs) &&
+    (candidate.streaming === undefined || typeof candidate.streaming === "boolean")
   );
 }
 
@@ -560,27 +562,44 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
       const conversationId = this.conversationIdForEvent(event.operationId);
       if (conversationId) {
         const createdAtMs = eventTimestampMs(event.timestamp);
+        const current = this.conversationJournal.conversations[conversationId] ?? [];
+        const streaming = [...current]
+          .reverse()
+          .find((message) => message.role === "assistant" && message.streaming && message.id.startsWith(`${event.operationId ?? ""}:stream`));
+        const baseId = event.operationId
+          ? `${event.operationId}:${event.role}`
+          : `${event.role}:${createdAtMs}`;
+        let id = streaming?.id ?? baseId;
+        if (!streaming) {
+          let suffix = 1;
+          while (current.some((message) => message.id === id)) {
+            id = `${baseId}:${suffix}`;
+            suffix += 1;
+          }
+        }
         this.appendConversationMessage(conversationId, {
-          id: event.operationId
-            ? `${event.operationId}:${event.role}`
-            : `${event.role}:${createdAtMs}:${Math.random().toString(16).slice(2)}`,
+          id,
           role: event.role,
           text: event.text,
           createdAtMs,
+          streaming: false,
         }, true);
       }
     } else if (event.type === "chat.delta") {
       const conversationId = this.conversationIdForEvent(event.operationId);
       if (conversationId) {
         const createdAtMs = eventTimestampMs(event.timestamp);
-        const id = `${event.operationId}:assistant`;
         const current = this.conversationJournal.conversations[conversationId] ?? [];
-        const existing = current.find((message) => message.id === id);
+        const existing = [...current]
+          .reverse()
+          .find((message) => message.role === "assistant" && message.streaming && message.id.startsWith(`${event.operationId}:stream`));
+        const id = existing?.id ?? `${event.operationId}:stream`;
         this.appendConversationMessage(conversationId, {
           id,
           role: "assistant",
           text: `${existing?.text ?? ""}${event.delta}`,
           createdAtMs: existing?.createdAtMs ?? createdAtMs,
+          streaming: true,
         }, false);
       }
     }
