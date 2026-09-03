@@ -52,3 +52,7 @@ Remove long application-driving E2E from automatic CI/CD, split release entry po
 ## Next action
 
 Wait for product review of this real test build, then recalibrate the inaccurate app-driving E2E against observed behavior before enabling those checks as formal-release gates.
+
+## Product-review finding — 2026-09-03
+
+The first real Mac test artifact launched, but it is not yet a usable authentication/Agent test artifact. Because the `test` lane skipped the formal signing identity, the installed app and bundled `mahayana-app-host` are ad-hoc signed; macOS therefore prompts for the existing Fabushi auth Keychain item and the blocked Host channel causes `feature.*` timeouts. This means the fast lane still needs a safe Mac test-signing/keychain strategy before it can be the baseline used to recalibrate formal E2E. Long E2E remains disabled; do not work around this by granting an unsigned/ad-hoc Host permanent Keychain access.

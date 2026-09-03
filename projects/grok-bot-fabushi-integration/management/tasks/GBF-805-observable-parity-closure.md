@@ -168,3 +168,9 @@ This continuation is sourced from `source/2026-09-03-session-streaming-miniapp-e
 5. MSR-106 verifies current-main avatar motion is one shared 30 FPS scheduler with shared focus/visibility lifecycle and target-Mac packaged energy evidence.
 
 Targeted unit/source/E2E regressions are part of this branch, but this task remains `IN_PROGRESS` until GitHub Actions, protected main, exact-main packaged/mobile/visual/energy evidence and Release are all green.
+
+## Real macOS test-build review — 2026-09-03
+
+`1.2.14-test.152` was exercised on the target Mac. The round found release-blocking runtime problems rather than a clean parity proof: the ad-hoc-signed test Host triggers a Keychain password prompt for `com.ombhrum.fabushi.auth.v2`, Host calls then time out, Agent send fails after the timeout, logout remains `退出中…`, and the requested clean test-account login cannot be reached. The selected `fabushi test` connector independently returns an account-connection 400. Mahayana visual identity also still differs between Messenger (`peer:conversation:mahayana-ai:agent:assistant`) and Workbench (`bot:mahayana-assistant`), and near-idle Electron GPU/renderer CPU remains high. Full evidence: `evidence/GBF-805/mac-test-1.2.14-test.152-product-review-20260903.md`.
+
+GBF-805 remains `IN_PROGRESS`; do not recalibrate formal E2E around this broken runtime state. First restore a safe signed/isolated test auth boundary and Host responsiveness, then rerun the real-device journey.
