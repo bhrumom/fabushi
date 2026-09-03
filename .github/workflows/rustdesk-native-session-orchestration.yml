@@ -49,24 +49,37 @@ jobs:
           python .github/scripts/rustdesk-requested-grants-integration.py
           python .github/scripts/rustdesk-migration-v20-registration.py
           python .github/scripts/rustdesk-native-session-orchestration.py
-      - name: Verify native RustDesk authorization and credential boundary
+      - name: Verify authoritative cloud grant materialization
         run: |
           grep -q 'RemoteComputerPermissionsRequest' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
           grep -q 'REMOTE_COMPUTER_REQUESTED_GRANTS_SCHEMA_V20' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/lib.rs
+          grep -q 'JOIN remote_computer_session_grants g' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
+      - name: Verify native credential lifecycle materialization
+        run: |
           grep -q 'createRustDeskHostSessionCredential' desktop/electron/main.cjs
           grep -q 'revokeRustDeskHostSessionCredential' desktop/electron/main.cjs
+          grep -q 'rotateTemporaryPassword' desktop/electron/main.cjs
+      - name: Verify active-session RustDesk orchestration materialization
+        run: |
           grep -q 'type: "rustdesk.bootstrap"' frontend/apps/web/src/lib/remote-computer/desktop-peer.ts
           grep -q 'nativeRustDesk.connect' frontend/apps/web/src/lib/remote-computer/mobile-peer.ts
           grep -q "provider: 'rustdesk-sidecar'" desktop/src/messaging-shell-v2.tsx
+      - name: Verify temporary credentials never enter cloud persistence
+        run: |
           ! grep -Eq 'temporaryPassword|rustdeskPassword|providerPassword' third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs
-          node --test chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js
-          node --test desktop/electron/rustdesk-sidecar-process.test.cjs desktop/electron/rustdesk-host-bootstrap.test.cjs desktop/electron/rustdesk-host-daemon-process.test.cjs
-      - name: Typecheck shared web and desktop surfaces
+          ! grep -Eqi 'temporary_password|rustdesk_password|provider_password' third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0019_remote_computer_audit_grants.sql
+      - name: Verify remote session security contracts
+        run: node --test chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js
+      - name: Verify isolated Electron RustDesk process contracts
+        run: node --test desktop/electron/rustdesk-sidecar-process.test.cjs desktop/electron/rustdesk-host-bootstrap.test.cjs desktop/electron/rustdesk-host-daemon-process.test.cjs
+      - name: Typecheck shared web surface
         run: |
           corepack enable
           corepack prepare pnpm@10.9.0 --activate
           pnpm --dir frontend/apps/web install --frozen-lockfile --ignore-scripts
           pnpm --dir frontend/apps/web run typecheck
+      - name: Typecheck desktop surface
+        run: |
           npm --prefix desktop ci --ignore-scripts
           npm --prefix desktop run typecheck
       - name: Commit verified orchestration to dedicated integration branch
