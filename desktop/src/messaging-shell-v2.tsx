@@ -1122,6 +1122,11 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
       // Presence begins automatically after login. The controller receives the
       // persisted opt-in before any remote session polling is allowed.
       controlEnabled: remoteControlEnabledRef.current,
+      provider: 'rustdesk-sidecar',
+      platform: navigator.platform.toLowerCase().includes('mac') ? 'macos'
+        : navigator.platform.toLowerCase().includes('win') ? 'windows'
+          : navigator.platform.toLowerCase().includes('linux') ? 'linux' : 'unknown',
+      capabilities: ['remote-desktop', 'input', 'clipboard', 'file-transfer', 'display', 'audio', 'session-management'],
       resolveAgentId: (requestedAgentId) => requestedAgentId === 'mahayana-assistant'
         || peersRef.current.some((peer) => isAgentPeer(peer) && (peer.actorId ?? peer.id) === requestedAgentId)
         ? requestedAgentId

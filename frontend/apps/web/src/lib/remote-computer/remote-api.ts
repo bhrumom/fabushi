@@ -487,15 +487,24 @@ export class RemoteComputerApi {
     return result;
   }
 
-  async createControlSession(deviceId: string, clientId: string, clientToken: string): Promise<MobileControlSession> {
+  async createControlSession(
+    deviceId: string,
+    clientId: string,
+    clientToken: string,
+    permissions: RemoteControlPermissions = { display: true, input: true, clipboard: false, fileTransfer: false, audio: false },
+  ): Promise<MobileControlSession> {
     if (!validStoredIdentifier(deviceId, 128)
       || !validStoredIdentifier(clientId)
       || !validOpaqueCredential(clientToken)) {
       throw new Error("本手机的配对凭据无效，请重新配对");
     }
+    if (!permissions || permissions.display !== true
+      || [permissions.input, permissions.clipboard, permissions.fileTransfer, permissions.audio].some((value) => typeof value !== "boolean")) {
+      throw new Error("远程控制权限请求无效");
+    }
     const response = await this.authorizedFetch(`/v1/computers/${encodeURIComponent(deviceId)}/sessions`, {
       method: "POST",
-      body: JSON.stringify({ clientId, clientToken }),
+      body: JSON.stringify({ clientId, clientToken, permissions }),
     });
     const raw = await parseResponse<unknown>(response);
     if (!isRecord(raw)

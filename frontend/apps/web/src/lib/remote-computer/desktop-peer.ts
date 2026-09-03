@@ -14,6 +14,7 @@ import type {
   RuntimeEvent,
 } from "../mahayana-host/contracts";
 import type { MahayanaHostTransport } from "../mahayana-host/transport";
+import { invokeNativeDesktop } from "../fabushi-runtime/native-desktop";
 
 const DEVICE_ID_STORAGE_KEY = "fabushi-remote-computer-device-id-v1";
 const DEVICE_ID_SCOPE_STORAGE_PREFIX = "fabushi-remote-computer-device-id-v2";
@@ -128,6 +129,7 @@ interface PeerSession {
   pendingOperations: number;
   drainingSignals: boolean;
   pendingRemoteCandidates: RTCIceCandidateInit[];
+  rustDeskBootstrapped: boolean;
 }
 
 type IncomingChannelMessage =
@@ -951,6 +953,7 @@ export class RemoteComputerDesktopController {
       pendingOperations: 0,
       drainingSignals: false,
       pendingRemoteCandidates: [],
+      rustDeskBootstrapped: false,
     };
     this.peers.set(session.sessionId, entry);
     this.update({
@@ -1063,6 +1066,7 @@ export class RemoteComputerDesktopController {
           sessionId: entry.session.sessionId,
           generation: entry.session.generation ?? 0,
         });
+        await this.maybeSendRustDeskBootstrap(entry);
       }
       await remoteRequest(this.transport, {
         type: "remoteComputer.signal",
@@ -1092,6 +1096,38 @@ export class RemoteComputerDesktopController {
     }
   }
 
+  private async maybeSendRustDeskBootstrap(entry: PeerSession): Promise<void> {
+    const channel = entry.channel;
+    if (this.provider !== "rustdesk-sidecar" || entry.rustDeskBootstrapped || entry.closing || !entry.activated
+      || !channel || channel.readyState !== "open") return;
+    try {
+      const credential = await invokeNativeDesktop<{ peerId?: unknown; temporaryPassword?: unknown }>(
+        "createRustDeskHostSessionCredential",
+        { sessionId: entry.session.sessionId, clientLabel: entry.session.clientLabel ?? entry.session.clientId, grant: entry.session.permissions },
+      );
+      const peerId = typeof credential?.peerId === "string" ? credential.peerId : "";
+      const password = typeof credential?.temporaryPassword === "string" ? credential.temporaryPassword : "";
+      if (!/^[A-Za-z0-9._:-]{1,160}$/.test(peerId) || password.length < 6 || password.length > 32 || /\s/.test(password)) {
+        throw new Error("RustDesk host bootstrap returned invalid credentials");
+      }
+      entry.rustDeskBootstrapped = true;
+      await sendJson(channel, {
+        type: "rustdesk.bootstrap",
+        protocol: 1,
+        sessionId: entry.session.sessionId,
+        peerId,
+        password,
+        forceRelay: false,
+        grant: entry.session.permissions,
+      });
+    } catch (cause) {
+      // Browser/mobile and native sessions keep the already-authorized WebRTC path
+      // when a native provider is unavailable. Never fail open by fabricating a
+      // RustDesk credential or widening the session grant.
+      this.update({ error: cause instanceof Error ? cause.message : String(cause) });
+    }
+  }
+
   private configureChannel(entry: PeerSession, channel: RTCDataChannel): void {
     if (!this.controlEnabled) {
       channel.close();
@@ -1106,13 +1142,16 @@ export class RemoteComputerDesktopController {
       }
       this.update({ channelOpen: entry.activated, connectionState: entry.peer.connectionState });
       if (!entry.activated) return;
-      void sendJson(channel, {
-        type: "computer.hello",
-        protocol: 1,
-        deviceId: this.deviceId,
-        sessionId: entry.session.sessionId,
-        generation: entry.session.generation ?? 0,
-      }).catch((cause) => this.update({ error: cause instanceof Error ? cause.message : String(cause) }));
+      void (async () => {
+        await sendJson(channel, {
+          type: "computer.hello",
+          protocol: 1,
+          deviceId: this.deviceId,
+          sessionId: entry.session.sessionId,
+          generation: entry.session.generation ?? 0,
+        });
+        await this.maybeSendRustDeskBootstrap(entry);
+      })().catch((cause) => this.update({ error: cause instanceof Error ? cause.message : String(cause) }));
     };
     channel.onclose = () => {
       this.update({ channelOpen: false });
@@ -1288,6 +1327,10 @@ export class RemoteComputerDesktopController {
   private async closePeer(entry: PeerSession, notifyServer: boolean): Promise<void> {
     if (entry.closing) return;
     entry.closing = true;
+    if (entry.rustDeskBootstrapped) {
+      entry.rustDeskBootstrapped = false;
+      await invokeNativeDesktop("revokeRustDeskHostSessionCredential", { sessionId: entry.session.sessionId }).catch(() => undefined);
+    }
     if (entry.signalTimer) window.clearInterval(entry.signalTimer);
     entry.signalTimer = undefined;
     const channel = entry.channel;

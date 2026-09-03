@@ -45,6 +45,28 @@ struct RemoteComputerPairRequest {
 struct RemoteComputerSessionCreateRequest {
     client_id: String,
     client_token: String,
+    #[serde(default = "default_remote_control_permissions")]
+    permissions: RemoteComputerPermissionsRequest,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerPermissionsRequest {
+    display: bool,
+    input: bool,
+    clipboard: bool,
+    file_transfer: bool,
+    audio: bool,
+}
+
+fn default_remote_control_permissions() -> RemoteComputerPermissionsRequest {
+    RemoteComputerPermissionsRequest {
+        display: true,
+        input: true,
+        clipboard: false,
+        file_transfer: false,
+        audio: false,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,6 +203,11 @@ struct RemoteComputerSessionListRow {
     state: String,
     created_at: i64,
     expires_at: i64,
+    allow_display: i64,
+    allow_input: i64,
+    allow_clipboard: i64,
+    allow_file_transfer: i64,
+    allow_audio: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -894,14 +921,20 @@ pub(super) async fn remote_computer_sessions(
     let rows = worker::query!(
         &database,
         "SELECT s.session_id, s.client_id, c.label AS client_label,
-                s.state, s.created_at, s.expires_at
+                s.state, s.created_at, s.expires_at,
+                g.allow_display, g.allow_input, g.allow_clipboard,
+                g.allow_file_transfer, g.allow_audio
          FROM remote_computer_sessions s
          JOIN remote_computer_clients c
            ON c.client_id = s.client_id AND c.device_id = s.device_id AND c.user_id = s.user_id
          JOIN remote_computers d ON d.device_id = s.device_id AND d.user_id = s.user_id
+         JOIN remote_computer_session_grants g
+           ON g.session_id = s.session_id AND g.user_id = s.user_id
+          AND g.device_id = s.device_id AND g.client_id = s.client_id
          WHERE s.user_id = ?1 AND s.device_id = ?2 AND s.state <> 'closed'
            AND s.expires_at > ?3 AND c.revoked_at IS NULL
            AND c.client_token_hash IS NOT NULL AND d.revoked_at IS NULL
+           AND g.revoked_at IS NULL AND g.expires_at > ?3
          ORDER BY s.created_at DESC LIMIT 32",
         &account.user_id,
         device_id,
@@ -920,7 +953,13 @@ pub(super) async fn remote_computer_sessions(
                 "state": row.state,
                 "createdAt": row.created_at,
                 "expiresAt": row.expires_at,
-                "permissions": {"display": true, "input": true, "clipboard": false, "fileTransfer": false, "audio": false},
+                "permissions": {
+                    "display": row.allow_display != 0,
+                    "input": row.allow_input != 0,
+                    "clipboard": row.allow_clipboard != 0,
+                    "fileTransfer": row.allow_file_transfer != 0,
+                    "audio": row.allow_audio != 0,
+                },
             })
         })
         .collect::<Vec<_>>();
@@ -959,6 +998,13 @@ pub(super) async fn remote_computer_session_create(
             400,
             "invalid_client_token",
             "Paired client credential is invalid.",
+        );
+    }
+    if !input.permissions.display {
+        return error_response(
+            400,
+            "display_permission_required",
+            "Remote control sessions must explicitly grant display access.",
         );
     }
     let database = context.env.d1(DATABASE_BINDING)?;
@@ -1018,22 +1064,23 @@ pub(super) async fn remote_computer_session_create(
     let inserted = worker::query!(
         &database,
         "INSERT INTO remote_computer_sessions
-         (session_id, device_id, client_id, user_id, mobile_token_hash, state, created_at, expires_at, closed_at)
-         SELECT ?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, NULL
+         (session_id, device_id, client_id, user_id, mobile_token_hash, state, created_at, expires_at, closed_at,
+          allow_display, allow_input, allow_clipboard, allow_file_transfer, allow_audio)
+         SELECT ?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, NULL, ?8, ?9, ?10, ?11, ?12
          WHERE EXISTS (
                  SELECT 1 FROM remote_computer_clients c
                  JOIN remote_computers d
                    ON d.device_id = c.device_id AND d.user_id = c.user_id
                  WHERE c.client_id = ?3 AND c.device_id = ?2 AND c.user_id = ?4
-                   AND c.client_token_hash = ?10 AND c.revoked_at IS NULL
+                   AND c.client_token_hash = ?15 AND c.revoked_at IS NULL
                    AND d.revoked_at IS NULL
                )
            AND (SELECT COUNT(*) FROM remote_computer_sessions
                 WHERE user_id = ?4 AND device_id = ?2 AND client_id = ?3
-                  AND state <> 'closed' AND expires_at > ?6) < ?8
+                  AND state <> 'closed' AND expires_at > ?6) < ?13
            AND (SELECT COUNT(*) FROM remote_computer_sessions
                 WHERE user_id = ?4 AND device_id = ?2
-                  AND state <> 'closed' AND expires_at > ?6) < ?9",
+                  AND state <> 'closed' AND expires_at > ?6) < ?14",
         &session_id,
         &device_id,
         &input.client_id,
@@ -1041,6 +1088,11 @@ pub(super) async fn remote_computer_session_create(
         &mobile_token_hash,
         now,
         expires_at,
+        input.permissions.display as i64,
+        input.permissions.input as i64,
+        input.permissions.clipboard as i64,
+        input.permissions.file_transfer as i64,
+        input.permissions.audio as i64,
         REMOTE_SESSION_MAX_PER_CLIENT,
         REMOTE_SESSION_MAX_PER_DEVICE,
         &candidate_hash
@@ -1085,7 +1137,13 @@ pub(super) async fn remote_computer_session_create(
         "createdAt": now,
         "expiresAt": expires_at,
         "state": "pending",
-        "permissions": {"display": true, "input": true, "clipboard": false, "fileTransfer": false, "audio": false},
+        "permissions": {
+            "display": input.permissions.display,
+            "input": input.permissions.input,
+            "clipboard": input.permissions.clipboard,
+            "fileTransfer": input.permissions.file_transfer,
+            "audio": input.permissions.audio,
+        },
         "iceServers": remote_ice_servers(&context.env),
     }))?
     .with_headers(auth_headers()))

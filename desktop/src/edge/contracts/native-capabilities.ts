@@ -8,6 +8,8 @@ export const NATIVE_DESKTOP_METHODS = {
   submitFeedback: { args: 'object' },
   getDesktopEnvironment: { args: 'none' },
   getRustDeskStatus: { args: 'none' },
+  createRustDeskHostSessionCredential: { args: 'object' },
+  revokeRustDeskHostSessionCredential: { args: 'object' },
   openRustDeskSession: { args: 'object' },
   sendRustDeskCommand: { args: 'object' },
   closeRustDeskSession: { args: 'object' },
