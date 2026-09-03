@@ -1,0 +1,108 @@
+name: Provision Fabushi MCP CI test account
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ACCOUNT_USERNAME: fabushi_mcp_ci_test
+  ACCOUNT_EMAIL: fabushi-mcp-ci-test@internal.ombhrum.com
+  PLATFORM_WORKER_DIR: third_party/mahayana/mahayana-rs/mahayana-platform-worker
+
+jobs:
+  provision:
+    name: Provision ordinary production Fabushi account
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+      FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+
+    steps:
+      - name: Checkout protected source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Require managed credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF:-}" = refs/heads/main
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -n "${FABUSHI_CI_TEST_PASSWORD:-}"
+          if (( ${#FABUSHI_CI_TEST_PASSWORD} < 11 )); then
+            echo 'FABUSHI_CI_TEST_PASSWORD must contain at least 11 characters.' >&2
+            exit 1
+          fi
+
+      - name: Derive a normal PBKDF2 credential without exposing the password
+        id: credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          node <<'NODE'
+          const crypto = require('node:crypto');
+          const fs = require('node:fs');
+          const password = process.env.FABUSHI_CI_TEST_PASSWORD || '';
+          if (password.length < 11) throw new Error('managed test password must contain at least 11 characters');
+          const salt = crypto.randomBytes(16);
+          const hash = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+          const encode = (value) => value.toString('base64url');
+          const escapeSql = (value) => String(value).replaceAll("'", "''");
+          const username = escapeSql(process.env.ACCOUNT_USERNAME);
+          const email = escapeSql(process.env.ACCOUNT_EMAIL);
+          const encodedSalt = escapeSql(encode(salt));
+          const encodedHash = escapeSql(encode(hash));
+          const sql = `
+          INSERT INTO users
+            (id, user_no, username, email, password_hash, salt, iterations, algo,
+             email_verified, membership_type, created_at)
+          SELECT COALESCE(MAX(id), 10000) + 1,
+                 COALESCE(MAX(id), 10000) + 1,
+                 '${username}', '${email}', '${encodedHash}', '${encodedSalt}',
+                 100000, 'PBKDF2-SHA256', 0, 'trial', datetime('now')
+          FROM users
+          WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = '${username}');
+          UPDATE users
+             SET password_hash = '${encodedHash}', salt = '${encodedSalt}',
+                 iterations = 100000, algo = 'PBKDF2-SHA256'
+           WHERE username = '${username}';
+          DELETE FROM account_password_credentials
+           WHERE user_id = (SELECT CAST(id AS TEXT) FROM users WHERE username = '${username}');
+          INSERT OR REPLACE INTO email_username_mapping (email, username, user_id)
+          SELECT '${email}', '${username}', id FROM users WHERE username = '${username}';
+          `;
+          fs.writeFileSync(process.env.RUNNER_TEMP + '/provision-mcp-ci-account.sql', sql, { mode: 0o600 });
+          NODE
+
+      - name: Capture production account database recovery bookmark
+        working-directory: ${{ env.PLATFORM_WORKER_DIR }}
+        shell: bash
+        run: npx --yes wrangler@4 d1 time-travel info ACCOUNT_DB --json > "$RUNNER_TEMP/account-db-recovery-bookmark.json"
+
+      - name: Provision the ordinary account in production D1
+        working-directory: ${{ env.PLATFORM_WORKER_DIR }}
+        shell: bash
+        run: npx --yes wrangler@4 d1 execute ACCOUNT_DB --remote --file "$RUNNER_TEMP/provision-mcp-ci-account.sql"
+
+      - name: Verify the account through the public login API
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(jq -cn --arg username "$ACCOUNT_USERNAME" --arg password "$FABUSHI_CI_TEST_PASSWORD" --arg deviceId "provision-${GITHUB_RUN_ID}" '{username:$username,password:$password,deviceId:$deviceId}')"
+          response="$(curl --fail --silent --show-error -H 'content-type: application/json' --data "$body" https://api.ombhrum.com/api/auth/login)"
+          jq -e --arg username "$ACCOUNT_USERNAME" '.user.id != null and .user.username == $username and (.accessToken|type)=="string" and (.refreshToken|type)=="string"' <<<"$response" >/dev/null
+          echo 'Production Fabushi MCP CI account login verified.'
+
+      - name: Remove local credential material
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/provision-mcp-ci-account.sql"

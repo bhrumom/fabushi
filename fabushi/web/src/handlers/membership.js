@@ -1,6 +1,7 @@
 import { jsonResponse } from '../utils/response.js';
 import { verifyToken } from '../../auth-utils.js';
 import { isTestAccountRequest, testAccountUser } from '../utils/test-account.js';
+import { hasUnlimitedUsage, isAdminUser } from '../utils/helpers.js';
 
 async function resolveTokenUser(db, tokenData) {
   if (tokenData?.userId !== undefined && tokenData?.userId !== null && db.getUserById) {
@@ -33,7 +34,28 @@ async function requireMembershipUser(request, env, db) {
   return { user, tokenData };
 }
 
-function buildMembershipPayload(user) {
+function buildMembershipPayload(user, env) {
+  const unlimitedUsage = hasUnlimitedUsage(user, env);
+  if (unlimitedUsage) {
+    const admin = isAdminUser(user, env);
+    return {
+      username: user.username,
+      userId: user.id,
+      userNo: user.user_no ?? user.id ?? null,
+      email: user.email,
+      role: admin ? 'super_admin' : 'user',
+      unlimitedUsage: true,
+      membership: {
+        isActive: true,
+        active: true,
+        type: 'lifetime',
+        expiresAt: null,
+        daysLeft: null,
+      },
+      hasStripeCustomer: false,
+    };
+  }
+
   const now = new Date();
   const membershipExpiry = user.membership_expires_at
     ? new Date(user.membership_expires_at)
@@ -67,6 +89,8 @@ async function testAccountMembershipResponse(request, env) {
     userNo: user.userNo,
     email: user.email,
     isTestAccount: true,
+    unlimitedUsage: true,
+    role: 'user',
     membership: {
       isActive: true,
       active: true,
@@ -84,7 +108,7 @@ export async function handleCheckMembershipStatus(request, env, db) {
   if (testAccount) return testAccount;
   const result = await requireMembershipUser(request, env, db);
   if (result.response) return result.response;
-  return jsonResponse(buildMembershipPayload(result.user));
+  return jsonResponse(buildMembershipPayload(result.user, env));
 }
 
 // 检查会员状态 - 支付宝端点
@@ -93,5 +117,5 @@ export async function handleCheckAlipayMembership(request, env, db) {
   if (testAccount) return testAccount;
   const result = await requireMembershipUser(request, env, db);
   if (result.response) return result.response;
-  return jsonResponse(buildMembershipPayload(result.user));
+  return jsonResponse(buildMembershipPayload(result.user, env));
 }

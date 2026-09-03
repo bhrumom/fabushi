@@ -1,22 +1,45 @@
-use mahayana_core::RuntimeConfig;
+use base64::Engine as _;
+use mahayana_core::{ModelProviderMode, RuntimeConfig};
 use mahayana_feature_host::FeatureHostController;
 use mahayana_host::HostCreateConfig;
 use mahayana_host_protocol::{
     ApprovalResolution, FeatureCommand, HostConfig, HostMode, SurfacePlatform,
 };
 use mahayana_js_runtime::{DeepSeekJsHost, scan_package_compatibility};
-use mahayana_plugin_runtime::{ExternalReleaseManifest, PermissionManager, PluginInstaller};
+use mahayana_native_engine::ProcessExecution;
+use mahayana_plugin_runtime::{
+    ExternalReleaseManifest, InstalledPluginPointer, PermissionManager, PluginInstaller,
+    PluginState,
+};
 use mahayana_product::MahayanaProductClient;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppHostFeatureMode {
     Production,
     Test,
 }
+
+const TEST_MARKETPLACE_PLUGINS: &[(&str, &str, &str)] = &[
+    ("global-dharma", "全球法布施", "任务、日志与部署"),
+    ("faliu-flashcards", "法流记忆卡", "经文牌组与复习"),
+    ("platform-publish", "平台发布", "内容发布与自动化"),
+    (
+        "hermes-installer",
+        "Hermes Installer",
+        "插件安装与运行时管理",
+    ),
+    ("bot-father", "Bot Father", "创建和管理机器人"),
+    (
+        "chatgpt-auto-confirm",
+        "ChatGPT Auto Confirm",
+        "受控自动确认与任务协作",
+    ),
+];
 
 impl From<AppHostFeatureMode> for HostMode {
     fn from(value: AppHostFeatureMode) -> Self {
@@ -57,6 +80,7 @@ pub struct HostResponse {
 
 pub struct AppHost {
     app_data_dir: PathBuf,
+    feature_mode: AppHostFeatureMode,
     product: MahayanaProductClient,
     js: Mutex<DeepSeekJsHost>,
     feature: FeatureHostController,
@@ -81,8 +105,16 @@ impl AppHost {
             feature_root.join("account-session.json"),
             feature_root.join("product-surface.json"),
         );
+        product
+            .bootstrap_ci_test_account_session()
+            .map_err(|error| {
+                AppHostError::Operation(format!(
+                    "GitHub Actions test-account bootstrap failed: {error}"
+                ))
+            })?;
         Ok(Self {
             app_data_dir,
+            feature_mode,
             product,
             js: Mutex::new(
                 DeepSeekJsHost::new()
@@ -114,43 +146,18 @@ impl AppHost {
         match method {
             "host.platform" => Ok(json!({"platform": host_platform()})),
             method if method.starts_with("feature.") => self.handle_feature(method, params),
-            "marketplace.browse" => {
-                let query = params.get("query").and_then(Value::as_str);
-                let requested_platform = params
-                    .get("platform")
-                    .and_then(Value::as_str)
-                    .unwrap_or(host_platform());
-                let marketplace_platform = match requested_platform {
-                    "ios" | "android" => "mobile",
-                    other => other,
-                };
-                self.product
-                    .marketplace_browse(query, Some(marketplace_platform))
-                    .map_err(|error| AppHostError::Operation(error.to_string()))
-            }
-            "marketplace.release" => {
-                let plugin_id = string_param(&params, "pluginId")?;
-                let version = string_param(&params, "version")?;
-                self.product
-                    .marketplace_release_metadata(plugin_id, version)
-                    .map_err(|error| AppHostError::Operation(error.to_string()))
-            }
             "platform.request" => self
                 .product
                 .execute("mahayana.platform.request", &params)
                 .map_err(|error| AppHostError::Operation(error.to_string())),
-            "plugin.install" => self.install_plugin(params),
-            "plugin.uninstall" => self.uninstall_plugin(params),
-            "plugin.active" => self.active_plugin(params),
             "plugin.permissions" => self.plugin_permissions(params),
             "plugin.permission.grant" => self.set_permission(params, true),
             "plugin.permission.revoke" => self.set_permission(params, false),
             "plugin.compatibility" => self.plugin_compatibility(params),
-            "plugin.uiDocument" => self.plugin_ui_document(params),
             "runtime.start" => self.start_runtime(params),
             "runtime.stop" => self.stop_runtime(params),
             "runtime.tools" => self.runtime_tools(),
-            "runtime.callTool" => self.call_runtime_tool(params),
+            "runtime.call" => self.runtime_call(params),
             other => Err(AppHostError::InvalidRequest(format!(
                 "unknown method {other}"
             ))),
@@ -162,12 +169,18 @@ impl AppHost {
             "feature.info" => serde_json::to_value(self.feature.info())
                 .map_err(|error| AppHostError::Operation(error.to_string())),
             "feature.execute" => self.feature_execute(params),
-            "feature.receive" => self.feature_receive(),
+            "feature.receive" => self.feature_receive(params),
             "feature.approval.resolve" => self.feature_resolve_approval(params),
             "feature.interrupt" => self.feature_interrupt(params),
             "feature.auth.status" => self
                 .feature
                 .auth_status()
+                .map_err(|error| AppHostError::Operation(error.to_string())),
+            // Main-process only: this method is intentionally absent from the
+            // renderer IPC allowlist. It never returns a refresh credential.
+            "feature.auth.deviceAgentSession" => self
+                .product
+                .device_agent_session()
                 .map_err(|error| AppHostError::Operation(error.to_string())),
             "feature.auth.providers" => self
                 .feature
@@ -187,6 +200,15 @@ impl AppHost {
                 .feature
                 .logout()
                 .map_err(|error| AppHostError::Operation(error.to_string())),
+            "feature.marketplace.browse" => self.marketplace_browse(params),
+            "feature.marketplace.release" => self.marketplace_release(params),
+            "feature.plugin.install" => self.install_plugin(params),
+            "feature.plugin.uninstall" => self.uninstall_plugin(params),
+            "feature.plugin.active" => self.active_plugin(params),
+            "feature.plugin.listInstalled" => self.list_installed_plugins(),
+            "feature.plugin.uiDocument" => self.plugin_ui_document(params),
+            "feature.messaging.execute" => self.feature_messaging_execute(params),
+            "feature.messaging.blob.read" => self.feature_messaging_blob_read(params),
             "feature.messaging.access.issue" => self.feature_messaging_access_issue(params),
             other => Err(AppHostError::InvalidRequest(format!(
                 "unknown feature method {other}"
@@ -206,10 +228,15 @@ impl AppHost {
         serde_json::to_value(accepted).map_err(|error| AppHostError::Operation(error.to_string()))
     }
 
-    fn feature_receive(&self) -> Result<Value, AppHostError> {
+    fn feature_receive(&self, params: Value) -> Result<Value, AppHostError> {
+        let timeout_ms = params
+            .get("timeoutMs")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            .min(30_000);
         let event = self
             .feature
-            .receive()
+            .receive_with_timeout(Duration::from_millis(timeout_ms))
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
         serde_json::to_value(event).map_err(|error| AppHostError::Operation(error.to_string()))
     }
@@ -232,6 +259,38 @@ impl AppHost {
             .interrupt(operation_id)
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
         Ok(Value::Null)
+    }
+
+    fn feature_messaging_execute(&self, params: Value) -> Result<Value, AppHostError> {
+        let request_id = string_param(&params, "requestId")?.to_string();
+        let envelope = params
+            .get("envelope")
+            .cloned()
+            .ok_or_else(|| AppHostError::InvalidRequest("envelope is required".into()))?;
+        let envelopes = self
+            .feature
+            .execute_messaging_sync(request_id, envelope)
+            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        Ok(json!({"envelopes": envelopes}))
+    }
+
+    fn feature_messaging_blob_read(&self, params: Value) -> Result<Value, AppHostError> {
+        let blob_id = string_param(&params, "blobId")?;
+        let offset = params.get("offset").and_then(Value::as_u64).unwrap_or(0);
+        let length = params
+            .get("length")
+            .and_then(Value::as_u64)
+            .unwrap_or(1024 * 1024)
+            .clamp(1, 1024 * 1024);
+        let (metadata, bytes) = self
+            .feature
+            .read_messaging_blob_range(blob_id, offset, length)
+            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        Ok(json!({
+            "metadata": metadata,
+            "offset": offset,
+            "dataBase64": base64::engine::general_purpose::STANDARD.encode(bytes),
+        }))
     }
 
     fn feature_messaging_access_issue(&self, params: Value) -> Result<Value, AppHostError> {
@@ -299,6 +358,74 @@ impl AppHost {
             .map_err(|error| AppHostError::Operation(error.to_string()))
     }
 
+    fn marketplace_browse(&self, params: Value) -> Result<Value, AppHostError> {
+        let query = params.get("query").and_then(Value::as_str);
+        if self.feature_mode == AppHostFeatureMode::Test {
+            let term = query.unwrap_or_default().trim().to_lowercase();
+            let plugins = TEST_MARKETPLACE_PLUGINS
+                .iter()
+                .filter_map(|(plugin_id, display_name, description)| {
+                    let searchable =
+                        format!("{plugin_id} {display_name} {description}").to_lowercase();
+                    if !term.is_empty() && !searchable.contains(&term) {
+                        return None;
+                    }
+                    Some(json!({
+                        "pluginId": plugin_id,
+                        "displayName": display_name,
+                        "description": description,
+                        "latestVersion": "1.0.0",
+                        "platforms": ["desktop"],
+                        "releaseStatus": "approved"
+                    }))
+                })
+                .collect::<Vec<_>>();
+            return Ok(json!({"plugins": plugins}));
+        }
+        let requested_platform = params
+            .get("platform")
+            .and_then(Value::as_str)
+            .unwrap_or(host_platform());
+        let marketplace_platform = match requested_platform {
+            "ios" | "android" => "mobile",
+            other => other,
+        };
+        self.product
+            .marketplace_browse(query, Some(marketplace_platform))
+            .map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    fn marketplace_release(&self, params: Value) -> Result<Value, AppHostError> {
+        let plugin_id = string_param(&params, "pluginId")?;
+        let version = string_param(&params, "version")?;
+        if self.feature_mode == AppHostFeatureMode::Test {
+            if !TEST_MARKETPLACE_PLUGINS
+                .iter()
+                .any(|(candidate, _, _)| *candidate == plugin_id)
+            {
+                return Err(AppHostError::Operation(format!(
+                    "test marketplace plugin {plugin_id} was not found"
+                )));
+            }
+            return Ok(json!({
+                "pluginId": plugin_id,
+                "version": version,
+                "releaseStatus": "approved",
+                "releaseManifest": {
+                    "schemaVersion": 1,
+                    "protocol": "mahayana.external-release.v1",
+                    "pluginId": plugin_id,
+                    "version": version,
+                    "permissions": [],
+                    "artifacts": []
+                }
+            }));
+        }
+        self.product
+            .marketplace_release_metadata(plugin_id, version)
+            .map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
     fn plugin_root(&self) -> PathBuf {
         self.app_data_dir.join("plugins")
     }
@@ -323,6 +450,52 @@ impl AppHost {
             .get("platform")
             .and_then(Value::as_str)
             .unwrap_or(host_platform());
+        if self.feature_mode == AppHostFeatureMode::Test {
+            if !TEST_MARKETPLACE_PLUGINS
+                .iter()
+                .any(|(candidate, _, _)| *candidate == release.plugin_id)
+            {
+                return Err(AppHostError::Operation(format!(
+                    "test marketplace plugin {} was not found",
+                    release.plugin_id
+                )));
+            }
+            let plugin_root = self.plugin_root().join(&release.plugin_id);
+            let installed_dir = plugin_root
+                .join("versions")
+                .join(&release.version)
+                .join("test-ui");
+            std::fs::create_dir_all(&installed_dir)
+                .map_err(|error| AppHostError::Operation(error.to_string()))?;
+            let display_name = TEST_MARKETPLACE_PLUGINS
+                .iter()
+                .find(|(candidate, _, _)| *candidate == release.plugin_id)
+                .map(|(_, display_name, _)| *display_name)
+                .unwrap_or(release.plugin_id.as_str());
+            let html = format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>{display_name}</title></head><body><main><h1>{display_name}</h1><p>Installed from the deterministic Mahayana Marketplace test backend.</p></main></body></html>"
+            );
+            std::fs::write(installed_dir.join("index.html"), html)
+                .map_err(|error| AppHostError::Operation(error.to_string()))?;
+            let pointer = InstalledPluginPointer {
+                plugin_id: release.plugin_id.clone(),
+                version: release.version.clone(),
+                artifact_id: "test-ui".to_string(),
+                artifact_sha256: "0".repeat(64),
+                runtime: "local-web".to_string(),
+                entry: Some("index.html".to_string()),
+                requested_permissions: release.permissions.clone(),
+                installed_path: installed_dir.to_string_lossy().into_owned(),
+            };
+            std::fs::create_dir_all(&plugin_root)
+                .map_err(|error| AppHostError::Operation(error.to_string()))?;
+            let active = serde_json::to_vec_pretty(&pointer)
+                .map_err(|error| AppHostError::Operation(error.to_string()))?;
+            std::fs::write(plugin_root.join("active.json"), active)
+                .map_err(|error| AppHostError::Operation(error.to_string()))?;
+            return serde_json::to_value(pointer)
+                .map_err(|error| AppHostError::Operation(error.to_string()));
+        }
         let preferred: &[&str] = match platform {
             "ios" | "android" | "mobile" => &[
                 "deepseek-js",
@@ -385,6 +558,38 @@ impl AppHost {
             .active(plugin_id)
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
         serde_json::to_value(pointer).map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    fn list_installed_plugins(&self) -> Result<Value, AppHostError> {
+        let root = self.plugin_root();
+        let installer = self.installer()?;
+        let mut plugins = Vec::new();
+        let entries = match std::fs::read_dir(&root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(json!({"plugins": plugins}));
+            }
+            Err(error) => return Err(AppHostError::Operation(error.to_string())),
+        };
+        for entry in entries {
+            let entry = entry.map_err(|error| AppHostError::Operation(error.to_string()))?;
+            if !entry
+                .file_type()
+                .map_err(|error| AppHostError::Operation(error.to_string()))?
+                .is_dir()
+            {
+                continue;
+            }
+            let plugin_id = entry.file_name().to_string_lossy().into_owned();
+            if let Some(pointer) = installer
+                .active(&plugin_id)
+                .map_err(|error| AppHostError::Operation(error.to_string()))?
+            {
+                plugins.push(pointer);
+            }
+        }
+        plugins.sort_by(|left, right| left.plugin_id.cmp(&right.plugin_id));
+        Ok(json!({"plugins": plugins}))
     }
 
     fn plugin_permissions(&self, params: Value) -> Result<Value, AppHostError> {
@@ -460,20 +665,27 @@ impl AppHost {
             .ok_or_else(|| {
                 AppHostError::Operation(format!("plugin {plugin_id} is not installed"))
             })?;
-        if pointer.runtime != "local-web" {
-            return Err(AppHostError::Operation(format!(
-                "plugin runtime {} does not expose a local Web document",
-                pointer.runtime
-            )));
-        }
         let root = std::fs::canonicalize(&pointer.installed_path)
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
-        let entry = pointer
+        let requested_entry = pointer
             .entry
             .as_deref()
-            .unwrap_or("index.html")
-            .trim_start_matches("./");
-        let relative = PathBuf::from(entry);
+            .map(|value| value.trim_start_matches("./"));
+        let entry = requested_entry
+            .filter(|value| value.to_ascii_lowercase().ends_with(".html"))
+            .map(str::to_string)
+            .or_else(|| {
+                ["ui/index.html", "web/index.html", "index.html"]
+                    .into_iter()
+                    .find(|candidate| root.join(candidate).is_file())
+                    .map(str::to_string)
+            })
+            .ok_or_else(|| {
+                AppHostError::Operation(format!(
+                    "installed plugin {plugin_id} does not expose an HTML Mini App entry"
+                ))
+            })?;
+        let relative = PathBuf::from(&entry);
         if relative.components().any(|component| {
             matches!(
                 component,
@@ -557,16 +769,36 @@ impl AppHost {
         serde_json::to_value(tools).map_err(|error| AppHostError::Operation(error.to_string()))
     }
 
-    fn call_runtime_tool(&self, params: Value) -> Result<Value, AppHostError> {
+    fn runtime_call(&self, params: Value) -> Result<Value, AppHostError> {
+        let plugin_id = string_param(&params, "pluginId")?;
         let name = string_param(&params, "name")?;
         let arguments = params
             .get("arguments")
             .cloned()
             .unwrap_or_else(|| json!({}));
-        self.js
+        if !arguments.is_object() {
+            return Err(AppHostError::InvalidRequest(
+                "runtime.call arguments must be an object".into(),
+            ));
+        }
+        let host = self
+            .js
             .lock()
-            .map_err(|_| AppHostError::Operation("JavaScript host lock poisoned".into()))?
-            .call_tool_json(name, &arguments)
+            .map_err(|_| AppHostError::Operation("JavaScript host lock poisoned".into()))?;
+        if host.plugin_state(plugin_id) != Some(PluginState::Active) {
+            return Err(AppHostError::Operation(format!(
+                "plugin {plugin_id} runtime is not active"
+            )));
+        }
+        let tools = host
+            .registered_tools()
+            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        if !tools.iter().any(|candidate| candidate == name) {
+            return Err(AppHostError::Operation(format!(
+                "tool {name} is not registered in the active runtime"
+            )));
+        }
+        host.call_tool_json(name, &arguments)
             .map_err(|error| AppHostError::Operation(error.to_string()))
     }
 }
@@ -596,19 +828,53 @@ fn create_feature_host(
 ) -> Result<FeatureHostController, AppHostError> {
     let root = feature_host_root(app_data_dir);
     std::fs::create_dir_all(&root).map_err(|error| AppHostError::Operation(error.to_string()))?;
+    let provider =
+        std::env::var("MAHAYANA_INFERENCE_PROVIDER").unwrap_or_else(|_| "fabushi".into());
+    let mut runtime = RuntimeConfig {
+        data_dir: Some(root.join("runtime")),
+        ..RuntimeConfig::default()
+    };
+    if provider == "openrouter" {
+        runtime.model.provider = ModelProviderMode::UserConfiguredRemote;
+        runtime.model.base_url = Some("https://openrouter.ai/api/v1".into());
+        runtime.model.model =
+            std::env::var("MAHAYANA_OPENROUTER_MODEL").unwrap_or_else(|_| "openai/gpt-5.2".into());
+        runtime.model.credential_key = Some("inference/openrouter/api-key".into());
+    } else if provider == "claude-code" {
+        runtime.model.provider = ModelProviderMode::UserConfiguredRemote;
+        runtime.model.base_url = Some("https://api.anthropic.com/v1".into());
+        runtime.model.model =
+            std::env::var("MAHAYANA_CLAUDE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".into());
+        runtime.model.credential_key = Some("inference/claude/api-key".into());
+    }
     let host_config = HostCreateConfig {
-        runtime: RuntimeConfig {
-            data_dir: Some(root.join("runtime")),
-            ..RuntimeConfig::default()
-        },
+        runtime,
         product_session_path: Some(root.join("account-session.json")),
         product_surface_state_path: Some(root.join("product-surface.json")),
         automation_path: Some(root.join("automations.json")),
-        // The desktop FeatureHost owns its isolated Codex home. Inheriting the
-        // user's global MCP servers makes unrelated host-specific tools (for
-        // example ChatGPT's node_repl) mandatory for every Fabushi contact.
-        // Installed Fabushi plugins are loaded from this runtime's own config.
+        use_codex_account: std::env::var("MAHAYANA_USE_CODEX_ACCOUNT").as_deref() == Ok("1"),
+        codex_home: std::env::var_os("MAHAYANA_CODEX_HOME").map(PathBuf::from),
+        model_bearer_token: std::env::var("MAHAYANA_MODEL_BEARER_TOKEN")
+            .ok()
+            .filter(|value| !value.is_empty()),
+        model_wire_api: match provider.as_str() {
+            "openrouter" => mahayana_model::responses::ResponsesWireApi::ChatCompletions,
+            "claude-code" => mahayana_model::responses::ResponsesWireApi::AnthropicMessages,
+            _ => mahayana_model::responses::ResponsesWireApi::Responses,
+        },
         inherit_installed_plugins: Some(false),
+        process_execution: if std::env::var("MAHAYANA_SANDBOX_RUNTIME").as_deref()
+            == Ok("local-docker")
+        {
+            ProcessExecution::LocalDocker {
+                docker_path: std::env::var_os("MAHAYANA_DOCKER_BIN")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("docker")),
+                image: std::env::var("MAHAYANA_DOCKER_IMAGE").unwrap_or_default(),
+            }
+        } else {
+            ProcessExecution::Host
+        },
         ..HostCreateConfig::default()
     };
     FeatureHostController::create_with_host_config(

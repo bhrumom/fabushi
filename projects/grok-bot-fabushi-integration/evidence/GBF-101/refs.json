@@ -1,0 +1,29 @@
+{
+  "merge_base": "fb3ac82da93de473a372f489cf8ecb7f348c87d0",
+  "refs": [
+    {
+      "name": "main",
+      "commit": "e621c65314319dab313f13a3bab0195f112ef66f",
+      "tree": "cd1fe891e103771a198c6fcf251fa174189b942e",
+      "author_date": "2026-08-22T08:26:21Z",
+      "commit_date": "2026-08-22T08:26:21Z",
+      "subject": "docs(governance): close FPG-004 global project IDs (#1997)"
+    },
+    {
+      "name": "latest-0.20",
+      "commit": "7174a70567ae98ef534b0eebcbe66935f1471cc1",
+      "tree": "20b5abfc13b1e21abecd72fcc4a816b3233e4431",
+      "author_date": "2026-08-16T21:16:14+08:00",
+      "commit_date": "2026-08-16T21:16:14+08:00",
+      "subject": "ci(auth): sync Apple Services ID into staging worker (#1945)"
+    },
+    {
+      "name": "legacy-0.16",
+      "commit": "a8bd854b512a3eaf20be9518767ab593724d67dc",
+      "tree": "a0f061511a387f5de543882d8109f0c64e26f4a3",
+      "author_date": "2026-08-15T18:13:18Z",
+      "commit_date": "2026-08-15T18:13:18Z",
+      "subject": "test(desktop): expect onboarding on first launch"
+    }
+  ]
+}

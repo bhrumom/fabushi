@@ -1,0 +1,56 @@
+name: GBF security closure
+
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/assert-gbf-security-closure.py'
+      - '.github/workflows/gbf-security-closure.yml'
+      - 'projects/grok-bot-fabushi-integration/**'
+      - 'desktop/electron/**'
+      - 'chatgpt-vps-control/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/assert-gbf-security-closure.py'
+      - '.github/workflows/gbf-security-closure.yml'
+      - 'projects/grok-bot-fabushi-integration/**'
+      - 'desktop/electron/**'
+      - 'chatgpt-vps-control/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+  workflow_dispatch:
+
+concurrency:
+  group: gbf-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  closure:
+    name: Threat provenance secret denial closure
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Verify threat, provenance and privacy boundaries
+        run: python3 .github/scripts/assert-gbf-security-closure.py
+      - name: Verify Electron denial, redaction and trace secrecy
+        run: node --test desktop/electron/edge-ipc.test.cjs desktop/electron/native-capability-handlers.test.cjs
+      - name: Install clean-room computer-control test dependencies
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts
+      - name: Verify browser target, reconnect and one-time sensitive input
+        working-directory: chatgpt-vps-control
+        run: node --test tests/browser-extension.test.js tests/browser-session.test.js tests/native-request-service.test.js tests/secure-input.test.js
+      - name: Audit production computer-control dependencies
+        working-directory: chatgpt-vps-control
+        run: npm audit --omit=dev

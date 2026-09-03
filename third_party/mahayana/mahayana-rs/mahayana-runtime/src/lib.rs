@@ -9,15 +9,8 @@ use fabushi_official_miniapps::OfficialMiniAppEngine;
 use fabushi_official_miniapps::app_definition;
 use fabushi_official_miniapps::home_html;
 use kernel_conversation::KernelConversationProvider;
-use mahayana_agent::AgentActivityStatus;
 use mahayana_agent::AgentBackend;
 use mahayana_agent::AgentError;
-use mahayana_agent::AgentEvent;
-use mahayana_agent::AgentEventSink;
-use mahayana_agent::AgentMessageRequest;
-use mahayana_agent::ApprovalResolution;
-use mahayana_agent::SharedAgentEventSink;
-use mahayana_agent::StartThreadRequest;
 use mahayana_agent_kernel_bridge::LegacyAgentKernelBridge;
 use mahayana_conversation::ConversationError;
 use mahayana_conversation::ConversationEventSink;
@@ -26,19 +19,14 @@ use mahayana_conversation::ProviderRegistry;
 use mahayana_conversation::ResolveApprovalRequest;
 use mahayana_conversation::SendMessageRequest;
 use mahayana_conversation::SharedConversationEventSink;
-use mahayana_core::AgentThreadId;
 use mahayana_core::ApprovalId;
 use mahayana_core::CONVERSATION_SCHEMA_VERSION;
 use mahayana_core::Conversation;
 use mahayana_core::ConversationId;
 use mahayana_core::MODEL_RUNTIME_VERSION;
-use mahayana_core::Message;
-use mahayana_core::MessageId;
-use mahayana_core::MessageRole;
 use mahayana_core::OperationId;
 use mahayana_core::PluginCommandDescriptor;
 use mahayana_core::RUNTIME_ABI_VERSION;
-use mahayana_core::RuntimeActivityStatus;
 use mahayana_core::RuntimeCommand;
 use mahayana_core::RuntimeConfig;
 use mahayana_core::RuntimeEvent;
@@ -53,15 +41,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
-use tokio::sync::Mutex as AsyncMutex;
 
 pub struct RuntimeBuilder {
     config: RuntimeConfig,
@@ -100,7 +82,7 @@ impl RuntimeBuilder {
             .config
             .data_dir
             .as_ref()
-            .map(|data_dir| data_dir.join("conversations").join("mahayana-ai.json"));
+            .map(|root| root.join("provider-neutral-assistant-transcript.json"));
         self.providers
             .register(Arc::new(KernelConversationProvider::new(
                 backend,
@@ -178,18 +160,12 @@ pub struct MahayanaRuntime {
     providers: Arc<ProviderRegistry>,
     agent_backend: Option<Arc<dyn AgentBackend>>,
     async_runtime: tokio::runtime::Runtime,
-    event_tx: Sender<RuntimeEventEnvelope>,
-    event_rx: Receiver<RuntimeEventEnvelope>,
-    session_generation: Arc<AtomicU64>,
+    event_tx: Sender<RuntimeEvent>,
+    event_rx: Receiver<RuntimeEvent>,
     operations: Arc<Mutex<HashMap<OperationId, String>>>,
     approvals: Arc<Mutex<HashMap<ApprovalId, String>>>,
     official_miniapps: Mutex<OfficialMiniAppEngine>,
     approved_local_plugin_tools: Mutex<HashSet<(String, String)>>,
-}
-
-struct RuntimeEventEnvelope {
-    generation: u64,
-    event: RuntimeEvent,
 }
 
 impl MahayanaRuntime {
@@ -222,7 +198,6 @@ impl MahayanaRuntime {
             return Err(RuntimeError::RemoteModelNotCompiled);
         }
 
-        let session_generation = Arc::new(AtomicU64::new(0));
         let (event_tx, event_rx) = crossbeam_channel::bounded(1024);
         let runtime = Self {
             config,
@@ -231,7 +206,6 @@ impl MahayanaRuntime {
             async_runtime,
             event_tx,
             event_rx,
-            session_generation,
             operations: Arc::new(Mutex::new(HashMap::new())),
             approvals: Arc::new(Mutex::new(HashMap::new())),
             official_miniapps: Mutex::new(OfficialMiniAppEngine::default()),
@@ -239,11 +213,8 @@ impl MahayanaRuntime {
         };
         runtime
             .event_tx
-            .send(RuntimeEventEnvelope {
-                generation: runtime.session_generation.load(Ordering::SeqCst),
-                event: RuntimeEvent::Ready {
-                    status: runtime.status(),
-                },
+            .send(RuntimeEvent::Ready {
+                status: runtime.status(),
             })
             .map_err(|_| RuntimeError::EventConsumerClosed)?;
         Ok(runtime)
@@ -263,46 +234,21 @@ impl MahayanaRuntime {
         }
     }
 
-    /// Reset all process-local conversation and Agent state before an account
-    /// logout or account switch. This prevents the next account from seeing
-    /// the previous account's prompt history, pending approvals, or session
-    /// context even though the host process remains alive.
+    /// Reset local conversation/Agent state when the authenticated product
+    /// account changes. This also drains queued events so a previous account's
+    /// reply cannot appear after the new account is ready.
     pub fn reset_session(&self) -> Result<(), RuntimeError> {
-        self.session_generation.fetch_add(1, Ordering::SeqCst);
-        let providers = self.providers.providers();
-        self.async_runtime.block_on(async move {
-            for provider in providers {
-                provider.reset_session().await?;
-            }
-            Ok::<(), ConversationError>(())
-        })?;
         if let Some(backend) = self.agent_backend.as_ref() {
             backend
                 .reset_session()
                 .map_err(|error| RuntimeError::AgentBackend(error.to_string()))?;
         }
+        for provider in self.providers.providers() {
+            self.async_runtime.block_on(provider.reset_session())?;
+        }
         lock(&self.operations)?.clear();
         lock(&self.approvals)?.clear();
-        self.approved_local_plugin_tools
-            .lock()
-            .map_err(|_| RuntimeError::Synchronization("plugin approval map poisoned".into()))?
-            .clear();
-        Ok(())
-    }
-
-    /// Switch the local conversation transcript used by the long-lived kernel
-    /// provider without carrying the previous account's session into the new
-    /// account. The path is deliberately optional so logout can detach local
-    /// persistence while retaining each account's on-disk history.
-    pub fn set_conversation_history_path(&self, path: Option<PathBuf>) -> Result<(), RuntimeError> {
-        self.session_generation.fetch_add(1, Ordering::SeqCst);
-        let providers = self.providers.providers();
-        self.async_runtime.block_on(async move {
-            for provider in providers {
-                provider.set_history_path(path.clone()).await?;
-            }
-            Ok::<(), ConversationError>(())
-        })?;
+        while self.event_rx.try_recv().is_ok() {}
         Ok(())
     }
 
@@ -645,11 +591,9 @@ impl MahayanaRuntime {
                 .then_with(|| left.id.cmp(&right.id))
         });
         for (provider, message) in degraded {
-            let generation = self.session_generation.load(Ordering::SeqCst);
-            let _ = self.event_tx.send(RuntimeEventEnvelope {
-                generation,
-                event: RuntimeEvent::ProviderDegraded { provider, message },
-            });
+            let _ = self
+                .event_tx
+                .send(RuntimeEvent::ProviderDegraded { provider, message });
         }
         Ok(conversations)
     }
@@ -667,7 +611,6 @@ impl MahayanaRuntime {
         let provider = self.providers.for_conversation(&conversation_id)?;
         let provider_key = provider.key().to_string();
         let operation_id = OperationId::generated("operation");
-        let generation = self.session_generation.load(Ordering::SeqCst);
         lock(&self.operations)?.insert(operation_id.clone(), provider_key.clone());
         let request = SendMessageRequest {
             conversation_id,
@@ -680,11 +623,8 @@ impl MahayanaRuntime {
             provider_key,
             event_tx: self.event_tx.clone(),
             approvals: Arc::clone(&self.approvals),
-            generation,
-            session_generation: Arc::clone(&self.session_generation),
         });
         let event_tx = self.event_tx.clone();
-        let session_generation = Arc::clone(&self.session_generation);
         let operations = Arc::clone(&self.operations);
         let task_operation_id = operation_id.clone();
         self.async_runtime.spawn(async move {
@@ -704,9 +644,7 @@ impl MahayanaRuntime {
                     message: error.to_string(),
                 },
             };
-            if session_generation.load(Ordering::SeqCst) == generation {
-                let _ = event_tx.send(RuntimeEventEnvelope { generation, event });
-            }
+            let _ = event_tx.send(event);
             if let Ok(mut operations) = operations.lock() {
                 operations.remove(&task_operation_id);
             }
@@ -715,18 +653,10 @@ impl MahayanaRuntime {
     }
 
     pub fn receive(&self, timeout: Duration) -> Result<Option<RuntimeEvent>, RuntimeError> {
-        let generation = self.session_generation.load(Ordering::SeqCst);
-        loop {
-            match self.event_rx.recv_timeout(timeout) {
-                Ok(envelope) if envelope.generation == generation => {
-                    return Ok(Some(envelope.event));
-                }
-                Ok(_) => continue,
-                Err(RecvTimeoutError::Timeout) => return Ok(None),
-                Err(RecvTimeoutError::Disconnected) => {
-                    return Err(RuntimeError::EventConsumerClosed);
-                }
-            }
+        match self.event_rx.recv_timeout(timeout) {
+            Ok(event) => Ok(Some(event)),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => Err(RuntimeError::EventConsumerClosed),
         }
     }
 }
@@ -774,289 +704,22 @@ fn lock<T>(mutex: &Mutex<T>) -> Result<std::sync::MutexGuard<'_, T>, RuntimeErro
 
 struct RuntimeEventSink {
     provider_key: String,
-    event_tx: Sender<RuntimeEventEnvelope>,
+    event_tx: Sender<RuntimeEvent>,
     approvals: Arc<Mutex<HashMap<ApprovalId, String>>>,
-    generation: u64,
-    session_generation: Arc<AtomicU64>,
 }
 
 impl ConversationEventSink for RuntimeEventSink {
     fn emit(&self, event: RuntimeEvent) -> Result<(), ConversationError> {
-        if self.session_generation.load(Ordering::SeqCst) != self.generation {
-            return Ok(());
-        }
         if let RuntimeEvent::ApprovalRequested { approval_id, .. } = &event {
             self.approvals
                 .lock()
                 .map_err(|_| ConversationError::Provider("approval map poisoned".to_string()))?
                 .insert(approval_id.clone(), self.provider_key.clone());
         }
-        if self.session_generation.load(Ordering::SeqCst) != self.generation {
-            return Ok(());
-        }
         self.event_tx
-            .send(RuntimeEventEnvelope {
-                generation: self.generation,
-                event,
-            })
+            .send(event)
             .map_err(|_| ConversationError::EventConsumerClosed)
     }
-}
-
-struct AgentConversationProvider {
-    backend: Arc<dyn AgentBackend>,
-    thread_id: AsyncMutex<Option<AgentThreadId>>,
-    history: Arc<Mutex<Vec<Message>>>,
-}
-
-impl AgentConversationProvider {
-    fn new(backend: Arc<dyn AgentBackend>) -> Self {
-        Self {
-            backend,
-            thread_id: AsyncMutex::new(None),
-            history: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    async fn thread_id(
-        &self,
-        conversation_id: &ConversationId,
-    ) -> Result<AgentThreadId, ConversationError> {
-        let mut thread_id = self.thread_id.lock().await;
-        if let Some(thread_id) = thread_id.as_ref() {
-            return Ok(thread_id.clone());
-        }
-        let created = self
-            .backend
-            .start_thread(StartThreadRequest {
-                conversation_id: conversation_id.clone(),
-            })
-            .await
-            .map_err(agent_error)?;
-        *thread_id = Some(created.clone());
-        Ok(created)
-    }
-}
-
-#[async_trait::async_trait]
-impl ConversationProvider for AgentConversationProvider {
-    fn key(&self) -> &'static str {
-        "codex"
-    }
-
-    async fn list_conversations(&self) -> Result<Vec<Conversation>, ConversationError> {
-        Ok(vec![Conversation::codex_assistant()])
-    }
-
-    async fn history(
-        &self,
-        conversation_id: &ConversationId,
-        limit: u32,
-    ) -> Result<Vec<Message>, ConversationError> {
-        let history = self
-            .history
-            .lock()
-            .map_err(|_| ConversationError::Provider("history mutex poisoned".to_string()))?;
-        let matching: Vec<_> = history
-            .iter()
-            .filter(|message| &message.conversation_id == conversation_id)
-            .cloned()
-            .collect();
-        let start = matching.len().saturating_sub(limit as usize);
-        Ok(matching[start..].to_vec())
-    }
-
-    async fn send_message(
-        &self,
-        request: SendMessageRequest,
-        events: SharedConversationEventSink,
-    ) -> Result<(), ConversationError> {
-        let thread_id = self.thread_id(&request.conversation_id).await?;
-        let user_message = Message {
-            id: request
-                .client_message_id
-                .as_deref()
-                .and_then(|id| MessageId::new(id).ok())
-                .unwrap_or_else(|| MessageId::generated("message")),
-            conversation_id: request.conversation_id.clone(),
-            role: MessageRole::User,
-            text: request.text.clone(),
-            created_at_ms: now_ms(),
-            metadata: Value::Null,
-        };
-        if !request.hidden {
-            self.history
-                .lock()
-                .map_err(|_| ConversationError::Provider("history mutex poisoned".to_string()))?
-                .push(user_message);
-        }
-        let agent_sink: SharedAgentEventSink = Arc::new(AgentEventBridge {
-            conversation_id: request.conversation_id.clone(),
-            operation_id: request.operation_id.clone(),
-            events,
-            history: Arc::clone(&self.history),
-        });
-        self.backend
-            .send_message(
-                AgentMessageRequest {
-                    thread_id,
-                    conversation_id: request.conversation_id,
-                    operation_id: request.operation_id,
-                    text: request.text,
-                    client_message_id: request.client_message_id,
-                },
-                agent_sink,
-            )
-            .await
-            .map_err(agent_error)
-    }
-
-    async fn interrupt(&self, operation_id: &OperationId) -> Result<(), ConversationError> {
-        self.backend
-            .interrupt(operation_id)
-            .await
-            .map_err(agent_error)
-    }
-
-    async fn resolve_approval(
-        &self,
-        request: ResolveApprovalRequest,
-    ) -> Result<(), ConversationError> {
-        self.backend
-            .resolve_approval(ApprovalResolution {
-                approval_id: request.approval_id,
-                decision: request.decision,
-                payload: request.payload,
-            })
-            .await
-            .map_err(agent_error)
-    }
-
-    async fn reset_session(&self) -> Result<(), ConversationError> {
-        self.backend.reset_session().map_err(agent_error)?;
-        *self.thread_id.lock().await = None;
-        self.history
-            .lock()
-            .map_err(|_| ConversationError::Provider("history mutex poisoned".to_string()))?
-            .clear();
-        Ok(())
-    }
-}
-
-struct AgentEventBridge {
-    conversation_id: ConversationId,
-    operation_id: OperationId,
-    events: SharedConversationEventSink,
-    history: Arc<Mutex<Vec<Message>>>,
-}
-
-impl AgentEventSink for AgentEventBridge {
-    fn emit(&self, event: AgentEvent) -> Result<(), AgentError> {
-        let event = match event {
-            AgentEvent::MessageDelta { delta } => RuntimeEvent::MessageDelta {
-                operation_id: self.operation_id.clone(),
-                conversation_id: self.conversation_id.clone(),
-                delta,
-            },
-            AgentEvent::MessageCompleted { mut message } => {
-                message.conversation_id = self.conversation_id.clone();
-                self.history
-                    .lock()
-                    .map_err(|_| AgentError::Backend("history mutex poisoned".to_string()))?
-                    .push(message.clone());
-                RuntimeEvent::MessageCompleted {
-                    operation_id: self.operation_id.clone(),
-                    message,
-                }
-            }
-            AgentEvent::TokenUsageUpdated { usage } => RuntimeEvent::ModelUsageUpdated {
-                operation_id: self.operation_id.clone(),
-                usage,
-            },
-            AgentEvent::ToolProgress { message } => RuntimeEvent::PluginProgress {
-                operation_id: self.operation_id.clone(),
-                plugin_id: "codex".into(),
-                tool: String::new(),
-                progress: 0,
-                total: 0,
-                message,
-            },
-            AgentEvent::Activity { activity } => RuntimeEvent::AgentActivity {
-                operation_id: self.operation_id.clone(),
-                step_id: activity.step_id,
-                kind: activity.kind,
-                title: activity.title,
-                detail: activity.detail,
-                status: match activity.status {
-                    AgentActivityStatus::Running => RuntimeActivityStatus::Running,
-                    AgentActivityStatus::Completed => RuntimeActivityStatus::Completed,
-                    AgentActivityStatus::Failed => RuntimeActivityStatus::Failed,
-                },
-                metadata: activity.metadata,
-            },
-            AgentEvent::ApprovalRequested {
-                approval_id,
-                title,
-                details,
-            } => RuntimeEvent::ApprovalRequested {
-                operation_id: self.operation_id.clone(),
-                approval_id,
-                title,
-                details,
-            },
-        };
-        self.events
-            .emit(event)
-            .map_err(|error| AgentError::Backend(error.to_string()))
-    }
-}
-
-fn agent_error(error: AgentError) -> ConversationError {
-    match error {
-        AgentError::UsageLimitExceeded(message) => ConversationError::UsageLimitExceeded(message),
-        error => ConversationError::Provider(error.to_string()),
-    }
-}
-
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(i64::MAX)
-}
-
-const MAX_PERSISTED_CONVERSATION_MESSAGES: usize = 500;
-
-fn load_conversation_history(path: Option<&Path>) -> Vec<Message> {
-    let Some(path) = path else {
-        return Vec::new();
-    };
-    let Ok(bytes) = std::fs::read(path) else {
-        return Vec::new();
-    };
-    let Ok(mut messages) = serde_json::from_slice::<Vec<Message>>(&bytes) else {
-        return Vec::new();
-    };
-    messages.retain(|message| !message.text.trim().is_empty());
-    if messages.len() > MAX_PERSISTED_CONVERSATION_MESSAGES {
-        messages.drain(0..messages.len() - MAX_PERSISTED_CONVERSATION_MESSAGES);
-    }
-    messages
-}
-
-fn persist_conversation_history(path: Option<&Path>, messages: &[Message]) -> Result<(), String> {
-    let Some(path) = path else {
-        return Ok(());
-    };
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let temp = path.with_extension("json.tmp");
-    let data = serde_json::to_vec_pretty(messages).map_err(|error| error.to_string())?;
-    std::fs::write(&temp, data).map_err(|error| error.to_string())?;
-    std::fs::rename(&temp, path).map_err(|error| error.to_string())
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1133,8 +796,17 @@ fn local_plugin_commands(plugin_id: Option<&str>) -> Vec<PluginCommandDescriptor
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use mahayana_agent::AgentEvent;
+    use mahayana_agent::AgentMessageRequest;
+    use mahayana_agent::ApprovalResolution;
+    use mahayana_agent::SharedAgentEventSink;
+    use mahayana_agent::StartThreadRequest;
+    use mahayana_core::AgentThreadId;
     use mahayana_core::ApprovalDecision;
     use mahayana_core::CODEX_ASSISTANT_CONVERSATION_ID;
+    use mahayana_core::Message;
+    use mahayana_core::MessageId;
+    use mahayana_core::MessageRole;
 
     struct EchoAgent;
 
@@ -1162,7 +834,7 @@ mod tests {
                     conversation_id: request.conversation_id,
                     role: MessageRole::Assistant,
                     text: format!("大乘：{}", request.text),
-                    created_at_ms: now_ms(),
+                    created_at_ms: 0,
                     metadata: Value::Null,
                 },
             })

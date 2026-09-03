@@ -1,0 +1,54 @@
+name: Mahayana Recovery Conformance
+
+on:
+  pull_request:
+    paths:
+      - third_party/mahayana/mahayana-rs/mahayana-kernel/**
+      - third_party/mahayana/mahayana-rs/mahayana-orchestrator/**
+      - third_party/mahayana/mahayana-rs/mahayana-native-engine/**
+      - .github/workflows/mahayana-recovery-conformance.yml
+  push:
+    branches:
+      - main
+    paths:
+      - third_party/mahayana/mahayana-rs/mahayana-kernel/**
+      - third_party/mahayana/mahayana-rs/mahayana-orchestrator/**
+      - third_party/mahayana/mahayana-rs/mahayana-native-engine/**
+      - .github/workflows/mahayana-recovery-conformance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mahayana-recovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-recovery-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+
+      - name: Install Linux native dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
+
+      - name: Verify recovery, snapshot, and supervision contracts
+        shell: bash
+        run: |
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all -- --check
+          cargo test --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml \
+            -p mahayana-orchestrator -p mahayana-kernel -p mahayana-native-engine
+          cargo clippy --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml \
+            -p mahayana-orchestrator -p mahayana-native-engine --all-targets -- -D warnings

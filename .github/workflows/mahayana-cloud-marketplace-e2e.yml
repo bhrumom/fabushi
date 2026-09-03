@@ -26,7 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CARGO_INCREMENTAL: 1
+      # This job compiles both Worker and native Mahayana graphs. Incremental
+      # artifacts are not reused inside the immutable CI run and can consume
+      # several additional GiB on GitHub-hosted runners.
+      CARGO_INCREMENTAL: 0
       CARGO_PROFILE: ci
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
@@ -42,6 +45,22 @@ jobs:
         shell: bash
         run: echo "MAHAYANA_HOME=$RUNNER_TEMP/mahayana-home" >> "$GITHUB_ENV"
 
+      - name: Reclaim Ubuntu runner disk for marketplace E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Disk before reclaim:"
+          df -h /
+          # Marketplace E2E uses Node, Rust, Wrangler and native Linux libs; it
+          # does not use the preinstalled Android, .NET or Haskell toolchains.
+          # Reclaim those hosted-runner images before restoring the Rust cache
+          # so the native host build cannot fail with ENOSPC late in the run.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          docker system prune -af >/dev/null 2>&1 || true
+          sudo apt-get clean
+          echo "Disk after reclaim:"
+          df -h /
+
       - name: Require deployment credentials
         shell: bash
         run: |
@@ -55,11 +74,23 @@ jobs:
         with:
           node-version: 22
 
+      - name: Test public marketplace artifact gateway contract
+        run: node --test examples/mahayana-cloud-marketplace/marketplace-e2e-artifact-worker.test.mjs
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
+
+      - name: Install Linux native capture/input dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
 
       - name: Restore Marketplace Rust cache
         uses: Swatinem/rust-cache@v2
@@ -101,14 +132,14 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          cargo test --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client 2>&1 \
+          cargo test --features mahayana-cli/codex-compat --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client 2>&1 \
             | tee artifacts/marketplace-validation/cargo-test.log
 
       - name: Build Mahayana CLI E2E binary
         shell: bash
         run: |
           set -o pipefail
-          cargo build --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli 2>&1 \
+          cargo build --features mahayana-cli/codex-compat --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli 2>&1 \
             | tee artifacts/marketplace-validation/mahayana-cli-build.log
 
       - name: Upload marketplace validation diagnostics
@@ -180,16 +211,17 @@ jobs:
           package_sha="$(sha256sum "$source_archive" | awk '{print $1}')"
           package_size="$(stat -c '%s' "$source_archive")"
 
-          # Reuse the existing development R2 bucket and development Worker
-          # proxy instead of allocating a new Worker for every E2E artifact.
-          # This keeps the test genuinely external/HTTPS without consuming the
-          # account's finite Worker-script quota.
-          artifact_key="e2e/marketplace/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/plugin.tar.gz"
+          # Reuse the already-deployed development Worker. The artifact key
+          # is under its explicitly public `public/` prefix, so this E2E flow
+          # needs no per-run Worker and remains within the account's quota.
+          artifact_key="public/e2e/marketplace/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/plugin.tar.gz"
           npx --yes wrangler@4 r2 object put "bushi-dev/$artifact_key" \
             --file "$source_archive" --remote \
             2>&1 | tee "$RUNNER_TEMP/artifact-r2-put.log"
           encoded_key="$(jq -rn --arg value "$artifact_key" '$value|@uri')"
-          artifact_url="https://fabushi-flutter-web-dev.bhrumom.workers.dev/r2?file=$encoded_key"
+          artifact_gateway="https://fabushi-flutter-web-dev.bhrumom.workers.dev/r2"
+          artifact_url="${artifact_gateway}?file=${encoded_key}"
+          printf 'reused_artifact_gateway=%s\n' "$artifact_gateway" > "$RUNNER_TEMP/artifact-gateway-deploy.log"
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 \
             "$artifact_url" > "$RUNNER_TEMP/served-plugin.tar.gz"
           test "$(sha256sum "$RUNNER_TEMP/served-plugin.tar.gz" | awk '{print $1}')" = "$package_sha"
@@ -529,6 +561,7 @@ jobs:
             ${{ runner.temp }}/platform-deploy.log
             ${{ runner.temp }}/platform-health.json
             ${{ runner.temp }}/artifact-r2-put.log
+            ${{ runner.temp }}/artifact-gateway-deploy.log
             ${{ runner.temp }}/source-plugin.tar.gz
             ${{ runner.temp }}/served-plugin.tar.gz
             ${{ runner.temp }}/publish.log

@@ -26,6 +26,25 @@ function platformOrigin(env) {
   return url.origin;
 }
 
+async function fetchPlatform(env, request) {
+  // Prefer Cloudflare's internal service binding. If that binding is temporarily
+  // unavailable, retry the same request against the canonical HTTPS origin so
+  // browser login does not fail closed with a gateway-generated 502.
+  if (env.MAHAYANA_PLATFORM && typeof env.MAHAYANA_PLATFORM.fetch === 'function') {
+    const directRequest = request.clone();
+    try {
+      return await env.MAHAYANA_PLATFORM.fetch(request);
+    } catch (error) {
+      console.warn(
+        'Mahayana platform service binding failed; retrying canonical HTTPS origin:',
+        error?.message || error,
+      );
+    }
+    return fetch(directRequest, { redirect: 'manual' });
+  }
+  return fetch(request, { redirect: 'manual' });
+}
+
 export async function routePlatformGateway({ pathname, request, env }) {
   if (!isCanonicalPlatformPath(pathname)) return null;
 
@@ -35,7 +54,7 @@ export async function routePlatformGateway({ pathname, request, env }) {
     // Manual redirect handling is essential for OAuth/browser-first auth: the
     // user's browser, not this gateway Worker, must follow provider redirects.
     const upstreamRequest = new Request(target.toString(), request);
-    const upstream = await fetch(upstreamRequest, { redirect: 'manual' });
+    const upstream = await fetchPlatform(env, upstreamRequest);
     const headers = new Headers(upstream.headers);
     headers.set('X-Fabushi-Control-Plane', 'mahayana-platform');
     return new Response(upstream.body, {

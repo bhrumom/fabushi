@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "models": {
+    "sessionLifecycle": "third_party/mahayana/mahayana-rs/mahayana-kernel/src/resilience.rs::SessionRegistry",
+    "operationLifecycle": "third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs::operations",
+    "hostContract": "third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs::FeatureCommand/HostEvent",
+    "agentRuntime": "third_party/mahayana/mahayana-rs/mahayana-runtime/src/lib.rs::MahayanaRuntime",
+    "computerTarget": "third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs::ComputerControlTarget",
+    "rendererHostEdge": "desktop/electron/mahayana-edge.cjs::MAHAYANA_EDGE",
+    "nativeCapabilityEdge": "desktop/electron/native-edge.cjs::NATIVE_EDGE",
+    "conversation": "third_party/mahayana/mahayana-rs/mahayana-conversation/src/lib.rs",
+    "permissions": "third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs::ProductHostSettings"
+  },
+  "forbiddenParallelAuthorities": [
+    "frontend/apps/web/src/lib/grok-agent",
+    "frontend/apps/web/src/lib/grok-bot",
+    "vendor/grok-bot-0.20.0"
+  ]
+}

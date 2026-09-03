@@ -1,0 +1,22 @@
+{
+  "latest-0.20": {
+    "ref": "7174a70567ae98ef534b0eebcbe66935f1471cc1",
+    "tree": "20b5abfc13b1e21abecd72fcc4a816b3233e4431",
+    "entries": 13717,
+    "type_counts": {
+      "blob": 13716,
+      "commit": 1
+    },
+    "sha256": "e0d4e95de6438797b507a85a3a97612555547a9970de588c9244918c99b24562"
+  },
+  "legacy-0.16": {
+    "ref": "a8bd854b512a3eaf20be9518767ab593724d67dc",
+    "tree": "a0f061511a387f5de543882d8109f0c64e26f4a3",
+    "entries": 13694,
+    "type_counts": {
+      "blob": 13693,
+      "commit": 1
+    },
+    "sha256": "e764c1b0000a464993cc234703814cad3ea4417b21371d1efafe4ada836440d5"
+  }
+}

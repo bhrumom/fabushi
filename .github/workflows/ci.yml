@@ -5,6 +5,8 @@ on:
     branches:
       - main
   merge_group:
+    types:
+      - checks_requested
     branches:
       - main
   push:
@@ -13,7 +15,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -33,45 +35,173 @@ jobs:
       mcp: ${{ steps.classify.outputs.mcp }}
       workflows: ${{ steps.classify.outputs.workflows }}
       electron: ${{ steps.classify.outputs.electron }}
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      unknown: ${{ steps.classify.outputs.unknown }}
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 1
       - id: classify
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
-          FORCE_ALL: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' }}
-        run: |
-          set -euo pipefail
-          if [ "$FORCE_ALL" = "true" ] || [ -z "$BASE_SHA" ]; then
-            frontend=true
-            worker=true
-            mcp=true
-            workflows=true
-            electron=true
-          else
-            git fetch --no-tags --depth=1 origin "$BASE_SHA"
-            changed="$(git diff --name-only "$BASE_SHA" HEAD)"
-            printf '%s\n' "$changed" >> "$GITHUB_STEP_SUMMARY"
-            frontend=false
-            worker=false
-            mcp=false
-            workflows=false
-            electron=false
-            if printf '%s\n' "$changed" | grep -Eq '^(frontend/|contracts/automation/cross-platform-journeys\.json$)'; then frontend=true; fi
-            if printf '%s\n' "$changed" | grep -Eq '^(fabushi/web/|third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/)'; then worker=true; fi
-            if printf '%s\n' "$changed" | grep -Eq '^(\.agents/plugins/|ai-backend/|frontend/packages/mcp-app-sdk/|plugins/)'; then mcp=true; fi
-            if printf '%s\n' "$changed" | grep -Eq '^\.github/workflows/'; then workflows=true; fi
-            if printf '%s\n' "$changed" | grep -Eq '^(\.github/scripts/(assert-electron-feature-host-bridge\.sh|assert-feature-command-router-coverage\.py|assert-fabushi-desktop-architecture\.py)$|desktop/electron/|desktop/src/|frontend/apps/host/|frontend/apps/web/src/app/(host|remote-computer)/|frontend/apps/web/src/lib/(fabushi-runtime|mahayana-host|remote-computer)/|third_party/mahayana/mahayana-rs/(mahayana-agent-codex/|mahayana-app-host/|mahayana-computer/|mahayana-feature-host/|mahayana-host-protocol/))'; then electron=true; fi
-          fi
-          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
-          echo "worker=$worker" >> "$GITHUB_OUTPUT"
-          echo "mcp=$mcp" >> "$GITHUB_OUTPUT"
-          echo "workflows=$workflows" >> "$GITHUB_OUTPUT"
-          echo "electron=$electron" >> "$GITHUB_OUTPUT"
-          printf 'frontend=%s worker=%s mcp=%s workflows=%s electron=%s\n' "$frontend" "$worker" "$mcp" "$workflows" "$electron" >> "$GITHUB_STEP_SUMMARY"
+        name: Classify changed paths without checkout
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const eventName = context.eventName;
+
+            const domainMatchers = {
+              frontend: [
+                /^frontend\//,
+                /^contracts\/automation\/cross-platform-journeys\.json$/,
+              ],
+              worker: [
+                /^fabushi\/web\//,
+                /^third_party\/mahayana\/mahayana-rs\/mahayana-platform-worker\//,
+              ],
+              mcp: [
+                /^\.agents\/plugins\//,
+                /^ai-backend\//,
+                /^frontend\/packages\/mcp-app-sdk\//,
+                /^plugins\//,
+              ],
+              workflows: [
+                /^\.github\/workflows\//,
+              ],
+              electron: [
+                /^\.github\/scripts\/(assert-electron-feature-host-bridge\.sh|assert-feature-command-router-coverage\.py|assert-fabushi-desktop-architecture\.py|assert-gbf-runtime-convergence\.py|assert-gbf-canonical-data-model\.py)$/,
+                /^chatgpt-vps-control\//,
+                /^desktop\/electron\//,
+                /^desktop\/src\//,
+                /^frontend\/apps\/host\//,
+                /^frontend\/apps\/web\/src\/app\/(host|remote-computer)\//,
+                /^frontend\/apps\/web\/src\/lib\/(fabushi-runtime|mahayana-host|remote-computer)\//,
+                /^third_party\/mahayana\/mahayana-rs\/mahayana-web\//,
+                /^third_party\/mahayana\/mahayana-rs\/(mahayana-agent-codex\/|mahayana-app-host\/|mahayana-computer\/|mahayana-feature-host\/|mahayana-host-protocol\/|mahayana-runtime\/)/,
+              ],
+            };
+
+            const isDocsSafe = (filename) =>
+              /^projects\//.test(filename) ||
+              /^docs\//.test(filename) ||
+              /^\.agent\/skills\//.test(filename) ||
+              /^[^/]+\.md$/.test(filename) ||
+              /^\.github\/[^/]+\.md$/.test(filename);
+
+            async function compareFiles(base, head) {
+              if (!base || !head || /^0+$/.test(base)) {
+                return { files: [], forceAll: true, reason: 'missing or zero base/head SHA' };
+              }
+              const { data } = await github.rest.repos.compareCommitsWithBasehead({
+                owner,
+                repo,
+                basehead: `${base}...${head}`,
+                per_page: 100,
+              });
+              const files = (data.files || []).map((file) => file.filename);
+              const forceAll = files.length >= 300;
+              return {
+                files,
+                forceAll,
+                reason: forceAll ? 'compare API reached the 300-file safety limit' : '',
+              };
+            }
+
+            let files = [];
+            let forceAll = false;
+            let forceReason = '';
+            let source = eventName;
+
+            if (eventName === 'workflow_dispatch') {
+              forceAll = true;
+              forceReason = 'manual dispatch intentionally validates all canonical domains';
+            } else if (eventName === 'pull_request') {
+              const pullNumber = context.payload.pull_request.number;
+              const changed = await github.paginate(github.rest.pulls.listFiles, {
+                owner,
+                repo,
+                pull_number: pullNumber,
+                per_page: 100,
+              });
+              files = changed.map((file) => file.filename);
+              source = `pull_request #${pullNumber}`;
+            } else if (eventName === 'merge_group') {
+              const mergeGroup = context.payload.merge_group || {};
+              const compared = await compareFiles(mergeGroup.base_sha, mergeGroup.head_sha);
+              files = compared.files;
+              forceAll = compared.forceAll;
+              forceReason = compared.reason;
+              source = `merge_group ${mergeGroup.base_sha || '?'}..${mergeGroup.head_sha || '?'}`;
+            } else if (eventName === 'push') {
+              const compared = await compareFiles(context.payload.before, context.payload.after || context.sha);
+              files = compared.files;
+              forceAll = compared.forceAll;
+              forceReason = compared.reason;
+              source = `push ${context.payload.before || '?'}..${context.payload.after || context.sha}`;
+            } else {
+              forceAll = true;
+              forceReason = `unsupported event ${eventName}`;
+            }
+
+            const selected = {
+              frontend: false,
+              worker: false,
+              mcp: false,
+              workflows: false,
+              electron: false,
+            };
+
+            const matchesAnyDomain = (filename) => {
+              let matched = false;
+              for (const [domain, matchers] of Object.entries(domainMatchers)) {
+                if (matchers.some((matcher) => matcher.test(filename))) {
+                  selected[domain] = true;
+                  matched = true;
+                }
+              }
+              return matched;
+            };
+
+            const unknownFiles = [];
+            if (!forceAll) {
+              for (const filename of files) {
+                const matched = matchesAnyDomain(filename);
+                if (!matched && !isDocsSafe(filename)) {
+                  unknownFiles.push(filename);
+                }
+              }
+
+              if (unknownFiles.length > 0) {
+                forceAll = true;
+                forceReason = `unclassified non-document paths: ${unknownFiles.join(', ')}`;
+              }
+            }
+
+            if (forceAll) {
+              for (const domain of Object.keys(selected)) {
+                selected[domain] = true;
+              }
+            }
+
+            const docsOnly = !forceAll && files.length > 0 && files.every(isDocsSafe);
+            const unknown = unknownFiles.length > 0;
+
+            for (const [domain, value] of Object.entries(selected)) {
+              core.setOutput(domain, value ? 'true' : 'false');
+            }
+            core.setOutput('docs_only', docsOnly ? 'true' : 'false');
+            core.setOutput('unknown', unknown ? 'true' : 'false');
+
+            await core.summary
+              .addHeading('CI impact classification')
+              .addTable([
+                [{ data: 'Source', header: true }, source],
+                [{ data: 'Changed files', header: true }, String(files.length)],
+                [{ data: 'Docs-only fast path', header: true }, String(docsOnly)],
+                [{ data: 'Unknown non-doc paths', header: true }, String(unknown)],
+                [{ data: 'Force all canonical domains', header: true }, String(forceAll)],
+                [{ data: 'Reason', header: true }, forceReason || 'exact changed-path classification'],
+              ])
+              .addRaw(`\nfrontend=${selected.frontend} worker=${selected.worker} mcp=${selected.mcp} workflows=${selected.workflows} electron=${selected.electron}\n`)
+              .addDetails('Changed files', files.length ? files.map((file) => `- ${file}`).join('\n') : '(none)')
+              .write();
 
   frontend:
     name: Frontend checks
@@ -90,6 +220,7 @@ jobs:
           sparse-checkout: |
             /frontend/**
             /contracts/automation/cross-platform-journeys.json
+            /fabushi/web/mahayana-wasm/**
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -110,8 +241,17 @@ jobs:
         with:
           path: ${{ runner.temp }}/fabushi-pnpm-store
           key: frontend-pnpm-${{ runner.os }}-v2-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+      - name: Restore Next.js incremental build cache
+        uses: actions/cache@v4
+        with:
+          path: frontend/apps/web/.next/cache
+          key: frontend-next-${{ runner.os }}-v1-${{ hashFiles('frontend/pnpm-lock.yaml') }}-${{ hashFiles('frontend/apps/web/**', 'frontend/packages/**') }}
+          restore-keys: |
+            frontend-next-${{ runner.os }}-v1-${{ hashFiles('frontend/pnpm-lock.yaml') }}-
       - name: Typecheck frontend workspace
         run: pnpm typecheck
+      - name: Verify AI discovery contracts
+        run: pnpm --filter @fabushi/web test:ai-discovery
       - name: Build official web frontend
         run: pnpm build:web
 
@@ -138,6 +278,13 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
+      - name: Restore Fabushi Pay Rust build state
+        uses: actions/cache@v4
+        with:
+          path: third_party/mahayana/mahayana-rs/mahayana-pay-worker/target
+          key: worker-rust-${{ runner.os }}-v1-${{ hashFiles('third_party/mahayana/mahayana-rs/mahayana-pay-worker/Cargo.lock', 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/Cargo.toml') }}
+          restore-keys: |
+            worker-rust-${{ runner.os }}-v1-
       - name: Check Worker JavaScript syntax
         shell: bash
         run: |
@@ -255,31 +402,54 @@ jobs:
             /.github/scripts/assert-electron-feature-host-bridge.sh
             /.github/scripts/assert-feature-command-router-coverage.py
             /.github/scripts/assert-fabushi-desktop-architecture.py
+            /.github/scripts/assert-gbf-runtime-convergence.py
+            /.github/scripts/assert-gbf-canonical-data-model.py
             /.github/scripts/assert-native-capability-semantics.py
             /.github/scripts/assert-auth-entry-flow.py
             /.github/scripts/assert-bot-mark-motion.py
             /.github/scripts/assert-product-ui-contracts.py
             /.github/scripts/build-offline-asr-engine.mjs
+            /.github/scripts/verify-packaged-computer-control.mjs
+            /.github/workflows/apple-store-delivery.yml
+            /.github/workflows/ci.yml
+            /.github/workflows/computer-control-security.yml
+            /.github/workflows/electron-desktop.yml
+            /.github/workflows/electron-macos-hot-package.yml
+            /.github/workflows/native-electron-release.yml
+            /.github/workflows/platform-control-plane.yml
+            /chatgpt-vps-control/**
             /desktop/electron/offline-asr-engine.json
             /desktop/electron/offline-asr.cjs
             /.github/scripts/assert-native-desktop-edge-parity.py
             /desktop/electron/**
+            /desktop/package.json
+            /desktop/scripts/prepare-desktop-window-branding.mjs
+            /desktop/scripts/prepare-desktop-window-branding.test.mjs
             /desktop/src/edge/**
             /desktop/src/main.tsx
             /desktop/src/messaging-shell-v2.tsx
+            /desktop/src/miniapp-bot-projection.ts
+            /ai-backend/src/miniapp_marketplace_catalog.js
             /frontend/apps/host/**
             /frontend/apps/web/src/app/host/**
             /frontend/apps/web/src/app/remote-computer/**
             /frontend/apps/web/src/lib/fabushi-runtime/**
             /frontend/apps/web/src/lib/mahayana-host/**
             /frontend/apps/web/src/lib/remote-computer/**
+            /mobile/android/app/src/main/java/com/ombhrum/fabushi/RemoteComputerSurface.kt
+            /mobile/ios/Fabushi/RemoteComputerSurface.swift
             /third_party/mahayana/mahayana-rs/mahayana-app-host/Cargo.toml
             /third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs
+            /third_party/mahayana/mahayana-rs/mahayana-agent-codex/Cargo.toml
+            /third_party/mahayana/mahayana-rs/mahayana-agent-codex/src/**
             /third_party/mahayana/mahayana-rs/mahayana-computer/Cargo.toml
             /third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
             /third_party/mahayana/mahayana-rs/mahayana-feature-host/Cargo.toml
             /third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs
             /third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
+            /third_party/mahayana/mahayana-rs/mahayana-runtime/src/lib.rs
+            /third_party/mahayana/mahayana-rs/mahayana-kernel/src/resilience.rs
+            /third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0014_remote_computer_client_tokens.sql
             /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs
             /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/**
             /third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs
@@ -287,6 +457,10 @@ jobs:
         run: python3 .github/scripts/assert-feature-command-router-coverage.py
       - name: Guard the Fabushi desktop architecture
         run: python3 .github/scripts/assert-fabushi-desktop-architecture.py
+      - name: Verify single Mahayana Agent Tool runtime
+        run: python3 .github/scripts/assert-gbf-runtime-convergence.py
+      - name: Verify canonical Grok fusion data authorities
+        run: python3 .github/scripts/assert-gbf-canonical-data-model.py
       - name: Verify native desktop edge parity
         run: python3 .github/scripts/assert-native-desktop-edge-parity.py
       - name: Verify browser-first account login
@@ -297,8 +471,10 @@ jobs:
         run: python3 .github/scripts/assert-product-ui-contracts.py
       - name: Reject native capability stubs
         run: python3 .github/scripts/assert-native-capability-semantics.py
-      - name: Verify offline ASR provider contracts
-        run: node --test desktop/electron/offline-asr.test.cjs
+      - name: Verify Electron edge, host lifecycle, and offline ASR contracts
+        run: node --test desktop/scripts/prepare-desktop-window-branding.test.mjs desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/remote-device-agent-supervisor.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs chatgpt-vps-control/tests/fabushi-embedded-runtime-source.test.js chatgpt-vps-control/tests/fabushi-computer-policy.test.js
+      - name: Enforce Electron edge performance budget
+        run: node desktop/electron/edge-ipc.bench.cjs
       - name: Verify Electron to Rust Feature Host bridge
         shell: bash
         run: bash .github/scripts/assert-electron-feature-host-bridge.sh

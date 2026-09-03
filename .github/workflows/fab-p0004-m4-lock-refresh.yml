@@ -1,0 +1,45 @@
+name: FAB-P0004 M4 one-shot lock refresh
+
+on:
+  push:
+    branches:
+      - gbf/m4-computer-control-convergence-20260822
+    paths:
+      - .github/workflows/fab-p0004-m4-lock-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out M4 branch
+        uses: actions/checkout@v5
+        with:
+          ref: gbf/m4-computer-control-convergence-20260822
+          fetch-depth: 1
+      - name: Install Rust 1.92
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.92.0
+      - name: Regenerate Mahayana workspace lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd third_party/mahayana/mahayana-rs
+          cargo generate-lockfile
+      - name: Commit refreshed lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- third_party/mahayana/mahayana-rs/Cargo.lock; then
+            echo "Cargo.lock already current"
+            exit 0
+          fi
+          git config user.name "fabushi-ci"
+          git config user.email "fabushi-ci@users.noreply.github.com"
+          git add third_party/mahayana/mahayana-rs/Cargo.lock
+          git commit -m "chore(gbf): refresh M4 Mahayana lockfile"
+          git push origin HEAD:gbf/m4-computer-control-convergence-20260822

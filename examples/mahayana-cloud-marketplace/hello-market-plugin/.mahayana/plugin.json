@@ -3,8 +3,8 @@
   "supportedPlatforms": ["cli", "desktop"],
   "runtime": {
     "cli": {
-      "executable": "./server/index.mjs",
-      "args": []
+      "executable": "node",
+      "args": ["--experimental-strip-types", "./server/index.mjs"]
     }
   },
   "miniapp": {

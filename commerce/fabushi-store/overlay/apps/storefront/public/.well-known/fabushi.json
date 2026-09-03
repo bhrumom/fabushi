@@ -1,0 +1,27 @@
+{
+  "protocol": "fabushi.miniapp.manifest.v2",
+  "id": "fabushi-store",
+  "version": "1.0.0",
+  "name": "Fabushi 跨境商城",
+  "website": "https://shop.ombhrum.com",
+  "miniapp": {
+    "entry": "https://shop.ombhrum.com"
+  },
+  "agent": {
+    "transport": "mcp-http",
+    "endpoint": "https://shop.ombhrum.com/api/fabushi/mcp"
+  },
+  "capabilities": [
+    "commerce.catalog.read",
+    "commerce.cart.read",
+    "commerce.cart.write",
+    "commerce.checkout.prepare",
+    "commerce.order.place"
+  ],
+  "source": {
+    "repository": "https://github.com/bhrumom/fabushi",
+    "path": "commerce/fabushi-store",
+    "upstream": "https://github.com/medusajs/dtc-starter",
+    "upstreamCommit": "cb603dfda0a82e8bb5e81622f295e0ff90ac6913"
+  }
+}

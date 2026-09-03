@@ -6,6 +6,10 @@ on:
       - main
     paths:
       - frontend/**
+      - fabushi/web/mahayana-wasm/**
+      - third_party/mahayana/mahayana-rs/mahayana-web/**
+      - scripts/build-mahayana-wasm.sh
+      - scripts/build-official-miniapp-wasm.sh
       - .github/workflows/deploy-official-site-cloudflare.yml
   workflow_run:
     workflows:
@@ -41,6 +45,23 @@ jobs:
           sparse-checkout: |
             /frontend/**
             /contracts/automation/cross-platform-journeys.json
+            /fabushi/web/mahayana-wasm/**
+            /scripts/build-mahayana-wasm.sh
+            /scripts/build-official-miniapp-wasm.sh
+            /third_party/mahayana/mahayana-rs/**
+            /third_party/mahayana/codex-rs/**
+            /native/mahayana-messaging/**
+
+      - name: Set up Rust for the browser runtime
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install pinned wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
+
+      - name: Generate the Mahayana WebAssembly runtime
+        run: ./scripts/build-mahayana-wasm.sh
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4

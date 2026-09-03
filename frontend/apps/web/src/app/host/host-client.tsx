@@ -47,8 +47,9 @@ import type {
   WorkflowSummary,
   WorkflowTrigger,
 } from "../../lib/mahayana-host/contracts";
-import { isElectronMahayanaHostAvailable } from "../../lib/mahayana-host/electron-transport";
+import { ElectronMahayanaHostTransport, isElectronMahayanaHostAvailable } from "../../lib/mahayana-host/electron-transport";
 import { MockMahayanaHostTransport } from "../../lib/mahayana-host/mock-transport";
+import { WasmMahayanaHostTransport } from "../../lib/mahayana-host/wasm-transport";
 import type { MahayanaHostTransport } from "../../lib/mahayana-host/transport";
 import { MahayanaCoordinator } from "../../lib/mahayana-host/coordinator";
 import {
@@ -96,7 +97,6 @@ import {
 } from "./extension-studio";
 import {
   RichMessage,
-  SecretRequestDialog,
   TranscriptCardView,
   type TranscriptCardEntry,
 } from "./rich-transcript";
@@ -107,6 +107,7 @@ import {
   type BotMarkShape,
   type BotMarkState,
 } from "./bot-mark";
+import { marketplaceApps as marketplaceCatalog } from "../../lib/marketplace";
 import { GroupAvatarStack, GroupChatPanel, GroupEditor } from "./group-chat-panel";
 import { AgentWorkflowPanel } from "./agent-workflow-panel";
 
@@ -139,57 +140,12 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-const marketplaceApps = [
-  {
-    id: "global-dharma",
-    title: "全球法布施",
-    description: "管理法布施任务、日志与部署状态",
-    glyph: "法",
-    tone: "violet",
-  },
-  {
-    id: "faliu-flashcards",
-    title: "法流记忆卡",
-    description: "创建经文牌组并安排复习",
-    glyph: "记",
-    tone: "blue",
-  },
-  {
-    id: "platform-publish",
-    title: "平台发布",
-    description: "创建草稿并发布到内容平台",
-    glyph: "发",
-    tone: "orange",
-  },
-  {
-    id: "hermes-installer",
-    title: "Hermes 安装器",
-    description: "安装、启动并检查本地服务",
-    glyph: "H",
-    tone: "green",
-  },
-  {
-    id: "bot-father",
-    title: "Bot Father",
-    description: "创建和管理自动化机器人",
-    glyph: "B",
-    tone: "pink",
-  },
-  {
-    id: "mahayana-assistant",
-    title: "大乘助手",
-    description: "使用 Mahayana Runtime 完成复杂任务",
-    glyph: "乘",
-    tone: "cyan",
-  },
-  {
-    id: "chatgpt-auto-confirm",
-    title: "自动确认",
-    description: "管理长任务授权与执行队列",
-    glyph: "✓",
-    tone: "yellow",
-  },
-] as const;
+const marketplaceApps = marketplaceCatalog.map((app) => ({
+  ...app,
+  title: app.name,
+  description: app.subtitle,
+  glyph: app.icon,
+}));
 
 type FeatureStates = Record<
   MahayanaHostFeatureId,
@@ -206,46 +162,16 @@ type AgentActivity = {
 };
 
 type HostTranscriptEntry = {
-  id: string;
+  id?: string;
   kind: "message" | "action" | "thinking";
   role: "user" | "assistant";
   text: string;
   operationId?: string;
-  createdAtMs: number;
-  actionKind?: string;
-  actionTitle?: string;
-  actionDetail?: string;
-  actionStatus?: AgentActivity["status"];
   streaming?: boolean;
+  title?: string;
+  detail?: string;
+  status?: "running" | "completed" | "failed";
 };
-
-function upsertHostAction(
-  entries: HostTranscriptEntry[],
-  action: Omit<HostTranscriptEntry, "id" | "kind" | "role" | "text" | "createdAtMs"> & {
-    id: string;
-    text?: string;
-  },
-): HostTranscriptEntry[] {
-  const next = entries.filter(
-    (entry) => !(entry.kind === "thinking" && entry.operationId === action.operationId),
-  );
-  const entry: HostTranscriptEntry = {
-    id: action.id,
-    kind: "action",
-    role: "assistant",
-    text: action.text ?? "",
-    operationId: action.operationId,
-    createdAtMs: Date.now(),
-    actionKind: action.actionKind,
-    actionTitle: action.actionTitle,
-    actionDetail: action.actionDetail,
-    actionStatus: action.actionStatus,
-  };
-  const index = next.findIndex((candidate) => candidate.id === entry.id);
-  return index < 0
-    ? [...next, entry]
-    : next.map((candidate, candidateIndex) => candidateIndex === index ? entry : candidate);
-}
 
 type SettingsSection = "general" | "mcp" | "usage" | "updates";
 type ThemePreference = "system" | "light" | "dark";
@@ -277,6 +203,23 @@ const defaultPreferences: HostPreferences = {
   aiComputerControlEnabled: true,
   autoReviewRules: [],
 };
+
+function serializeProductHostSettings(settings: ProductHostSettings): string {
+  return JSON.stringify({
+    notifications: settings.notifications,
+    autoUpdateWhenIdle: settings.autoUpdateWhenIdle,
+    localExecution: settings.localExecution,
+    routeEgressLocally: settings.routeEgressLocally,
+    securityKeys: settings.securityKeys,
+    webauthnProxyEnabled: settings.webauthnProxyEnabled,
+    localToolPermission: settings.localToolPermission,
+    remoteControlEnabled: settings.remoteControlEnabled,
+    aiComputerControlEnabled: settings.aiComputerControlEnabled,
+    autoReviewRules: settings.autoReviewRules,
+    inferenceProvider: settings.inferenceProvider,
+    sandboxRuntime: settings.sandboxRuntime,
+  });
+}
 
 const modelOptions = [
   { value: "auto", label: "自动选择" },
@@ -450,21 +393,40 @@ interface ConfirmAction {
   action: () => void | Promise<void>;
 }
 
-export default function HostClient() {
+interface HostClientProps {
+  onAuthStateChange?: (state: AuthState) => void;
+}
+
+export default function HostClient({ onAuthStateChange }: HostClientProps) {
   const screenshotMode = new URLSearchParams(window.location.search).get("screenshot");
   const screenshotHasMiniApp = screenshotMode === "miniapp";
   const screenshotComputerOpen = ["computer", "running", "miniapp"].includes(screenshotMode ?? "");
-  const transport = useMemo<MahayanaHostTransport>(
-    () => new MockMahayanaHostTransport({ authenticated: screenshotMode !== null }),
-    [screenshotMode],
-  );
+  const configuredHostMode =
+    typeof process !== "undefined"
+      ? process.env.NEXT_PUBLIC_MAHAYANA_HOST_MODE
+      : undefined;
+  const hostTestMode =
+    configuredHostMode === "test" ||
+    (window as Window & { __FABUSHI_HOST_TEST__?: boolean }).__FABUSHI_HOST_TEST__ === true;
+  const transport = useMemo<MahayanaHostTransport>(() => {
+    // Screenshot fixtures intentionally stay deterministic, but the real desktop
+    // login surface must authenticate the same Electron/Rust Host that the
+    // Messenger shell will use after the handoff. Using the mock here makes the
+    // browser flow appear successful while the authoritative Host remains signed out.
+    if (screenshotMode !== null) return new MockMahayanaHostTransport({ authenticated: true });
+    // The standalone Host journey uses deterministic fixtures for auth and
+    // marketplace contract coverage. Production browser sessions always use
+    // Mahayana WebAssembly below, so this branch cannot hide a real runtime.
+    if (hostTestMode) return new MockMahayanaHostTransport({ authenticated: false });
+    if (isElectronMahayanaHostAvailable()) return new ElectronMahayanaHostTransport();
+    return new WasmMahayanaHostTransport();
+  }, [hostTestMode, screenshotMode]);
   const coordinator = useMemo(() => new MahayanaCoordinator(transport), [transport]);
   const requestSequence = useRef(0);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [hostStatus, setHostStatus] = useState("initializing");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<HostTranscriptEntry[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [installedMiniApps, setInstalledMiniApps] = useState<Set<string>>(
     () => new Set(screenshotHasMiniApp ? [defaultMiniAppId] : []),
   );
@@ -546,12 +508,20 @@ export default function HostClient() {
   const [marketplaceSearch, setMarketplaceSearch] = useState("");
   const [busyMiniApp, setBusyMiniApp] = useState<string | null>(null);
   const [auth, setAuth] = useState<AuthState | null>(null);
+  const authRef = useRef<AuthState | null>(null);
+  const commitAuth = useCallback((next: AuthState) => {
+    authRef.current = next;
+    setAuth(next);
+  }, []);
   const [authResolved, setAuthResolved] = useState(false);
   const [accountAvatarUrl, setAccountAvatarUrl] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [browserLoginAttempt, setBrowserLoginAttempt] = useState<BrowserLoginAttempt | null>(null);
   const [browserLoginWakeNonce, setBrowserLoginWakeNonce] = useState(0);
+  useEffect(() => {
+    if (authResolved && auth) onAuthStateChange?.(auth);
+  }, [auth, authResolved, onAuthStateChange]);
   const [onboardingStep, setOnboardingStep] = useState(() =>
     screenshotMode !== null || window.localStorage.getItem(ONBOARDING_COMPLETE_KEY) === "1"
       ? 3
@@ -618,6 +588,10 @@ export default function HostClient() {
   const [preferences, setPreferences] = useState<HostPreferences>(defaultPreferences);
   const [hostSettingsHydrated, setHostSettingsHydrated] = useState(false);
   const lastHostSettingsJsonRef = useRef("");
+  const hostRouterSettingsRef = useRef<Pick<ProductHostSettings, "inferenceProvider" | "sandboxRuntime">>({
+    inferenceProvider: "fabushi",
+    sandboxRuntime: "host",
+  });
   const [auditRecords, setAuditRecords] = useState<unknown[]>([]);
   const [auditAgentId, setAuditAgentId] = useState<string | null>(null);
   const [ruleDraft, setRuleDraft] = useState("");
@@ -647,9 +621,6 @@ export default function HostClient() {
   );
   const [updateState, setUpdateState] = useState<UpdateState>({ type: "loading" });
   const [transcriptCards, setTranscriptCards] = useState<TranscriptCardEntry[]>([]);
-  const [secretModalRequestId, setSecretModalRequestId] = useState<string | null>(null);
-  const [secretSubmittingId, setSecretSubmittingId] = useState<string | null>(null);
-  const [secretError, setSecretError] = useState<string | null>(null);
   const [automationName, setAutomationName] = useState("");
   const [automationPrompt, setAutomationPrompt] = useState("");
   const [automationSchedule, setAutomationSchedule] = useState("@daily");
@@ -671,99 +642,65 @@ export default function HostClient() {
   const notificationDeciderRef = useRef(new AgentNotificationPolicy());
   const notificationSnapshotsRef = useRef(new Map<string, AgentNotificationSnapshot>());
   const notificationOperationAgentsRef = useRef(new Map<string, string>());
+  const agentRequestPendingRef = useRef(false);
+  const streamedOperationIdRef = useRef<string | null>(null);
   const notificationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const computerRefreshInFlightRef = useRef(false);
   const remoteDesktopControllerRef = useRef<RemoteComputerDesktopController | null>(null);
-  const secretRequestOperationsRef = useRef(new Map<string, string | undefined>());
-  const accountTransitionRef = useRef<string | null>(null);
-  const authAccountKey = auth?.loggedIn
-    ? `account:${String(auth.user?.id ?? auth.user?.username ?? auth.user?.email ?? `provider:${auth.provider ?? "default"}`)}`
-    : "anonymous";
 
-  const clearAccountBoundUiState = useCallback(() => {
-    setInput("");
-    setMessages([]);
-    setActiveConversationId(null);
-    setActiveGroupId(null);
-    setActiveAgentId("mahayana-assistant");
-    setTranscriptCards([]);
-    setSecretModalRequestId(null);
-    setSecretSubmittingId(null);
-    setSecretError(null);
-    secretRequestOperationsRef.current.clear();
-    setActivity([]);
-    setUsage(null);
-    setAttachments([]);
-    setActiveOperationId(null);
-    setOperationState("idle");
-    setChatDispatching(false);
-    setApproval(null);
-    setConfirmAction(null);
-    setConfirmBusy(false);
-    setConversations([]);
-    setCapabilities([]);
-    setAutomations([]);
-    setConnectors([]);
-    setSkills([]);
-    setSkillTeams([]);
-    setBots([]);
-    setGroups([]);
-    setGroupPreviews({});
-    setListenerIntegrations([]);
-    setConnectingListeners(new Set());
-    setPeerMessages([]);
-    setSubagents([]);
-    setAsyncTasks([]);
-    setBackgroundWorkingAgents(new Set());
-    setBackgroundPreviews({});
-    setLastBroadcastResult(null);
-    setTrays([]);
-    setAuditRecords([]);
-    setSearchMessageMatches([]);
-    setSearchMediaMatches([]);
-    setCloudAgentInfo(null);
-    setCloudAgentFailure(null);
-    setWorkspaceStatus(null);
-    setWorkspaceSecrets(null);
-    setWorkspaceDiskAudit(null);
-    setWorkspaceError(null);
-    setSharingState({ scope: "local-device", rooms: [], joinRequests: [] });
-    setSharingError(null);
-    setLastSharedInvite(null);
-    setMcpServers([]);
-    setMcpApps([]);
-    setMcpToolResult("");
-    setAgentMemories([]);
-    setAgentWorkflows([]);
-    setError(null);
-    setFeatureStates(createInitialFeatureStates());
-    notificationOperationAgentsRef.current.clear();
-    notificationSnapshotsRef.current.clear();
-  }, []);
+  const claimStreamedOperation = (operationId?: string): boolean => {
+    if (!operationId) return false;
+    if (streamedOperationIdRef.current === operationId) return true;
+    if (!agentRequestPendingRef.current) return false;
+    agentRequestPendingRef.current = false;
+    streamedOperationIdRef.current = operationId;
+    return true;
+  };
 
-  const refreshAccountScopedData = useCallback(async () => {
-    const stamp = Date.now();
-    await transport.execute({ type: "conversation.list", requestId: `conversation-list-account-${stamp}` });
-    await transport.execute({ type: "capability.list", requestId: `capability-list-account-${stamp}` });
-    await coordinator.listAutomations();
-    await Promise.all([
-      transport.execute({ type: "connector.list", requestId: `connector-list-account-${stamp}` }),
-      coordinator.listSkills(),
-      coordinator.listAgents(),
-      coordinator.listGroups(),
-      coordinator.listTrays(),
-      transport.execute({ type: "settings.get", requestId: `settings-get-account-${stamp}` }),
-      coordinator.listListenerIntegrations(),
-      transport.execute({ type: "update.status", requestId: `update-status-account-${stamp}` }),
+  const clearStreamedOperation = (operationId: string, terminalStatus: "completed" | "failed" = "completed") => {
+    if (streamedOperationIdRef.current !== operationId) return;
+    streamedOperationIdRef.current = null;
+    agentRequestPendingRef.current = false;
+    setMessages((current) => current
+      .filter((entry) => !(entry.kind === "thinking" && entry.operationId === operationId))
+      .map((entry) => entry.kind === "action" &&
+        entry.operationId === operationId &&
+        entry.status === "running"
+        ? { ...entry, status: terminalStatus }
+        : entry));
+  };
+
+  const appendThinkingEntry = (operationId: string, title: string) => {
+    setMessages((current) => [
+      ...current.filter((entry) => !(entry.kind === "thinking" && entry.operationId === operationId)),
+      { kind: "thinking", role: "assistant", text: "", operationId, title: title || "正在思考", status: "running" },
     ]);
-  }, [coordinator, transport]);
+  };
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: chatDispatching ? "auto" : "smooth", block: "end" });
+  const upsertStreamAction = (entry: {
+    id: string;
+    operationId: string;
+    title: string;
+    detail?: string;
+    status: "running" | "completed" | "failed";
+  }) => {
+    setMessages((current) => {
+      const next: HostTranscriptEntry = {
+        id: entry.id,
+        kind: "action",
+        role: "assistant",
+        text: "",
+        operationId: entry.operationId,
+        title: entry.title,
+        detail: entry.detail,
+        status: entry.status,
+      };
+      const index = current.findIndex((candidate) => candidate.kind === "action" && candidate.id === entry.id);
+      return index < 0
+        ? [...current, next]
+        : current.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, ...next } : candidate);
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [messages, transcriptCards, chatDispatching]);
+  };
 
   useEffect(() => {
     const unsubscribe = subscribeNativeDesktopEvents({
@@ -972,8 +909,9 @@ export default function HostClient() {
       remoteControlEnabled: preferences.remoteControlEnabled,
       aiComputerControlEnabled: preferences.aiComputerControlEnabled,
       autoReviewRules: preferences.autoReviewRules,
+      ...hostRouterSettingsRef.current,
     };
-    const serialized = JSON.stringify(settings);
+    const serialized = serializeProductHostSettings(settings);
     if (serialized === lastHostSettingsJsonRef.current) return;
     lastHostSettingsJsonRef.current = serialized;
     void transport.execute({
@@ -989,7 +927,7 @@ export default function HostClient() {
       !hostSettingsHydrated ||
       hostStatus !== "ready" ||
       !auth?.loggedIn ||
-      !preferences.remoteControlEnabled
+      !(auth.user?.id ?? auth.user?.username ?? auth.user?.email)
     ) {
       remoteDesktopControllerRef.current = null;
       if (existing) void existing.stop();
@@ -1001,6 +939,12 @@ export default function HostClient() {
     const controller = new RemoteComputerDesktopController({
       transport,
       label: `${auth.user?.nickname || auth.user?.username || "Fabushi"} 的 Mac`,
+      identityScope: String(auth.user?.id ?? auth.user?.username ?? auth.user?.email),
+      controlEnabled: preferences.remoteControlEnabled,
+      resolveAgentId: (requestedAgentId) => requestedAgentId === "mahayana-assistant"
+        || botsRef.current.some((bot) => bot.id === requestedAgentId)
+        ? requestedAgentId
+        : null,
       onState: (state) => {
         if (!cancelled) setRemoteDesktopState(state);
       },
@@ -1014,9 +958,10 @@ export default function HostClient() {
       securityKeys: preferences.securityKeys,
       webauthnProxyEnabled: preferences.webauthnProxyEnabled,
       localToolPermission: preferences.localToolPermission,
-      remoteControlEnabled: true,
+      remoteControlEnabled: preferences.remoteControlEnabled,
       aiComputerControlEnabled: preferences.aiComputerControlEnabled,
       autoReviewRules: preferences.autoReviewRules,
+      ...hostRouterSettingsRef.current,
     };
     void (async () => {
       await transport.execute({
@@ -1037,8 +982,10 @@ export default function HostClient() {
     };
   }, [
     auth?.loggedIn,
+    auth?.user?.id,
     auth?.user?.nickname,
     auth?.user?.username,
+    auth?.user?.email,
     hostSettingsHydrated,
     hostStatus,
     preferences.remoteControlEnabled,
@@ -1174,23 +1121,6 @@ export default function HostClient() {
       }));
     };
 
-    const clearPendingSecretCards = (operationId: string) => {
-      const requestIds = new Set(
-        [...secretRequestOperationsRef.current.entries()]
-          .filter(([, pendingOperationId]) => pendingOperationId === operationId)
-          .map(([requestId]) => requestId),
-      );
-      setTranscriptCards((current) => current.filter((entry) =>
-        entry.operationId !== operationId ||
-        entry.card.kind !== "secretRequest" ||
-        entry.card.provided,
-      ));
-      setSecretModalRequestId((current) => requestIds.has(current ?? "") ? null : current);
-      setSecretSubmittingId((current) => requestIds.has(current ?? "") ? null : current);
-      if (requestIds.size > 0) setSecretError(null);
-      for (const requestId of requestIds) secretRequestOperationsRef.current.delete(requestId);
-    };
-
     const unsubscribe = coordinator.subscribe((event) => {
       switch (event.type) {
         case "host.ready":
@@ -1198,31 +1128,33 @@ export default function HostClient() {
           pass("runtime.boot");
           break;
         case "chat.message":
+          if (event.role === "assistant" && claimStreamedOperation(event.operationId)) {
+            setMessages((current) => current.filter((entry) => !(entry.kind === "thinking" && entry.operationId === event.operationId)));
+          }
           setMessages((current) => {
-            const next = event.operationId
-              ? current.filter((message) => !(message.kind === "thinking" && message.operationId === event.operationId))
-              : current;
             if (event.role === "assistant" && event.operationId) {
-              const index = next.findIndex(
-                (message) => message.kind === "message" && message.role === "assistant" && message.operationId === event.operationId && message.streaming,
+              const index = current.findIndex(
+                (message) => message.kind === "message" && message.operationId === event.operationId && message.streaming,
               );
               if (index >= 0) {
-                return next.map((message, messageIndex) =>
+                return current.map((message, messageIndex) =>
                   messageIndex === index
-                    ? { ...message, text: event.text, streaming: false }
+                    ? { ...message, kind: "message", text: event.text, streaming: false }
                     : message,
                 );
               }
             }
+            if (event.role === "user" && current.some((message) =>
+              message.role === "user" && message.text === event.text &&
+              (!event.operationId || message.operationId === event.operationId))) return current;
             return [
-              ...next,
+              ...current,
               {
-                id: event.operationId ? `message:${event.operationId}` : `message:${Date.now()}`,
+                id: nextRequestId("message"),
                 kind: "message",
                 role: event.role,
                 text: event.text,
                 operationId: event.operationId,
-                createdAtMs: Date.now(),
                 streaming: false,
               },
             ];
@@ -1241,36 +1173,33 @@ export default function HostClient() {
           }
           break;
         case "chat.delta":
+          claimStreamedOperation(event.operationId);
+          setMessages((current) => current.filter((entry) => !(entry.kind === "thinking" && entry.operationId === event.operationId)));
           setMessages((current) => {
-            const next = current.filter((message) => !(message.kind === "thinking" && message.operationId === event.operationId));
-            const index = next.findIndex(
-              (message) => message.kind === "message" && message.role === "assistant" && message.operationId === event.operationId && message.streaming,
+            const index = current.findIndex(
+              (message) => message.kind === "message" && message.operationId === event.operationId && message.streaming,
             );
             if (index < 0) {
               return [
-                ...next,
+                ...current,
                 {
-                  id: `message:${event.operationId}:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
+                  id: `${event.operationId}:stream`,
                   kind: "message",
                   role: "assistant",
                   text: event.delta,
                   operationId: event.operationId,
-                  createdAtMs: Date.now(),
                   streaming: true,
                 },
               ];
             }
-            return next.map((message, messageIndex) =>
+            return current.map((message, messageIndex) =>
               messageIndex === index
-                ? { ...message, text: `${message.text}${event.delta}`, streaming: true }
+                ? { ...message, kind: "message", text: `${message.text}${event.delta}`, streaming: true }
                 : message,
             );
           });
           break;
         case "transcript.card":
-          if (event.card.kind === "secretRequest") {
-            secretRequestOperationsRef.current.set(event.card.requestId, event.operationId);
-          }
           setTranscriptCards((current) => {
             const entry = {
               entryId: event.entryId,
@@ -1282,10 +1211,6 @@ export default function HostClient() {
               ? [...current, entry]
               : current.map((item, itemIndex) => itemIndex === index ? entry : item);
           });
-          if (event.card.kind === "secretRequest" && !event.card.provided) {
-            setSecretModalRequestId(event.card.requestId);
-            setSecretError(null);
-          }
           break;
         case "draft.changed":
           setTranscriptCards((current) => current.map((entry) => {
@@ -1309,16 +1234,12 @@ export default function HostClient() {
           }));
           break;
         case "secret.provided":
-          secretRequestOperationsRef.current.delete(event.secretRequestId);
           setTranscriptCards((current) => current.map((entry) =>
             entry.card.kind === "secretRequest" &&
             entry.card.requestId === event.secretRequestId
               ? { ...entry, card: { ...entry.card, provided: true } }
               : entry,
           ));
-          setSecretModalRequestId((current) => current === event.secretRequestId ? null : current);
-          setSecretSubmittingId((current) => current === event.secretRequestId ? null : current);
-          setSecretError(null);
           break;
         case "conversation.listed":
           setConversations(event.conversations);
@@ -1463,9 +1384,9 @@ export default function HostClient() {
           }));
           if (activeAgentIdRef.current === event.agentId && !activeGroupIdRef.current) {
             setMessages((current) => {
-              const index = current.findIndex((message) => message.kind === "message" && message.role === "assistant" && message.operationId === event.operationId);
+              const index = current.findIndex((message) => message.operationId === event.operationId);
               if (index < 0) {
-                return [...current, { id: `message:${event.operationId}`, kind: "message", role: "assistant", text: event.delta, operationId: event.operationId, createdAtMs: Date.now() }];
+                return [...current, { kind: "message", role: "assistant", text: event.delta, operationId: event.operationId }];
               }
               return current.map((message, messageIndex) => messageIndex === index
                 ? { ...message, text: `${message.text}${event.delta}` }
@@ -1483,9 +1404,9 @@ export default function HostClient() {
           }, false);
           if (activeAgentIdRef.current === event.agentId && !activeGroupIdRef.current) {
             setMessages((current) => {
-              const index = current.findIndex((message) => message.kind === "message" && message.role === "assistant" && message.operationId === event.operationId);
+              const index = current.findIndex((message) => message.operationId === event.operationId);
               return index < 0
-                ? [...current, { id: `message:${event.operationId}`, kind: "message", role: "assistant", text: event.text, operationId: event.operationId, createdAtMs: Date.now() }]
+                ? [...current, { kind: "message", role: "assistant", text: event.text, operationId: event.operationId }]
                 : current.map((message, messageIndex) => messageIndex === index ? { ...message, text: event.text } : message);
             });
           }
@@ -1620,7 +1541,11 @@ export default function HostClient() {
           setMcpToolResult(JSON.stringify(event.result, null, 2));
           break;
         case "settings.changed":
-          lastHostSettingsJsonRef.current = JSON.stringify(event.settings);
+          lastHostSettingsJsonRef.current = serializeProductHostSettings(event.settings);
+          hostRouterSettingsRef.current = {
+            inferenceProvider: event.settings.inferenceProvider,
+            sandboxRuntime: event.settings.sandboxRuntime,
+          };
           setHostSettingsHydrated(true);
           setPreferences((current) => ({
             ...current,
@@ -1695,21 +1620,24 @@ export default function HostClient() {
             botsRef.current.find((bot) => bot.conversationId === event.conversationId)?.id ?? "mahayana-assistant",
           );
           setTranscriptCards([]);
-          secretRequestOperationsRef.current.clear();
-          setSecretModalRequestId(null);
-          setSecretSubmittingId(null);
-          setSecretError(null);
           setMessages(
             event.messages.map((message) => ({
-              id: message.id,
-              kind: "message",
+              kind: "message" as const,
               role: message.role,
               text: message.text,
-              createdAtMs: message.createdAtMs,
             })),
           );
           break;
         case "agent.step":
+          if (event.operationId && claimStreamedOperation(event.operationId)) {
+            upsertStreamAction({
+              id: `${event.operationId}:${event.stepId}`,
+              operationId: event.operationId,
+              title: event.title,
+              detail: event.detail,
+              status: event.status,
+            });
+          }
           setActivity((current) => {
             const next: AgentActivity = {
               id: event.stepId,
@@ -1728,21 +1656,19 @@ export default function HostClient() {
               ? [...current.slice(-11), next]
               : current.map((item, itemIndex) =>
                   itemIndex === index ? next : item,
-              );
+                );
           });
-          const actionStepId = event.kind === "model"
-            ? `${event.kind}:${event.title}`
-            : event.stepId;
-          setMessages((current) => upsertHostAction(current, {
-            id: `action:${event.operationId ?? "session"}:${actionStepId}`,
-            operationId: event.operationId,
-            actionKind: event.kind,
-            actionTitle: event.title,
-            actionDetail: event.detail,
-            actionStatus: event.status,
-          }));
           break;
         case "model.routed":
+          if (claimStreamedOperation(event.operationId)) {
+            upsertStreamAction({
+              id: `${event.operationId}:model`,
+              operationId: event.operationId,
+              title: event.model === "auto" ? "选择模型" : `模型：${event.model}`,
+              detail: `${event.provider} · ${event.mode}`,
+              status: "completed",
+            });
+          }
           setUsage((current) => ({
             totalTokens: current?.totalTokens ?? 0,
             contextWindow: current?.contextWindow,
@@ -1759,14 +1685,6 @@ export default function HostClient() {
               status: "completed",
             },
           ]);
-          setMessages((current) => upsertHostAction(current, {
-            id: `action:${event.operationId}:model`,
-            operationId: event.operationId,
-            actionKind: "model",
-            actionTitle: event.model === "auto" ? "自动选择模型" : `模型路由 · ${event.model}`,
-            actionDetail: `${event.provider} · ${event.mode}`,
-            actionStatus: "completed",
-          }));
           break;
         case "usage.updated":
           setUsage((current) => ({
@@ -1826,7 +1744,10 @@ export default function HostClient() {
           pass("capability.approval");
           break;
         case "operation.started": {
-          setChatDispatching(true);
+          if (claimStreamedOperation(event.operationId)) {
+            setChatDispatching(true);
+            appendThinkingEntry(event.operationId, event.label || "正在思考");
+          }
           setOperationState("running");
           if (event.interruptible) {
             setActiveOperationId(event.operationId);
@@ -1836,34 +1757,21 @@ export default function HostClient() {
             notificationOperationAgentsRef.current.set(event.operationId, agentId);
             queueNotificationSnapshot(agentId, { isRunning: true, awaitingReason: null }, false);
           }
-          setMessages((current) => current.some((message) => message.kind === "thinking" && message.operationId === event.operationId)
-            ? current
-            : [...current, {
-                id: `thinking:${event.operationId}`,
-                kind: "thinking",
-                role: "assistant",
-                text: "",
-                operationId: event.operationId,
-                createdAtMs: Date.now(),
-                actionTitle: event.label,
-                actionStatus: "running",
-              }]);
           break;
         }
         case "operation.interrupted": {
-          clearPendingSecretCards(event.operationId);
+          clearStreamedOperation(event.operationId, "failed");
           setChatDispatching(false);
           setActiveOperationId(null);
           setOperationState("interrupted");
           const agentId = notificationOperationAgentsRef.current.get(event.operationId);
           if (agentId) queueNotificationSnapshot(agentId, { isRunning: false }, false);
           notificationOperationAgentsRef.current.delete(event.operationId);
-          setMessages((current) => current.filter((message) => !(message.kind === "thinking" && message.operationId === event.operationId)));
           pass("operation.interrupt");
           break;
         }
         case "operation.completed": {
-          clearPendingSecretCards(event.operationId);
+          clearStreamedOperation(event.operationId);
           setChatDispatching(false);
           setActiveOperationId((current) =>
             current === event.operationId ? null : current,
@@ -1874,11 +1782,10 @@ export default function HostClient() {
           const agentId = notificationOperationAgentsRef.current.get(event.operationId);
           if (agentId) queueNotificationSnapshot(agentId, { isRunning: false }, true);
           notificationOperationAgentsRef.current.delete(event.operationId);
-          setMessages((current) => current.filter((message) => !(message.kind === "thinking" && message.operationId === event.operationId)));
           break;
         }
         case "operation.failed": {
-          clearPendingSecretCards(event.operationId);
+          clearStreamedOperation(event.operationId, "failed");
           setChatDispatching(false);
           setActiveOperationId((current) =>
             current === event.operationId ? null : current,
@@ -1887,14 +1794,12 @@ export default function HostClient() {
           const agentId = notificationOperationAgentsRef.current.get(event.operationId);
           if (agentId) queueNotificationSnapshot(agentId, { isRunning: false }, false);
           notificationOperationAgentsRef.current.delete(event.operationId);
-          setMessages((current) => current.filter((message) => !(message.kind === "thinking" && message.operationId === event.operationId)));
           setError(`${event.code}: ${event.message}`);
           break;
         }
         case "session.cleared":
-          clearAccountBoundUiState();
           setSessionState("cleared");
-          setAuth({ loggedIn: false });
+          commitAuth({ loggedIn: false });
           pass("session.clear");
           break;
         case "host.closed":
@@ -1903,23 +1808,21 @@ export default function HostClient() {
       }
     });
 
-    const configuredMode =
-      typeof process !== "undefined"
-        ? process.env.NEXT_PUBLIC_MAHAYANA_HOST_MODE
-        : undefined;
+    const configuredMode = configuredHostMode;
     const mode =
       configuredMode === "production" || configuredMode === "test"
         ? configuredMode
-        : isElectronMahayanaHostAvailable()
-          ? "production"
-          : "test";
+        : "production";
 
+    let disposed = false;
     void transport
       .initialize({ profileId: "default", mode })
       .then(async () => {
-        let authState: AuthState;
+        // Resolve authentication first. Conversation/tool/workspace hydration is background
+        // work and must never hold a full-screen returning-user gate.
+        let restoredLoggedIn = false;
         try {
-          authState = await Promise.race([
+          const authState = await Promise.race([
             transport.authStatus(),
             new Promise<never>((_, reject) =>
               window.setTimeout(
@@ -1928,22 +1831,59 @@ export default function HostClient() {
               ),
             ),
           ]);
-          setAuth(authState);
-          if (authState.loggedIn) {
+          if (disposed) return;
+          restoredLoggedIn = authState.loggedIn;
+          // Browser login can complete while the initial authStatus request is
+          // still in flight. Never let that older signed-out snapshot overwrite
+          // the newer authenticated session.
+          if (!authRef.current?.loggedIn) commitAuth(authState);
+          if (authState.loggedIn || authRef.current?.loggedIn) {
             setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
           }
         } catch (cause: unknown) {
-          setAuth({ loggedIn: false });
-          setLoginError(
-            `无法恢复账号会话：${cause instanceof Error ? cause.message : String(cause)}`,
-          );
-          setAuthResolved(true);
-          return;
+          if (disposed) return;
+          if (!authRef.current?.loggedIn) {
+            commitAuth({ loggedIn: false });
+            setLoginError(
+              `无法恢复账号会话：${cause instanceof Error ? cause.message : String(cause)}`,
+            );
+          }
         } finally {
-          setAuthResolved(true);
+          if (!disposed) setAuthResolved(true);
         }
-        if (!authState.loggedIn) return;
-        await refreshAccountScopedData();
+        // Only a session restored by this initialization owns HostClient hydration.
+        // If browser login won the race, the parent immediately switches to
+        // MessengerWorkspace; letting this stale signed-out surface hydrate after
+        // unmount would monopolize the single Rust Host queue and delay Messenger.
+        if (disposed || !restoredLoggedIn) return;
+        await transport.execute({
+          type: "conversation.list",
+          requestId: "conversation-list-initial",
+        });
+        await transport.execute({
+          type: "capability.list",
+          requestId: "capability-list-initial",
+        });
+        await coordinator.listAutomations();
+        await Promise.all([
+          transport.execute({
+            type: "connector.list",
+            requestId: "connector-list-initial",
+          }),
+          coordinator.listSkills(),
+          coordinator.listAgents(),
+          coordinator.listGroups(),
+          coordinator.listTrays(),
+          transport.execute({
+            type: "settings.get",
+            requestId: "settings-get-initial",
+          }),
+          coordinator.listListenerIntegrations(),
+          transport.execute({
+            type: "update.status",
+            requestId: "update-status-initial",
+          }),
+        ]);
         const stored = JSON.parse(
           window.localStorage.getItem("fabushi.installed-miniapps") ?? "[]",
         ) as unknown;
@@ -1965,34 +1905,18 @@ export default function HostClient() {
         }
       })
       .catch((cause: unknown) => {
+        if (!authRef.current?.loggedIn) commitAuth({ loggedIn: false });
         setAuthResolved(true);
         setHostStatus("failed");
         setError(cause instanceof Error ? cause.message : String(cause));
       });
 
     return () => {
+      disposed = true;
       unsubscribe();
       void transport.close();
     };
-  }, [transport, coordinator, clearAccountBoundUiState, refreshAccountScopedData]);
-
-  useEffect(() => {
-    if (!authResolved) return undefined;
-    const previousAccountKey = accountTransitionRef.current;
-    accountTransitionRef.current = authAccountKey;
-    if (previousAccountKey === null || previousAccountKey === authAccountKey) return undefined;
-
-    clearAccountBoundUiState();
-    if (!auth?.loggedIn) return undefined;
-
-    let cancelled = false;
-    void refreshAccountScopedData().catch((cause: unknown) => {
-      if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [authAccountKey, auth?.loggedIn, authResolved, clearAccountBoundUiState, refreshAccountScopedData]);
+  }, [transport, coordinator]);
 
   const nextRequestId = (prefix: string) => {
     requestSequence.current += 1;
@@ -2011,22 +1935,18 @@ export default function HostClient() {
 
   const execute = (command: RuntimeCommand) => coordinator.execute(command);
 
-  const secretRequestPending = transcriptCards.some(
-    (entry) => Boolean(entry.operationId) && entry.card.kind === "secretRequest" && !entry.card.provided,
-  );
-
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (secretRequestPending) return;
     const text = input.trim();
     if (!text) return;
     setInput("");
     setChatDispatching(true);
+    agentRequestPendingRef.current = true;
     const outgoingAttachments = attachments;
     setAttachments([]);
     setError(null);
     try {
-      await execute({
+      const accepted = await execute({
         type: "chat.send",
         requestId: nextRequestId("chat"),
         text,
@@ -2039,10 +1959,16 @@ export default function HostClient() {
         model: selectedModel === "auto" ? undefined : selectedModel,
         attachments: outgoingAttachments,
       });
+      if (accepted.operationId && claimStreamedOperation(accepted.operationId)) {
+        appendThinkingEntry(accepted.operationId, "正在思考");
+      }
     } catch (cause: unknown) {
+      agentRequestPendingRef.current = false;
+      streamedOperationIdRef.current = null;
       setChatDispatching(false);
       setError(cause instanceof Error ? cause.message : String(cause));
     }
+    if (!streamedOperationIdRef.current) agentRequestPendingRef.current = false;
   };
 
   const attachFiles = async (files: FileList | null) => {
@@ -2216,7 +2142,12 @@ export default function HostClient() {
         const result = await transport.browserLoginPoll(attempt.attemptId);
         if (cancelled) return;
         if (result.status === "completed" && result.auth) {
-          setAuth({ ...result.auth, loggedIn: true });
+          const completedAuth = { ...result.auth, loggedIn: true };
+          // Resolve the parent shell immediately; do not wait for the initial
+          // auth restoration request or leave the authenticated Host surface
+          // mounted in place of Messenger.
+          setAuthResolved(true);
+          commitAuth(completedAuth);
           setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
           setBrowserLoginAttempt(null);
           setLoginBusy(false);
@@ -2253,25 +2184,16 @@ export default function HostClient() {
   const logout = async () => {
     await run(async () => {
       const state = await transport.logout();
-      clearAccountBoundUiState();
-      setAuth({ ...state, loggedIn: false });
+      commitAuth({ ...state, loggedIn: false });
       setAccountOpen(false);
       setBrowserLoginAttempt(null);
       setLoginBusy(false);
     });
   };
 
-  const activeSecretRequestEntry = secretModalRequestId
-    ? transcriptCards.find((entry) => entry.card.kind === "secretRequest" && entry.card.requestId === secretModalRequestId)
-    : undefined;
-  const activeSecretRequest = activeSecretRequestEntry?.card.kind === "secretRequest" && !activeSecretRequestEntry.card.provided
-    ? activeSecretRequestEntry.card
-    : null;
-
   const hasManagedModal = Boolean(
     confirmAction ||
     approval ||
-    activeSecretRequest ||
     browserLoginAttempt ||
     accountOpen ||
     feedbackOpen ||
@@ -2362,13 +2284,6 @@ export default function HostClient() {
       // Approval is an explicit security decision; Escape must never silently
       // deny or dismiss it.
       if (approval) return;
-      if (activeSecretRequest) {
-        if (secretSubmittingId !== activeSecretRequest.requestId) {
-          setSecretModalRequestId(null);
-          setSecretError(null);
-        }
-        return;
-      }
       if (accountOpen) return void setAccountOpen(false);
       if (widgetGalleryOpen) return void setWidgetGalleryOpen(false);
       if (aboutOpen) return void setAboutOpen(false);
@@ -2393,8 +2308,6 @@ export default function HostClient() {
     confirmAction,
     confirmBusy,
     approval,
-    activeSecretRequest,
-    secretSubmittingId,
     browserLoginAttempt?.attemptId,
     accountOpen,
     feedbackOpen,
@@ -2442,36 +2355,15 @@ export default function HostClient() {
     );
   };
 
-  const openSecretRequest = (secretRequestId: string) => {
-    setSecretError(null);
-    setSecretModalRequestId(secretRequestId);
-  };
-
-  const provideSecret = async (secretRequestId: string, value: string): Promise<boolean> => {
-    if (!value.trim()) {
-      setSecretError("请输入凭据后再保存。");
-      return false;
-    }
-    setSecretSubmittingId(secretRequestId);
-    setSecretError(null);
-    setError(null);
-    try {
-      await execute({
+  const provideSecret = (secretRequestId: string, value: string) => {
+    void run(() =>
+      execute({
         type: "secret.provide",
         requestId: nextRequestId("secret"),
         secretRequestId,
         value,
-      });
-      setSecretModalRequestId(null);
-      return true;
-    } catch (cause: unknown) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      setSecretError(message);
-      setError(message);
-      return false;
-    } finally {
-      setSecretSubmittingId((current) => current === secretRequestId ? null : current);
-    }
+      }),
+    );
   };
 
   const connectListener = (platform: ListenerPlatform) => {
@@ -3335,13 +3227,9 @@ export default function HostClient() {
               className={styles.iconButton}
               type="button"
               aria-label="新建会话"
-              disabled={secretRequestPending}
               onClick={() => {
                 setMessages([]);
                 setTranscriptCards([]);
-                setSecretModalRequestId(null);
-                setSecretSubmittingId(null);
-                setSecretError(null);
                 setActivity([]);
                 setUsage(null);
                 setActiveConversationId(null);
@@ -3422,7 +3310,6 @@ export default function HostClient() {
                   <button
                     type="button"
                     key={`${match.agentId}:${match.entryId}`}
-                    disabled={secretRequestPending}
                     onClick={() => {
                       setActiveGroupId(null);
                       setActiveAgentId(match.agentId);
@@ -3458,7 +3345,6 @@ export default function HostClient() {
           <button
             className={activeAgentId === "mahayana-assistant" ? styles.agentActive : styles.agentItem}
             type="button"
-            disabled={secretRequestPending}
             onClick={() => { setActiveGroupId(null); setActiveAgentId("mahayana-assistant"); }}
           >
             <BotMark botId="mahayana-assistant" state={backgroundWorkingAgents.has("mahayana-assistant") ? "working" : activeAgentId === "mahayana-assistant" && !activeGroupId ? activeBotState : "idle"} size={38} shape={primaryBotProfile?.avatarShape as BotMarkShape | undefined} color={primaryBotProfile?.avatarColor as BotMarkColor | undefined} className={styles.sidebarBotMark} label={primaryBotProfile?.name || "大乘助手"} />
@@ -3474,7 +3360,6 @@ export default function HostClient() {
                 key={conversation.id}
                 className={activeConversationId === conversation.id ? styles.agentActive : styles.agentItem}
                 type="button"
-                disabled={secretRequestPending}
                 onClick={() => {
                   setActiveGroupId(null);
                   void run(() =>
@@ -3498,7 +3383,6 @@ export default function HostClient() {
               key={bot.id}
               className={!activeGroupId && activeConversationId === bot.conversationId ? styles.agentActive : styles.agentItem}
               type="button"
-              disabled={secretRequestPending}
               onClick={() => {
                 setActiveGroupId(null);
                 setActiveAgentId(bot.id);
@@ -3517,9 +3401,6 @@ export default function HostClient() {
                   setActiveConversationId(null);
                   setMessages([]);
                   setTranscriptCards([]);
-                  setSecretModalRequestId(null);
-                  setSecretSubmittingId(null);
-                  setSecretError(null);
                   setActivity([]);
                   setUsage(null);
                 }
@@ -3615,15 +3496,6 @@ export default function HostClient() {
             <span>{displayName}</span>
             <Icon name="settings" size={17} />
           </button>
-          <button
-            className={styles.logoutButton}
-            data-testid="logout-quick"
-            type="button"
-            onClick={() => void logout()}
-          >
-            <span aria-hidden="true">↪</span>
-            <span>退出登录</span>
-          </button>
         </div>
       </aside>
 
@@ -3679,92 +3551,61 @@ export default function HostClient() {
         {error ? <p role="alert" className={styles.error}>{error}</p> : null}
 
         <div className={styles.conversation}>
-          {!messages.length && !transcriptCards.length && !chatDispatching ? (
-            <div className={styles.welcome}>
-              <BotMark botId={activeBotMarkId} state={activeBotState} size={66} shape={activeBotShape} color={activeBotColor} className={styles.welcomeBotMark} label={activeBotProfile?.name || (activeAgent ? `${activeAgent.title}机器人` : "大乘助手")} />
-              <h2>{activeAgent ? `${activeAgent.title}已连接` : "有什么可以帮你？"}</h2>
-              <p>{activeAgent ? "可以在右侧打开应用，也可以通过大乘助手调用它的能力。" : "发送消息、运行任务，或从插件市场为助手添加能力。"}</p>
-            </div>
-          ) : null}
+          <div className={styles.welcome}>
+            <BotMark botId={activeBotMarkId} state={activeBotState} size={66} shape={activeBotShape} color={activeBotColor} className={styles.welcomeBotMark} label={activeBotProfile?.name || (activeAgent ? `${activeAgent.title}机器人` : "大乘助手")} />
+            <h2>{activeAgent ? `${activeAgent.title}已连接` : "有什么可以帮你？"}</h2>
+            <p>{activeAgent ? "可以在右侧打开应用，也可以通过大乘助手调用它的能力。" : "发送消息、运行任务，或从插件市场为助手添加能力。"}</p>
+          </div>
           <div className={styles.messages} data-testid="messages" aria-live="polite">
-            {messages.map((message) => {
-              if (message.kind === "thinking") {
-                return (
-                  <article key={message.id} data-testid="message-thinking" className={styles.thinkingMessage} aria-label="助手正在思考">
-                    <BotMark
-                      botId={activeBotMarkId}
-                      state="thinking"
-                      size={28}
-                      shape={activeBotShape}
-                      color={activeBotColor}
-                      className={styles.messageBotMark}
-                      label="助手正在思考"
-                    />
-                    <span className={styles.thinkingDots} aria-hidden="true"><i /><i /><i /></span>
-                  </article>
-                );
-              }
-              if (message.kind === "action") {
-                const actionRunning = message.actionStatus === "running";
-                return (
-                  <article key={message.id} data-testid="message-action" className={styles.actionMessage} data-state={message.actionStatus}>
-                    {actionRunning ? (
-                      <BotMark
-                        botId={activeBotMarkId}
-                        state={botMarkStateFromActivity({ kind: message.actionKind, title: message.actionTitle, detail: message.actionDetail })}
-                        size={24}
-                        shape={activeBotShape}
-                        color={activeBotColor}
-                        className={styles.messageBotMark}
-                        label="助手正在执行动作"
-                      />
-                    ) : (
-                      <span className={styles.actionStatusIcon} aria-hidden="true">{message.actionStatus === "failed" ? "!" : "✓"}</span>
-                    )}
-                    <div>
-                      <strong>{message.actionTitle || "助手动作"}</strong>
-                      {message.actionDetail ? <small>{message.actionDetail}</small> : null}
-                    </div>
-                    {message.actionStatus === "running" ? <span className={styles.actionLive}>进行中</span> : null}
-                  </article>
-                );
-              }
-
-              return (
-                <article
-                  key={message.id}
-                  data-testid={`message-${message.role}`}
-                  className={message.role === "user" ? styles.userMessage : styles.assistantMessage}
-                  data-streaming={message.role === "assistant" && message.operationId && operationState === "running" ? "true" : undefined}
-                >
-                  <div>
-                    {message.role === "assistant" ? <RichMessage text={message.text} /> : <p>{message.text}</p>}
-                  </div>
-                </article>
-              );
-            })}
+            {messages.map((message, index) => message.kind === "thinking" ? (
+              <article key={`${message.operationId ?? "stream"}-${index}`} className={styles.agentThinkingRow} data-testid="agent-thinking" data-operation-id={message.operationId}>
+                <BotMark botId={activeBotMarkId} state="thinking" size={28} shape={activeBotShape} color={activeBotColor} className={styles.messageBotMark} label={activeAgent ? `${activeAgent.title}机器人` : "大乘助手"} />
+                <div><strong>{message.title || "正在思考"}</strong><span>大乘助手正在处理这条消息…</span></div>
+              </article>
+            ) : message.kind === "action" ? (
+              <article key={message.id ?? `${message.operationId ?? "stream"}-${index}`} className={styles.agentActionRow} data-testid="agent-step" data-operation-id={message.operationId} data-status={message.status}>
+                <BotMark botId={activeBotMarkId} state={message.status === "running" ? "working" : message.status === "failed" ? "error" : "result"} size={25} shape={activeBotShape} color={activeBotColor} className={styles.messageBotMark} label={activeAgent ? `${activeAgent.title}机器人` : "大乘助手"} />
+                <div><strong>{message.title}</strong>{message.detail ? <span>{message.detail}</span> : null}</div>
+                <small>{message.status === "running" ? "进行中" : message.status === "failed" ? "失败" : "完成"}</small>
+              </article>
+            ) : (
+              <article
+                key={`${message.role}-${index}`}
+                data-testid={`message-${message.role}`}
+                className={message.role === "user" ? styles.userMessage : styles.assistantMessage}
+              >
+                {message.role === "assistant" ? (
+                  <BotMark
+                    botId={activeBotMarkId}
+                    state={(chatDispatching || operationState === "running") && (!activeOperationId || !message.operationId || message.operationId === activeOperationId) ? activeBotState : "idle"}
+                    size={28}
+                    shape={activeBotShape}
+                    color={activeBotColor}
+                    className={styles.messageBotMark}
+                    label={activeAgent ? `${activeAgent.title}机器人` : "大乘助手"}
+                  />
+                ) : null}
+                <div>
+                  <strong>{message.role === "user" ? "你" : activeAgent ? `${activeAgent.title}机器人` : "大乘助手"}</strong>
+                  {message.role === "assistant"
+                    ? <RichMessage text={message.text} />
+                    : <p>{message.text}</p>}
+                </div>
+              </article>
+            ))}
             {transcriptCards.length ? (
               <div className={styles.transcriptCards}>
                 {transcriptCards.map((entry) => (
-                  <article key={entry.entryId} className={styles.transcriptCardMessage}>
-                    <div className={styles.transcriptCardMessageHeader}><span className={styles.actionStatusIcon}>✓</span><strong>任务卡片</strong><small>需要你的确认或后续操作</small></div>
-                    <TranscriptCardView
-                      entry={entry}
-                      onResolveDraft={resolveDraft}
-                      onOpenSecret={openSecretRequest}
-                      onConnectListener={connectListener}
-                    />
-                  </article>
+                  <TranscriptCardView
+                    key={entry.entryId}
+                    entry={entry}
+                    onResolveDraft={resolveDraft}
+                    onProvideSecret={provideSecret}
+                    onConnectListener={connectListener}
+                  />
                 ))}
               </div>
             ) : null}
-            {chatDispatching && !messages.some((message) => message.kind === "thinking") ? (
-              <article data-testid="message-thinking" className={styles.thinkingMessage} aria-label="助手正在思考">
-                <BotMark botId={activeBotMarkId} state="thinking" size={28} shape={activeBotShape} color={activeBotColor} className={styles.messageBotMark} label="助手正在思考" />
-                <span className={styles.thinkingDots} aria-hidden="true"><i /><i /><i /></span>
-              </article>
-            ) : null}
-            <div ref={messagesEndRef} aria-hidden="true" />
           </div>
 
           <form className={styles.composer} onSubmit={(event) => void sendMessage(event)}>
@@ -3822,7 +3663,7 @@ export default function HostClient() {
                 }
               }}
               placeholder={activeAgent ? `给${activeAgent.title}机器人发消息…` : "描述任务，@ 引用文件，或让大乘助手执行操作…"}
-              disabled={hostStatus !== "ready" || secretRequestPending}
+              disabled={hostStatus !== "ready"}
             />
             <div className={styles.composerToolbar}>
               <input
@@ -3837,7 +3678,6 @@ export default function HostClient() {
                 type="button"
                 aria-label="添加附件"
                 onClick={() => attachmentInput.current?.click()}
-                disabled={hostStatus !== "ready" || secretRequestPending}
               >
                 <Icon name="attach" size={17} />
               </button>
@@ -3846,7 +3686,6 @@ export default function HostClient() {
                 aria-label="Agent 模式"
                 value={agentMode}
                 onChange={(event) => setAgentMode(event.target.value as AgentMode)}
-                disabled={secretRequestPending}
               >
                 <option value="agent">Agent</option>
                 <option value="ask">问答</option>
@@ -3857,7 +3696,6 @@ export default function HostClient() {
                 aria-label="模型"
                 value={selectedModel}
                 onChange={(event) => setSelectedModel(event.target.value)}
-                disabled={secretRequestPending}
               >
                 {modelOptions.map((model) => (
                   <option key={model.value} value={model.value}>{model.label}</option>
@@ -3878,7 +3716,7 @@ export default function HostClient() {
                   className={styles.sendButton}
                   data-testid="send-message"
                   type="submit"
-                  disabled={hostStatus !== "ready" || secretRequestPending || !input.trim()}
+                  disabled={hostStatus !== "ready" || !input.trim()}
                   aria-label="发送消息"
                 >
                   <Icon name="send" />
@@ -4386,6 +4224,10 @@ export default function HostClient() {
                         {installed ? <span className={styles.connectedDot} /> : null}
                       </div>
                       <p>{app.description}</p>
+                      <div className={styles.marketMeta}>
+                        <span>{app.developer}</span>
+                        <a href={`/apps/${app.slug}`}>详情 / 内容</a>
+                      </div>
                     </div>
                     <button
                       data-testid={app.id === defaultMiniAppId ? "install-miniapp" : `install-${app.id}`}
@@ -4916,20 +4758,6 @@ export default function HostClient() {
         </div>
       ) : null}
 
-      {activeSecretRequest ? (
-        <SecretRequestDialog
-          card={activeSecretRequest}
-          onProvide={provideSecret}
-          onClose={() => {
-            if (secretSubmittingId === activeSecretRequest.requestId) return;
-            setSecretModalRequestId(null);
-            setSecretError(null);
-          }}
-          submitting={secretSubmittingId === activeSecretRequest.requestId}
-          error={secretError}
-        />
-      ) : null}
-
       {approval ? (
         <div className={styles.backdrop}>
           <section className={styles.approvalDialog} role="dialog" aria-modal="true" aria-labelledby="approval-title" tabIndex={-1}>
@@ -5201,8 +5029,8 @@ export default function HostClient() {
             <section className={`${styles.fabushiWelcome} ${styles.loginExperience}`} role="status" aria-live="polite">
               <BotMark botId="fabushi-account" state="waking" size={96} className={styles.loginHeroMark} paused={false} />
               <p className={styles.loginEyebrow}>FABUSHI ACCOUNT</p>
-              <h2>正在恢复你的工作空间</h2>
-              <p>安全会话保存在本机；不会把登录凭据暴露给界面层。</p>
+              <h2>正在验证账号</h2>
+              <p>界面不会等待工作空间同步；这里只确认本机安全会话是否仍有效。</p>
               <div className={styles.loginLoadingRail}><i /><i /><i /></div>
             </section>
           ) : browserLoginAttempt ? (

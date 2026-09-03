@@ -3,9 +3,21 @@
 #[cfg(any(target_arch = "wasm32", test))]
 mod auth;
 
+#[cfg(any(target_arch = "wasm32", test))]
+mod capability_access;
+
 pub const PLATFORM_SCHEMA_V1: &str = include_str!("../migrations/0001_platform.sql");
+pub const CI_RUNNER_AUTH_SOURCE_V1: &str = include_str!("worker_api/ci_runner.rs");
 pub const LISTENER_RELAY_SCHEMA_V5: &str = include_str!("../migrations/0005_listener_relay.sql");
 pub const REMOTE_COMPUTER_SCHEMA_V6: &str = include_str!("../migrations/0006_remote_computer.sql");
+pub const REMOTE_COMPUTER_CLIENT_TOKEN_SCHEMA_V14: &str =
+    include_str!("../migrations/0014_remote_computer_client_tokens.sql");
+pub const REMOTE_COMPUTER_INVENTORY_SCHEMA_V15: &str =
+    include_str!("../migrations/0015_remote_computer_inventory.sql");
+pub const REMOTE_COMPUTER_SESSION_PROVIDER_SCHEMA_V16: &str =
+    include_str!("../migrations/0016_remote_computer_session_provider.sql");
+pub const REMOTE_COMPUTER_TRANSPORT_CONTRACT_SCHEMA_V17: &str =
+    include_str!("../migrations/0017_remote_computer_transport_contract.sql");
 pub const WORKSPACE_MESSAGING_SCHEMA_V7: &str =
     include_str!("../migrations/0007_workspace_messaging.sql");
 pub const FABUSHI_PAY_SCHEMA_V7: &str = include_str!("../migrations/0007_fabushi_pay.sql");

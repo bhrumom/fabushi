@@ -13,6 +13,7 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-ffi/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-mcp-runtime/**'
       - 'examples/mahayana-cloud-marketplace/**'
       - '.github/workflows/mahayana-cloud-marketplace-e2e.yml'
   push:
@@ -28,6 +29,7 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-ffi/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-mcp-runtime/**'
       - 'examples/mahayana-cloud-marketplace/**'
       - '.github/workflows/mahayana-cloud-marketplace-e2e.yml'
   workflow_dispatch:

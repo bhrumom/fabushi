@@ -1,35 +1,34 @@
-import type { ReactNode } from "react";
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { brand } from "@fabushi/shared";
 import { LocaleProvider } from "../components/locale-provider";
+import { FabushiAppAgentSurface } from "../components/fabushi-app-agent-surface";
+import { MarketplaceWebMcp } from "../components/marketplace/marketplace-webmcp";
 import { siteUrl } from "../lib/site-url";
 import "./globals.css";
 
 const homeUrl = siteUrl("/");
-const siteTitle = `${brand.name} | 全球法布施 App 下载官网`;
+const siteTitle = `${brand.name} | 跨平台 Messenger、AI Agents 与 Mini Apps`;
 const siteDescription =
-  "Fabushi 官网只服务 App 下载与安装转化，提供 iOS、Android 与桌面版下载入口、版本说明、安装支持、下载 FAQ 与基础隐私信息。";
+  "Fabushi 是跨平台 Messenger 与 AI Agent Host。Web、桌面与移动端保持一致的核心交互，并内置 Mini Apps、WebMCP、应用市场和内容级搜索。";
 
 export const metadata: Metadata = {
   title: siteTitle,
   description: siteDescription,
   keywords: [
     "Fabushi",
-    "法布施",
-    "全球法布施",
-    "App 下载",
-    "iOS 下载",
-    "Android 下载",
-    "macOS 下载",
-    "Windows 下载",
-    "Linux 下载",
-    "桌面版下载",
-    "TestFlight",
-    "APK 下载",
-    "下载 FAQ",
-    "安装支持",
+    "Messenger",
+    "AI Agent",
+    "Mini App",
+    "MCP Apps",
+    "WebMCP",
+    "应用市场",
+    "应用分发",
+    "内容级搜索",
+    "跨平台",
+    "工作流",
   ],
-  applicationName: `${brand.name} Fabushi`,
+  applicationName: brand.name,
   authors: [{ name: "Fabushi" }],
   creator: "Fabushi",
   publisher: "Fabushi",
@@ -37,7 +36,7 @@ export const metadata: Metadata = {
   alternates: {
     canonical: homeUrl,
   },
-  category: "utilities",
+  category: "software",
   manifest: siteUrl("/manifest.webmanifest"),
   openGraph: {
     title: siteTitle,
@@ -68,7 +67,23 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <link
+          rel="search"
+          type="application/opensearchdescription+xml"
+          title="Fabushi 应用与内容搜索"
+          href={siteUrl("/opensearch.xml")}
+        />
+        <link
+          rel="alternate"
+          type="application/json"
+          title="Fabushi 公开搜索索引"
+          href={siteUrl("/search-index.json")}
+        />
+      </head>
       <body>
+        <MarketplaceWebMcp />
+        <FabushiAppAgentSurface />
         <LocaleProvider>{children}</LocaleProvider>
       </body>
     </html>

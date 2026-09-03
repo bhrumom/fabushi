@@ -1,11 +1,48 @@
 {
   "schemaVersion": 3,
-  "revision": "2026-08-10.20",
+  "revision": "2026-08-26.805",
   "keepAlive": true,
   "authoritative": true,
   "maxConcurrent": 2,
   "reviewGate": false,
   "tasks": [
+    {
+      "id": "GBF-805-GROK-PARITY-20260826",
+      "goalVersion": 1,
+      "revision": 1,
+      "applyMode": "interrupt",
+      "title": "GBF-805 Grok Bot 0.18 可观察效果完整收敛",
+      "promptTemplate": "continue-to-complete",
+      "directive": "从 canonical main 开始持续推进 FAB-P0004 / GBF-805，直到用户实际安装的产品达到 Grok Bot 0.18 reconstructed 的可观察行为与体验标准，而不是只以代码存在或单元测试通过作为完成。每轮先读取 projects/grok-bot-fabushi-integration 全部管理/验收/来源文档与 issue #2155，再读取 bhrum/grok-bot-0.18-reconstructed@a9f633e09d49a85829b8236331b9e21f7e612634 中与 Bot、Agent、conversation、renderer、avatar、storage、settings 相关的可用源码/证据。必须遵守 provenance：可以复刻可观察行为、交互、数据模型、状态机和架构；未经许可不要整包复制生产 renderer、品牌资源或不明许可资产。所有 Bot 必须进入唯一 Mahayana Agent runtime。不要新建第二套执行器。不要弱化现有 E2E selector、assertion、security gate。必须持续实际实现、测试、合并、exact-main packaged E2E、发布和旧客户端更新验证，所有客观验收项完成后才把 GBF-805 标记 RELEASED。",
+      "connector": "GitHub",
+      "repository": "bhrumom/fabushi",
+      "codeDirectory": ".",
+      "priority": 1000,
+      "timeout": 21600,
+      "maxTaskContinuations": 0,
+      "maxRuntimeRetries": 5,
+      "dependsOn": [],
+      "resourceLocks": [
+        "worktree:fabushi",
+        "program:FAB-P0004",
+        "task:GBF-805",
+        "runtime:mahayana-agent",
+        "surface:desktop-messenger",
+        "service:mahayana-platform",
+        "release:desktop"
+      ],
+      "documentDirectory": "projects/grok-bot-fabushi-integration",
+      "specSources": [
+        "projects/grok-bot-fabushi-integration/management/01-WBS原子任务.md",
+        "projects/grok-bot-fabushi-integration/management/03-验收追踪矩阵.md",
+        "projects/grok-bot-fabushi-integration/management/05-状态报告.md",
+        "projects/grok-bot-fabushi-integration/management/07-变更日志.md",
+        "projects/grok-bot-fabushi-integration/management/tasks/GBF-507-mahayana-agent-workbench.md",
+        "projects/grok-bot-fabushi-integration/management/tasks/GBF-805-observable-parity-closure.md",
+        "projects/grok-bot-fabushi-integration/decisions/ADR-0003-single-agent-runtime.md"
+      ],
+      "prompt": "完成 FAB-P0004 / GBF-805 的全部剩余工作。第一，修复账号与设置：已认证用户的 General 首屏必须稳定显示并可操作‘退出登录’，logout 必须经过 canonical Host 边界并清除账号级 projection/draft/journal/native mirror，重新浏览器登录后恢复 workspace；以真实 /api/auth/user-info 和稳定 account id 22 作为身份事实，统一 Web、Rust platform、AI backend、provider router、usage/billing 的 super-admin + unlimited entitlement，任何模型路由都不得再为该账号报‘本月 AI token 额度不足’。第二，实现真正的 Grok 风格多步骤回复：唯一 Mahayana Agent runtime 产生真实 planning/reasoning/model route/ordered steps/tool calls/results/approvals/subagents/background tasks/artifacts/usage/failure/interrupted/resume/final answer 事件，Messenger 逐步流式显示，不能退化成普通气泡或单个失败卡。第三，收敛 Bot identity/avatar：Bot 使用稳定 canonical cloud bot id，联系人列表、Header、资料页、消息和 Workbench 共享同一 identity；头像 shape/color/eyes/motion choreography 必须基于稳定 Bot id，在 app restart、切换联系人、消息发送、多客户端后保持一致，不得把 conversationId/requestId/operationId 当 Bot identity。第四，把 Bot 创建/编辑/删除、avatar metadata、Conversation、Message、Run、Step、ToolResult、Approval、Artifact 迁移到 Rust/cloud canonical authoritative store；localStorage 只允许 bounded projection/cache；完成 GBF-601/602 的 crash/restart、operationId/requestId 幂等和无重复副作用 resume。第五，按照固定参考 bhrum/grok-bot-0.18-reconstructed@a9f633e09d49a85829b8236331b9e21f7e612634 逐屏收敛 Messenger typography、spacing、card hierarchy、streaming、tool/approval/error/result transition、avatar slots 和动态效果，用 screenshot/video/trace 做视觉证据。第六，完善而非削弱 TypeScript/Rust/unit/integration/architecture/security/E2E；exact-main macOS/Windows/Linux packaged journey 全绿，共享协议影响到 Android/iOS 时相应 gate 也必须绿；从同一个 tested main SHA 发布 updater-compatible immutable GitHub Release，并验证当前安装的旧 macOS Fabushi 能发现并安装新版本。最后更新 GBF-501/601/602/703/801/802/803/804/805 的 WBS、验收矩阵、状态、变更日志、evidence；任何一项缺少客观证据都不得声称全部完成。"
+    },
     {
       "id": "ios-external-miniapp-e2e-20260810",
       "goalVersion": 1,
@@ -40,7 +77,7 @@
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/ios-external-miniapp-e2e-20260810/UI_UX.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/ios-external-miniapp-e2e-20260810/ACCEPTANCE.md"
       ],
-      "prompt": "实现 iOS 端从零插件的新用户状态开始的真实外部小程序全链路自动化：为 CLI 核心和 iOS/Flutter 薄 UI 建立业界标准、可快速驱动的测试接口；在构建安装包前后可自动启动、重置、查询、执行和读取结构化事件；搜索线上官方已发布的“全球法布施”小程序，验证它不是内置功能，下载并校验远端构件后安装；验证更新版本可热更新且无需重新打包 App；进入该插件机器人会话发送确定性测试消息；最终不能依据 UI 文案判断成功，必须根据 CLI/runtime 日志、安装回执、来源与版本、tool call、correlation id 和插件真实返回完成断言。覆盖所有可发现 action 的契约自动化、失败恢复、进程重启后的安装持久化、安全边界，以及 iOS Simulator 的 CI 自动执行；真机只保留少量签名/系统能力烟雾测试，不再作为核心功能验证的唯一手段。"
+      "prompt": "实现 iOS 端从零插件的新用户状态开始的真实外部小程序全链路自动化：为 CLI 核心和 iOS/Flutter 薄 UI 建立业界标准、可快速驱动的测试接口；在构建安装包前后可自动启动、重置、查询、执行和读取结构化事件；搜索线上官方已发布的‘全球法布施’小程序，验证它不是内置功能，下载并校验远端构件后安装；验证更新版本可热更新且无需重新打包 App；进入该插件机器人会话发送确定性测试消息；最终不能依据 UI 文案判断成功，必须根据 CLI/runtime 日志、安装回执、来源与版本、tool call、correlation id 和插件真实返回完成断言。覆盖所有可发现 action 的契约自动化、失败恢复、进程重启后的安装持久化、安全边界，以及 iOS Simulator 的 CI 自动执行；真机只保留少量签名/系统能力烟雾测试，不再作为核心功能验证的唯一手段。"
     }
   ]
 }

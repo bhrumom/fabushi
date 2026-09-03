@@ -52,15 +52,45 @@ jobs:
         with:
           components: rustfmt
 
+      - name: Verify formatting before native package setup
+        run: cargo fmt --all -- --check
+
+      - name: Install Linux native capture/input dependencies
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
+
       - name: Restore targeted Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: mahayana-fast-v5
+          shared-key: mahayana-fast-v6
           cache-all-crates: true
 
-      - name: Verify formatting
-        run: cargo fmt --all -- --check
+      - name: Test Mahayana-owned CLI compatibility surfaces
+        run: >-
+          cargo test
+          -p mahayana-tui-compat
+          -p mahayana-plugin-archive-compat
+          --profile ci
+
+      - name: Test Mahayana-owned authentication and encrypted secrets
+        run: >-
+          cargo test
+          -p mahayana-auth
+          -p mahayana-secrets
+          --profile ci
+
+      - name: Compile product client against Mahayana-owned auth and secrets
+        run: >-
+          cargo test
+          -p mahayana-platform-client
+          --profile ci
 
       - name: Test sovereign kernel, supervision, and legacy bridge
         run: >-

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "douyin-batch-downloader-local": {
+      "type": "stdio",
+      "command": "./runtime/cli/fabushi-plugin-cli",
+      "args": ["--plugin", "douyin-batch-downloader", "mcp-serve"],
+      "cwd": "."
+    }
+  }
+}

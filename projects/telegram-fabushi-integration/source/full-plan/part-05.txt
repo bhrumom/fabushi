@@ -1,0 +1,220 @@
+- anti-abuse
+- session revoke
+
+E2EE 规划：
+- 普通云同步会话：服务端加密存储 + TLS
+- Secret Conversation：端到端加密
+- 后续可逐步扩展群组 E2EE
+
+E2EE 必须有：
+- device key
+- identity key
+- prekey
+- session key
+- key rotation
+- safety number/verification
+- multi-device key management
+- backup/recovery 策略
+
+不要自行设计未经验证的密码学原语；使用成熟加密库和经过审计的协议组件。
+
+
+============================================================
+二十、服务端部署与基础设施
+============================================================
+
+开发环境：
+- Docker Compose 一键启动
+- gateway
+- message
+- sync
+- presence
+- media
+- database
+- redis/nats 等事件组件（按实际选择）
+- object storage
+
+生产环境：
+- Kubernetes 或可水平扩展服务编排
+- PostgreSQL
+- Redis
+- Object Storage/S3-compatible
+- Event bus
+- CDN
+- TURN/SFU
+- observability
+
+服务必须具备：
+- health check
+- readiness
+- metrics
+- structured logs
+- tracing
+- alerting
+- rate limit
+- backup
+- disaster recovery
+
+
+============================================================
+二十一、性能目标
+============================================================
+
+客户端：
+- 冷启动优先本地数据
+- 会话列表首次可交互目标 < 1 秒（在合理硬件与已登录缓存情况下）
+- 新消息本地入 UI P50 < 50ms（收到事件后）
+- 大会话通过虚拟列表稳定滚动
+- 本地搜索增量索引
+- Rust core 不阻塞 UI thread
+
+网络：
+- 单连接多会话复用
+- 批量 ack
+- 批量 read state
+- presence 聚合
+- delta sync
+- 二进制协议
+
+服务端：
+- 所有写入操作幂等
+- 可水平扩容
+- 热点群/频道专门优化
+- 大频道 fanout 策略分层
+- 离线推送异步化
+
+
+============================================================
+二十二、可观测性与调试
+============================================================
+
+统一 trace：
+client_message_id -> gateway -> message service -> event -> sync -> recipient
+
+每条消息可定位：
+- 创建时间
+- 发送尝试
+- server accepted
+- fanout
+- recipient sync
+- read ack
+
+开发模式提供：
+- Network inspector
+- Sync inspector
+- Conversation state inspector
+- Mini App permission inspector
+- Agent event inspector
+- Payment event inspector
+
+日志不得记录：
+- 明文密码
+- 完整 token
+- 支付敏感信息
+- E2EE key
+
+
+============================================================
+二十三、测试体系
+============================================================
+
+1. Rust Unit Tests
+- message state machine
+- sync cursor
+- permissions
+- retry
+- idempotency
+- serialization
+
+2. Protocol Compatibility Tests
+- old client/new server
+- new client/old server
+- unknown fields
+- version negotiation
+
+3. Property/Fuzz Tests
+- malformed frame
+- duplicate events
+- out-of-order events
+- random reconnect
+- corrupted media metadata
+
+4. Integration Tests
+- user A -> user B
+- multi-device
+- offline recovery
+- group fanout
+- channel post
+- Agent reply
+- Mini App event
+- Payment webhook
+
+5. Network Chaos Tests
+- 500ms latency
+- packet loss
+- disconnect
+- reconnect
+- duplicate delivery
+- server restart
+
+6. Electron E2E
+- Playwright
+- 登录
+- 联系人
+- 私聊
+- 群聊
+- 文件发送
+- 搜索
+- Mini App
+- Agent
+- 支付沙盒
+- 通话信令
+
+7. iOS/Android E2E
+- 登录
+- 同步
+- 推送
+- 聊天
+- 媒体
+- 后台恢复
+
+
+============================================================
+二十四、CI/CD
+============================================================
+
+所有通信模块必须进入 GitHub Actions：
+
+PR 快速链路：
+- fmt
+- clippy
+- rust unit
+- protocol tests
+- targeted integration tests
+- desktop typecheck
+- desktop smoke E2E
+
+main 完整链路：
+- full Rust tests
+- server integration
+- Electron E2E
+- iOS build/tests
+- Android build/tests
+- security scan
+- migration tests
+
+Nightly：
+- network chaos
+- load test
+- long-running sync
+- large history
+- fuzz
+
+发布：
+- 协议 schema compatibility gate
+- DB migration gate
+- staged rollout
+- rollback plan
+
+
+============================================================

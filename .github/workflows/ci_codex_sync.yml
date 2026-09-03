@@ -6,44 +6,86 @@ on:
     paths:
       - "third_party/mahayana"
       - "third_party/mahayana/**"
-  pull_request:
-    branches: ["main", "develop"]
-    paths:
-      - "third_party/mahayana"
-      - "third_party/mahayana/**"
+      - ".github/workflows/ci_codex_sync.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: mahayana-codex-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-mahayana-runtime:
     name: Test embedded Codex Runtime (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: true
       matrix:
+        # This is the heavyweight canonical validation surface. Pull requests use
+        # mahayana-fast-checks.yml; full desktop-family validation happens only on
+        # canonical branch updates or explicit manual verification.
         os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      CARGO_INCREMENTAL: "1"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          # Keep CI deterministic. Advance this pin only in a PR that proves the
+          # full Mahayana clippy/test matrix on all three desktop runner families.
+          toolchain: 1.97.1
           components: clippy, rustfmt
+      - name: Restore Mahayana Cargo build state
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-codex-runtime-v1-${{ runner.os }}-rust-1.97.1
+          cache-all-crates: true
+      - name: Install Linux native capture/input dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
       - name: Run Cargo fmt check
         run: cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all -- --check
       - name: Run Cargo clippy
-        run: >-
-          cargo clippy --locked
-          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
-          --package mahayana-agent-codex
-          --package mahayana-ffi
-          --package mahayana-cli
-          --all-targets -- -D warnings
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/mahayana-clippy.log"
+          if cargo clippy --locked \
+            --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml \
+            --package mahayana-agent-codex \
+            --package mahayana-ffi \
+            --package mahayana-cli \
+            --all-targets -- -D warnings >"$log" 2>&1; then
+            echo 'Mahayana clippy passed.'
+          else
+            echo 'Mahayana clippy failed; final diagnostics follow.' >&2
+            tail -n 240 "$log" >&2
+            exit 1
+          fi
       - name: Run automated unit and integration tests
         if: runner.os == 'Linux'
-        run: >-
-          cargo test --locked
-          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
-          --package mahayana-agent-codex
-          --package mahayana-agent-responses
-          --package mahayana-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/mahayana-tests.log"
+          if cargo test --locked \
+            --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml \
+            --package mahayana-agent-codex \
+            --package mahayana-agent-responses \
+            --package mahayana-cli >"$log" 2>&1; then
+            echo 'Mahayana tests passed.'
+          else
+            echo 'Mahayana tests failed; final diagnostics follow.' >&2
+            tail -n 240 "$log" >&2
+            exit 1
+          fi

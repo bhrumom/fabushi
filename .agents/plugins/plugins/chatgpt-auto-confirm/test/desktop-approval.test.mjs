@@ -160,6 +160,7 @@ test('initial outbound messages create a new Chat and same-task continuations us
   assert.match(nativeSource, /__reactFiber\$/);
   assert.match(nativeSource, /new_chat_conversation_not_created/);
   assert.match(nativeSource, /new_chat_creation_not_confirmed/);
+  assert.match(nativeSource, /unmaterializedBlankConversation/);
   assert.match(nativeSource, /prepare_new_chat_baseline_failed/);
   assert.match(nativeSource, /new_chat_click_no_result/);
   assert.match(nativeSource, /allow forty seconds/);
@@ -702,6 +703,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /__mahayanaChatModeSwitchAttempted/);
   assert.doesNotMatch(nativeSource, /\[\.\.\.candidates\(\)\]\.reverse\(\)\.find/);
   assert.match(nativeSource, /label\.includes\('current mode: chatgpt'\)/);
+  assert.match(nativeSource,
+    /'new chat', '新聊天', 'new conversation', '新对话',[\s\S]*'new task', '新建任务', '新任务'/);
   assert.match(nativeSource, /button\.innerText,[\s\S]*button\.getAttribute\('title'\)/);
   assert.match(nativeSource, /alreadySelected: true/);
   assert.match(nativeSource, /__mahayanaConfirmedChatGPTMode = true/);

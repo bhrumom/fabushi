@@ -1,6 +1,8 @@
-const { app, autoUpdater, BrowserWindow, dialog, ipcMain, Menu, net, nativeTheme, Notification, protocol, safeStorage, shell, session } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, nativeTheme, Notification, protocol, safeStorage, shell, session, Tray } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const { pathToFileURL, URL } = require('node:url');
 const { Readable } = require('node:stream');
@@ -10,6 +12,8 @@ const { MAHAYANA_EDGE } = require('./mahayana-edge.cjs');
 const { NATIVE_EDGE } = require('./native-edge.cjs');
 const { createNativeCapabilityHandlers } = require('./native-capability-handlers.cjs');
 const { MessagingSignalingClient } = require('./messaging-signaling-client.cjs');
+const { createAppAgentSurfaceServer } = require('./app-agent-surface-server.cjs');
+const { RemoteDeviceAgentSupervisor } = require('./remote-device-agent-supervisor.cjs');
 
 const appDataOverride = process.env.FABUSHI_APP_DATA?.trim();
 if (appDataOverride) app.setPath('userData', path.resolve(appDataOverride));
@@ -23,20 +27,165 @@ protocol.registerSchemesAsPrivileged([
     scheme: 'fabushi-blob',
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
+  {
+    scheme: 'fabushi-miniapp',
+    privileges: { standard: true, secure: true },
+  },
 ]);
 
-const host = new MahayanaHostProcess();
-const allowedHostMethods = new Set(Object.keys(MAHAYANA_EDGE.methods));
+const miniAppDocuments = new Map();
+const MINIAPP_DOCUMENT_TTL_MS = 10 * 60 * 1000;
+const MINIAPP_DOCUMENT_MAX_BYTES = 5 * 1024 * 1024;
+
+function pruneMiniAppDocuments(now = Date.now()) {
+  for (const [token, entry] of miniAppDocuments) {
+    if (!entry || entry.expiresAtMs <= now) miniAppDocuments.delete(token);
+  }
+  while (miniAppDocuments.size > 64) miniAppDocuments.delete(miniAppDocuments.keys().next().value);
+}
+
+function registerMiniAppDocument(pluginId, html) {
+  const normalizedPluginId = String(pluginId ?? '').trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(normalizedPluginId)) throw new Error('Invalid Mini App plugin id.');
+  if (typeof html !== 'string' || !html.trim()) throw new Error('Mini App HTML is required.');
+  if (Buffer.byteLength(html, 'utf8') > MINIAPP_DOCUMENT_MAX_BYTES) throw new Error('Mini App HTML exceeds the desktop document limit.');
+  pruneMiniAppDocuments();
+  const token = crypto.randomUUID();
+  miniAppDocuments.set(token, { pluginId: normalizedPluginId, html, expiresAtMs: Date.now() + MINIAPP_DOCUMENT_TTL_MS });
+  return `fabushi-miniapp://document/${token}`;
+}
+
+function handleMiniAppDocumentRequest(request) {
+  const requested = new URL(request.url);
+  if (requested.hostname !== 'document') return new Response('Not found', { status: 404 });
+  pruneMiniAppDocuments();
+  const token = decodeURIComponent(requested.pathname.replace(/^\/+/, ''));
+  const entry = miniAppDocuments.get(token);
+  if (!entry) return new Response('Not found', { status: 404 });
+  return new Response(entry.html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'",
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+}
+
+function encryptedProviderSecret(name) {
+  if (!safeStorage?.isEncryptionAvailable?.()) {
+    return null;
+  }
+  const secretFile = path.join(app.getPath('userData'), 'secure', 'secrets.json');
+  let vault;
+  try { vault = JSON.parse(fsSync.readFileSync(secretFile, 'utf8')); }
+  catch { return null; }
+  const ciphertext = vault?.[name]?.ciphertext;
+  if (typeof ciphertext !== 'string' || !ciphertext) {
+    return null;
+  }
+  try {
+    const value = safeStorage.decryptString(Buffer.from(ciphertext, 'base64'));
+    return value && !/[\r\n]/.test(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function providerEnvironment(inferenceProvider) {
+  if (inferenceProvider === 'openrouter') {
+    const value = encryptedProviderSecret('inference/openrouter/api-key');
+    if (!value) return {};
+    return {
+      MAHAYANA_MODEL_BEARER_TOKEN: value,
+      MAHAYANA_OPENROUTER_MODEL: process.env.MAHAYANA_OPENROUTER_MODEL || 'openai/gpt-5.2',
+    };
+  }
+  if (inferenceProvider === 'claude-code') {
+    const value = encryptedProviderSecret('inference/claude/api-key') || process.env.ANTHROPIC_API_KEY?.trim();
+    if (!value || /[\r\n]/.test(value)) return {};
+    return {
+      MAHAYANA_MODEL_BEARER_TOKEN: value,
+      MAHAYANA_CLAUDE_MODEL: process.env.MAHAYANA_CLAUDE_MODEL || 'claude-sonnet-4-6',
+    };
+  }
+  return {
+    // Never forward provider credentials to the Fabushi/Codex Host generation.
+  };
+}
+
+const host = new MahayanaHostProcess({ providerEnvironment });
 let mahayanaEdgeServer = null;
 let nativeEdgeServer = null;
+let appAgentSurfaceServer = null;
+let remoteDeviceAgentSupervisor = null;
+let appAgentSurfaceShutdownPending = false;
+let appAgentSurfaceShutdownComplete = false;
 let hostEventPumpStopped = false;
 let hostEventPump = null;
 const messagingAccessCache = new Map();
 let messagingSignalingClient = null;
+let availableDesktopUpdateVersion = null;
+let runtimeDesktopUpdateStatus = null;
+const DESKTOP_UPDATE_CHECK_MIN_INTERVAL_MS = 60_000;
+const DESKTOP_UPDATE_FOREGROUND_INTERVAL_MS = 5 * 60_000;
+let lastAutomaticDesktopUpdateCheckAt = 0;
+let automaticDesktopUpdateCheckTimer = null;
+let automaticDesktopUpdateCheckPromise = null;
+let mainWindow = null;
+let backgroundTray = null;
+let quitting = false;
+const backgroundPersistenceEnabled = process.env.FABUSHI_E2E !== '1';
 
-function clearAccountBoundMessagingState() {
-  messagingAccessCache.clear();
-  messagingSignalingClient?.disconnect();
+function appAgentControlPolicyDecision() {
+  const configured = String(process.env.FABUSHI_COMPUTER_POLICY_FILE || '').trim();
+  const policyFile = configured
+    ? path.resolve(configured)
+    : path.join(app.getPath('userData'), 'feature-host', 'runtime', 'settings.json');
+  let settings;
+  try { settings = JSON.parse(fsSync.readFileSync(policyFile, 'utf8')); }
+  catch { return { allowed: false, reason: 'Fabushi computer-control policy is unavailable.' }; }
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return { allowed: false, reason: 'Fabushi computer-control policy is invalid.' };
+  }
+  if (settings.localExecution !== true || settings.aiComputerControlEnabled !== true) {
+    return { allowed: false, reason: 'Fabushi AI computer control is disabled.' };
+  }
+  if (!['ask', 'always'].includes(settings.localToolPermission)) {
+    return { allowed: false, reason: 'Fabushi local tool permission denies control.' };
+  }
+  return { allowed: true };
+}
+
+function appAgentSurfaceDiscoveryPath() {
+  const configured = String(process.env.FABUSHI_APP_AGENT_DISCOVERY_FILE || '').trim();
+  return configured
+    ? path.resolve(configured)
+    : path.join(app.getPath('userData'), 'agent-surface', 'bridge.json');
+}
+
+async function startAppAgentSurfaceServer() {
+  if (appAgentSurfaceServer) return appAgentSurfaceServer;
+  const bridge = createAppAgentSurfaceServer({
+    discoveryPath: appAgentSurfaceDiscoveryPath(),
+    authorize: () => appAgentControlPolicyDecision(),
+    onRequest(request) {
+      const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+      if (!win || win.webContents.isDestroyed() || !nativeEdgeServer) {
+        throw new Error('app_surface_renderer_unavailable');
+      }
+      nativeEdgeServer.emit(win.webContents, 'app-agent-surface-request', request);
+    },
+  });
+  await bridge.start();
+  appAgentSurfaceServer = bridge;
+  console.info(JSON.stringify({
+    type: 'fabushi.app-agent-surface.ready',
+    origin: bridge.origin,
+    discoveryPath: bridge.discoveryPath,
+  }));
+  return bridge;
 }
 
 function normalizeMessagingAccessParams(params) {
@@ -117,11 +266,18 @@ const DEEP_LINK_DEDUPE_MS = 5_000;
 
 function focusMainWindow() {
   if (!app.isReady()) return;
-  const win = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
-  if (!win) return;
+  let win = mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow
+    : BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+  if (!win) win = createWindow();
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+}
+
+function requestApplicationQuit() {
+  quitting = true;
+  app.quit();
 }
 
 function parseFabushiDeepLink(candidate) {
@@ -223,11 +379,12 @@ if (!primaryInstance) app.quit();
 
 if (primaryInstance) {
   app.on('second-instance', (_event, argv) => {
-    if (!argv.some((value) => typeof value === 'string' && value.toLowerCase().startsWith(DEEP_LINK_PROTOCOL))) focusMainWindow();
+    focusMainWindow();
     deepLinkRouter.handleArgv(argv, 'second-instance');
   });
   app.on('open-url', (event, url) => {
     event.preventDefault();
+    focusMainWindow();
     deepLinkRouter.handle(url, 'open-url');
   });
   deepLinkRouter.handleArgv(process.argv, 'initial-argv');
@@ -312,6 +469,36 @@ async function mutateNativeState(mutator) {
     await fs.rename(temp, file);
   });
   return nativeStateWrite;
+}
+
+function normalizePersistedDesktopUpdateStatus(status) {
+  const currentVersion = app.getVersion();
+  if (!status || typeof status !== 'object') return { type: 'upToDate', version: currentVersion };
+  const version = typeof status.version === 'string' && status.version ? status.version : currentVersion;
+  if (status.type === 'upToDate') return { ...status, version: currentVersion };
+  if (version === currentVersion && ['available', 'downloading', 'ready', 'staging'].includes(status.type)) {
+    return { type: 'upToDate', version: currentVersion };
+  }
+  return { ...status, version };
+}
+
+async function getDesktopUpdateStatus() {
+  if (runtimeDesktopUpdateStatus) return runtimeDesktopUpdateStatus;
+  const state = await readNativeState();
+  runtimeDesktopUpdateStatus = normalizePersistedDesktopUpdateStatus(state.updateStatus);
+  return runtimeDesktopUpdateStatus;
+}
+
+function setDesktopUpdateStatus(status, { broadcast = true } = {}) {
+  // The updater is a live process state machine. Set memory before broadcasting so
+  // a renderer click triggered by this exact event can never read stale disk state.
+  runtimeDesktopUpdateStatus = status;
+  if (broadcast) broadcastNativeEvent('update-status', status);
+  return mutateNativeState((state) => ({ ...state, updateStatus: status }))
+    .catch((error) => {
+      console.warn('[updater] unable to persist live update status', error instanceof Error ? error.message : String(error));
+    })
+    .then(() => status);
 }
 
 function persistenceKey(value) {
@@ -433,8 +620,23 @@ function broadcastNativeEvent(eventName, payload) {
   }
 }
 
+function logEdgeInvocation(record) {
+  // Deliberately exclude args/results/URLs/tokens. This record is safe to retain as
+  // operational telemetry and gives renderer -> edge correlation without secrets.
+  console.info(JSON.stringify({ type: 'fabushi.edge.invoke', ...record }));
+}
+
 function installNativeEdge() {
   const handlers = {
+    respondAppAgentSurfaceRequest(params, event) {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!mainWindow || mainWindow.isDestroyed() || win !== mainWindow) {
+        throw new Error('Only the primary trusted Fabushi renderer may answer App Agent Surface requests.');
+      }
+      if (!appAgentSurfaceServer) throw new Error('App Agent Surface is unavailable.');
+      if (!appAgentSurfaceServer.respond(params)) throw new Error('App Agent Surface request is missing or already settled.');
+      return true;
+    },
     async openExternal(params) {
       await shell.openExternal(safeHttpsUrl(params.url));
       return true;
@@ -600,40 +802,52 @@ function installNativeEdge() {
     host,
     readNativeState,
     mutateNativeState,
+    getDesktopUpdateStatus,
+    setDesktopUpdateStatus,
     windowForEvent,
     broadcastNativeEvent,
-    clearAccountBoundMessagingState,
     markDeepLinksReady: () => deepLinkRouter.markReady(),
   }));
 
   nativeEdgeServer = serveMainEdge(ipcMain, NATIVE_EDGE, handlers, {
     isTrustedSender,
+    onInvocation: logEdgeInvocation,
     onHandlerError(method, error) {
       console.error(`[native-edge] ${method} failed`, error);
     },
   });
 }
 
+async function authorizeMahayanaParams(method, params) {
+  const normalized = normalizeParams(params);
+  if (method !== 'feature.execute') return normalized;
+  const command = normalized.command;
+  if (!command || command.type !== 'messaging.execute') return normalized;
+  const context = command.envelope?.context;
+  const deviceId = String(context?.deviceId || '').trim();
+  const sessionId = String(context?.sessionId || '').trim();
+  const actorId = String(context?.actorId || '').trim();
+  if (!deviceId || !sessionId || !actorId) {
+    throw new Error('Messaging envelope requires account-bound actor, device, and session identity.');
+  }
+  const credential = await getOrIssueMessagingAccess({ deviceId, sessionId }, ['messaging']);
+  if (String(credential.actorId || '') !== actorId) {
+    throw new Error('Messaging envelope actor does not match authenticated account.');
+  }
+  return normalized;
+}
+
 function installMahayanaEdge() {
   const handlers = Object.fromEntries(
     Object.keys(MAHAYANA_EDGE.methods).map((method) => [
       method,
-      async (params) => {
-        const result = await host.request(method, normalizeParams(params));
-        if (
-          method === 'feature.auth.logout' ||
-          (method.startsWith('feature.auth.') && method !== 'feature.auth.status' && result?.loggedIn === true) ||
-          result?.auth?.loggedIn === true
-        ) {
-          clearAccountBoundMessagingState();
-        }
-        return result;
-      },
+      async (params) => host.request(method, await authorizeMahayanaParams(method, params)),
     ]),
   );
 
   mahayanaEdgeServer = serveMainEdge(ipcMain, MAHAYANA_EDGE, handlers, {
     isTrustedSender,
+    onInvocation: logEdgeInvocation,
     onHandlerError(method, error) {
       console.error(`[mahayana-edge] ${method} failed`, error);
     },
@@ -642,8 +856,13 @@ function installMahayanaEdge() {
 
 function noteRuntimeUsage(event) {
   if (!event || event.type !== 'usage.updated') return;
+  const provider = String(host.activeInferenceProvider || 'fabushi');
+  const inputTokens = Math.max(0, Number(event.inputTokens ?? 0));
+  const cachedInputTokens = Math.max(0, Number(event.cachedInputTokens ?? 0));
+  const outputTokens = Math.max(0, Number(event.outputTokens ?? 0));
+  const reasoningTokens = Math.max(0, Number(event.reasoningTokens ?? 0));
   const totalTokens = Math.max(0, Number(event.totalTokens ?? 0));
-  const item = { timestampMs: Date.now(), totalTokens };
+  const item = { timestampMs: Date.now(), provider, inputTokens, cachedInputTokens, outputTokens, reasoningTokens, totalTokens };
   void mutateNativeState((state) => {
     const previous = Array.isArray(state.usageEvents) ? state.usageEvents : [];
     const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1000;
@@ -652,6 +871,10 @@ function noteRuntimeUsage(event) {
       ...state,
       usageEvents,
       usageLifetimeTokens: Number(state.usageLifetimeTokens ?? 0) + totalTokens,
+      usageLifetimeByProvider: {
+        ...(state.usageLifetimeByProvider ?? {}),
+        [provider]: Number(state.usageLifetimeByProvider?.[provider] ?? 0) + totalTokens,
+      },
       usageUpdatedAtMs: item.timestampMs,
     };
   }).catch((error) => console.error('[native-edge] failed to persist usage telemetry', error));
@@ -670,6 +893,16 @@ function broadcastMahayanaEvent(event) {
     if (win.isDestroyed() || win.webContents.isDestroyed()) continue;
     mahayanaEdgeServer.emit(win.webContents, 'runtime-event', event);
   }
+  if (event?.type === 'settings.changed'
+      && ((typeof event.settings?.inferenceProvider === 'string'
+        && event.settings.inferenceProvider !== host.activeInferenceProvider)
+        || (typeof event.settings?.sandboxRuntime === 'string'
+          && event.settings.sandboxRuntime !== host.activeSandboxRuntime))) {
+    setImmediate(() => {
+      try { host.restart('inference Router settings changed'); }
+      catch (error) { console.error('[mahayana-edge] Router restart failed', error); }
+    });
+  }
 }
 
 function startHostEventPump() {
@@ -678,9 +911,12 @@ function startHostEventPump() {
   hostEventPump = (async () => {
     while (!hostEventPumpStopped) {
       try {
-        const event = await host.request('feature.receive', {});
+        const event = await host.request('feature.receive', { timeoutMs: 500 });
         if (event) broadcastMahayanaEvent(event);
-        else await sleep(10);
+        // Yield after every receive, including a non-empty event. The Rust Host
+        // processes requests serially; immediately enqueueing the next long-poll
+        // from this Promise continuation can starve renderer IPC such as auth.
+        await sleep(10);
       } catch (error) {
         if (hostEventPumpStopped) break;
         console.error('[mahayana-edge] runtime event pump failed', error);
@@ -695,15 +931,6 @@ function startHostEventPump() {
 function installIpcHandlers() {
   installMahayanaEdge();
   installNativeEdge();
-
-  // Temporary compatibility channel for older renderer builds. Current preload
-  // routes window.fabushi.invoke through MAHAYANA_EDGE instead.
-  ipcMain.handle('fabushi:host', async (event, request) => {
-    assertTrustedSender(event);
-    const method = String(request?.method || '');
-    if (!allowedHostMethods.has(method)) throw new Error(`Host method is not allowed: ${method}`);
-    return host.request(method, normalizeParams(request?.params));
-  });
 
   ipcMain.handle('fabushi:pick-file', async (event) => {
     assertTrustedSender(event);
@@ -731,6 +958,11 @@ function installIpcHandlers() {
     return BrowserWindow.fromWebContents(event.sender)?.isFocused() ?? false;
   });
 
+  ipcMain.handle('fabushi:register-miniapp-document', async (event, payload) => {
+    assertTrustedSender(event);
+    return registerMiniAppDocument(payload?.pluginId, payload?.html);
+  });
+
   ipcMain.handle('fabushi:open-system-settings', async (event, payload) => {
     assertTrustedSender(event);
     const pane = String(payload?.pane || '');
@@ -753,6 +985,7 @@ function installIpcHandlers() {
 }
 
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
   const win = new BrowserWindow({
     title: '全球法布施',
     width: 1180,
@@ -767,8 +1000,12 @@ function createWindow() {
       sandbox: true,
       webSecurity: true,
       allowRunningInsecureContent: false,
+      // Remote presence, WebRTC signaling, and semantic computer-use polling
+      // must continue when the user closes (hides) the desktop window.
+      backgroundThrottling: false,
     },
   });
+  mainWindow = win;
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     try { void shell.openExternal(safeHttpsUrl(url)); } catch {}
@@ -781,6 +1018,16 @@ function createWindow() {
   for (const eventName of ['focus', 'blur', 'minimize', 'restore', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) {
     win.on(eventName, publishWindowState);
   }
+  win.on('close', (event) => {
+    if (quitting || !backgroundPersistenceEnabled) return;
+    event.preventDefault();
+    win.hide();
+    publishWindowState();
+  });
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+    deepLinkRouter.markNotReady();
+  });
   win.webContents.on('zoom-changed', () => {
     broadcastNativeEvent('zoom-factor-changed', { factor: win.webContents.getZoomFactor() });
   });
@@ -799,34 +1046,108 @@ function createWindow() {
   } else {
     void win.loadURL('app://bundle/index.html');
   }
+  return win;
+}
+
+function installBackgroundTray() {
+  if (!backgroundPersistenceEnabled || backgroundTray) return;
+  const iconPath = path.resolve(__dirname, '..', 'resources', 'icon.png');
+  let image = nativeImage.createFromPath(iconPath);
+  if (image.isEmpty()) {
+    // Packaged builds may not carry the builder source icon inside app.asar.
+    // Keep a dependency-free embedded fallback so tray persistence works on
+    // every target even when only dist/** and electron/** are packaged.
+    const fallbackSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="9" fill="#8b5cf6"/><path d="M9 11h14v9H9zm4 11h6v2h-6z" fill="white"/></svg>';
+    image = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(fallbackSvg).toString('base64')}`);
+  }
+  if (process.platform === 'darwin' && !image.isEmpty()) {
+    image = image.resize({ width: 18, height: 18 });
+    image.setTemplateImage(true);
+  }
+  if (image.isEmpty()) {
+    console.warn('[desktop] background tray icon could not be created; continuing without a tray');
+    return;
+  }
+  try {
+    const tray = new Tray(image);
+    tray.setToolTip('Fabushi · 电脑连接在后台运行');
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: '显示 Fabushi', click: focusMainWindow },
+      { label: '电脑连接在后台运行', enabled: false },
+      { type: 'separator' },
+      { label: '退出 Fabushi', click: requestApplicationQuit },
+    ]));
+    tray.on('click', focusMainWindow);
+    tray.on('double-click', focusMainWindow);
+    backgroundTray = tray;
+  } catch (cause) {
+    // Some minimal Linux desktop sessions do not provide a status notifier or
+    // system tray. Presence must remain available rather than crashing the Host;
+    // relaunching the single-instance app still restores the hidden window.
+    backgroundTray = null;
+    console.warn('[desktop] background tray is unavailable; continuing in background mode', cause);
+  }
 }
 
 function installAutoUpdaterEvents() {
   if (!autoUpdater?.on) return;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
   autoUpdater.on('checking-for-update', () => {
-    void mutateNativeState((state) => ({ ...state, updateStatus: { type: 'checking', version: app.getVersion() } }));
-    broadcastNativeEvent('update-status', { type: 'checking', version: app.getVersion() });
+    const status = { type: 'checking', version: app.getVersion() };
+    void setDesktopUpdateStatus(status);
   });
   autoUpdater.on('update-not-available', (info) => {
+    availableDesktopUpdateVersion = null;
     const status = { type: 'upToDate', version: info?.version ?? app.getVersion() };
-    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
-    broadcastNativeEvent('update-status', status);
+    void setDesktopUpdateStatus(status);
   });
   autoUpdater.on('update-available', (info) => {
-    const status = { type: 'downloading', version: info?.version ?? null };
-    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
-    broadcastNativeEvent('update-status', status);
+    availableDesktopUpdateVersion = info?.version ?? app.getVersion();
+    const status = { type: 'available', version: availableDesktopUpdateVersion, notes: typeof info?.releaseNotes === 'string' ? info.releaseNotes : undefined };
+    void setDesktopUpdateStatus(status);
   });
-  autoUpdater.on('update-downloaded', (_event, _notes, version) => {
-    const status = { type: 'ready', version: version ?? null };
-    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
-    broadcastNativeEvent('update-status', status);
+  autoUpdater.on('download-progress', (progress) => {
+    const status = { type: 'downloading', version: availableDesktopUpdateVersion ?? app.getVersion(), progress: Number.isFinite(progress?.percent) ? Math.round(progress.percent) : undefined };
+    void setDesktopUpdateStatus(status);
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    availableDesktopUpdateVersion = info?.version ?? availableDesktopUpdateVersion ?? app.getVersion();
+    const status = { type: 'ready', version: availableDesktopUpdateVersion };
+    void setDesktopUpdateStatus(status);
   });
   autoUpdater.on('error', (error) => {
     const status = { type: 'error', message: error instanceof Error ? error.message : String(error) };
-    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
-    broadcastNativeEvent('update-status', status);
+    void setDesktopUpdateStatus(status);
   });
+}
+
+async function checkForDesktopUpdateAutomatically({ force = false } = {}) {
+  if (!app.isPackaged || !autoUpdater?.checkForUpdates) return null;
+  const now = Date.now();
+  if (!force && now - lastAutomaticDesktopUpdateCheckAt < DESKTOP_UPDATE_CHECK_MIN_INTERVAL_MS) return null;
+  if (automaticDesktopUpdateCheckPromise) return automaticDesktopUpdateCheckPromise;
+  lastAutomaticDesktopUpdateCheckAt = now;
+  automaticDesktopUpdateCheckPromise = autoUpdater.checkForUpdates()
+    .catch((error) => {
+      console.warn('[updater] automatic update check failed', error instanceof Error ? error.message : String(error));
+      return null;
+    })
+    .finally(() => { automaticDesktopUpdateCheckPromise = null; });
+  return automaticDesktopUpdateCheckPromise;
+}
+
+function installAutomaticDesktopUpdateChecks() {
+  if (!app.isPackaged) return;
+  const startupTimer = setTimeout(() => { void checkForDesktopUpdateAutomatically({ force: true }); }, 4_000);
+  startupTimer.unref?.();
+  app.on('browser-window-focus', () => { void checkForDesktopUpdateAutomatically(); });
+  automaticDesktopUpdateCheckTimer = setInterval(() => {
+    const hasFocusedWindow = BrowserWindow.getAllWindows().some((win) => !win.isDestroyed() && win.isFocused());
+    if (hasFocusedWindow) void checkForDesktopUpdateAutomatically();
+  }, DESKTOP_UPDATE_FOREGROUND_INTERVAL_MS);
+  automaticDesktopUpdateCheckTimer.unref?.();
 }
 
 function installApplicationMenu() {
@@ -860,6 +1181,10 @@ function installApplicationMenu() {
         { type: 'separator' },
         { label: '发送反馈', click: () => send('open-feedback') },
         { label: '关于', click: () => send('open-about') },
+        ...(process.platform === 'darwin' ? [] : [
+          { type: 'separator' },
+          { label: '退出 Fabushi', accelerator: 'CmdOrCtrl+Q', click: requestApplicationQuit },
+        ]),
       ],
     },
     {
@@ -980,25 +1305,45 @@ function installAppProtocol() {
     return net.fetch(pathToFileURL(resolved).toString());
   });
   protocol.handle('fabushi-blob', handleMessagingBlobRequest);
+  protocol.handle('fabushi-miniapp', handleMiniAppDocumentRequest);
 }
 
 applyStartupNativePreferences();
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   installAppProtocol();
   installApplicationMenu();
   installAutoUpdaterEvents();
   if (primaryInstance && app.isPackaged) app.setAsDefaultProtocolClient('fabushi');
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   installIpcHandlers();
+  await startAppAgentSurfaceServer().catch((error) => {
+    console.error('[app-agent-surface] failed to start', error);
+  });
   host.start();
+  remoteDeviceAgentSupervisor = new RemoteDeviceAgentSupervisor({ host, app });
+  remoteDeviceAgentSupervisor.start();
+  installBackgroundTray();
   createWindow();
   startHostEventPump();
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  installAutomaticDesktopUpdateChecks();
+  app.on('activate', () => {
+    focusMainWindow();
+    void checkForDesktopUpdateAutomatically();
+  });
 });
 
-app.on('window-all-closed', () => { deepLinkRouter.markNotReady(); if (process.platform !== 'darwin') app.quit(); });
-app.on('before-quit', () => {
+app.on('window-all-closed', () => {
+  deepLinkRouter.markNotReady();
+  // Production keeps the Host and account-bound computer presence alive after
+  // the window is hidden. Automated user journeys opt into a deterministic
+  // shutdown seam so Playwright can close each isolated application cleanly.
+  if (!backgroundPersistenceEnabled) app.quit();
+});
+app.on('before-quit', (event) => {
+  quitting = true;
+  if (automaticDesktopUpdateCheckTimer) clearInterval(automaticDesktopUpdateCheckTimer);
+  automaticDesktopUpdateCheckTimer = null;
   hostEventPumpStopped = true;
   mahayanaEdgeServer?.dispose();
   mahayanaEdgeServer = null;
@@ -1007,5 +1352,26 @@ app.on('before-quit', () => {
   messagingSignalingClient?.disconnect('app_quit');
   messagingSignalingClient = null;
   messagingAccessCache.clear();
+  remoteDeviceAgentSupervisor?.close();
+  remoteDeviceAgentSupervisor = null;
+  const closingAppAgentSurface = appAgentSurfaceServer;
+  appAgentSurfaceServer = null;
+  if (closingAppAgentSurface && !appAgentSurfaceShutdownComplete) {
+    event.preventDefault();
+    if (!appAgentSurfaceShutdownPending) {
+      appAgentSurfaceShutdownPending = true;
+      void closingAppAgentSurface.close()
+        .catch((error) => {
+          console.error('[app-agent-surface] shutdown failed', error);
+        })
+        .finally(() => {
+          appAgentSurfaceShutdownPending = false;
+          appAgentSurfaceShutdownComplete = true;
+          app.quit();
+        });
+    }
+  }
+  backgroundTray?.destroy();
+  backgroundTray = null;
   host.close();
 });

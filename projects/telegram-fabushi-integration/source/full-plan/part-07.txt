@@ -1,0 +1,220 @@
+M12：高级 IM 能力
+------------------------------------------------------------
+
+任务：
+- sticker/GIF
+- polls
+- scheduled message
+- advanced reaction
+- advanced search
+- multi-window
+- stories/动态（如产品确认）
+- group call/SFU（如进入本阶段）
+
+验收：
+- 功能矩阵达到既定 Telegram Desktop 对标范围
+
+------------------------------------------------------------
+M13：安全强化 + E2EE
+------------------------------------------------------------
+
+任务：
+- device verification
+- Secret Conversation
+- key rotation
+- security review
+- threat model
+- fuzz/security testing
+
+验收：
+- E2EE 会话服务端无法读取正文
+- 多设备密钥生命周期测试通过
+
+------------------------------------------------------------
+M14：全量替换旧通信栈
+------------------------------------------------------------
+
+任务：
+- 迁移旧会话数据（如存在）
+- 移除重复聊天实现
+- 移除旧联系人实现
+- 移除旧 Bot 单独通道
+- feature flags 逐步关闭旧路径
+
+验收：
+- 主路径仅剩 Fabushi Messaging Core
+- 无旧栈隐式 fallback
+- main 分支通过完整测试
+
+
+============================================================
+二十六、功能矩阵与完成定义
+============================================================
+
+每一个功能只能标记为以下状态：
+- NOT_STARTED
+- IN_PROGRESS
+- IMPLEMENTED
+- TESTED
+- E2E_VERIFIED
+- RELEASED
+
+禁止仅因为“有代码”就标记完成。
+
+一个功能达到 DONE 必须同时满足：
+1. 代码已进入正式架构
+2. Rust/服务端测试通过
+3. UI 可使用
+4. E2E 验证
+5. 错误处理存在
+6. 权限正确
+7. 日志/监控可定位
+8. 文档/协议已更新
+9. 无依赖旧临时路径
+10. 已合并 main 或进入明确发布分支
+
+
+============================================================
+二十七、全量验收清单
+============================================================
+
+A. 账号
+[ ] 登录
+[ ] 多设备
+[ ] 设备管理
+[ ] 联系人
+[ ] 黑名单
+[ ] 隐私
+
+B. 私聊
+[ ] 文本
+[ ] 富文本
+[ ] 回复
+[ ] 转发
+[ ] 编辑
+[ ] 删除
+[ ] 已读
+[ ] typing
+[ ] 草稿
+[ ] 置顶
+[ ] 静音
+[ ] 搜索
+[ ] reaction
+
+C. 媒体
+[ ] 图片
+[ ] 视频
+[ ] 音频
+[ ] 语音
+[ ] 文件
+[ ] GIF
+[ ] Sticker
+[ ] 断点续传
+[ ] 缓存
+
+D. 群
+[ ] 创建群
+[ ] 邀请
+[ ] 管理员
+[ ] 权限
+[ ] 禁言
+[ ] 加入请求
+[ ] 管理日志
+[ ] Topic
+
+E. 频道
+[ ] 创建频道
+[ ] 广播
+[ ] 订阅
+[ ] 管理员
+[ ] Reaction
+[ ] 评论/Topic
+
+F. Agent/Bot
+[ ] Agent 联系人
+[ ] Agent 私聊
+[ ] 群 @Agent
+[ ] Agent-to-Agent
+[ ] Tool event
+[ ] 权限
+[ ] Audit
+
+G. Mini Apps
+[ ] 启动
+[ ] SDK
+[ ] initData 签名
+[ ] 权限
+[ ] 文件
+[ ] 联系人
+[ ] 位置
+[ ] Agent bridge
+[ ] Payment bridge
+
+H. 支付
+[ ] Merchant
+[ ] Product
+[ ] Order
+[ ] PaymentIntent
+[ ] Provider
+[ ] Webhook
+[ ] Ledger
+[ ] Refund
+[ ] Sandbox E2E
+
+I. 通话
+[ ] 1:1 Voice
+[ ] 1:1 Video
+[ ] Screen Share
+[ ] TURN
+[ ] Call history
+[ ] Group call（后期）
+
+J. 跨端
+[ ] Electron
+[ ] iOS
+[ ] Android
+[ ] 同一 Rust Core
+[ ] 同一协议版本
+
+K. 可靠性
+[ ] 断网
+[ ] 重连
+[ ] 重复事件
+[ ] 乱序
+[ ] 多设备
+[ ] 服务重启
+[ ] 大历史
+[ ] 大群
+
+L. 安全
+[ ] TLS
+[ ] device trust
+[ ] token rotation
+[ ] permission
+[ ] rate limit
+[ ] Mini App sandbox
+[ ] payment signing
+[ ] E2EE Secret Conversation
+
+
+============================================================
+二十八、迁移策略
+============================================================
+
+不允许“一次性全部重写然后切换”。采用 Strangler 方式逐步替换：
+
+1. 先建立新 Rust Core
+2. 新消息走新 Core
+3. UI 通过统一 SDK 访问，不再直接访问旧模块
+4. 用 feature flag 按会话/账号灰度
+5. 新旧双写只在必要的迁移窗口使用，并有明确移除日期
+6. 旧代码只允许修阻塞 bug，不再增加功能
+7. 每完成一个域，删除对应旧实现
+8. 最终移除兼容层
+
+数据库迁移要求：
+- versioned migration
+- backward-safe
+- crash-safe
+- migration tests
+- rollback/forward strategy

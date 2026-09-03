@@ -35,7 +35,13 @@ import {
   isElectronMahayanaHostAvailable,
 } from "./electron-transport";
 import type {
+  InstalledPluginList,
+  InstalledPluginPointer,
   MahayanaHostTransport,
+  MarketplaceBrowseResult,
+  MarketplaceReleaseMetadata,
+  PluginUiDocument,
+  PluginUninstallResult,
   RuntimeEventListener,
 } from "./transport";
 import { makeMemoryId, memoryDedupeKey, normalizeMemoryContent } from "../fabushi-runtime/memory-store";
@@ -505,6 +511,7 @@ const richResultsCards = (): TranscriptCard[] => {
 export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private readonly native: MahayanaHostTransport | null;
   private readonly listeners = new Set<RuntimeEventListener>();
+  private readonly installedPlugins = new Map<string, InstalledPluginPointer>();
   private readonly approvals = new Set<string>();
   private readonly providedSecrets = new Set<string>();
   private status: HostStatus = "idle";
@@ -535,6 +542,8 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
     remoteControlEnabled: false,
     aiComputerControlEnabled: true,
     autoReviewRules: [],
+    inferenceProvider: "fabushi",
+    sandboxRuntime: "host",
   };
   private listenerIntegrations = new Map(defaultListeners().map((integration) => [integration.platform, integration]));
   private updateState: UpdateState = { type: "upToDate", version: "0.1.0" };
@@ -574,6 +583,72 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
     this.status = "ready";
     this.emit({ type: "host.ready", timestamp: now(), info: this.info });
     return this.info;
+  }
+
+  async marketplaceBrowse(query?: string): Promise<MarketplaceBrowseResult> {
+    if (this.native) return this.native.marketplaceBrowse(query);
+    const term = query?.trim().toLocaleLowerCase() ?? "";
+    const plugins = [
+      ["global-dharma", "全球法布施", "任务、日志与部署"],
+      ["faliu-flashcards", "法流记忆卡", "经文牌组与复习"],
+      ["platform-publish", "平台发布", "内容发布与自动化"],
+      ["bot-father", "Bot Father", "创建和管理机器人"],
+    ].map(([pluginId, displayName, description]) => ({
+      pluginId, displayName, description, latestVersion: "1.0.0",
+      platforms: ["desktop"], releaseStatus: "approved",
+    })).filter((plugin) => !term || `${plugin.pluginId} ${plugin.displayName} ${plugin.description}`.toLocaleLowerCase().includes(term));
+    return { plugins };
+  }
+
+  async marketplaceRelease(pluginId: string, version: string): Promise<MarketplaceReleaseMetadata> {
+    if (this.native) return this.native.marketplaceRelease(pluginId, version);
+    return {
+      pluginId,
+      version,
+      releaseStatus: "approved",
+      releaseManifest: {
+        schemaVersion: 1,
+        protocol: "mahayana.external-release.v1",
+        pluginId,
+        version,
+        permissions: [],
+        artifacts: [],
+      },
+    };
+  }
+
+  async pluginInstall(release: Record<string, unknown>, platform = "desktop"): Promise<InstalledPluginPointer> {
+    if (this.native) return this.native.pluginInstall(release, platform);
+    const pluginId = String(release.pluginId ?? "");
+    const version = String(release.version ?? "1.0.0");
+    if (!pluginId) throw new Error("release pluginId is required");
+    const pointer: InstalledPluginPointer = {
+      pluginId, version, artifactId: "mock-ui", artifactSha256: "0".repeat(64),
+      runtime: "local-web", entry: "index.html", installedPath: `/mock/plugins/${pluginId}/${version}`, requestedPermissions: [],
+    };
+    this.installedPlugins.set(pluginId, pointer);
+    return pointer;
+  }
+
+  async pluginUninstall(pluginId: string): Promise<PluginUninstallResult> {
+    if (this.native) return this.native.pluginUninstall(pluginId);
+    return { pluginId, removed: this.installedPlugins.delete(pluginId), permissionsRemoved: true };
+  }
+
+  async pluginActive(pluginId: string): Promise<InstalledPluginPointer | null> {
+    if (this.native) return this.native.pluginActive(pluginId);
+    return this.installedPlugins.get(pluginId) ?? null;
+  }
+
+  async pluginListInstalled(): Promise<InstalledPluginList> {
+    if (this.native) return this.native.pluginListInstalled();
+    return { plugins: [...this.installedPlugins.values()] };
+  }
+
+  async pluginUiDocument(pluginId: string): Promise<PluginUiDocument> {
+    if (this.native) return this.native.pluginUiDocument(pluginId);
+    if (!this.installedPlugins.has(pluginId)) throw new Error(`plugin ${pluginId} is not installed`);
+    return { pluginId, html: `<!doctype html><meta charset="utf-8"><title>${pluginId}</title><main style="font-family:system-ui;padding:32px"><h1>${pluginId}</h1><p>Installed from the online Mahayana Marketplace.</p></main>` };
   }
 
   async execute(command: RuntimeCommand): Promise<CommandAccepted> {
@@ -1299,7 +1374,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         return { requestId: command.requestId };
       }
       case "remoteComputer.register":
-        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "registered", data: { deviceId: command.deviceId, label: command.label, pairingCode: "AB12CD34", pairingExpiresAt: Math.floor(Date.now() / 1000) + 600 } });
+        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "registered", data: { deviceId: command.deviceId, label: command.label, provider: command.provider, platform: command.platform, appVersion: command.appVersion, capabilities: command.capabilities, pairingCode: "AB12CD34", pairingExpiresAt: Math.floor(Date.now() / 1000) + 600 } });
         return { requestId: command.requestId };
       case "remoteComputer.heartbeat":
         this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "heartbeat", data: { ok: true, lastSeenAt: Math.floor(Date.now() / 1000) } });

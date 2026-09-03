@@ -9,6 +9,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { buildComputerToolDescriptors, registerComputerUseTools } from "./computer-use.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const MCP_PREFIX = process.env.MCP_PATH_PREFIX ?? "/mcp";
@@ -17,6 +18,7 @@ const HISTORY_PATH = process.env.HISTORY_PATH ?? resolve(process.cwd(), "history
 const MAX_OUTPUT_CHARS = Number(process.env.MAX_OUTPUT_CHARS ?? 12000);
 const MAX_TIMEOUT_SECONDS = Number(process.env.MAX_TIMEOUT_SECONDS ?? 600);
 const NO_AUTH_SECURITY_SCHEMES = [{ type: "noauth" }];
+const READ_SECURITY_SCHEMES = [{ type: "oauth2", scopes: ["vps.read"] }];
 const WRITE_SECURITY_SCHEMES = [{ type: "oauth2", scopes: ["vps.write"] }];
 const OAUTH_SCOPES = ["vps.read", "vps.write"];
 const OAUTH_CODES = new Map();
@@ -873,8 +875,25 @@ async function createVpsServer(authContext, authChallenge) {
     }
   );
 
+  registerComputerUseTools(server, {
+    hasReadScope: () => hasScope(authContext, "vps.read") || hasScope(authContext, "vps.write"),
+    hasWriteScope: () => hasScope(authContext, "vps.write"),
+    readAuthChallenge: authChallenge,
+    writeAuthChallenge: authChallenge,
+    toolAuthError,
+    readSecuritySchemes: READ_SECURITY_SCHEMES,
+    writeSecuritySchemes: WRITE_SECURITY_SCHEMES,
+    toolMeta,
+    audit: writeHistory,
+  });
+
+  const computerDescriptors = buildComputerToolDescriptors({
+    readSecuritySchemes: READ_SECURITY_SCHEMES,
+    writeSecuritySchemes: WRITE_SECURITY_SCHEMES,
+    toolMeta,
+  });
   server.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOL_DESCRIPTORS,
+    tools: [...TOOL_DESCRIPTORS, ...computerDescriptors],
   }));
 
   return server;

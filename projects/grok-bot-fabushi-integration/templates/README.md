@@ -1,0 +1,6 @@
+# Templates
+
+- `TASK_TEMPLATE.md`
+- `ADR_TEMPLATE.md`
+- `PR_ACCEPTANCE_TEMPLATE.md`
+- `STATUS_REPORT_TEMPLATE.md`

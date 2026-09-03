@@ -1,0 +1,23 @@
+project_id: FAB-P0006
+project_key: FAM
+legacy_project_ids: []
+name: Fabushi Always-on Marketing
+slug: fabushi-always-on-marketing
+status: active
+repository: bhrumom/fabushi
+authoritative_branch: main
+authoritative_path: projects/fabushi-always-on-marketing
+owner: Fabushi growth + engineering
+reviewers: []
+current_stage: M0-foundation-and-evidence-pipeline
+created_at: 2026-08-23
+updated_at: 2026-08-23
+risk_tier: tier-1
+security_classification: internal
+target_finish: null
+related_projects:
+  - telegram-fabushi-integration
+  - grok-bot-fabushi-integration
+  - mahayana-sovereign-runtime
+source_systems:
+  - GitHub:bhrumom/fabushi

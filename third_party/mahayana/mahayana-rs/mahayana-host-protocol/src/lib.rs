@@ -434,6 +434,67 @@ pub enum ComputerControlOrigin {
     Ai,
 }
 
+pub const COMPUTER_CONTROL_PROTOCOL_VERSION: u16 = 1;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ComputerTargetKind {
+    #[default]
+    Desktop,
+    Window,
+    BrowserTab,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputerControlTarget {
+    #[serde(default = "computer_control_protocol_version")]
+    pub protocol_version: u16,
+    #[serde(default)]
+    pub kind: ComputerTargetKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_target_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab_id: Option<String>,
+    #[serde(default)]
+    pub generation: u64,
+}
+
+const fn computer_control_protocol_version() -> u16 {
+    COMPUTER_CONTROL_PROTOCOL_VERSION
+}
+
+impl Default for ComputerControlTarget {
+    fn default() -> Self {
+        Self {
+            protocol_version: COMPUTER_CONTROL_PROTOCOL_VERSION,
+            kind: ComputerTargetKind::Desktop,
+            device_id: None,
+            window_id: None,
+            browser_session_id: None,
+            browser_target_id: None,
+            tab_id: None,
+            generation: 0,
+        }
+    }
+}
+
+impl ComputerControlTarget {
+    pub fn remote_desktop(device_id: impl Into<String>, generation: u64) -> Self {
+        Self {
+            device_id: Some(device_id.into()),
+            generation,
+            ..Self::default()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ComputerActionKind {
@@ -640,6 +701,25 @@ pub enum LocalToolPermission {
     Always,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InferenceProvider {
+    #[default]
+    Fabushi,
+    Codex,
+    ClaudeCode,
+    #[serde(rename = "openrouter")]
+    OpenRouter,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SandboxRuntime {
+    #[default]
+    Host,
+    LocalDocker,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductHostSettings {
@@ -659,6 +739,14 @@ pub struct ProductHostSettings {
     pub ai_computer_control_enabled: bool,
     #[serde(default)]
     pub auto_review_rules: Vec<AutoReviewRule>,
+    /// Provider preference for newly-created Agent conversations. Existing
+    /// conversations keep their recorded provider identity.
+    #[serde(default)]
+    pub inference_provider: InferenceProvider,
+    /// Execution environment preference. Adapters must still pass the normal
+    /// Mahayana capability and ownership checks before use.
+    #[serde(default)]
+    pub sandbox_runtime: SandboxRuntime,
 }
 
 impl Default for ProductHostSettings {
@@ -674,6 +762,8 @@ impl Default for ProductHostSettings {
             remote_control_enabled: false,
             ai_computer_control_enabled: true,
             auto_review_rules: Vec::new(),
+            inference_provider: InferenceProvider::default(),
+            sandbox_runtime: SandboxRuntime::default(),
         }
     }
 }
@@ -1363,6 +1453,8 @@ pub enum FeatureCommand {
         origin: ComputerControlOrigin,
         #[serde(rename = "sessionId", default, skip_serializing_if = "Option::is_none")]
         session_id: Option<String>,
+        #[serde(default)]
+        target: ComputerControlTarget,
     },
     #[serde(rename = "computer.action")]
     ComputerAction {
@@ -1374,6 +1466,8 @@ pub enum FeatureCommand {
         agent_id: Option<String>,
         #[serde(rename = "sessionId", default, skip_serializing_if = "Option::is_none")]
         session_id: Option<String>,
+        #[serde(default)]
+        target: ComputerControlTarget,
         action: ComputerAction,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         then: Vec<ComputerAction>,
@@ -1385,6 +1479,18 @@ pub enum FeatureCommand {
         #[serde(rename = "deviceId")]
         device_id: String,
         label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        platform: Option<String>,
+        #[serde(
+            rename = "appVersion",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        app_version: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        capabilities: Vec<String>,
     },
     #[serde(rename = "remoteComputer.heartbeat")]
     RemoteComputerHeartbeat {
@@ -2647,6 +2753,25 @@ mod tests {
     }
 
     #[test]
+    fn product_settings_default_legacy_payloads_and_round_trip_router_choices() {
+        let legacy: ProductHostSettings = serde_json::from_str(
+            r#"{"notifications":true,"autoUpdateWhenIdle":true,"localExecution":true,"routeEgressLocally":false,"securityKeys":false,"webauthnProxyEnabled":false,"localToolPermission":"ask"}"#,
+        )
+        .expect("decode legacy settings");
+        assert_eq!(legacy.inference_provider, InferenceProvider::Fabushi);
+        assert_eq!(legacy.sandbox_runtime, SandboxRuntime::Host);
+
+        let configured = ProductHostSettings {
+            inference_provider: InferenceProvider::ClaudeCode,
+            sandbox_runtime: SandboxRuntime::LocalDocker,
+            ..Default::default()
+        };
+        let value = serde_json::to_value(configured).expect("encode router settings");
+        assert_eq!(value["inferenceProvider"], "claude-code");
+        assert_eq!(value["sandboxRuntime"], "local-docker");
+    }
+
+    #[test]
     fn mcp_remove_command_round_trips_with_request_id() {
         let command: FeatureCommand = serde_json::from_str(
             r#"{"type":"mcp.remove","requestId":"mcp-remove-1","server":"docs"}"#,
@@ -2657,6 +2782,58 @@ mod tests {
             command,
             FeatureCommand::McpRemove { server, .. } if server == "docs"
         ));
+    }
+
+    #[test]
+    fn legacy_computer_commands_default_to_versioned_local_desktop_target() {
+        let command: FeatureCommand = serde_json::from_str(
+            r#"{"type":"computer.screenshot","requestId":"screen-1","origin":"local-ui"}"#,
+        )
+        .expect("decode legacy computer command");
+        match command {
+            FeatureCommand::ComputerScreenshot { target, .. } => {
+                assert_eq!(target.protocol_version, COMPUTER_CONTROL_PROTOCOL_VERSION);
+                assert_eq!(target.kind, ComputerTargetKind::Desktop);
+                assert_eq!(target.generation, 0);
+                assert!(target.device_id.is_none());
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn remote_computer_target_round_trips_device_and_generation() {
+        let target = ComputerControlTarget::remote_desktop("desktop-a", 42);
+        let value = serde_json::to_value(&target).expect("encode target");
+        assert_eq!(value["protocolVersion"], COMPUTER_CONTROL_PROTOCOL_VERSION);
+        assert_eq!(value["kind"], "desktop");
+        assert_eq!(value["deviceId"], "desktop-a");
+        assert_eq!(value["generation"], 42);
+        assert_eq!(
+            serde_json::from_value::<ComputerControlTarget>(value).unwrap(),
+            target
+        );
+    }
+
+    #[test]
+    fn computer_action_duration_and_scroll_amount_match_the_react_contract() {
+        let action: ComputerAction = serde_json::from_str(
+            r#"{"action":"drag","x":1,"y":2,"x2":3,"y2":4,"durationMs":375,"amount":7}"#,
+        )
+        .expect("decode computer action");
+        assert_eq!(action.wait_ms, Some(375));
+        assert_eq!(action.amount, Some(7));
+        let value = serde_json::to_value(&action).expect("encode computer action");
+        assert_eq!(value["durationMs"], 375);
+        assert_eq!(value["amount"], 7);
+        assert!(value.get("waitMs").is_none());
+    }
+
+    #[test]
+    fn legacy_wait_ms_alias_remains_accepted() {
+        let action: ComputerAction = serde_json::from_str(r#"{"action":"wait","waitMs":250}"#)
+            .expect("decode legacy wait action");
+        assert_eq!(action.wait_ms, Some(250));
     }
 
     #[test]

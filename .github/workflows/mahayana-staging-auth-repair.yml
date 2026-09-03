@@ -2,6 +2,15 @@ name: Mahayana staging auth repair
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mahayana-staging-auth-repair.yml'
+      - '.github/scripts/deploy-auth-provider-bridge.sh'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
 
 permissions:
   contents: read
@@ -150,9 +159,10 @@ jobs:
           attempt_id="$(jq -er '.attemptId' <<<"$start")"
           poll_secret="$(jq -er '.pollSecret' <<<"$start")"
           login_url="$(jq -er '.loginUrl' <<<"$start")"
+          auth_public_base_url="https://api.ombhrum.com"
           case "$login_url" in
-            "$PLATFORM_URL/api/auth/browser/portal"*) ;;
-            *) echo "Browser login portal escaped staging origin: $login_url" >&2; exit 1 ;;
+            "$auth_public_base_url/api/auth/browser/portal"*) ;;
+            *) echo "Browser login portal escaped canonical auth origin: $login_url" >&2; exit 1 ;;
           esac
 
           poll_body="$(jq -cn --arg pollSecret "$poll_secret" '{pollSecret:$pollSecret}')"

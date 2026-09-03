@@ -1,24 +1,27 @@
 {
   "name": "@fabushi/desktop",
-  "version": "1.0.2",
-  "description": "全球法布施 Electron desktop client",
+  "version": "1.2.14",
+  "description": "Fabushi Electron desktop client",
   "homepage": "https://fabushi.ombhrum.com/",
   "author": "bhrumom",
   "desktopName": "com.ombhrum.fabushi",
   "private": true,
   "type": "module",
-  "main": "electron/main.cjs",
+  "main": "electron/bootstrap.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
+    "prebuild:renderer": "node scripts/prepare-desktop-window-branding.mjs",
     "build:renderer": "tsc --noEmit && vite build",
     "build:host": "cargo build --release -p mahayana-app-host-desktop --bin mahayana-app-host --manifest-path ../third_party/mahayana/mahayana-rs/Cargo.toml && node scripts/stage-host.mjs",
     "build:host:ci": "cargo build --profile ci -p mahayana-app-host-desktop --bin mahayana-app-host --manifest-path ../third_party/mahayana/mahayana-rs/Cargo.toml && node scripts/stage-host.mjs ci",
     "build": "npm run build:host && npm run build:renderer",
     "package": "npm run build:host && npm run build:renderer && electron-builder",
+    "test:credential-gateway": "node --test electron/credential-gateway.test.cjs",
     "test:e2e": "playwright test",
     "start": "electron ."
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "lucide-react": "^1.14.0",
     "react": "19.1.1",
     "react-dom": "19.1.1"
@@ -36,7 +39,7 @@
   },
   "build": {
     "appId": "com.ombhrum.fabushi",
-    "productName": "全球法布施",
+    "productName": "Fabushi",
     "executableName": "fabushi",
     "asar": true,
     "directories": {
@@ -58,6 +61,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "resources/computer-control",
+        "to": "computer-control",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
@@ -67,12 +77,22 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "artifactName": "fabushi-${version}-macos-${arch}.${ext}",
+      "entitlements": "resources/mac/entitlements.plist",
+      "entitlementsInherit": "resources/mac/entitlements.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "全球法布施使用麦克风进行语音消息、语音输入和离线语音识别。",
+        "NSCameraUsageDescription": "全球法布施使用摄像头进行视频通话。"
+      },
+      "icon": "resources/icon.png"
     },
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "artifactName": "fabushi-${version}-setup.${ext}",
+      "icon": "resources/icon.png"
     },
     "linux": {
       "category": "Utility",
@@ -81,7 +101,8 @@
       "target": [
         "AppImage",
         "deb"
-      ]
+      ],
+      "artifactName": "fabushi-${version}-${arch}.${ext}"
     },
     "deb": {
       "packageName": "fabushi",
@@ -108,7 +129,18 @@
       "extendInfo": {
         "NSMicrophoneUsageDescription": "全球法布施使用麦克风进行语音输入和离线语音识别。"
       },
-      "forceCodeSigning": true
-    }
+      "forceCodeSigning": true,
+      "icon": "resources/icon.png"
+    },
+    "afterSign": "scripts/notarize-after-sign.cjs",
+    "copyright": "Copyright © 2026 Fabushi. All rights reserved.",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "bhrumom",
+        "repo": "fabushi",
+        "releaseType": "release"
+      }
+    ]
   }
 }

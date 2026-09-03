@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/prepare-mahayana-wasm.mjs",
     "dev": "vite --host 127.0.0.1 --port 1420",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "prebuild": "node scripts/prepare-mahayana-wasm.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 1420",
     "preview:e2e": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "tsc -p tsconfig.json --noEmit"

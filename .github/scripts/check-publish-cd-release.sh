@@ -99,6 +99,8 @@ for forbidden in (
 
 for required in (
     'workflow_dispatch',
+    'workflow_run',
+    'target="${INPUT_TARGET:-both}"',
     'Build and upload Electron macOS MAS package',
     'Build and upload native iOS IPA',
     'upload-app-store-connect.sh',
@@ -109,6 +111,9 @@ for required in (
 ):
     if required not in apple_store_workflow:
         missing.append(f'Apple Store workflow missing: {required}')
+
+if apple_store_workflow.count('run: bash .github/scripts/upload-app-store-connect.sh') != 2:
+    missing.append('Apple Store workflow must route both macOS and iOS through the shared App Store Connect uploader')
 
 for forbidden in (
     'flutter build',

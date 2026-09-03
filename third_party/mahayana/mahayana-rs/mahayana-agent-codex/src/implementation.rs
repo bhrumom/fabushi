@@ -34,6 +34,7 @@ use codex_app_server_protocol::PluginInstalledParams;
 use codex_app_server_protocol::PluginInstalledResponse;
 use codex_app_server_protocol::PluginReadParams;
 use codex_app_server_protocol::PluginReadResponse;
+use codex_app_server_protocol::PluginRuntimePlatform as CodexPluginRuntimePlatform;
 use codex_app_server_protocol::PluginSource;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
@@ -99,7 +100,9 @@ use mahayana_core::OperationId;
 use mahayana_host_protocol::ComputerAction;
 use mahayana_host_protocol::ComputerControlOrigin;
 use mahayana_host_protocol::LocalToolPermission;
+use mahayana_platform_core::HostPlatform;
 use mahayana_plugin_host::LocalPlugin;
+use mahayana_plugin_host::PluginRuntimeVariant as MahayanaPluginRuntimeVariant;
 use mahayana_plugin_host::select_runtime_with_availability;
 use serde_json::Value;
 use serde_json::json;
@@ -141,6 +144,116 @@ fn shared_installed_plugin_overrides(
         &config,
         shared_codex_home.as_path(),
     ))
+}
+
+fn bundled_computer_mcp_override() -> Result<Option<(String, toml::Value)>, AgentError> {
+    let Some(command) = std::env::var_os("MAHAYANA_COMPUTER_MCP_COMMAND") else {
+        return Ok(None);
+    };
+    let Some(entry) = std::env::var_os("MAHAYANA_COMPUTER_MCP_ENTRY") else {
+        return Err(AgentError::Backend(
+            "bundled computer MCP command is configured without an entry point".into(),
+        ));
+    };
+    let command = PathBuf::from(command);
+    let entry = PathBuf::from(entry);
+    if !command.is_absolute() || !entry.is_absolute() {
+        return Err(AgentError::Backend(
+            "bundled computer MCP paths must be absolute".into(),
+        ));
+    }
+    if !command.is_file() {
+        return Err(AgentError::Backend(format!(
+            "bundled computer MCP command is unavailable: {}",
+            command.display()
+        )));
+    }
+    if !entry.is_file() {
+        return Err(AgentError::Backend(format!(
+            "bundled computer MCP entry point is unavailable: {}",
+            entry.display()
+        )));
+    }
+
+    let mut environment = toml::map::Map::new();
+    if std::env::var("MAHAYANA_COMPUTER_MCP_ELECTRON_NODE").as_deref() == Ok("1") {
+        environment.insert(
+            "ELECTRON_RUN_AS_NODE".into(),
+            toml::Value::String("1".into()),
+        );
+    }
+    for (source, target) in [
+        ("MAHAYANA_COMPUTER_MCP_HOME", "CHATGPT_COMPUTER_HOME"),
+        (
+            "MAHAYANA_COMPUTER_MCP_NATIVE_HELPER",
+            "CHATGPT_COMPUTER_NATIVE_HELPER",
+        ),
+        (
+            "MAHAYANA_COMPUTER_MCP_MAC_APP_DIR",
+            "CHATGPT_COMPUTER_MAC_APP_DIR",
+        ),
+        (
+            "MAHAYANA_COMPUTER_MCP_POLICY_FILE",
+            "FABUSHI_COMPUTER_POLICY_FILE",
+        ),
+        (
+            "MAHAYANA_COMPUTER_MCP_APP_AGENT_DISCOVERY_FILE",
+            "FABUSHI_APP_AGENT_DISCOVERY_FILE",
+        ),
+    ] {
+        if let Some(value) = std::env::var_os(source) {
+            let value = PathBuf::from(value);
+            if !value.is_absolute() {
+                return Err(AgentError::Backend(format!(
+                    "bundled computer MCP environment path {source} must be absolute"
+                )));
+            }
+            environment.insert(
+                target.into(),
+                toml::Value::String(value.to_string_lossy().into_owned()),
+            );
+        }
+    }
+
+    let mut server = toml::map::Map::new();
+    server.insert(
+        "command".into(),
+        toml::Value::String(command.to_string_lossy().into_owned()),
+    );
+    server.insert(
+        "args".into(),
+        toml::Value::Array(vec![toml::Value::String(
+            entry.to_string_lossy().into_owned(),
+        )]),
+    );
+    server.insert("enabled".into(), toml::Value::Boolean(true));
+    server.insert("startup_timeout_sec".into(), toml::Value::Integer(30));
+    server.insert("tool_timeout_sec".into(), toml::Value::Integer(120));
+    if let Some(cwd) = std::env::var_os("MAHAYANA_COMPUTER_MCP_CWD") {
+        let cwd = PathBuf::from(cwd);
+        if !cwd.is_absolute() {
+            return Err(AgentError::Backend(
+                "bundled computer MCP working directory must be absolute".into(),
+            ));
+        }
+        if !cwd.is_dir() {
+            return Err(AgentError::Backend(format!(
+                "bundled computer MCP working directory is unavailable: {}",
+                cwd.display()
+            )));
+        }
+        server.insert(
+            "cwd".into(),
+            toml::Value::String(cwd.to_string_lossy().into_owned()),
+        );
+    }
+    if !environment.is_empty() {
+        server.insert("env".into(), toml::Value::Table(environment));
+    }
+    Ok(Some((
+        "mcp_servers.fabushi_computer".into(),
+        toml::Value::Table(server),
+    )))
 }
 
 fn shared_installed_plugin_roots(runtime_codex_home: &Path) -> Result<Vec<PathBuf>, AgentError> {
@@ -1507,6 +1620,9 @@ impl CodexAgentBackend {
         if settings.inherit_installed_plugins {
             cli_overrides.extend(shared_installed_plugin_overrides(&settings.codex_home)?);
         }
+        if let Some(computer_mcp) = bundled_computer_mcp_override()? {
+            cli_overrides.push(computer_mcp);
+        }
         let mut config = ConfigBuilder::default()
             .codex_home(settings.codex_home)
             .cli_overrides(cli_overrides.clone())
@@ -2206,10 +2322,30 @@ impl AgentBackend for CodexAgentBackend {
             mcp_configs.extend(load_plugin_mcp_servers(path.as_path(), None).await);
         }
         debug_plugin_inheritance("workspace thread MCP servers", mcp_configs.keys().cloned());
+        let runtime_variants = detail
+            .plugin
+            .runtime_variants
+            .iter()
+            .map(|variant| MahayanaPluginRuntimeVariant {
+                id: variant.id.clone(),
+                server: variant.server.clone(),
+                platforms: variant
+                    .platforms
+                    .iter()
+                    .map(|platform| match platform {
+                        CodexPluginRuntimePlatform::Cli => HostPlatform::Cli,
+                        CodexPluginRuntimePlatform::Desktop => HostPlatform::Desktop,
+                        CodexPluginRuntimePlatform::Mobile => HostPlatform::Mobile,
+                        CodexPluginRuntimePlatform::Web => HostPlatform::Web,
+                    })
+                    .collect(),
+                priority: i64::from(variant.priority),
+            })
+            .collect::<Vec<_>>();
         let selected = select_runtime_with_availability(
             request.platform,
             &detail.plugin.mcp_servers,
-            &detail.plugin.runtime_variants,
+            &runtime_variants,
             |server| mcp_configs.get(server).is_some_and(mcp_runtime_available),
         )
         .map_err(|error| AgentError::Backend(error.to_string()))?;

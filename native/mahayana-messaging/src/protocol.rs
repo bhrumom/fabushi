@@ -1,13 +1,16 @@
-use crate::actor::{Actor, ActorId, Presence};
+use crate::actor::{Actor, ActorId, Participant, Presence};
 use crate::blob_store::{BlobId, BlobMetadata, BlobUploadStatus};
 use crate::bot::{BotExecution, BotInvocation, BotProfile};
 use crate::community::{CommunityMember, CommunityState, ForumTopicState, InviteLink, JoinRequest};
-use crate::conversation::{Conversation, ConversationFolder, ConversationId, NotificationSettings};
+use crate::conversation::{
+    Conversation, ConversationDraft, ConversationFolder, ConversationId, NotificationSettings,
+};
 use crate::message::{ClientMessageId, Message, MessageContent, MessageId, ReactionSummary};
 use crate::miniapp::{
     MiniAppGrant, MiniAppManifest, MiniAppRequest, MiniAppResponse, MiniAppSession,
 };
 use crate::payment::{CustomerInfo, Invoice, PaymentOrder};
+use crate::search::{SearchQuery, SearchResult};
 use crate::story::{Story, StoryId};
 use crate::wallet::{LedgerEntry, WalletAccount};
 use serde::{Deserialize, Serialize};
@@ -53,6 +56,9 @@ pub enum ClientCommand {
         cursor: Option<String>,
         limit: u32,
     },
+    Search {
+        query: SearchQuery,
+    },
     UpsertProfile {
         actor: Actor,
     },
@@ -65,6 +71,19 @@ pub enum ClientCommand {
     UpdateConversation {
         conversation: Conversation,
     },
+    UpdateConversationInfo {
+        conversation_id: ConversationId,
+        title: String,
+        description: Option<String>,
+    },
+    SetConversationParticipant {
+        conversation_id: ConversationId,
+        participant: Participant,
+    },
+    RemoveConversationParticipant {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
+    },
     ArchiveConversation {
         conversation_id: ConversationId,
         archived: bool,
@@ -72,6 +91,15 @@ pub enum ClientCommand {
     PinConversation {
         conversation_id: ConversationId,
         pinned: bool,
+    },
+    SetMarkedUnread {
+        conversation_id: ConversationId,
+        marked_unread: bool,
+    },
+    SetDraft {
+        conversation_id: ConversationId,
+        text: String,
+        reply_to_message_id: Option<MessageId>,
     },
     SetConversationNotifications {
         conversation_id: ConversationId,
@@ -136,6 +164,11 @@ pub enum ClientCommand {
         conversation_id: ConversationId,
         message_id: MessageId,
         pinned: bool,
+    },
+    VotePoll {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        option_ids: Vec<String>,
     },
     StartTyping {
         conversation_id: ConversationId,
@@ -247,6 +280,7 @@ pub enum ServerEvent {
         conversations: Vec<Conversation>,
         messages: Vec<Message>,
         folders: Vec<ConversationFolder>,
+        drafts: Vec<ConversationDraft>,
         invoices: Vec<Invoice>,
         orders: Vec<PaymentOrder>,
         stories: Vec<Story>,
@@ -255,6 +289,10 @@ pub enum ServerEvent {
         bot_executions: Vec<BotExecution>,
         mini_apps: Vec<MiniAppManifest>,
         next_cursor: Option<String>,
+    },
+    SearchResults {
+        query: SearchQuery,
+        results: Vec<SearchResult>,
     },
     ActorChanged {
         actor: Actor,
@@ -265,6 +303,18 @@ pub enum ServerEvent {
     },
     ConversationChanged {
         conversation: Conversation,
+    },
+    ConversationParticipantChanged {
+        conversation: Conversation,
+        removed_actor_id: Option<ActorId>,
+    },
+    MarkedUnreadChanged {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
+        marked_unread: bool,
+    },
+    DraftChanged {
+        draft: ConversationDraft,
     },
     FolderChanged {
         folder: ConversationFolder,

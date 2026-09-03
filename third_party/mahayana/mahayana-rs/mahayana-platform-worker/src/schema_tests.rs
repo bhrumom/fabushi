@@ -42,6 +42,55 @@ fn remote_computer_migration_keeps_control_plane_separate_from_desktop_data() {
     assert!(REMOTE_COMPUTER_SCHEMA_V6.contains("device_secret_hash TEXT NOT NULL"));
     assert!(!REMOTE_COMPUTER_SCHEMA_V6.contains("screenshot_data"));
     assert!(!REMOTE_COMPUTER_SCHEMA_V6.contains("input_payload"));
+    assert!(REMOTE_COMPUTER_CLIENT_TOKEN_SCHEMA_V14.contains("client_token_hash TEXT"));
+    assert!(REMOTE_COMPUTER_CLIENT_TOKEN_SCHEMA_V14.contains("SET state = 'closed'"));
+    assert!(REMOTE_COMPUTER_CLIENT_TOKEN_SCHEMA_V14.contains("SET revoked_at = COALESCE"));
+    assert!(!REMOTE_COMPUTER_CLIENT_TOKEN_SCHEMA_V14.contains("client_token TEXT"));
+}
+
+#[test]
+fn remote_computer_inventory_migration_is_additive_and_secret_free() {
+    for required in [
+        "provider TEXT NOT NULL DEFAULT 'fabushi-webrtc'",
+        "platform TEXT NOT NULL DEFAULT 'unknown'",
+        "app_version TEXT NOT NULL DEFAULT 'unknown'",
+        "capabilities_json TEXT NOT NULL DEFAULT '[]'",
+        "rustdesk-sidecar",
+        "remote_computers_inventory_idx",
+    ] {
+        assert!(
+            REMOTE_COMPUTER_INVENTORY_SCHEMA_V15.contains(required),
+            "missing {required}"
+        );
+    }
+    assert!(!REMOTE_COMPUTER_INVENTORY_SCHEMA_V15.contains("device_secret TEXT"));
+    assert!(!REMOTE_COMPUTER_INVENTORY_SCHEMA_V15.contains("screenshot_data"));
+    assert!(!REMOTE_COMPUTER_INVENTORY_SCHEMA_V15.contains("input_payload"));
+}
+
+#[test]
+fn ci_runner_auth_is_exact_workflow_and_linked_account_scoped() {
+    for required in [
+        "token.actions.githubusercontent.com",
+        "bhrumom/fabushi",
+        "1037709914",
+        "281146136",
+        "interactive-runner-mcp.yml@refs/heads/main",
+        "refs/heads/main",
+        "ref_protected",
+        "workflow_dispatch",
+        "github-hosted",
+        "account_identities",
+        "provider = 'github'",
+        "CI_OIDC_MAX_AGE_SECONDS",
+    ] {
+        assert!(
+            CI_RUNNER_AUTH_SOURCE_V1.contains(required),
+            "missing {required}"
+        );
+    }
+    assert!(!CI_RUNNER_AUTH_SOURCE_V1.contains("TEST_ACCOUNT_TOKEN"));
+    assert!(!CI_RUNNER_AUTH_SOURCE_V1.contains("refreshToken"));
 }
 
 #[test]
@@ -142,4 +191,43 @@ fn validation_rejects_floating_point_money() {
         validate_fabushi_pay_schema(&schema),
         Err(SchemaError::FloatingPointAmount)
     );
+}
+
+#[test]
+fn worker_router_rejects_duplicate_developer_commerce_regressions() {
+    let source = include_str!("worker_api.rs");
+    let compact = source.split_whitespace().collect::<String>();
+    for (method, route) in [
+        ("get", "/v1/developer/commerce/profile"),
+        ("post", "/v1/developer/commerce/profile"),
+        ("get", "/v1/developer/commerce/miniapps"),
+        ("post", "/v1/developer/commerce/miniapps/:mini_app_id"),
+        (
+            "get",
+            "/v1/developer/commerce/miniapps/:mini_app_id/products",
+        ),
+        (
+            "post",
+            "/v1/developer/commerce/miniapps/:mini_app_id/products",
+        ),
+        (
+            "post",
+            "/v1/developer/commerce/miniapps/:mini_app_id/products/:product_id",
+        ),
+        (
+            "post",
+            "/v1/developer/commerce/miniapps/:mini_app_id/products/:product_id/google/sync",
+        ),
+        (
+            "post",
+            "/v1/pay/intents/:payment_id/apple/advanced-commerce",
+        ),
+    ] {
+        let needle = format!(".{method}_async(\"{route}\"");
+        assert_eq!(
+            compact.matches(&needle).count(),
+            1,
+            "duplicate Mahayana Worker router registration: {method} {route}"
+        );
+    }
 }

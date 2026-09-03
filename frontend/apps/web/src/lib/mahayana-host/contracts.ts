@@ -291,6 +291,23 @@ export interface TeachRecordingResult {
 }
 
 export type ComputerControlOrigin = "local-ui" | "remote-mobile" | "ai";
+export const COMPUTER_CONTROL_PROTOCOL_VERSION = 1 as const;
+export type ComputerTargetKind = "desktop" | "window" | "browser-tab";
+export interface ComputerControlTarget {
+  protocolVersion: typeof COMPUTER_CONTROL_PROTOCOL_VERSION;
+  kind: ComputerTargetKind;
+  deviceId?: string;
+  windowId?: string;
+  browserSessionId?: string;
+  browserTargetId?: string;
+  tabId?: string;
+  generation: number;
+}
+export const localDesktopComputerTarget = (): ComputerControlTarget => ({
+  protocolVersion: COMPUTER_CONTROL_PROTOCOL_VERSION,
+  kind: "desktop",
+  generation: 0,
+});
 export type ComputerActionKind = "screenshot" | "click" | "move" | "drag" | "type" | "key" | "scroll" | "wait";
 export type ComputerMouseButton = "left" | "right" | "middle";
 export type ComputerScrollDirection = "up" | "down" | "left" | "right";
@@ -335,6 +352,17 @@ export interface ComputerActionResult {
   snapshot: ComputerSnapshot;
 }
 
+export type RemoteComputerProvider = "fabushi-webrtc" | "rustdesk-sidecar";
+export type RemoteComputerPlatform = "windows" | "macos" | "linux" | "android" | "ios" | "web" | "unknown";
+export type RemoteComputerCapability =
+  | "remote-desktop"
+  | "input"
+  | "clipboard"
+  | "file-transfer"
+  | "display"
+  | "audio"
+  | "session-management";
+
 export interface RemoteComputerRegistration {
   deviceId: string;
   label: string;
@@ -354,6 +382,7 @@ export interface RemoteComputerSession {
   state: "pending" | "active" | "closed";
   createdAt?: number;
   expiresAt: number;
+  generation?: number;
 }
 export interface RemoteComputerSignal {
   signalId: number;
@@ -440,6 +469,8 @@ export interface SearchMediaMatch {
 }
 
 export type LocalToolPermission = "never" | "ask" | "always";
+export type InferenceProvider = "fabushi" | "codex" | "claude-code" | "openrouter";
+export type SandboxRuntime = "host" | "local-docker";
 export type AutoReviewBehavior = "allow" | "ask";
 export interface AutoReviewRule {
   id: string;
@@ -457,6 +488,8 @@ export interface ProductHostSettings {
   remoteControlEnabled: boolean;
   aiComputerControlEnabled: boolean;
   autoReviewRules: AutoReviewRule[];
+  inferenceProvider: InferenceProvider;
+  sandboxRuntime: SandboxRuntime;
 }
 
 export interface ListenerIntegrationSummary {
@@ -693,9 +726,17 @@ export type RuntimeCommand =
   | (CommandBase & { type: "teach.start"; agentId: string; entryPoint: TeachEntryPoint })
   | (CommandBase & { type: "teach.stop"; agentId: string; save: boolean })
   | (CommandBase & { type: "computer.status" })
-  | (CommandBase & { type: "computer.screenshot"; origin?: ComputerControlOrigin; sessionId?: string })
-  | (CommandBase & { type: "computer.action"; origin?: ComputerControlOrigin; agentId?: string; sessionId?: string; action: ComputerAction; then?: ComputerAction[] })
-  | (CommandBase & { type: "remoteComputer.register"; deviceId: string; label: string })
+  | (CommandBase & { type: "computer.screenshot"; origin?: ComputerControlOrigin; sessionId?: string; target?: ComputerControlTarget })
+  | (CommandBase & { type: "computer.action"; origin?: ComputerControlOrigin; agentId?: string; sessionId?: string; target?: ComputerControlTarget; action: ComputerAction; then?: ComputerAction[] })
+  | (CommandBase & {
+      type: "remoteComputer.register";
+      deviceId: string;
+      label: string;
+      provider: RemoteComputerProvider;
+      platform: RemoteComputerPlatform;
+      appVersion: string;
+      capabilities: RemoteComputerCapability[];
+    })
   | (CommandBase & { type: "remoteComputer.heartbeat"; deviceId: string })
   | (CommandBase & { type: "remoteComputer.clients"; deviceId: string })
   | (CommandBase & { type: "remoteComputer.clientRevoke"; deviceId: string; clientId: string })

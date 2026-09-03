@@ -1,0 +1,80 @@
+# FCM-003 — Agent/Skill Governance CI Classification
+
+- **Task ID:** FCM-003
+- **Status:** passed
+- **Started:** 2026-08-22T14:24:00+08:00
+- **Updated:** 2026-08-22T14:58:00+08:00
+- **Completed:** 2026-08-22T14:54:20+08:00
+
+## Objective
+
+Prevent repository-governance-only changes under `.agent/skills/**`, root Markdown governance files, `projects/**`, and `docs/**` from triggering the unknown-path fail-safe and unrelated Frontend/Worker/MCP/Electron suites, without weakening safety for runtime paths.
+
+## Source / trigger
+
+- FPG-002 PR #1980 / CI run `32556780549` proved `.agent/skills/**` was treated as an unknown non-document path.
+- User requested cleanup and completion of the unfinished FCM-003 branch on 2026-08-22.
+
+## In scope
+
+- add `.agent/skills/**` to governance/docs-safe classification;
+- preserve `.agents/plugins/**` in MCP runtime classification;
+- preserve `.github/workflows/**` in workflow guardrails;
+- preserve unknown non-document force-all behavior;
+- validate through required PR CI and merge queue.
+
+## Out of scope
+
+- changing product test semantics;
+- weakening the required aggregate `CI result`;
+- bypassing protected `main` / merge queue;
+- treating arbitrary `.agent/**` or unknown runtime paths as docs-safe.
+
+## Acceptance criteria
+
+1. `.agent/skills/**`, root Markdown, `projects/**`, and `docs/**` do not force all product domains when no runtime files changed.
+2. `.agents/plugins/**` still selects MCP contracts.
+3. `.github/workflows/**` still selects workflow guardrails.
+4. Unknown non-document paths still fail safe to all canonical product domains.
+5. Required `CI result` succeeds.
+6. The change merges through protected `main` / merge queue.
+7. Canonical `main` is re-read after merge and project records are closed with objective evidence.
+
+## Implementation
+
+- `.github/workflows/ci.yml`: add the exact matcher `^\.agent\/skills\/` to `isDocsSafe()`.
+- No change to domain matchers or force-all logic.
+
+## Verification
+
+- Lightweight static classifier assertions before push.
+- PR-head GitHub Actions selection.
+- Merge-group required CI.
+- Post-merge read from `main`.
+
+## Branch / PR
+
+- Branch: `project/fcm-003-agent-skill-ci-classification`
+- PR: #1984
+
+## Evidence
+
+- Trigger: PR #1980 / CI run `32556780549`.
+- Implementation commit: `9187fb6f8cfbca8e9ac1f25a61aa12bb6a4fa0a5`.
+- PR CI: run `32558117683`, success.
+- Merge-group CI: run `32558147639`, success; required `CI result` passed.
+- Merge queue commit on `main`: `3a06560ce2b9d8d850f6f15e008ae9b0cf1f997b`.
+- Post-merge `main` read verified the `.agent/skills/**` matcher.
+- Closure smoke PR: #1985.
+- Closure PR CI: run `32558243330`, success; only classifier + `CI result` ran.
+- Closure merge-group CI: run `32558267502`, success; product/workflow suites skipped.
+- Closure merge commit: `fc4e0521a0bac8729632432acb6149cad5ab403d`.
+
+## Blockers / risks
+
+- No remaining blocker.
+- Local heavy verification was intentionally not run; repository policy delegates builds/tests to GitHub Actions.
+
+## Next action
+
+No remaining FCM-003 action. Continue with the next CI governance task only when prioritized.

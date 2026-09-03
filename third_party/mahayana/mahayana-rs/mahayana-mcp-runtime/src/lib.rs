@@ -10,6 +10,8 @@
 //! as `Authorization: Bearer` (or an `api_key` as `X-API-Key`) when that header
 //! is not already declared. Both forms are materialized only at request time.
 
+pub mod status;
+
 use mahayana_platform_core::HostPlatform;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -21,7 +23,6 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use url::Url;
-use uuid::Uuid;
 
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const MANAGED_SECRET_PREFIX: &str = "${MAHAYANA_MANAGED_SECRET:";
@@ -452,10 +453,15 @@ fn parse_transport(
                 .get("command")
                 .and_then(Value::as_str)
                 .ok_or_else(|| McpError::InvalidPlugin("stdio server has no command".into()))?;
-            let command = if Path::new(command).is_absolute() {
+            let command_path = Path::new(command);
+            let command = if command_path.is_absolute() {
+                PathBuf::from(command)
+            } else if is_bare_executable(command) {
+                // Bare commands such as "node" are resolved through PATH. Only
+                // explicit relative paths are rooted inside the installed plugin.
                 PathBuf::from(command)
             } else {
-                safe_plugin_join(plugin_root, Path::new(command))?
+                safe_plugin_join(plugin_root, command_path)?
             };
             let cwd = value
                 .get("cwd")
@@ -517,12 +523,12 @@ fn parse_transport(
                         .map(|value| (key.clone(), expand_secret(value, session_token)))
                 })
                 .collect::<BTreeMap<_, _>>();
-            if parsed.host_str() == Some("api.ombhrum.com") {
-                if let Some(token) = session_token.filter(|token| !token.trim().is_empty()) {
-                    headers
-                        .entry("Authorization".into())
-                        .or_insert_with(|| format!("Bearer {token}"));
-                }
+            if parsed.host_str() == Some("api.ombhrum.com")
+                && let Some(token) = session_token.filter(|token| !token.trim().is_empty())
+            {
+                headers
+                    .entry("Authorization".into())
+                    .or_insert_with(|| format!("Bearer {token}"));
             }
             validate_headers(&headers)?;
             Ok(McpTransport::Http {
@@ -704,7 +710,7 @@ fn parse_sse_json(body: &str) -> Result<Value, McpError> {
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .last()
+        .next_back()
         .ok_or_else(|| McpError::Protocol("MCP SSE response had no JSON data event".into()))
 }
 
@@ -779,6 +785,10 @@ fn safe_plugin_join(root: &Path, relative: &Path) -> Result<PathBuf, McpError> {
         }
     }
     Ok(path)
+}
+
+fn is_bare_executable(command: &str) -> bool {
+    !command.is_empty() && command != "." && command != ".." && !command.contains(['/', '\\'])
 }
 
 fn expand_secret(value: &str, session_token: Option<&str>) -> String {
@@ -981,7 +991,7 @@ mod tests {
     #[test]
     fn rejects_plugin_traversal_and_insecure_remote_http() {
         assert!(validate_plugin_id("../evil").is_err());
-        let root = std::env::temp_dir().join(format!("mahayana-mcp-test-{}", Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("mahayana-mcp-test-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).expect("create root");
         let result = parse_transport(
             &root,
@@ -989,6 +999,27 @@ mod tests {
             None,
         );
         assert!(matches!(result, Err(McpError::UnsafeTransport(_))));
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn preserves_bare_stdio_commands_for_path_lookup() {
+        let root =
+            std::env::temp_dir().join(format!("mahayana-mcp-command-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("create root");
+        let resolved = parse_transport(
+            &root,
+            json!({"type":"stdio","command":"node","cwd":"."}),
+            None,
+        )
+        .expect("parse bare command");
+        match resolved {
+            McpTransport::Stdio { command, cwd, .. } => {
+                assert_eq!(command, PathBuf::from("node"));
+                assert_eq!(cwd, root);
+            }
+            McpTransport::Http { .. } => panic!("expected stdio transport"),
+        }
         fs::remove_dir_all(root).expect("cleanup");
     }
 

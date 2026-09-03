@@ -124,6 +124,23 @@
 .pairRow input { font: 700 19px/1 "SFMono-Regular", Consolas, monospace; letter-spacing: .13em; text-transform: uppercase; }
 .pairRow button { min-width: 76px; }
 
+.deviceFilters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 7px;
+  margin-bottom: 9px;
+}
+.deviceFilters input,
+.deviceFilters select {
+  min-width: 0;
+  border: 1px solid #2b2e35;
+  border-radius: 9px;
+  background: #17191e;
+  color: #b8bbc2;
+  font: inherit;
+  font-size: 10px;
+  padding: 8px 9px;
+}
 .computerList { display: grid; gap: 7px; }
 .computerList > button {
   width: 100%;
@@ -139,8 +156,19 @@
   text-align: left;
 }
 .computerList > button:disabled { opacity: .48; }
-.computerList > button > span:nth-child(2) { display: grid; gap: 2px; }
+.computerList > button > span:nth-child(2) { display: grid; gap: 3px; }
 .computerList strong { font-size: 12px; }
+.computerDetails { min-width: 0; }
+.computerMeta { display: flex; flex-wrap: wrap; gap: 4px; }
+.computerMeta > span {
+  border: 1px solid #30333b;
+  border-radius: 999px;
+  color: #9296a1;
+  font-size: 8px;
+  line-height: 1;
+  padding: 3px 5px;
+}
+.computerMeta > span[data-active="true"] { border-color: rgb(88 216 155 / 38%); color: #58d89b; }
 .computerList small { color: #81858f; font-size: 10px; }
 .computerList small[data-online="true"] { color: #58d89b; }
 .computerList em { color: #8d82ff; font-size: 10px; font-style: normal; }
@@ -204,6 +232,22 @@
 .modeBar button[data-active="true"] { border-color: #6e63e9; background: rgb(110 99 233 / 14%); color: #c3bdff; }
 
 .keyboardCard { display: grid; gap: 8px; padding: 9px; }
+.aiRow {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgb(110 99 233 / 24%);
+  border-radius: 11px;
+  background: linear-gradient(135deg, rgb(110 99 233 / 12%), rgb(75 63 185 / 5%));
+}
+.aiRow > div:first-child,
+.manualLabel { display: grid; gap: 2px; }
+.aiRow strong,
+.manualLabel strong { font-size: 11px; }
+.aiRow small,
+.manualLabel small { color: #838792; font-size: 9px; line-height: 1.45; }
+.aiStatus { color: #9c94ff !important; }
+.manualLabel { padding: 2px 2px 0; }
 .textRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
 .textRow input { padding: 9px 11px; }
 .textRow button { min-width: 62px; color: #d6d2ff; }
@@ -222,4 +266,9 @@
   .shell { padding-left: 24px; padding-right: 24px; }
   .screenViewport { min-height: 420px; }
   .keyGrid { grid-template-columns: repeat(12, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .deviceFilters { grid-template-columns: 1fr 1fr; }
+  .deviceFilters input { grid-column: 1 / -1; }
 }

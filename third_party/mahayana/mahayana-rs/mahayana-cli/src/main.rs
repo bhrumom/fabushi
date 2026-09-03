@@ -1,9 +1,10 @@
 use clap::Args;
 use clap::Parser;
 use clap::Subcommand;
+#[cfg(feature = "codex-compat")]
 use codex_cli::plugin_cmd::PluginCli;
+#[cfg(feature = "codex-compat")]
 use codex_cli::plugin_cmd::PluginSubcommand;
-use codex_core_plugins::plugin_bundle_archive::pack_plugin_bundle_tar_gz;
 use mahayana_feature_host::FeatureHostController;
 use mahayana_host::HostCreateConfig;
 use mahayana_host::default_automation_path;
@@ -30,6 +31,7 @@ use mahayana_runtime::mahayana_runtime_interrupt;
 use mahayana_runtime::mahayana_runtime_last_error;
 use mahayana_runtime::mahayana_runtime_receive;
 use mahayana_runtime::mahayana_runtime_resolve_approval;
+use plugin_archive::pack_plugin_bundle_tar_gz;
 use serde_json::Value;
 use serde_json::json;
 use sha2::Digest;
@@ -48,6 +50,7 @@ use std::thread;
 use std::time::Duration;
 
 mod chat_tui;
+mod plugin_archive;
 mod plugin_dev;
 mod plugin_dev_template;
 
@@ -482,25 +485,33 @@ enum PurchasesCommand {
 }
 
 fn main() {
-    let raw_args = std::env::args_os().collect::<Vec<_>>();
-    if should_run_embedded_agent_cli(raw_args.get(1..).unwrap_or_default()) {
-        if let Err(error) = codex_cli::run_multitool_with_args(raw_args) {
-            eprintln!("错误：{error}");
-            std::process::exit(1);
+    #[cfg(feature = "codex-compat")]
+    {
+        let raw_args = std::env::args_os().collect::<Vec<_>>();
+        if should_run_embedded_agent_cli(raw_args.get(1..).unwrap_or_default()) {
+            if let Err(error) = codex_cli::run_multitool_with_args(raw_args) {
+                eprintln!("错误：{error}");
+                std::process::exit(1);
+            }
+            return;
         }
-        return;
     }
 
+    #[cfg(feature = "codex-compat")]
     let arg0_guard = codex_arg0::arg0_dispatch();
+    #[cfg(feature = "codex-compat")]
     let codex_executable_path = arg0_guard
         .as_ref()
         .and_then(|guard| guard.paths().codex_self_exe.as_deref());
+    #[cfg(not(feature = "codex-compat"))]
+    let codex_executable_path: Option<&Path> = None;
     if let Err(error) = run(codex_executable_path, Cli::parse()) {
         eprintln!("错误：{error}");
         std::process::exit(1);
     }
 }
 
+#[cfg(any(feature = "codex-compat", test))]
 fn should_run_embedded_agent_cli(args: &[OsString]) -> bool {
     let Some(command) = args.first().and_then(|value| value.to_str()) else {
         return false;
@@ -514,6 +525,7 @@ fn should_run_embedded_agent_cli(args: &[OsString]) -> bool {
     !matches!(command, "-h" | "--help" | "-V" | "--version") && !is_product_command(command)
 }
 
+#[cfg(any(feature = "codex-compat", test))]
 fn is_product_command(command: &str) -> bool {
     matches!(
         command,
@@ -543,6 +555,7 @@ fn is_product_command(command: &str) -> bool {
     )
 }
 
+#[cfg(feature = "codex-compat")]
 fn run_embedded_agent_command(
     command_path: &[&str],
     EmbeddedAgentArgs { args }: EmbeddedAgentArgs,
@@ -552,6 +565,17 @@ fn run_embedded_agent_command(
     argv.extend(command_path.iter().map(OsString::from));
     argv.extend(args);
     codex_cli::run_multitool_with_args(argv).map_err(|error| error.to_string())
+}
+
+#[cfg(not(feature = "codex-compat"))]
+fn run_embedded_agent_command(
+    command_path: &[&str],
+    _args: EmbeddedAgentArgs,
+) -> Result<(), String> {
+    Err(format!(
+        "mahayana {} requires the optional codex-compat adapter in this build",
+        command_path.join(" ")
+    ))
 }
 
 fn run(codex_executable_path: Option<&Path>, cli: Cli) -> Result<(), String> {
@@ -1395,16 +1419,16 @@ fn plugin_command(
         } => {
             let path = plugin_dev::absolute_path(&path)?;
             let plugin = LocalPlugin::load(&path).map_err(|error| error.to_string())?;
-            if plugin.codex.name != plugin_id {
+            if plugin.legacy.name != plugin_id {
                 return Err(format!(
                     "插件清单标识 {} 与发布参数 {plugin_id} 不一致",
-                    plugin.codex.name
+                    plugin.legacy.name
                 ));
             }
-            if plugin.codex.version.as_deref() != Some(version.as_str()) {
+            if plugin.legacy.version.as_deref() != Some(version.as_str()) {
                 return Err(format!(
                     "插件清单版本 {} 与发布参数 {version} 不一致",
-                    plugin.codex.version.as_deref().unwrap_or("<missing>")
+                    plugin.legacy.version.as_deref().unwrap_or("<missing>")
                 ));
             }
             plugin_dev::test_path(&path)?;
@@ -1437,7 +1461,7 @@ fn plugin_command(
                 .publish_external_plugin(
                     &plugin_id,
                     &version,
-                    &plugin.codex.name,
+                    &plugin.legacy.name,
                     "",
                     &platforms,
                     &source_provenance,
@@ -1449,6 +1473,12 @@ fn plugin_command(
     }
 }
 
+#[cfg(not(feature = "codex-compat"))]
+fn run_codex_plugin(_args: Vec<String>) -> Result<(), String> {
+    Err("legacy plugin marketplace commands require the optional codex-compat adapter; use mahayana marketplace for the native product path".into())
+}
+
+#[cfg(feature = "codex-compat")]
 fn run_codex_plugin(args: Vec<String>) -> Result<(), String> {
     let cli = PluginCli::try_parse_from(std::iter::once("mahayana plugin".to_string()).chain(args))
         .map_err(|error| error.to_string())?;
@@ -1902,11 +1932,14 @@ fn should_print_completed_text(print_stream: bool, streamed_output: bool, comple
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
+    #[cfg(feature = "codex-compat")]
     use super::Cli;
     use super::merge_completed_text;
     use super::should_print_completed_text;
     use super::should_run_embedded_agent_cli;
+    #[cfg(feature = "codex-compat")]
     use clap::CommandFactory;
+    #[cfg(feature = "codex-compat")]
     use std::collections::BTreeSet;
     use std::ffi::OsString;
 
@@ -1914,6 +1947,7 @@ mod tests {
         values.iter().map(OsString::from).collect()
     }
 
+    #[cfg(feature = "codex-compat")]
     #[test]
     fn embedded_help_uses_mahayana_command_name() {
         let help = codex_cli::multitool_command()
@@ -1924,6 +1958,7 @@ mod tests {
         assert!(!help.contains("Usage: codex"));
     }
 
+    #[cfg(feature = "codex-compat")]
     #[test]
     fn every_visible_embedded_command_is_listed_by_mahayana_help() {
         let product_commands = Cli::command()

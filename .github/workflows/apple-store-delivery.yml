@@ -1,5 +1,3 @@
-name: Apple Store delivery - Electron macOS and native iOS
-
 on:
   workflow_dispatch:
     inputs:
@@ -25,6 +23,11 @@ on:
         description: Apple build number. Leave empty to use UTC YYYY.MM.DD; override when rerunning on the same day.
         required: false
         type: string
+  workflow_run:
+    workflows:
+      - Native mobile quality gate
+    types: [completed]
+    branches: [main]
 
 concurrency:
   group: apple-store-delivery
@@ -32,6 +35,8 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
+  checks: read
 
 jobs:
   resolve:
@@ -39,6 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      should_release: ${{ steps.select.outputs.should_release }}
       source_sha: ${{ steps.release.outputs.source_sha }}
       app_version: ${{ steps.release.outputs.app_version }}
       build_number: ${{ steps.release.outputs.build_number }}
@@ -46,16 +52,43 @@ jobs:
       ios: ${{ steps.release.outputs.ios }}
       release_tag: ${{ steps.release.outputs.release_tag }}
     steps:
+      - id: select
+        name: Select marked automatic Apple release
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPSTREAM_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          UPSTREAM_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+        run: |
+          set -euo pipefail
+          should_release=true
+          if [ "$EVENT_NAME" = 'workflow_run' ]; then
+            should_release=false
+            if [ "$UPSTREAM_EVENT" = 'push' ] &&
+               [ "$UPSTREAM_CONCLUSION" = 'success' ] &&
+               [ "$UPSTREAM_BRANCH" = 'main' ] &&
+               [[ "$UPSTREAM_MESSAGE" == *"[full-platform-release-final-20260831]"* ]]; then
+              should_release=true
+            fi
+          fi
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+          echo "Automatic Apple release selected: $should_release" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout requested source
+        if: steps.select.outputs.should_release == 'true'
         uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.event.workflow_run.head_sha }}
           fetch-depth: 1
 
       - id: release
+        if: steps.select.outputs.should_release == 'true'
         name: Resolve version and selected platforms
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ inputs.app_version }}
           INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
           INPUT_TARGET: ${{ inputs.target }}
@@ -63,7 +96,14 @@ jobs:
           set -euo pipefail
           source_sha="$(git rev-parse HEAD)"
           app_version="${INPUT_VERSION:-$(jq -r '.version' app-version.json)}"
-          build_number="${INPUT_BUILD_NUMBER:-$(date -u +'%Y.%-m.%-d')}"
+          target="${INPUT_TARGET:-both}"
+          if [ -n "$INPUT_BUILD_NUMBER" ]; then
+            build_number="$INPUT_BUILD_NUMBER"
+          elif [ "$EVENT_NAME" = 'workflow_run' ]; then
+            build_number="$(date -u +'%Y.%-m.')$((3100 + GITHUB_RUN_NUMBER))"
+          else
+            build_number="$(date -u +'%Y.%-m.%-d')"
+          fi
 
           if ! [[ "$app_version" =~ ^[0-9]+([.][0-9]+){1,2}$ ]]; then
             echo "App version must contain two or three numeric components: $app_version" >&2
@@ -76,7 +116,7 @@ jobs:
 
           macos=false
           ios=false
-          case "$INPUT_TARGET" in
+          case "$target" in
             both) macos=true; ios=true ;;
             macos) macos=true ;;
             ios) ios=true ;;
@@ -90,11 +130,12 @@ jobs:
             echo "build_number=$build_number"
             echo "macos=$macos"
             echo "ios=$ios"
+            echo "release_target=$target"
             echo "release_tag=$release_tag"
           } >> "$GITHUB_OUTPUT"
 
           {
-            echo '## Apple Store manual delivery'
+            echo '## Apple Store delivery'
             echo
             echo "- Source: \`$source_sha\`"
             echo "- Version: \`$app_version\`"
@@ -106,6 +147,15 @@ jobs:
             echo 'A successful upload is ingested by App Store Connect. After Apple processing, the same build is available for TestFlight and for App Store release selection; this workflow does not submit an App Review automatically.'
             echo 'After all selected App Store Connect uploads succeed, the exact signed store-distribution package(s) and SHA256SUMS.txt are also published to an immutable GitHub Release.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require canonical release source gates
+        if: steps.select.outputs.should_release == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
+          RELEASE_TARGET: ${{ steps.release.outputs.release_target }}
+        run: bash .github/scripts/require-release-source-gates.sh
 
   macos-electron:
     name: Build and upload Electron macOS MAS package
@@ -166,11 +216,36 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: |
+            desktop/package-lock.json
+            chatgpt-vps-control/package-lock.json
 
       - name: Install Electron dependencies
         working-directory: desktop
         run: npm ci --prefer-offline
+
+      - name: Install embedded Computer Use dependencies
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts --prefer-offline
+
+      - name: Install Mac App Store identity for the embedded Computer Use helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          cert="$RUNNER_TEMP/fabushi-mas-application.p12"
+          keychain="$RUNNER_TEMP/fabushi-mas-computer-helper.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$MACOS_APP_STORE_CERTIFICATE_P12_BASE64" | base64 --decode > "$cert"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert" -k "$keychain" -P "$MACOS_APP_STORE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Apple Distribution:|3rd Party Mac Developer Application:|Mac App Distribution:/ {print $2; exit}')"
+          test -n "$identity"
+          echo "MACOS_APP_STORE_APP_IDENTITY=$identity" >> "$GITHUB_ENV"
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -232,6 +307,16 @@ jobs:
         working-directory: desktop
         run: npm run build:renderer
 
+      - name: Stage bundled Computer Use runtime for the Mac application
+        shell: bash
+        env:
+          CHATGPT_COMPUTER_HOME: ${{ github.workspace }}/desktop/resources/computer-control
+        run: |
+          set -euo pipefail
+          export CHATGPT_COMPUTER_CODESIGN_IDENTITY="${MACOS_APP_STORE_APP_IDENTITY:-}"
+          export CHATGPT_COMPUTER_TEAM_ID="${MACOS_APP_STORE_TEAM_ID:-}"
+          node chatgpt-vps-control/bin/prepare-fabushi-bundle.js
+
       - name: Build signed Mac App Store package
         working-directory: desktop
         env:
@@ -240,7 +325,22 @@ jobs:
           npx --no-install electron-builder
           --mac mas
           --arm64
+          --publish never
           --config.buildVersion="$RELEASE_BUILD_NUMBER"
+
+      - name: Verify packaged Computer Use runtime, helper, and private MCP layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The MAS sandbox closes stdin when its signed executable is launched
+          # externally with ELECTRON_RUN_AS_NODE. The same source's Developer ID
+          # package runs the full MCP handshake in the Electron desktop gate;
+          # this store-package gate verifies the sealed runtime and signatures.
+          node .github/scripts/verify-packaged-computer-control.mjs \
+            --release-root desktop/release \
+            --platform mac \
+            --expected-mac-team "$MACOS_APP_STORE_TEAM_ID" \
+            --skip-handshake
 
       - id: mac-package
         name: Verify Mac App Store package
@@ -486,7 +586,7 @@ jobs:
   result:
     name: Apple Store delivery result
     needs: [resolve, macos-electron, ios-native]
-    if: always()
+    if: always() && needs.resolve.result == 'success' && needs.resolve.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
@@ -561,5 +661,6 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$SOURCE_SHA" \
             --title "Fabushi Apple $APP_VERSION ($BUILD_NUMBER)" \
-            --notes "Signed store-distribution packages accepted by App Store Connect from $SOURCE_SHA. These assets are also retained here exactly as delivered; Apple review/public availability remains controlled in App Store Connect."
+            --notes "Signed store-distribution packages accepted by App Store Connect from $SOURCE_SHA. These assets are also retained here exactly as delivered; Apple review/public availability remains controlled in App Store Connect." \
+            --latest=false
           echo "- GitHub Release: $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
