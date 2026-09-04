@@ -12,7 +12,7 @@ owner: Fabushi engineering
 reviewers: []
 current_stage: M1-capability-inventory-and-boundary-closure
 created_at: 2026-08-22
-updated_at: 2026-08-22
+updated_at: 2026-09-04
 risk_tier: tier-1
 security_classification: public
 target_finish: null
@@ -23,3 +23,15 @@ source_systems:
   - GitHub:bhrumom/fabushi
   - GitHub:openai/codex
   - GitHub:xai-org/grok-build
+recovery_program:
+  program_id: FAB-ARCH-P0-20260904
+  role: unique_bot_runtime_and_session_owner
+  required_invariant: one_bot_identity_one_durable_mahayana_session
+  capability_plane: mahayana_policy_approval_audit
+  review_verdict: REVIEW_REJECTED
+  reviewed_architecture_head: 21ee56892db48925fe863320a1cd68b51c4596cd
+  review_writeback_head: a0333f32a5d0edc04723c49fc53a5997a3b0fe1e
+  repair_pr: 2320
+  repair_status: ARCHITECTURE_REPAIR_READY_FOR_REREVIEW
+  execution_handoff_allowed: false
+  next_gate: fresh_code_review_on_latest_pr_head

@@ -1,22 +1,19 @@
 # Source of Truth
 
 ## 权威项目基线
+唯一长期项目基线：`bhrumom/fabushi` 的 `main:projects/grok-bot-fabushi-integration/`。GitHub live PR/CI/Release facts override stale project claims; chats/local copies are inputs only.
 
-唯一长期项目基线：`bhrumom/fabushi` 的 `main:projects/grok-bot-fabushi-integration/`。
+## 2026-09-04 clean-room boundary
+Program `FAB-ARCH-P0-20260904` inspected `bhrum/grok-bot-0.18-reconstructed@107877b4e2134fd167d239411386f09e42eadd6d`. Root `LICENSE` is absent; `PROVENANCE.md` states no upstream source-code license is implied and independent rights review is required. Therefore it is **behavior/evidence reference only**.
 
-## 原始需求
+Allowed: independently observe and record mention/privacy/session/tool-state UI behavior, visible state transitions, documented or observed IPC boundary shapes, screenshots/video/transcripts and resulting externally observable semantics.
 
-原始上传需求保存于 `source/grok-bot融合优化.txt`，原文为：学习 Grok Bot 项目并把 Grok Bot 完全融合进 Fabushi。
+Forbidden: copy, translate, mechanically port, derive implementation from, or vendor reconstructed implementation files. Every Grok-like behavior implemented by GBF-508 must cite an observable anchor ID/revision/evidence artifact. If an anchor or rights basis is missing, the behavior stays `UNMAPPED/EVIDENCE_ONLY` until resolved; it is not implemented from source.
 
-当前任务进一步明确：为“融合 Grok Bot 所有功能、所有源码”建立完整项目文件夹并持续完成项目资料。
+## Cross-project authority and hard gates
+GBF owns behavior and same-account device/App capability semantics; MSR owns execution/session/policy; TFI owns messaging projection/transport. No second Bot engine or direct provider->message path is allowed.
 
-## 工程事实来源
+PR #2320 reviewed head `21ee56892db48925fe863320a1cd68b51c4596cd` remains `REVIEW-REJECTED` until fresh review of the latest repair head. Current canonical dependency facts: `GBF-409` = `IN_PROGRESS` with PR/required CI/exact-main packaged E2E/Release evidence pending; `GBF-411` = `IN_PROGRESS` with GitHub CI/E2E/deployment/release/live evidence pending; `MSR-201/202` = `in-progress`. Thus GBF-508 cannot close via “reuse existing”; it hard-gates accepted GBF-409, GBF-411, MSR-210 and MSR-211 contracts, then its own merge/CI/exact-main installable package evidence.
 
-- 当前产品事实：GitHub `main`。
-- Grok Bot 历史融合输入：`grok-bot-latest-source-fusion`、`grok-bot-0.16-source-fusion`。
-- PR/CI/Release/部署事实：GitHub 实时状态。
-- 聊天、外部副本、历史分支不得静默覆盖 `main`。
-
-## 冲突处理
-
-若来源分支与 `main` 冲突：先做能力级 diff；默认保留 `main` 的后续修复，再迁移来源分支独有能力。只有有明确 ADR、测试与 CI 证据时才改变正式架构。
+## Conflict rule
+When source/project text conflicts with `main`/live GitHub facts, record the discrepancy and correct status without rewriting prior evidence. Planned/pending is never passed.
