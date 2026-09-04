@@ -10,6 +10,12 @@
 - Added unconditional lightweight `Canonical version contract` job that sparse-checks out the unchanged canonical script's direct inputs and executes `bash .github/scripts/assert-native-electron-canonical.sh`.
 - Added that child to `CI result.needs` and made `CI result` require its conclusion to be exactly `success`; unlike existing diff-selected jobs, `skipped` cannot satisfy this child.
 - Left the existing changed-path classifier unchanged to preserve its unknown-non-doc `forceAll` behavior and all pre-existing domain selection semantics.
+- Created PR #2342 against canonical main; first evidence head `f57fb7ddc72db0db31c7e5ae45d32c786b2bf455` contained `.github/workflows/ci.yml` plus four TFI execution/evidence/status records only.
+- CI run `33928830797` proved the child really executes: `Canonical version contract` job `101203055760` ran the unchanged script and failed with `iOS build number drift: canonical=29 project=28`.
+- The same CI run proved aggregate binding: `CI result` job `101203097569` read `version_contract_result="failure"` and failed with `Canonical version contract failed: failure`.
+- `Canonical architecture guardrails` job `101203073047` succeeded independently; it remains the retired Flutter/Tauri/Capacitor workflow guard and was not substituted for version evidence.
+- The failure is the already-known canonical 29/28 drift, not a skipped/miswired child. Fixing it requires prohibited `mobile/ios/project.yml` and belongs to the separately frozen version repair.
+- Applied frozen stop rule: `EXECUTION-VERSION-GUARD-CI-001-BLOCKED / SCOPE-EXPANSION-REQUIRED / CANONICAL-DRIFT-PREVENTS-SELF-BOOTSTRAP`.
 - Did not modify canonical version script, Electron/native/release workflows, rulesets, product/test source, `mobile/ios/project.yml`, `app-version.json`, Android, Cargo/dependencies, release/version semantics, or any prohibited downstream task.
-- No local build/test/rustfmt/clippy/E2E was run. GitHub Actions exact-head evidence remains the acceptance source.
-- Known bootstrap risk retained: canonical main itself still has the diagnosed iOS build-number drift; if the newly required child fails on that drift, execution must stop BLOCKED rather than modify the prohibited version file or weaken the gate.
+- Did not start code review, merge, VERSION-CONTRACT-002, test release or stable release. Return to architecture is required.
+- No local build/test/rustfmt/clippy/E2E was run.
