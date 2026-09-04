@@ -9,8 +9,10 @@
 - Requirement: `M6-PM-VG-R01`
 - Acceptance: `M6-PM-VG-A01`
 - Branch: `fix/tfi-m6-mainsafe-001-version-guard-ci-001`
+- Product/CI PR: `#2342`
 - Initial implementation commit: `3aa3fac353671a2b7203f242ee12d1ff3119d345`
-- Status: `IN_PROGRESS / AWAITING-EXACT-HEAD-ACTIONS`
+- First PR evidence head: `f57fb7ddc72db0db31c7e5ae45d32c786b2bf455`
+- Status: `EXECUTION-VERSION-GUARD-CI-001-BLOCKED / SCOPE-EXPANSION-REQUIRED / CANONICAL-DRIFT-PREVENTS-SELF-BOOTSTRAP`
 
 ## Frozen scope
 
@@ -24,39 +26,49 @@ Explicitly prohibited: `.github/scripts/assert-native-electron-canonical.sh`, El
 
 ## Implementation design
 
-The implementation deliberately does **not** change the existing changed-path classifier. Adding a new classifier domain for version-bearing files would turn previously unknown non-doc paths into classified paths and could therefore reduce the existing fail-safe `forceAll` behavior. That would violate the task requirement to preserve unrelated CI behavior.
+The implementation deliberately does **not** change the existing changed-path classifier. Adding a new classifier domain for version-bearing files would turn previously unknown non-doc paths into classified paths and could reduce the existing fail-safe `forceAll` behavior.
 
 Instead `ci.yml` gains one lightweight, unconditional job named `Canonical version contract`:
 
-1. checkout uses `actions/checkout@v5`, already used by the repository;
-2. sparse checkout includes the existing canonical script plus every repository path that script directly reads/tests;
+1. checkout uses existing `actions/checkout@v5`;
+2. sparse checkout includes the unchanged canonical script plus every path it directly reads/tests;
 3. the job executes exactly `bash .github/scripts/assert-native-electron-canonical.sh`;
-4. `CI result` adds this job to `needs` and explicitly requires `needs.canonical-version-contract.result == success` before applying the existing success-or-skipped policy to pre-existing diff-selected jobs.
+4. `CI result` adds the child to `needs` and explicitly requires `needs.canonical-version-contract.result == success` before applying the existing success-or-skipped policy to prior diff-selected jobs.
 
-This makes the version guard impossible to bypass via a skipped child while leaving existing domain selection unchanged. No version logic is duplicated in YAML and no new dependency/action is introduced.
+Thus the child cannot be bypassed by `skipped`, version logic is not duplicated, and no new action/dependency is introduced.
 
 ## Open-source / official review
 
-- GitHub Actions official workflow/job dependency and required-status documentation: adopted the principle that the required aggregate must depend on the real child gate and that merge-queue workflows must support `merge_group`; no code copied.
-- GitHub Actions official manual-workflow documentation: `workflow_dispatch` remains diagnostic only and is rejected as acceptance evidence for this automatic PR gate.
-- `actions/checkout`: GitHub-maintained action, MIT; already present in the repository and reused, no new dependency.
+- GitHub Actions official workflow/job dependency and required-status documentation: adopted the principle that the required aggregate must depend on the real child gate and merge-queue workflows must support `merge_group`; no code copied.
+- GitHub Actions official manual-workflow documentation: `workflow_dispatch` remains diagnostic only and is rejected as automatic-gate acceptance evidence.
+- `actions/checkout`: GitHub-maintained, MIT; already present and reused.
 - `actions/github-script`: GitHub-maintained, MIT; existing classifier retained unchanged; no upstream code copied.
 - Fabushi FCM ADR-0005: preserve cheap deterministic checks, aggregate `CI result`, merge queue, unknown-path fail-safe, and post-main heavy validation.
 
-## Validation policy
+## First exact-head GitHub Actions evidence
 
-No local build/test/rustfmt/clippy/E2E is run. Only GitHub diff/content inspection is used locally in the execution workflow; GitHub Actions is authoritative for the actual guard execution.
+PR #2342 first evidence head `f57fb7ddc72db0db31c7e5ae45d32c786b2bf455` triggered CI run `33928830797`.
 
-The current canonical base still has the known `app-version.json.iosBuildNumber=29` versus `mobile/ios/project.yml CURRENT_PROJECT_VERSION=28` drift. Therefore this execution does not assume the new guard will be green on its own topology PR. If the exact-head job faithfully executes the existing script and fails on that pre-existing drift, this task must stop `SCOPE-EXPANSION-REQUIRED / BLOCKED`; execution may not modify the version file or weaken the guard to self-bootstrap.
+- `Classify CI changes` job `101203055701`: SUCCESS.
+- `Canonical version contract` job `101203055760`: **FAILURE**, and it was actually executed, not skipped.
+- Raw child log proves checkout of the canonical version inputs and then exactly:
+  - `Run bash .github/scripts/assert-native-electron-canonical.sh`
+  - `iOS build number drift: canonical=29 project=28`
+  - process exit code `1`.
+- `Canonical architecture guardrails` job `101203073047`: SUCCESS; still only the retired Flutter/Tauri/Capacitor guard.
+- Frontend/Worker/MCP/Electron Feature Host jobs: SKIPPED by the existing classifier, as expected for this workflow-only change.
+- `CI result` job `101203097569`: **FAILURE**. Its raw log contains `version_contract_result="failure"` and `Canonical version contract failed: failure`, proving the protected aggregate waits for and reflects the new child.
 
-## Acceptance pending
+This is positive proof that the requested CI topology works, but the task cannot satisfy the frozen requirement that the same exact-head child and `CI result` are SUCCESS because canonical main itself still contains the pre-existing 29/28 drift.
 
-Before PASS-CANDIDATE:
+## Stop decision
 
-- final exact-head `Canonical version contract` must execute, not skip;
-- raw log must prove the canonical script actually ran;
-- the child and same-head `CI result` must succeed;
-- all applicable exact-head repository workflows/checks must succeed;
-- changed-files must remain `.github/workflows/ci.yml` plus only TFI execution records.
+Fixing the drift requires changing `mobile/ios/project.yml`, which is explicitly prohibited and belongs to the separately frozen VERSION-CONTRACT repair. Weakening/skipping the child, changing the canonical script, or special-casing this PR would violate the task contract.
 
-Any failure requiring an out-of-allowlist change stops this task and returns to architecture.
+Therefore execution stops as:
+
+`SCOPE-EXPANSION-REQUIRED / BLOCKED`.
+
+No code review, merge, VERSION-CONTRACT-002, test release or stable release is authorized. Return to architecture to resolve the bootstrap dependency between the new required guard and the already-known version drift.
+
+No local build/test/rustfmt/clippy/E2E was run.
