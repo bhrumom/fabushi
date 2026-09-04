@@ -5,33 +5,44 @@
 - Canonical base: `main@dbf22b467d35c8af2a074896c355a41993c8c191`
 - Architecture source: `#2340@a514a396cc7f6c1a3a622aba54906d33c00c3e4b`
 - Requirement / Acceptance: `M6-PM-VG-R01` / `M6-PM-VG-A01`
-- Current state: `IN_PROGRESS / AWAITING-FINAL-EXACT-HEAD-ACTIONS`
+- Product/CI PR: `#2342`
+- Current state: `EXECUTION-VERSION-GUARD-CI-001-BLOCKED / SCOPE-EXPANSION-REQUIRED / CANONICAL-DRIFT-PREVENTS-SELF-BOOTSTRAP`
 
-## Scope state
+## Scope and implementation state
 
 | Gate | State | Evidence |
 |---|---|---|
 | canonical main reread | PASS | `dbf22b467d35c8af2a074896c355a41993c8c191` |
 | branch lineage | PASS | fresh branch from canonical main; no #2340/#2341 branch reuse |
-| implementation allowlist | PASS so far | only `.github/workflows/ci.yml` implementation change |
+| implementation allowlist | PASS | only `.github/workflows/ci.yml` implementation change |
 | existing classifier behavior | PRESERVED | classifier text/outputs unchanged |
 | new child identity | IMPLEMENTED | `Canonical version contract` |
 | canonical script implementation | REUSED / UNCHANGED | `.github/scripts/assert-native-electron-canonical.sh` |
 | child skip bypass | PROHIBITED BY DESIGN | child unconditional; `CI result` requires exact `success` |
 | no new action/dependency | PASS | existing `actions/checkout@v5`; existing classifier action untouched |
 | local heavy validation | NOT RUN | by task rule |
-| exact-head child raw log | PENDING | GitHub Actions after PR creation |
-| exact-head `CI result` | PENDING | GitHub Actions after PR creation |
-| applicable repository checks | PENDING | GitHub Actions after PR creation |
-| independent code review | NOT STARTED | execution cannot self-review |
-| protected merge/readback | NOT AUTHORIZED | review phase only after PASS-CANDIDATE |
+| first exact-head child raw log | **FAIL / VALID BLOCKER EVIDENCE** | CI `33928830797`, job `101203055760` |
+| first exact-head `CI result` binding | **FAIL / VALID TOPOLOGY EVIDENCE** | job `101203097569` reflects child failure |
+| independent code review | NOT STARTED | blocked before review |
+| protected merge/readback | NOT AUTHORIZED | blocked before review |
 
-## Implementation choice
+## Raw Actions findings
 
-The child runs on every CI invocation rather than introducing a new changed-path classifier output. This preserves the current unknown-non-doc `forceAll` safety semantics and makes a future `mobile/ios/project.yml` change incapable of skipping the guard. The extra job is dependency-free apart from checkout and the repository's existing Bash/Python-stdlib script.
+On PR #2342 first evidence head `f57fb7ddc72db0db31c7e5ae45d32c786b2bf455`:
 
-## Known bootstrap risk
+- `Canonical version contract` job `101203055760` was executed, not skipped.
+- Raw job log shows `Run bash .github/scripts/assert-native-electron-canonical.sh`.
+- The unchanged script failed with `iOS build number drift: canonical=29 project=28`, exit code 1.
+- `CI result` job `101203097569` then read `version_contract_result="failure"` and failed with `Canonical version contract failed: failure`.
+- `Canonical architecture guardrails` job `101203073047` succeeded separately and is not used as version evidence.
+- Frontend, Worker, MCP plugin contracts and Electron Feature Host jobs were skipped under the unchanged existing classifier.
 
-Canonical base still contains the already diagnosed 29-vs-28 version drift. Therefore the new job may truthfully fail on this topology PR. If GitHub raw logs show that the unchanged canonical script executed and failed on that existing drift, execution must stop as `SCOPE-EXPANSION-REQUIRED / BLOCKED`: fixing the drift belongs to the separately frozen VERSION-CONTRACT-002 and is prohibited in this task.
+This proves both required topology properties: the canonical child actually runs, and its failure propagates into the protected required aggregate. It also proves the task cannot achieve its frozen success acceptance from the current base without changing the known stale `mobile/ios/project.yml`, which is prohibited here.
 
-No evidence substitution is permitted. A failing canonical child cannot be waived by successful architecture guardrails, Native mobile fast path, manual dispatch, or unrelated checks.
+## Stop rule applied
+
+Canonical base already contains the known 29-vs-28 drift. Correcting that drift requires `mobile/ios/project.yml`, reserved for the separately frozen version-contract repair and outside this task's allowlist. Execution must not weaken/skip the guard, change the script, special-case the topology PR, or alter rulesets/workflows outside `ci.yml`.
+
+Therefore this execution is **BLOCKED** and returns to architecture. Do not start code review, merge, VERSION-CONTRACT-002, test release or stable release.
+
+No evidence substitution and no local build/test/rustfmt/clippy/E2E occurred.
