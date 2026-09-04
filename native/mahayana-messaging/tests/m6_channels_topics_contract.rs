@@ -676,8 +676,7 @@ fn respond_community_join_emits_participant_projection_only_when_approved() {
         })
         .unwrap();
 
-    for (requester_id, requested_at_ms) in
-        [("human:approved", 20_i64), ("human:rejected", 21_i64)]
+    for (requester_id, requested_at_ms) in [("human:approved", 20_i64), ("human:rejected", 21_i64)]
     {
         engine
             .execute(Command::RequestCommunityJoin {
@@ -906,7 +905,9 @@ fn request_join_without_community_remains_community_not_found() {
     group.kind = ConversationKind::Group;
     group.owner_id = Some(ActorId::new("human:owner"));
     engine
-        .execute(Command::UpsertConversation { conversation: group })
+        .execute(Command::UpsertConversation {
+            conversation: group,
+        })
         .unwrap();
 
     let error = engine
