@@ -5,6 +5,7 @@ struct FabushiApp: App {
     @State private var model: MarketplaceModel
     @State private var appAgentSurface: FabushiAppAgentSurface
     @State private var messagingModel: MessagingModel
+    private let host: MahayanaHost
 
     init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -17,6 +18,7 @@ struct FabushiApp: App {
             let featureHostTest = false
             #endif
             let host = try MahayanaHost(appDataDirectory: base, featureHostTest: featureHostTest)
+            self.host = host
             _model = State(initialValue: MarketplaceModel(host: host))
             _messagingModel = State(initialValue: MessagingModel(host: host))
             _appAgentSurface = State(initialValue: FabushiAppAgentSurface())
@@ -27,7 +29,7 @@ struct FabushiApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(model: model, messaging: messagingModel, appAgentSurface: appAgentSurface)
+            GrokMobileShell(model: model, messaging: messagingModel, host: host, appAgentSurface: appAgentSurface)
                 .task {
                     await model.runFeatureHostSmokeIfRequested()
                     await model.initializeApp()
