@@ -703,7 +703,28 @@ fn respond_community_join_emits_participant_projection_only_when_approved() {
         })
         .unwrap();
     assert_eq!(approved.len(), 2);
-    assert!(matches!(&approved[0], Event::CommunityChanged { .. }));
+    let approved_community = match &approved[0] {
+        Event::CommunityChanged { community } => community,
+        event => panic!("unexpected approved event: {event:?}"),
+    };
+    let owner_id = ActorId::new("human:owner");
+    let approved_id = ActorId::new("human:approved");
+    let approved_member = approved_community
+        .members
+        .get(&approved_id)
+        .expect("approved requester member");
+    assert_eq!(approved_member.status, MemberStatus::Member);
+    assert_eq!(approved_member.invited_by.as_ref(), Some(&owner_id));
+    assert!(!approved_community
+        .pending_join_requests
+        .contains_key(&approved_id));
+    let approved_audit = approved_community
+        .admin_log
+        .iter()
+        .find(|entry| entry.action == CommunityAuditAction::JoinApproved)
+        .expect("JoinApproved audit entry");
+    assert_eq!(&approved_audit.actor_id, &owner_id);
+    assert_eq!(approved_audit.target_actor_id.as_ref(), Some(&approved_id));
     assert!(matches!(
         &approved[1],
         Event::ConversationParticipantUpserted {
@@ -724,7 +745,22 @@ fn respond_community_join_emits_participant_projection_only_when_approved() {
         })
         .unwrap();
     assert_eq!(rejected.len(), 1);
-    assert!(matches!(&rejected[0], Event::CommunityChanged { .. }));
+    let rejected_community = match &rejected[0] {
+        Event::CommunityChanged { community } => community,
+        event => panic!("unexpected rejected event: {event:?}"),
+    };
+    let rejected_id = ActorId::new("human:rejected");
+    assert!(!rejected_community.members.contains_key(&rejected_id));
+    assert!(!rejected_community
+        .pending_join_requests
+        .contains_key(&rejected_id));
+    let rejected_audit = rejected_community
+        .admin_log
+        .iter()
+        .find(|entry| entry.action == CommunityAuditAction::JoinRejected)
+        .expect("JoinRejected audit entry");
+    assert_eq!(&rejected_audit.actor_id, &owner_id);
+    assert_eq!(rejected_audit.target_actor_id.as_ref(), Some(&rejected_id));
 }
 
 #[test]
