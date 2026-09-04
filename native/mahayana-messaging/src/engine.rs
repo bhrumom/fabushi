@@ -2198,8 +2198,7 @@ impl MessagingEngine {
                                 conversation.kind,
                                 ConversationKind::Group | ConversationKind::Channel
                             )
-                        })
-                {
+                        }) {
                     community
                         .members
                         .get(&requester_id)
