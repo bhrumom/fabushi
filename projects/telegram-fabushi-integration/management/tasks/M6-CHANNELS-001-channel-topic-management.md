@@ -56,13 +56,25 @@
 
 ## 实现与验证记录
 
-- **分支**：`codex/tfi-close-001`
-- **提交**：待提交
+- **分支**：`codex/tfi-m6-repair`
+- **提交**：`6160971cb`（基于最新 `origin/main` 重放）；本轮修复待提交
 - **PR**：待创建/受保护合并
 - **CI**：待 GitHub Actions
 - **实现文件**：`native/mahayana-messaging/src/{community,conversation,protocol,engine,service}.rs`、`desktop/src/{selfhosted-messaging-client-v2,messaging-shell-v2}.ts{,x}`
 - **测试文件**：`native/mahayana-messaging/tests/m6_channels_topics_contract.rs`
-- **本地检查**：已执行 `rustfmt --check`、`git diff --check`；未执行本地编译或测试，遵循仓库磁盘安全规则。
+- **本地检查**：已执行 `git diff --check`；未执行本地编译或测试，遵循仓库磁盘安全规则。
+
+### 2026-09-04 — 网页版极高模型审查与修复
+
+网页版 ChatGPT 审查 `ba4e0c69e` 后返回 `WEB-REJECTED`，指出两项确定编译阻断和多项权限/隐私阻断。本轮已修复：
+
+- 补齐 `Topic.unread_count` 及 projection 初始化；开放 engine 内部 topic root helper 的 crate 可见性；
+- `UpdateCommunity` 不再接受客户端覆盖成员、邀请、Topic、封禁、订阅者和审计日志，并在首次建档时仅由 owner 初始化全量权限；
+- 不再允许未知频道被任意订阅并创建空社区状态；
+- actor-scoped projection 仅向具备 `invite_members` 权限的 owner/admin 暴露邀请 token；
+- journal replay 统一清理历史 invite token、pending join request 和 admin log，避免旧持久化记录泄露。
+
+审查原始结论及剩余 P1 项已作为本任务下一轮 CI/网页版复审输入；在 CI、PR、protected merge 和 canonical-main packaged E2E/Release 完成前保持 `IN_PROGRESS`。
 
 ## 风险、阻塞与下一步
 

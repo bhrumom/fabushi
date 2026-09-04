@@ -88,6 +88,8 @@ pub struct Topic {
     pub created_by: ActorId,
     pub closed: bool,
     pub hidden: bool,
+    #[serde(default)]
+    pub unread_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
