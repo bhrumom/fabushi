@@ -2194,19 +2194,22 @@ impl MessagingEngine {
                         .conversations
                         .get(&conversation_id)
                         .is_some_and(|conversation| {
-                            matches!(conversation.kind, ConversationKind::Group | ConversationKind::Channel)
+                            matches!(
+                                conversation.kind,
+                                ConversationKind::Group | ConversationKind::Channel
+                            )
                         })
-                    .then(|| {
-                        community
-                            .members
-                            .get(&requester_id)
-                            .and_then(participant_for_community_member)
-                            .map(|participant| Event::ConversationParticipantUpserted {
-                                conversation_id: conversation_id.clone(),
-                                participant,
-                            })
-                    })
-                    .flatten();
+                        .then(|| {
+                            community
+                                .members
+                                .get(&requester_id)
+                                .and_then(participant_for_community_member)
+                                .map(|participant| Event::ConversationParticipantUpserted {
+                                    conversation_id: conversation_id.clone(),
+                                    participant,
+                                })
+                        })
+                        .flatten();
                 let mut events = vec![Event::CommunityChanged { community }];
                 if let Some(event) = participant_event {
                     events.push(event);

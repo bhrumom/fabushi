@@ -25,3 +25,6 @@ Pending at initial evidence creation. Exact run/job IDs and conclusions will be 
 
 ## Current classification
 `EXECUTION-IN-PROGRESS / PR-HEAD-CI-PENDING / REVIEW-NOT-STARTED / MERGE-NOT-STARTED`.
+
+## PR-head Actions round 1 — formatter-only failure
+PR `#2336` initial exact head `219c3e7b91729d64cb684b304f381831501e01f2` triggered fresh Actions. Mahayana fast checks run `33914142883`, job `101157283662` (`Rust protocol, Host, and bridge fast gate`) failed only at step `Verify formatting before native package setup` (`cargo fmt --all -- --check`) before compilation/tests. The emitted diff was a single `engine.rs` layout change around the join participant projection. This is within the frozen FMT/Rust allowlist and does not change behavior. The exact Actions-emitted layout is applied in the next commit; no local rustfmt/build/test is used.
