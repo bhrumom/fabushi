@@ -2,33 +2,26 @@
 
 ## 权威位置
 
-本项目的唯一长期项目基线为：
+本项目唯一长期基线：`bhrumom/fabushi` 的 `main:projects/telegram-fabushi-integration/`。原始完整需求保存在 `source/完整telegram融合进fabushi.txt`。
 
-- Repository: `bhrumom/fabushi`
-- Branch: `main`
-- Project path: `projects/telegram-fabushi-integration/`
-
-GitHub `main` 上述目录中的内容是项目治理、范围、架构、任务、状态和验收记录的权威版本。
-
-## 原始需求基线
-
-原始完整需求保存在：`source/完整telegram融合进fabushi.txt`。
-
-规则：
-- 原始需求定义“做什么”和“最终目标是什么”。
-- `docs/` 负责把原始需求拆成可维护的专题规范。
-- `management/` 负责把计划拆成可验证的执行单元，并记录每轮真实进展。
-- `decisions/` 负责记录影响长期架构的 ADR 及替代关系。
-- `evidence/` 只保存可审计证据索引；代码、PR、CI、Release、部署等事实必须以 GitHub 实际状态为准。
-- 当专题文档与原始需求冲突时，在没有新 ADR 或用户新明确要求的情况下，以原始需求为准。
-- 当用户明确改变需求时，必须先把变化持久化到本 GitHub 项目目录，再更新 ADR/WBS/验收/变更日志。
-- Google Drive 版本、聊天记录、本地副本和其它外部副本只作为输入或镜像，不得静默覆盖 GitHub `main` 的项目基线。
-- 每次开始任务必须先读本目录；每次结束任务必须更新本目录并提交 GitHub，未完成记录回写不得宣称任务完成。
+规则：原始需求定义目标；`docs/` 规范化；`management/` 管理执行与真实状态；`decisions/` 保存 ADR；`evidence/` 保存证据索引。代码、PR、CI、Release、部署事实必须以 GitHub 实际状态为准。聊天、本地副本、外部镜像不得覆盖 canonical main。
 
 ## 2026-09-04 recovery addendum
 
-Program `FAB-ARCH-P0-20260904` 的架构记录是 `source/2026-09-04-p0-recovery-architecture.md`。该记录补充但不删除历史需求，跨项目契约分别链接 `FAB-P0005/MSR` 与 `FAB-P0004/GBF`。
+Program `FAB-ARCH-P0-20260904` 复用 `FAB-P0001/TFI`，跨项目契约链接 `FAB-P0005/MSR` 与 `FAB-P0004/GBF`。canonical base 为 `688465e94647d4c866f6b1d7b4884145b2f4a9da`；审计输入为 `codex/tfi-m6-repair@9e88a2e9c030fe05147460dfa580366cf9aa433d`，不是 canonical source of truth，也不因代码存在自动升级状态。
 
-本轮复核事实：canonical `main=688465e94647d4c866f6b1d7b4884145b2f4a9da`；审计输入 `codex/tfi-m6-repair=9e88a2e9c030fe05147460dfa580366cf9aa433d`，相对该 main ahead 12 / behind 0。审计输入分支不是 canonical source of truth，也不得因存在实现代码而自动升级状态。
+PR #2320 的代码审查已对 architecture head `21ee56892db48925fe863320a1cd68b51c4596cd` 给出 `REVIEW-REJECTED`；审查回写后 head 起点 `a0333f32a5d0edc04723c49fc53a5997a3b0fe1e` 也不是 `REVIEW-PASS`。本轮 repair 只允许进入 fresh real-diff re-review。
 
-严格 M6 审查仍为 rejected until proven otherwise。至少包括 `RespondCommunityJoin` Rust 类型错误、Community-backed `CreateConversation` 覆盖风险、恢复/participant 权威、权限/owner/channel/self-leave/legacy fixture、journal projection、protocol v3/admission/server-time/request bridge、negative contracts 等未闭环项；只有任务文件规定的真实 diff + GitHub Actions + protected-main + packaged evidence 可以改变结论。
+### M6 precise current facts at audited implementation head
+
+- `RespondCommunityJoin` 仍存在 `approved && Option<Event>` 形态的 Rust 编译阻断；这是 `TFI-M6-P0-001` 当前 defect。
+- `native/mahayana-messaging/src/service.rs` 的 Community-backed `CreateConversation` 仍可直接投影到 generic `UpsertConversation`；create/update ownership boundary 仍需修复。
+- 无 Community 的 `RequestCommunityJoin` **已经**显式返回 `CommunityNotFound`；不得再描述为当前仍通过 `CommunityState::new()` 抢占。它是后续 admission 工作必须保持的 regression guard。
+- Admission 尚未闭环，必须覆盖 public/private/invite/join-request 的正负矩阵，以及 invite expiry/revoke/replay、ban/already-member/unauthorized approval 等边界。
+- journal/replay、v2 reader boundary/v3 negotiation 等保持 rejected until their authoritative task contracts pass fresh review and real verification.
+
+## Cross-project closure rule
+
+TFI M8 session-dependent closure cannot treat unfinished MSR session work as satisfied；`MSR-201` 当前 `in-progress`，因此 `MSR-210` 必须在 `MSR-201 REVIEW-PASS/accepted contract` 后才能通过。TFI M7 group-Bot closure additionally hard-gates `MSR-211 REVIEW-PASS` and `GBF-508 REVIEW-PASS`; `MSR-211` itself is hard-gated by current in-progress `MSR-202`, `GBF-409`, and `GBF-411` as recorded in their projects.
+
+No task is complete from `REVIEW-PASS` alone: its own merge/CI/exact-canonical-main packaged/installable E2E/release evidence must also satisfy the task-local contract.

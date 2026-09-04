@@ -1,14 +1,15 @@
 # MSR P0 acceptance / risk / dependency / changelog — FAB-ARCH-P0-20260904
 
 ## Gates
-- MSR-107: current upstream audit accepted with Apache-2.0 NOTICE/provenance obligations.
-- MSR-210: session binding review-passed before TFI MiniApp->Bot and group Bot closure.
-- MSR-211: capability policy plane review-passed before Bot can use device/MiniApp tools.
+- MSR-107: architecture/provenance audit only; implementation-time exact-file provenance remains mandatory in every later adaptation task.
+- MSR-210: hard-blocked until MSR-201 reaches independent `REVIEW-PASS/accepted contract`; then must satisfy its own review/merge/CI/exact-main packaged evidence.
+- MSR-211: hard-blocked until MSR-202, MSR-210, GBF-409 and GBF-411 reach independent accepted contracts; then must satisfy its own delivery gates.
 
 ## Risks
-- `MSR-P0-R1` CRITICAL: multiple runtime/session owners cause divergent memory/tools/recovery. Mitigation: MSR-210 invariant + source guard.
-- `MSR-P0-R2` HIGH: device/MiniApp tool bypasses policy. Mitigation: MSR-211 single bus + deny/stale tests.
-- `MSR-P0-R3` MEDIUM: upstream copy drifts provenance. Mitigation: MSR-107 exact SHA/license/NOTICE ledger.
+- `MSR-P0-R1` CRITICAL: duplicate runtime/session ownership -> divergent memory/tools/recovery. Owner MSR-210.
+- `MSR-P0-R2` HIGH: device/MiniApp provider bypasses approval/audit. Owner MSR-211.
+- `MSR-P0-R3` HIGH: stale/replayed invocation repeats mutation. Owner MSR-211.
+- `MSR-P0-R4` LEGAL: architecture-level upstream pin mistaken for file-level permission/provenance. Owner MSR-107 + implementing task.
 
-## Change log 2026-09-04
-Recorded MSR as the sole Bot runtime/session owner for `FAB-ARCH-P0-20260904`; pinned current upstream audit revisions; added atomic session/capability tasks. No implementation/test/release claim.
+## Change log 2026-09-04 repair
+Preserved PR #2320 `REVIEW-REJECTED` history, normalized MSR-107/210/211, exposed live MSR-201/202 and GBF-409/411 blockers, added implementation-time exact-file provenance/NOTICE gate and full canonical-main packaged evidence identity. No CI/merge/release status was promoted.

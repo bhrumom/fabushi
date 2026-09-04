@@ -57,7 +57,13 @@ governance:
 
 recovery_program:
   program_id: FAB-ARCH-P0-20260904
-  status: ARCHITECTURE_READY_IMPLEMENTATION_NOT_VERIFIED
+  status: ARCHITECTURE_REPAIR_READY_FOR_REREVIEW
+  review_verdict: REVIEW_REJECTED
+  reviewed_architecture_head: 21ee56892db48925fe863320a1cd68b51c4596cd
+  review_writeback_head: a0333f32a5d0edc04723c49fc53a5997a3b0fe1e
+  repair_pr: 2320
+  execution_handoff_allowed: false
+  next_gate: fresh_code_review_on_latest_pr_head
   baseline_main: 688465e94647d4c866f6b1d7b4884145b2f4a9da
   observed_branch: codex/tfi-m6-repair
   observed_head: 9e88a2e9c030fe05147460dfa580366cf9aa433d
