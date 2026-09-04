@@ -163,6 +163,17 @@ pub struct ConversationDraft {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TopicDraft {
+    pub conversation_id: ConversationId,
+    pub topic_id: String,
+    pub actor_id: ActorId,
+    pub text: String,
+    pub reply_to_message_id: Option<String>,
+    pub updated_at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConversationFolder {
     pub id: String,
     pub title: String,
