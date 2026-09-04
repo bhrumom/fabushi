@@ -688,7 +688,8 @@ impl<S: MessagingStateStore> MessagingService<S> {
                                     member.status,
                                     MemberStatus::Owner | MemberStatus::Administrator
                                 )
-                            }) && !caller_is_owner =>
+                            })
+                            && !caller_is_owner =>
                         {
                             return Err(denied("admins cannot remove owner/admin members"));
                         }
