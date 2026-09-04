@@ -706,6 +706,22 @@ fn ensure_wallet_account(
     wallet.create_account(account_id.clone(), owner_id.clone(), now_ms)
 }
 
+fn participant_for_community_member(member: &CommunityMember) -> Option<Participant> {
+    let role = match member.status {
+        MemberStatus::Owner => ParticipantRole::Owner,
+        MemberStatus::Administrator => ParticipantRole::Admin,
+        MemberStatus::Member => ParticipantRole::Member,
+        MemberStatus::Restricted => ParticipantRole::Restricted,
+        MemberStatus::Left | MemberStatus::Banned => return None,
+    };
+    Some(Participant {
+        actor_id: member.actor_id.clone(),
+        role,
+        joined_at_ms: member.joined_at_ms,
+        muted_until_ms: member.restrictions.until_ms,
+    })
+}
+
 impl MessagingEngine {
     pub fn new() -> Self {
         Self::default()
@@ -1820,7 +1836,30 @@ impl MessagingEngine {
                     reason,
                     decided_at_ms,
                 );
-                Ok(vec![Event::CommunityChanged { community }])
+                let participant_event = self
+                    .state
+                    .conversations
+                    .get(&conversation_id)
+                    .is_some_and(|conversation| matches!(conversation.kind, ConversationKind::Group))
+                    .then(|| {
+                        community
+                            .members
+                            .get(&member.actor_id)
+                            .and_then(participant_for_community_member)
+                            .map(|participant| Event::ConversationParticipantUpserted {
+                                conversation_id: conversation_id.clone(),
+                                participant,
+                            })
+                            .unwrap_or_else(|| Event::ConversationParticipantRemoved {
+                                conversation_id: conversation_id.clone(),
+                                actor_id: member.actor_id.clone(),
+                            })
+                    });
+                let mut events = vec![Event::CommunityChanged { community }];
+                if let Some(event) = participant_event {
+                    events.push(event);
+                }
+                Ok(events)
             }
             Command::SetCommunityMember {
                 actor_id,
@@ -1883,7 +1922,30 @@ impl MessagingEngine {
                     None,
                     joined_at_ms,
                 );
-                Ok(vec![Event::CommunityChanged { community }])
+                let participant_event = self
+                    .state
+                    .conversations
+                    .get(&conversation_id)
+                    .is_some_and(|conversation| matches!(conversation.kind, ConversationKind::Group))
+                    .then(|| {
+                        community
+                            .members
+                            .get(&target_actor_id)
+                            .and_then(participant_for_community_member)
+                            .map(|participant| Event::ConversationParticipantUpserted {
+                                conversation_id: conversation_id.clone(),
+                                participant,
+                            })
+                            .unwrap_or_else(|| Event::ConversationParticipantRemoved {
+                                conversation_id: conversation_id.clone(),
+                                actor_id: target_actor_id.clone(),
+                            })
+                    });
+                let mut events = vec![Event::CommunityChanged { community }];
+                if let Some(event) = participant_event {
+                    events.push(event);
+                }
+                Ok(events)
             }
             Command::CreateInviteLink { actor_id, invite } => {
                 let mut community = self
@@ -2041,7 +2103,28 @@ impl MessagingEngine {
                         decided_at_ms,
                     );
                 }
-                Ok(vec![Event::CommunityChanged { community }])
+                let participant_event = approved
+                    && self
+                        .state
+                        .conversations
+                        .get(&conversation_id)
+                        .is_some_and(|conversation| matches!(conversation.kind, ConversationKind::Group))
+                    .then(|| {
+                        community
+                            .members
+                            .get(&requester_id)
+                            .and_then(participant_for_community_member)
+                            .map(|participant| Event::ConversationParticipantUpserted {
+                                conversation_id: conversation_id.clone(),
+                                participant,
+                            })
+                    })
+                    .flatten();
+                let mut events = vec![Event::CommunityChanged { community }];
+                if let Some(event) = participant_event {
+                    events.push(event);
+                }
+                Ok(events)
             }
             Command::UpsertForumTopic { actor_id, topic } => {
                 let mut community = self
