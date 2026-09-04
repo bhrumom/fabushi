@@ -213,7 +213,7 @@ impl KernelEventSink for NativeEventBridge {
                         metadata: Some(metadata),
                     },
                 }
-            },
+            }
             KernelEvent::ToolStarted { tool, .. } if tool == "send_message" => return Ok(()),
             KernelEvent::ToolStarted {
                 tool, arguments, ..
@@ -229,7 +229,7 @@ impl KernelEventSink for NativeEventBridge {
                         metadata: Some(json!({"tool":tool,"arguments":arguments})),
                     },
                 }
-            },
+            }
             KernelEvent::ToolCompleted { tool, .. } if tool == "send_message" => return Ok(()),
             KernelEvent::ToolCompleted {
                 tool,
@@ -252,7 +252,7 @@ impl KernelEventSink for NativeEventBridge {
                         metadata: Some(json!({"tool":tool,"output":output,"success":success})),
                     },
                 }
-            },
+            }
             KernelEvent::CheckpointCreated {
                 checkpoint_id,
                 label,
@@ -653,7 +653,11 @@ fn tool_activity_copy(tool: &str, completed: bool, success: bool) -> (String, Op
         "workspace_read" => ("读取工作区文件", "工作区文件已读取", "基于真实文件继续处理"),
         "workspace_write" => ("写入实现文件", "实现文件已写入", "把变更落到实际工作区"),
         "workspace_search" => ("搜索相关代码", "相关代码搜索完成", "定位需要处理的实现位置"),
-        "workspace_checkpoint" => ("创建安全检查点", "安全检查点已创建", "为后续修改保留可恢复状态"),
+        "workspace_checkpoint" => (
+            "创建安全检查点",
+            "安全检查点已创建",
+            "为后续修改保留可恢复状态",
+        ),
         "process_exec" => ("运行验证命令", "验证命令已完成", "使用真实执行结果检查实现"),
         "git_status" => ("检查改动状态", "改动状态已检查", "确认当前工作区变更"),
         "git_diff" => ("检查代码差异", "代码差异已检查", "核对实际修改内容"),
@@ -667,7 +671,10 @@ fn tool_activity_copy(tool: &str, completed: bool, success: bool) -> (String, Op
         if success {
             (done.to_string(), Some(detail.to_string()))
         } else {
-            (format!("{done}（失败）"), Some("这一步没有成功，Agent 会根据错误继续处理".into()))
+            (
+                format!("{done}（失败）"),
+                Some("这一步没有成功，Agent 会根据错误继续处理".into()),
+            )
         }
     } else {
         (running.to_string(), Some(detail.to_string()))
