@@ -24,3 +24,9 @@ No local build/test/E2E/native/app validation is permitted or performed. GitHub 
 STOP without scope expansion on any semantic regression, third deterministic repository failure, third production file requirement, or any test/workflow/config/dependency/toolchain/lint change requirement. Infrastructure-only failures may be retried under normal CI policy. Review/merge/E2E/release/P0-002+ are not authorized here.
 
 State at record write: `IMPLEMENTED / EXACT-HEAD-CI-PENDING / CLOSURE-BLOCKED`.
+
+## Exact-head CI iteration 1
+- Head `dc3913b5edac818052dc1031822695634abded0c` triggered Mahayana fast run `33908703028`, job `101139744051`.
+- The job failed only at `cargo fmt --all -- --check`; Actions supplied one in-scope formatting diff in `service.rs` splitting `}) && !caller_is_owner =>` across two lines. No semantic/code-scope expansion was indicated.
+- Applied that exact rustfmt layout in follow-up commit `0899258257e2efb8c24bb7fa951f4ae6180bbb10`; no local rustfmt/build/test was run.
+- State remains `IMPLEMENTED / EXACT-HEAD-CI-PENDING / CLOSURE-BLOCKED` until the new final head completes required Actions.

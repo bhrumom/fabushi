@@ -23,3 +23,6 @@ Production commit `90d337e8d04ce8c463c7228cac1053158f8268ed`:
 The final PR-head workflow run/job IDs and conclusions are recorded in the #2323 execution handoff comment after all required checks finish, because posting a PR comment does not mutate the verified Git SHA. This file intentionally does not claim CI success before that evidence exists.
 
 Stop classification if CI reveals expansion: `SEMANTIC-REGRESSION`, `NEW-SEMANTIC-FAILURE`, `SCOPE-EXPANSION-REQUIRED`, or `CI-INFRA-BLOCKED` exactly as frozen by architecture.
+
+## CI formatting correction evidence
+On execution-record head `dc3913b5edac818052dc1031822695634abded0c`, Mahayana fast run `33908703028` / job `101139744051` reached the formatting gate and reported exactly one diff in the already-authorized `service.rs` guard: rustfmt requires `})` and `&& !caller_is_owner =>` on separate lines. This was an in-scope formatter correction, not a third semantic failure. Commit `0899258257e2efb8c24bb7fa951f4ae6180bbb10` applies only that Actions-provided layout. New exact-head CI is required; the failed run is not reused as success evidence.
