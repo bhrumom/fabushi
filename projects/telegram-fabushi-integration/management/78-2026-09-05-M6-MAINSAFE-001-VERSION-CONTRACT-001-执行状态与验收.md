@@ -6,30 +6,39 @@
 - Architecture: `#2340@b747096704af068a0aa4ee00f2de98073ea6165c`
 - Product PR: `#2341`
 - Acceptance ID: `M6-PM-A01`
-- Current state: `EXECUTION-PASS-CANDIDATE-PENDING-FINAL-RECORD-HEAD-REVALIDATION`
+- Current state: `EXECUTION-VERSION-CONTRACT-001-BLOCKED / REQUIRED-CANONICAL-VERSION-GUARD-NOT-RUN`
 
 ## Acceptance state
 
 | Gate | Evidence | State |
 |---|---|---|
-| Frozen allowlist | only product file is `mobile/ios/project.yml`; other changed files are TFI execution records | PASS |
+| Frozen allowlist | only product file is `mobile/ios/project.yml`; all other PR files are TFI execution records | PASS |
 | Canonical source | `app-version.json.iosBuildNumber=29` | PASS |
 | Stale mirror identified | base `CURRENT_PROJECT_VERSION=28` | PASS |
-| Minimal implementation | commit `0e8f475f0cff2948f3e38beedc7af8440826ec8c`, one-line 28 -> 29 | PASS |
-| PR readback | #2341 base `dbf22b...`; validated record head `0d852fd...`; exactly 5 changed files | PASS |
-| Canonical architecture/version guard | CI `33926299157`, job `101195472470` | PASS |
-| Repository CI result | CI `33926299157` | PASS |
-| Portfolio governance | `33926299211`, job `101195446591` | PASS |
-| Developer Fiat Commerce | `33926299246`, all 5 jobs | PASS |
-| Native mobile PR gate | `33926299245`, jobs `101195446851` + `101195590840` | PASS; heavy platform steps skipped by path classifier |
+| Minimal implementation | `0e8f475f0cff2948f3e38beedc7af8440826ec8c`, one-line 28 -> 29 | PASS |
+| Exact-head changed-files | #2341 contained exactly 5 files at `c0bc37f...`: 1 product + 4 allowed records | PASS |
+| Repository CI result | run `33926458962`; `CI result` `101196401829` | PASS |
+| Architecture-only CI guard | `Canonical architecture guardrails` `101196051273` | PASS, but not the required version script |
+| Canonical version guard script | `.github/scripts/assert-native-electron-canonical.sh` on current product head | **NOT RUN / BLOCKER** |
+| Portfolio governance | `33926458998` / `101195944369` | PASS |
+| Developer Fiat Commerce | `33926459024`; five jobs | PASS |
+| Native mobile PR gate | `33926458965` / `101195989397` + `101196153499` | PASS; heavy platform steps skipped by PR fast-path |
+| Explicit PR gate | `33926459071` / `101195944844` | PASS; no merge performed |
 | Open-source/official review | Apple bundle-version semantics + XcodeGen MIT; no code copied | PASS |
 | Local heavy validation | intentionally not run | N/A by task rule |
-| Final record-head Actions | required because evidence write-back changes head | PENDING |
-| Independent code review | not started | BLOCKED until final exact-head execution handoff |
-| Protected merge/main readback | not authorized in execution session | BLOCKED |
+| Independent code review | not started | BLOCKED |
+| Protected merge/main readback | not authorized | BLOCKED |
 
-## Scope protection
+## Blocker proof
 
-No changes are permitted to `app-version.json`, Android, any other application source, test source, Electron, workflows, Cargo/dependencies, version generation, root `AGENTS.md`, `projects/PORTFOLIO.json`, unrelated old task records, IOS-FIXTURE/EVIDENCE-CONTRACT/EVIDENCE-JOURNEY/MAINSAFE-002/003.
+Frozen task acceptance item 2 requires the current-head GitHub architecture/version guard. The CI job named `Canonical architecture guardrails` does not execute `.github/scripts/assert-native-electron-canonical.sh`; its substantive check only rejects retired Flutter/Tauri/Capacitor architecture. Native mobile PR fast-path logs likewise do not execute that script.
 
-If final PR changed-files or final exact-head Actions prove otherwise, this task becomes `SCOPE-EXPANSION-REQUIRED / BLOCKED`.
+The version script is wired into Electron/release workflows, but Electron desktop PR path filters do not include `mobile/ios/project.yml`, so #2341 did not trigger it. Exact-head all-runs readback returned only CI, portfolio governance, Developer Fiat Commerce, Native mobile quality gate and Explicit automerge.
+
+The connected GitHub Actions interface in this execution session has no workflow-dispatch operation. Editing a workflow/path trigger is outside this atomic allowlist. Therefore execution cannot truthfully claim acceptance item 2 and must stop.
+
+## Stop state
+
+`SCOPE-EXPANSION-OR-MANUAL-DISPATCH-REQUIRED / BLOCKED`.
+
+Do not start code review, merge, test release or stable release. Return to architecture to choose a compliant way to run the existing version guard on the product head or freeze a separate CI/governance task.
