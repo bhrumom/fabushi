@@ -18,8 +18,11 @@ architecture:
   android: Native + UniFFI/JNI
   protocol: Self-hosted, versioned, event-driven
   protocol_version: 2
+  target_protocol_version: 3
   local_first: true
   ai_native: true
+  bot_runtime_owner: FAB-P0005/MSR
+  bot_behavior_device_owner: FAB-P0004/GBF
   miniapp_foreground_agent_interface: WebMCP
   miniapp_backend_runtime: Mahayana Rust Host
   telegram_api_dependency: false
@@ -51,6 +54,19 @@ governance:
   task_record_required_before_completion: true
   new_independent_workstream_requires_project_folder: true
   protected_merge_queue_required: true
+
+recovery_program:
+  program_id: FAB-ARCH-P0-20260904
+  status: ARCHITECTURE_READY_IMPLEMENTATION_NOT_VERIFIED
+  baseline_main: 688465e94647d4c866f6b1d7b4884145b2f4a9da
+  observed_branch: codex/tfi-m6-repair
+  observed_head: 9e88a2e9c030fe05147460dfa580366cf9aa433d
+  observed_branch_ahead: 12
+  observed_branch_behind: 0
+  record: source/2026-09-04-p0-recovery-architecture.md
+  cross_projects:
+    mahayana_runtime: FAB-P0005
+    bot_behavior_and_device_control: FAB-P0004
 
 latest_release:
   version: 1.1.0
