@@ -5,7 +5,7 @@
 - **Program:** `FAB-ARCH-P0-20260904`
 - **Status:** `BLOCKED`
 - **Owner:** Execution project group
-- **Hard dependencies:** `TFI-M6-P0-003 REVIEW-PASS` and `TFI-M6-P0-004 REVIEW-PASS`.
+- **Hard dependencies:** both `TFI-M6-P0-003` and `TFI-M6-P0-004` must individually complete contract acceptance, independent code review `REVIEW-PASS`, protected canonical-main merge, every required CI check, and installable/packaged E2E plus Release evidence tied to each exact accepted canonical-main SHA. A review pass alone on either prerequisite does not unblock this task. Until both full lineages are recorded, protocol implementation/submission/acceptance is blocked; only contract-only fixture/version design may proceed.
 - **Parallel condition:** no concurrent protocol/gateway/request-bridge task may edit the same version boundary.
 
 ## Objective
@@ -20,7 +20,7 @@ Introduce the minimum compatible v3 negotiation needed for admission context, au
 - existing v2 golden fixtures and focused protocol/gateway/transport tests.
 
 ## Implementation steps
-1. Freeze fixture-backed v2 reader behavior before introducing v3.
+1. Record the exact accepted canonical-main SHA, required CI, package/E2E and Release lineage for both M6-003 and M6-004, then freeze fixture-backed v2 reader behavior before introducing v3.
 2. Add explicit `supported_versions`/selected version at the connection/request boundary; reject unsupported future versions.
 3. Ensure negotiated v2 emits only v2-compatible fields/events; v3 can add admission context, server time and correlation without contaminating v2 wire shape.
 4. Use server time for expiry/permission decisions; client `sent_at_ms` remains diagnostic.
@@ -34,6 +34,7 @@ v2 reader preservation, v3 negotiation, server-time authority, request correlati
 New business features beyond fields needed by accepted M6 semantics; replacing transport stack; local build/test.
 
 ## Acceptance by category
+- **Dependency gate:** M6-003 and M6-004 each have accepted contract + independent `REVIEW-PASS` + protected canonical merge + required CI + exact-accepted-main installable/packaged E2E and Release evidence. Any missing dependency artifact blocks acceptance.
 - **Unit:** version selection, future-version rejection, request-ID replay and server-time expiry helpers.
 - **Contract:** golden v2 fixtures decode/round-trip unchanged; negotiated v2 sees no v3-only fields; v3 positive fixtures and unsupported-version negatives pass.
 - **Integration:** gateway -> service -> Electron transport reconnect/retry proves selected version and no duplicate mutation.
@@ -42,9 +43,9 @@ New business features beyond fields needed by accepted M6 semantics; replacing t
 - **Performance:** negotiation adds bounded handshake/request overhead; record protocol/open timing and prove no retry loop or material startup regression.
 
 ## Required write-back and evidence
-Record accepted dependency heads, branch/commit/PR/review/CI workflow-run-job/check/evidence/status/changelog here and in TFI P0 records. Planned/pending is not passed.
+Record both prerequisites' exact accepted contract/review heads, protected-main SHAs, required CI and package/E2E/Release lineage, then this task's branch/commit/PR/review/CI workflow-run-job/check/evidence/status/changelog here and in TFI P0 records. Planned/pending is not passed.
 
-Post-main closure requires exact main SHA/app version/platform/run+job/journey/timestamp/installable artifact/full video/step screenshots/trace/HTML-native report/logs; pass/fail always-equivalent upload; 90-day target or recorded lower maximum. Missing evidence blocks pass.
+This task's own post-main closure requires exact main SHA/app version/platform/run+job/journey/timestamp/installable artifact/full video/step screenshots/trace/HTML-native report/logs; pass/fail always-equivalent upload; 90-day target or recorded lower maximum. Missing prerequisite or own evidence blocks pass.
 
 ## Execution fields
 Branch: `blocked`; Commit: `pending`; PR: `pending`; CI: `pending`; Evidence: `pending`; Review: `pending`; Canonical-main/package/release: `pending`.
