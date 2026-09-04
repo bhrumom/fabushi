@@ -57,7 +57,7 @@
 ## 实现与验证记录
 
 - **分支**：`codex/tfi-m6-repair`
-- **提交**：`9916a77ed`（包含 `a5eb43137`、`f9316f500`、`2cbcb29ed`、`e7b41cd70`、`ff07289fa`、`0bd0b6d5d`、`9916a77ed` 修复轮次，基于最新 `origin/main`）
+- **提交**：`af6fb35c3`（包含 `a5eb43137`、`f9316f500`、`2cbcb29ed`、`e7b41cd70`、`ff07289fa`、`0bd0b6d5d`、`9916a77ed`、`7a55bf366`、`af6fb35c3` 修复轮次，基于最新 `origin/main`）
 - **PR**：待创建/受保护合并
 - **CI**：待 GitHub Actions
 - **实现文件**：`native/mahayana-messaging/src/{community,conversation,protocol,engine,service}.rs`、`desktop/src/{selfhosted-messaging-client-v2,messaging-shell-v2}.ts{,x}`
@@ -80,6 +80,8 @@
 `ff07289fa` 已 push，仍待网页版复审；协议滚动兼容、邀请凭证完整校验、Electron privileged merge、membership mutation 双向收敛和负向契约测试仍未完成。网页版审查会话随后因工作区额度耗尽中断，尚无该提交的最终 `WEB-ACCEPTED`/`WEB-REJECTED` 结论。在 CI、PR、protected merge 和 canonical-main packaged E2E/Release 完成前保持 `IN_PROGRESS`。
 
 网页版聊天模式随后审查 `0bd0b6d5d` 并确认 `project_event` 的 `_actor_id` 名称解析错误及 Electron Topic shape/unread 投影错误；`9916a77ed` 已修复这两个确定阻断并 push。该 head 仍未获网页版复审、Actions、PR 或 packaged E2E 验收，继续保持 `IN_PROGRESS`。
+
+网页版聊天模式规划 `P0.1` 后，`af6fb35c3` 已将 Community-backed `UpdateConversation` 限制为 metadata-only、以 Community 成员进行 participant 管理授权、为 Conversation participant mutation 生成 Community 兼容事件，并使 Group/Channel 的 Community→Conversation participant projection 都覆盖。该提交仍待网页版复审和 Actions 验证；不将静态检查视为编译通过。
 
 ## 风险、阻塞与下一步
 
