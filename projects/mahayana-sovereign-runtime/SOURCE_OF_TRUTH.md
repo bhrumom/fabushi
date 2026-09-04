@@ -17,9 +17,14 @@ The user requires Mahayana to become a new Fabushi-owned product by studying and
 - PR #1967 is an obsolete reverse-sync PR into the superseded `feat/mahayana-independent-kernel` branch and is not an implementation source of truth.
 
 ## Upstream provenance baseline
-- Grok Build reviewed baseline currently recorded by Fabushi: `19d42e35c07a9c9244f03f6df0c4c353f970d4f9`.
-- Codex reviewed baseline recorded by Fabushi: `970b7f2d6c78fc9a4438841d4688e5547ca9dd07`.
-- Current upstreams may move; inventory tasks must pin the exact commit used for each audit round.
+- Historical Grok Build reviewed baseline: `19d42e35c07a9c9244f03f6df0c4c353f970d4f9`.
+- Historical Codex reviewed baseline: `970b7f2d6c78fc9a4438841d4688e5547ca9dd07`.
+- 2026-09-04 audit refresh pins Codex `8e85265c39176b6bd498242a33d7b0f9b4b98303` and Grok Build `72a61251fcffb464bcc687aeb5a998e5a98ec0c9`; both root LICENSE files are Apache-2.0. These are audit revisions, not automatic imports.
+- Current upstreams may move; every adaptation round records exact revision, license, files/capabilities used, NOTICE/provenance and reject decisions.
+
+## 2026-09-04 cross-project authority
+
+For program `FAB-ARCH-P0-20260904`, MSR owns the only Bot execution runtime/session. TFI owns messaging/MiniApp projection; GBF owns behavior and same-account device capability semantics. No project may introduce a second Bot engine.
 
 ## Conflict rule
 When a project document conflicts with actual code/CI, record the discrepancy in status/changelog and correct the project record using live evidence; do not rewrite history silently.

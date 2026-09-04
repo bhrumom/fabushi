@@ -5,12 +5,17 @@
 ## 当前已验证状态
 
 - **M0 企业级项目基线已完成**：PR #1982 经 required `CI result` 成功并通过 merge queue 合入 `main`，merge commit `6d1e9cd7a475e8058d5d8512f5c3a0c21da8ed9c`；随后已从 `main` 重新读取项目元数据和原始需求验证 canonical state。
-- 当前阶段：**M1 — 全量源码/功能/来源盘点**。
-- 已确认历史输入分支：`grok-bot-latest-source-fusion`、`grok-bot-0.16-source-fusion`。
-- 已确认 latest 分支包含 Electron main/preload/host/native-capability/native-edge/offline-ASR/desktop-E2E 等输入。
-- 已确认当前 `main` 对部分同名 Electron 文件已有后续演进，因此历史 Grok 分支是只读审计输入，禁止整分支覆盖 `main`。
-- 当前下一验收门：GBF-101 固定 `main`、latest、0.16 三个精确 ref/commit，随后 GBF-102..105 完成文件/能力/diff/provenance 100% 盘点。
-- **M1–M8 的运行时代码迁移尚未被宣称完成。**
+- 当前阶段：**M4 — interactive runner MCP and agent surface**。
+- 历史 Grok 分支是只读审计输入，禁止整分支覆盖 `main`。
+- **M1–M8 的全部迁移仍不能因代码存在而宣称完成。**
+
+## 2026-09-04 P0 cross-project contract
+
+Program `FAB-ARCH-P0-20260904` 复用 GBF，不新建项目。GBF 负责 Grok-like 可观察 Bot 行为、同账号设备能力和 Agent Surface 语义；真正执行仍由 `FAB-P0005/MSR` 唯一 Runtime/session 完成，TFI 只负责消息投影/传输。
+
+现有 `GBF-409`（同账号设备发现/授权 Computer Use）与 `GBF-411`（Web/App MCP Agent Surface）继续作为能力依赖；新增 `GBF-508` 只定义/实现缺失的 Bot group behavior 和设备/MiniApp capability routing 接缝。
+
+`bhrum/grok-bot-0.18-reconstructed@107877b4e2134fd167d239411386f09e42eadd6d` 本轮根 `LICENSE` 不存在，且其 `PROVENANCE.md` 明示不蕴含上游源码许可，所以只能 clean-room 参考可观察行为/边界，不复制实现代码。
 
 ## 权威位置
 
@@ -23,19 +28,15 @@
 
 - Accountable/execution owner: Fabushi/Mahayana maintainers
 - Required review: Fabushi maintainers；computer-control、敏感输入、本机执行等高风险能力还需安全审查
-- 详细职责：`OWNERS.md`
 
 ## 项目级验收
 
-最终“Grok Bot 所有功能、所有源码已融合”必须满足 `docs/19-完成定义与验收.md`：来源 100% 分类、单一正式 runtime、保留能力有自动化/E2E 证据、安全/来源阻塞清零、受保护 main 与发布证据完整。
+最终完成必须满足来源分类、单一正式 runtime、自动化/E2E、安全、受保护 main 和发布证据；本次架构记录不改变既有实现状态。
 
 ## 目录导航
 
 - 原始需求/来源：`source/`
-- 标准产品与工程规范：`docs/00..07`、`docs/19`
-- 深入专题规范：`docs/02-Grok-Bot能力目录.md` 到 `docs/15-完成定义.md`
+- 规范：`docs/`
 - 执行管理：`management/`
 - ADR：`decisions/`
-- 验收证据：`evidence/`
-- 运维/回滚/恢复：`runbooks/`
-- 可复用模板：`templates/`
+- 证据：`evidence/`

@@ -6,9 +6,7 @@
 
 ## 原始需求
 
-原始上传需求保存于 `source/grok-bot融合优化.txt`，原文为：学习 Grok Bot 项目并把 Grok Bot 完全融合进 Fabushi。
-
-当前任务进一步明确：为“融合 Grok Bot 所有功能、所有源码”建立完整项目文件夹并持续完成项目资料。
+原始上传需求保存于 `source/grok-bot融合优化.txt`。当前产品目标是把有价值的 Grok Bot 行为/能力融入 Fabushi，而不是保留第二套 runtime。
 
 ## 工程事实来源
 
@@ -17,6 +15,12 @@
 - PR/CI/Release/部署事实：GitHub 实时状态。
 - 聊天、外部副本、历史分支不得静默覆盖 `main`。
 
+## 2026-09-04 clean-room boundary
+
+Program `FAB-ARCH-P0-20260904` additionally inspected `bhrum/grok-bot-0.18-reconstructed@107877b4e2134fd167d239411386f09e42eadd6d`. Root `LICENSE` is absent; `PROVENANCE.md` says no upstream source-code license is implied and independent rights review is required. Therefore this repository is behavior/evidence reference only: observable mention/privacy/session/tool-result/UI boundary may inform clean-room specifications, but implementation source must not be copied.
+
+GBF owns behavior and same-account device capability semantics; FAB-P0005/MSR owns execution/session; FAB-P0001/TFI owns message transport/projection.
+
 ## 冲突处理
 
-若来源分支与 `main` 冲突：先做能力级 diff；默认保留 `main` 的后续修复，再迁移来源分支独有能力。只有有明确 ADR、测试与 CI 证据时才改变正式架构。
+若来源与 `main` 冲突：先做能力级 diff；默认保留 `main` 后续修复。只有明确 ADR、测试、CI 与许可/来源证据时才改变正式架构。

@@ -19,6 +19,12 @@ In scope: sovereign kernel/runtime, sessions, workspace, tools, memory, workflow
 
 Non-goals: cosmetic renaming of vendor code; wholesale history merge of upstream repositories; restoring retired Flutter/Tauri product architecture; claiming parity without objective evidence.
 
+## 2026-09-04 P0 cross-project contract
+
+Program `FAB-ARCH-P0-20260904` makes MSR the **only** Bot runtime owner for TFI/GBF integration. Every canonical Bot identity must bind to exactly one durable Mahayana session; conversation/group/topic context is scoped inside that session. All device/MiniApp/tool execution passes through MSR policy/approval/audit.
+
+Read `docs/2026-09-04-bot-runtime-contract.md`, `management/09-2026-09-04-P0-WBS.md`, `management/tasks/MSR-107-upstream-capability-refresh.md`, `management/tasks/MSR-210-bot-durable-session-binding.md`, and `management/tasks/MSR-211-bot-capability-policy-plane.md`.
+
 ## Source of truth
 See `SOURCE_OF_TRUTH.md`. GitHub `main`, this project folder, accepted ADRs, and live CI facts are authoritative.
 
