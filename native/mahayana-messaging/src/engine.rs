@@ -2188,7 +2188,7 @@ impl MessagingEngine {
                         decided_at_ms,
                     );
                 }
-                let participant_event = approved
+                let participant_event = if approved
                     && self
                         .state
                         .conversations
@@ -2199,17 +2199,18 @@ impl MessagingEngine {
                                 ConversationKind::Group | ConversationKind::Channel
                             )
                         })
-                        .then(|| {
-                            community
-                                .members
-                                .get(&requester_id)
-                                .and_then(participant_for_community_member)
-                                .map(|participant| Event::ConversationParticipantUpserted {
-                                    conversation_id: conversation_id.clone(),
-                                    participant,
-                                })
+                {
+                    community
+                        .members
+                        .get(&requester_id)
+                        .and_then(participant_for_community_member)
+                        .map(|participant| Event::ConversationParticipantUpserted {
+                            conversation_id: conversation_id.clone(),
+                            participant,
                         })
-                        .flatten();
+                } else {
+                    None
+                };
                 let mut events = vec![Event::CommunityChanged { community }];
                 if let Some(event) = participant_event {
                     events.push(event);
