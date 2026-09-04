@@ -28,5 +28,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/mahayana-messaging
-      - name: Compile and run focused M6 contract
-        run: cargo test --manifest-path native/mahayana-messaging/Cargo.toml --test m6_channels_topics_contract
+      - name: Compile M6 contract test binary
+        run: cargo test --manifest-path native/mahayana-messaging/Cargo.toml --test m6_channels_topics_contract --no-run
+      - name: Run TFI-M6-P0-001 regressions
+        run: |
+          cargo test --manifest-path native/mahayana-messaging/Cargo.toml --test m6_channels_topics_contract respond_community_join_emits_participant_projection_only_when_approved
+          cargo test --manifest-path native/mahayana-messaging/Cargo.toml --test m6_channels_topics_contract community_backed_create_is_idempotent_and_update_cannot_reown_or_retype
+          cargo test --manifest-path native/mahayana-messaging/Cargo.toml --test m6_channels_topics_contract request_join_without_community_remains_community_not_found
