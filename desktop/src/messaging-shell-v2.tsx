@@ -1359,6 +1359,14 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           orders?: MessagingOrder[];
           stories?: MessagingStory[];
           communities?: MessagingCommunityState[];
+          topicDrafts?: Array<{
+            conversationId: string;
+            topicId: string;
+            actorId: string;
+            text: string;
+            replyToMessageId?: string;
+            updatedAtMs: number;
+          }>;
           bots?: MessagingBotProfile[];
           botExecutions?: MessagingBotExecution[];
         };
@@ -1386,6 +1394,12 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         setSelfOrders((current) => (payload.orders ?? []).reduce((items, item) => upsertById(items, item), previousCursor ? current : []));
         setSelfStories((current) => (payload.stories ?? []).reduce((items, item) => upsertById(items, item), previousCursor ? current : []));
         setSelfCommunities((current) => (payload.communities ?? []).reduce((items, item) => [...items.filter((existing) => existing.conversationId !== item.conversationId), item], previousCursor ? current : []));
+        if (payload.topicDrafts?.length) {
+          setDrafts((current) => payload.topicDrafts!.reduce((items, draft) => ({
+            ...items,
+            [`${draft.conversationId}:${draft.topicId}`]: draft.text,
+          }), current));
+        }
         setSelfBotProfiles((current) => (payload.bots ?? []).reduce((items, item) => [...items.filter((existing) => existing.actorId !== item.actorId), item], previousCursor ? current : []));
         setSelfBotExecutions((current) => (payload.botExecutions ?? []).reduce((items, item) => upsertById(items, item), previousCursor ? current : []));
         break;
@@ -1496,6 +1510,66 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
       case 'communityChanged': {
         const community = (event as unknown as { community: MessagingCommunityState }).community;
         setSelfCommunities((current) => [...current.filter((item) => item.conversationId !== community.conversationId), community]);
+        break;
+      }
+      case 'communityMembersPage': {
+        const payload = event as unknown as {
+          conversationId: string;
+          members: Array<MessagingCommunityState['members'][string]>;
+        };
+        setSelfCommunities((current) => current.map((community) => {
+          if (community.conversationId !== payload.conversationId) return community;
+          return {
+            ...community,
+            members: payload.members.reduce((items, member) => ({ ...items, [member.actorId]: member }), community.members),
+          };
+        }));
+        break;
+      }
+      case 'communityAuditLogPage': {
+        const payload = event as unknown as {
+          conversationId: string;
+          entries: NonNullable<MessagingCommunityState['adminLog']>;
+        };
+        setSelfCommunities((current) => current.map((community) => {
+          if (community.conversationId !== payload.conversationId) return community;
+          const entries = [...(community.adminLog ?? []), ...payload.entries];
+          return {
+            ...community,
+            adminLog: entries.filter((entry, index) => entries.findIndex((candidate) => candidate.id === entry.id) === index),
+          };
+        }));
+        break;
+      }
+      case 'topicDraftChanged': {
+        const payload = event as unknown as {
+          draft: {
+            conversationId: string;
+            topicId: string;
+            text: string;
+          };
+        };
+        setDrafts((current) => ({
+          ...current,
+          [`${payload.draft.conversationId}:${payload.draft.topicId}`]: payload.draft.text,
+        }));
+        break;
+      }
+      case 'topicReadChanged': {
+        const payload = event as unknown as {
+          conversationId: string;
+          actorId: string;
+          topicId: string;
+        };
+        if (payload.actorId !== selfHosted.actorId) break;
+        setSelfConversations((current) => current.map((conversation) => conversation.id === payload.conversationId
+          ? {
+              ...conversation,
+              topics: conversation.topics.map((topic) => topic.id === payload.topicId
+                ? { ...topic, unreadCount: 0 }
+                : topic),
+            }
+          : conversation));
         break;
       }
       case 'botChanged': {

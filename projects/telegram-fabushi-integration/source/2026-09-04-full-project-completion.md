@@ -21,7 +21,7 @@
 
 | 项目 | 学习/复用结论 | 许可证与边界决定 |
 |---|---|---|
-| [matrix-org/synapse](https://github.com/matrix-org/synapse) | 参考自建 homeserver 的分层部署、反向代理、同步/联邦边界和可运维性；不直接采用其 Python/Matrix 协议。 | Apache-2.0；只吸收公开架构经验，Fabushi 仍使用自有 Rust Protocol v2 与 self-hosted gateway。 |
+| [matrix-org/synapse](https://github.com/element-hq/synapse) | 参考自建 homeserver 的分层部署、反向代理、同步/联邦边界和可运维性；不直接采用其 Python/Matrix 协议。 | Apache-2.0；只吸收公开架构经验，Fabushi 仍使用自有 Rust Protocol v2 与 self-hosted gateway。 |
 | [element-hq/element-web](https://github.com/element-hq/element-web) | 参考成熟 Web/Electron Messenger 的信息架构、跨端客户端组织和完整交互测试思路；不复制 UI 资产或代码。 | AGPL/GPL/商业多许可证，且含 Element 商业许可边界；不直接引入依赖，保持 Fabushi 自有 UI 与品牌。 |
 | [signalapp/libsignal](https://github.com/signalapp/libsignal) | 参考 Rust 实现、Java/Swift/TypeScript 跨语言暴露方式及 Double Ratchet/X3DH 类密钥生命周期测试边界；先做独立威胁/许可证审查再决定是否依赖。 | AGPL-3.0；当前不直接 vendoring，M13 以协议边界、测试策略和许可证兼容性为前置门槛。 |
 

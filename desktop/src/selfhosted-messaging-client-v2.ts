@@ -66,6 +66,7 @@ export interface MessagingConversation {
     createdBy: string;
     closed: boolean;
     hidden: boolean;
+    unreadCount?: number;
   }>;
   folderIds: string[];
   archived: boolean;
@@ -230,6 +231,31 @@ export interface MessagingForumTopic {
   lastMessageId?: string;
 }
 
+export interface MessagingTopicDraft {
+  conversationId: string;
+  topicId: string;
+  actorId: string;
+  text: string;
+  replyToMessageId?: string;
+  updatedAtMs: number;
+}
+
+export interface MessagingChannelSubscription {
+  actorId: string;
+  subscribedAtMs: number;
+  muted: boolean;
+}
+
+export interface MessagingCommunityAuditEntry {
+  id: string;
+  actorId: string;
+  action: string;
+  targetActorId?: string;
+  targetId?: string;
+  reason?: string;
+  createdAtMs: number;
+}
+
 export interface MessagingCommunityState {
   conversationId: string;
   publicUsername?: string;
@@ -243,6 +269,8 @@ export interface MessagingCommunityState {
   pendingJoinRequests: Record<string, MessagingJoinRequest>;
   topics: Record<string, MessagingForumTopic>;
   bannedWords: string[];
+  subscribers?: Record<string, MessagingChannelSubscription>;
+  adminLog?: MessagingCommunityAuditEntry[];
 }
 
 export interface MessagingBotProfile {
@@ -794,6 +822,53 @@ export class SelfHostedMessagingClientV2 {
     return this.execute({ type: 'updateCommunity', community });
   }
 
+  subscribeChannel(conversationId: string): Promise<void> {
+    return this.execute({ type: 'subscribeChannel', conversationId });
+  }
+
+  unsubscribeChannel(conversationId: string): Promise<void> {
+    return this.execute({ type: 'unsubscribeChannel', conversationId });
+  }
+
+  listCommunityMembers(conversationId: string, cursor?: string, limit = 100): Promise<void> {
+    return this.execute({
+      type: 'listCommunityMembers',
+      conversationId,
+      cursor: cursor ?? null,
+      limit,
+    });
+  }
+
+  listCommunityAuditLog(conversationId: string, cursor?: string, limit = 100): Promise<void> {
+    return this.execute({
+      type: 'listCommunityAuditLog',
+      conversationId,
+      cursor: cursor ?? null,
+      limit,
+    });
+  }
+
+  setCommunitySlowMode(conversationId: string, seconds?: number): Promise<void> {
+    return this.execute({
+      type: 'setCommunitySlowMode',
+      conversationId,
+      seconds: seconds ?? null,
+    });
+  }
+
+  moderateCommunityMember(
+    conversationId: string,
+    member: MessagingCommunityMember,
+    reason?: string,
+  ): Promise<void> {
+    return this.execute({
+      type: 'moderateCommunityMember',
+      conversationId,
+      member,
+      reason: reason ?? null,
+    });
+  }
+
   setCommunityMember(conversationId: string, member: MessagingCommunityMember): Promise<void> {
     return this.execute({ type: 'setCommunityMember', conversationId, member });
   }
@@ -816,6 +891,25 @@ export class SelfHostedMessagingClientV2 {
 
   deleteForumTopic(conversationId: string, topicId: string): Promise<void> {
     return this.execute({ type: 'deleteForumTopic', conversationId, topicId });
+  }
+
+  markTopicRead(conversationId: string, topicId: string, messageId: string): Promise<void> {
+    return this.execute({ type: 'markTopicRead', conversationId, topicId, messageId });
+  }
+
+  setTopicDraft(
+    conversationId: string,
+    topicId: string,
+    text: string,
+    replyToMessageId?: string,
+  ): Promise<void> {
+    return this.execute({
+      type: 'setTopicDraft',
+      conversationId,
+      topicId,
+      text,
+      replyToMessageId: replyToMessageId ?? null,
+    });
   }
 
   registerBot(profile: MessagingBotProfile): Promise<void> {
