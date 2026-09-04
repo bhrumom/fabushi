@@ -1516,11 +1516,13 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           return {
             ...conversation,
             topics: Object.values(community.topics).map((topic) => ({
-              ...topic,
-              // CommunityChanged is the canonical topic projection. Preserve the
-              // actor-local unread value already maintained by topic events until
-              // the next conversation snapshot supplies a recalculated value.
-              unreadCount: previousTopics.get(topic.id)?.unreadCount ?? topic.unreadCount,
+              id: topic.id,
+              title: topic.title,
+              icon: topic.icon,
+              createdBy: topic.creatorId,
+              closed: topic.closed,
+              hidden: topic.hidden,
+              unreadCount: topic.unreadCount ?? previousTopics.get(topic.id)?.unreadCount ?? 0,
             })),
           };
         }));
