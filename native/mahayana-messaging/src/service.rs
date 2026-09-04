@@ -1759,7 +1759,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
 
     fn project_event(
         &self,
-        _actor_id: &ActorId,
+        actor_id: &ActorId,
         event: Event,
         server_time_ms: i64,
     ) -> Option<ServerEnvelope> {
@@ -1769,7 +1769,13 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 ServerEvent::PresenceChanged { actor_id, presence }
             }
             Event::ConversationUpserted { conversation } => {
-                ServerEvent::ConversationChanged { conversation }
+                ServerEvent::ConversationChanged {
+                    conversation: self.project_conversation_for_actor(
+                        actor_id,
+                        &conversation,
+                        server_time_ms,
+                    ),
+                }
             }
             Event::ConversationInfoUpdated {
                 conversation_id, ..
@@ -1779,7 +1785,13 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 .conversations
                 .get(&conversation_id)
                 .cloned()
-                .map(|conversation| ServerEvent::ConversationChanged { conversation })?,
+                .map(|conversation| ServerEvent::ConversationChanged {
+                    conversation: self.project_conversation_for_actor(
+                        actor_id,
+                        &conversation,
+                        server_time_ms,
+                    ),
+                })?,
             Event::ConversationParticipantUpserted {
                 conversation_id, ..
             } => self
@@ -1789,12 +1801,16 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 .get(&conversation_id)
                 .cloned()
                 .map(|conversation| ServerEvent::ConversationParticipantChanged {
-                    conversation,
+                    conversation: self.project_conversation_for_actor(
+                        actor_id,
+                        &conversation,
+                        server_time_ms,
+                    ),
                     removed_actor_id: None,
                 })?,
             Event::ConversationParticipantRemoved {
                 conversation_id,
-                actor_id,
+                actor_id: removed_actor_id,
             } => self
                 .engine
                 .state()
@@ -1802,8 +1818,12 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 .get(&conversation_id)
                 .cloned()
                 .map(|conversation| ServerEvent::ConversationParticipantChanged {
-                    conversation,
-                    removed_actor_id: Some(actor_id),
+                    conversation: self.project_conversation_for_actor(
+                        actor_id,
+                        &conversation,
+                        server_time_ms,
+                    ),
+                    removed_actor_id: Some(removed_actor_id),
                 })?,
             Event::ConversationArchived {
                 conversation_id, ..
@@ -1819,7 +1839,13 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 .conversations
                 .get(&conversation_id)
                 .cloned()
-                .map(|conversation| ServerEvent::ConversationChanged { conversation })?,
+                .map(|conversation| ServerEvent::ConversationChanged {
+                    conversation: self.project_conversation_for_actor(
+                        actor_id,
+                        &conversation,
+                        server_time_ms,
+                    ),
+                })?,
             Event::ConversationMarkedUnread {
                 conversation_id,
                 actor_id,

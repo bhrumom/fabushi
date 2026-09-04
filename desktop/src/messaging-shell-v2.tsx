@@ -1510,6 +1510,20 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
       case 'communityChanged': {
         const community = (event as unknown as { community: MessagingCommunityState }).community;
         setSelfCommunities((current) => [...current.filter((item) => item.conversationId !== community.conversationId), community]);
+        setSelfConversations((current) => current.map((conversation) => {
+          if (conversation.id !== community.conversationId) return conversation;
+          const previousTopics = new Map(conversation.topics.map((topic) => [topic.id, topic]));
+          return {
+            ...conversation,
+            topics: Object.values(community.topics).map((topic) => ({
+              ...topic,
+              // CommunityChanged is the canonical topic projection. Preserve the
+              // actor-local unread value already maintained by topic events until
+              // the next conversation snapshot supplies a recalculated value.
+              unreadCount: previousTopics.get(topic.id)?.unreadCount ?? topic.unreadCount,
+            })),
+          };
+        }));
         break;
       }
       case 'communityMembersPage': {
