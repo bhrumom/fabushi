@@ -1,0 +1,32 @@
+name: TFI M6 P0-001 atomic gate
+
+on:
+  pull_request:
+    branches:
+      - codex/tfi-m6-repair
+    paths:
+      - native/mahayana-messaging/src/engine.rs
+      - native/mahayana-messaging/src/service.rs
+      - native/mahayana-messaging/tests/m6_channels_topics_contract.rs
+      - .github/workflows/tfi-m6-p0-001-atomic-gate.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tfi-m6-p0-001-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  atomic-contract:
+    name: Compile and run TFI-M6-P0-001 contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/mahayana-messaging
+      - name: Compile and run focused M6 contract
+        run: cargo test --manifest-path native/mahayana-messaging/Cargo.toml --locked --test m6_channels_topics_contract
