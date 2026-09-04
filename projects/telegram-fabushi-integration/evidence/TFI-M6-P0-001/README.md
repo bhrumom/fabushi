@@ -78,3 +78,18 @@ This fresh head reproduces the required formatter-stage blocker after a records-
 ## Current verdict
 `REVIEW-REJECTED(R2) / CI-BLOCKED / R2-B3-RECORD-REPAIR-PUSHED / R3-PENDING / CLOSURE-BLOCKED`.
 No protected merge, exact-main packaged E2E/evidence bundle, Release, or fresh independent `REVIEW-PASS` is claimed.
+
+## 2026-09-05 MOD-001 architecture diagnosis — append-only current-state index
+This section supersedes only the current-state verdict above; every historical evidence statement remains preserved for its original head/time.
+
+- Exact architecture input: #2323 head `ecf79c8760b300c3853b74a64b6cf3f2d2db5e1d` over `9e88a2e9c030fe05147460dfa580366cf9aa433d`.
+- FMT-001 source commit `d2f97c0c22411a49ef926c0bb9c049be18348b10`; reviewer PR #2329 head `02fd655b478798ee9818f9f56e8b2010cf44c94a` = `REVIEW-PASS(FMT-001 scope)`.
+- Current required Product Rust `33898670053` / `101107313643`: rustfmt PASS; full `cargo test --all-targets` FAIL at pre-existing post-ban assertion in `slow_mode_and_moderation_are_enforced_by_the_rust_state_machine`; later clippy/media/bridge skipped.
+- Mahayana `33898670533` / `101107312228`, Product Electron `101107313196`, and Atomic `33898670050` / `101107311938` are SUCCESS but do not waive Product Rust.
+- Architecture root classification: **parent-branch pre-existing latent semantic-contract contradiction; test expectation mismatches `Banned -> ConversationParticipantRemoved` plus participation-first `QueueMessage` error precedence**. Not P0-001, FMT-001, or CI-environment regression.
+- New architecture evidence: `MOD-001-ARCHITECTURE-DIAGNOSIS-2026-09-05.md`.
+- New authoritative task: `projects/telegram-fabushi-integration/management/tasks/TFI-M6-P0-001-MOD-001-align-post-ban-send-contract.md`.
+- Task scope: exactly one product/test file, `native/mahayana-messaging/tests/m6_channels_topics_contract.rs`, plus append-only TFI execution records; production engine/service/workflow changes are forbidden.
+- Open-source-first: TDLib/Boost-1.0, Continuwuity/Apache-2.0, Synapse/AGPL-3.0+commercial were evaluated; only boundary/test principles are borrowed and no code is copied.
+- Revised dependency: `FMT-001 -> MOD-001 -> fresh independent REVIEW-PASS + all required CI -> MERGE-001 -> E2E-001 -> packaged evidence review PASS -> RELEASE-001 -> FULL-CLOSE`.
+- Current verdict: `ARCHITECTURE-MOD-PLAN-READY / CI-BLOCKED / CLOSURE-BLOCKED`; P0-002 remains blocked.
