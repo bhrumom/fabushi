@@ -648,6 +648,49 @@ impl<S: MessagingStateStore> MessagingService<S> {
             | ClientCommand::RemoveConversationParticipant {
                 conversation_id, ..
             } => {
+                if let Some(community) = self.engine.state().communities.get(conversation_id) {
+                    let caller = community
+                        .members
+                        .get(actor_id)
+                        .ok_or_else(|| denied("community management requires membership"))?;
+                    let caller_is_owner = matches!(caller.status, MemberStatus::Owner);
+                    let caller_can_manage = caller_is_owner
+                        || (matches!(caller.status, MemberStatus::Administrator)
+                            && caller.admin_rights.add_admins);
+                    if !caller_can_manage {
+                        return Err(denied("community management requires admin rights"));
+                    }
+                    match command {
+                        ClientCommand::SetConversationParticipant { participant, .. } => {
+                            let target = community.members.get(&participant.actor_id);
+                            if target.is_some_and(|member| matches!(member.status, MemberStatus::Owner))
+                                || matches!(participant.role, crate::actor::ParticipantRole::Owner)
+                            {
+                                return Err(denied("community owner cannot be changed"));
+                            }
+                            if !caller_is_owner
+                                && target.is_some_and(|member| {
+                                    matches!(member.status, MemberStatus::Administrator)
+                                })
+                            {
+                                return Err(denied("admins cannot manage other administrators"));
+                            }
+                        }
+                        ClientCommand::RemoveConversationParticipant {
+                            actor_id: target_actor_id,
+                            ..
+                        } => {
+                            if community.members.get(target_actor_id).is_some_and(|member| {
+                                matches!(member.status, MemberStatus::Owner | MemberStatus::Administrator)
+                            }) && !caller_is_owner
+                            {
+                                return Err(denied("admins cannot remove owner/admin members"));
+                            }
+                        }
+                        _ => {}
+                    }
+                    return Ok(());
+                }
                 let existing = self
                     .engine
                     .state()
@@ -721,6 +764,19 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 }
             }
             ClientCommand::UpdateConversation { conversation } => {
+                if let Some(community) = self.engine.state().communities.get(&conversation.id) {
+                    let member = community
+                        .members
+                        .get(actor_id)
+                        .ok_or_else(|| denied("community update requires membership"))?;
+                    if !matches!(member.status, MemberStatus::Owner)
+                        && !(matches!(member.status, MemberStatus::Administrator)
+                            && member.admin_rights.change_info)
+                    {
+                        return Err(denied("community update requires change_info permission"));
+                    }
+                    return Ok(());
+                }
                 let existing = self
                     .engine
                     .state()
@@ -1358,9 +1414,24 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 actor_id: actor_id.clone(),
                 presence,
             }],
-            ClientCommand::CreateConversation { conversation }
-            | ClientCommand::UpdateConversation { conversation } => {
+            ClientCommand::CreateConversation { conversation } => {
                 vec![Command::UpsertConversation { conversation }]
+            }
+            ClientCommand::UpdateConversation { conversation } => {
+                let is_community_backed = self
+                    .engine
+                    .state()
+                    .communities
+                    .contains_key(&conversation.id);
+                if is_community_backed {
+                    vec![Command::UpdateConversationInfo {
+                        conversation_id: conversation.id,
+                        title: conversation.title,
+                        description: conversation.description,
+                    }]
+                } else {
+                    vec![Command::UpsertConversation { conversation }]
+                }
             }
             ClientCommand::UpdateConversationInfo {
                 conversation_id,
