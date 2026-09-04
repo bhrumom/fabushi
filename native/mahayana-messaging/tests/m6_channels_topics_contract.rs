@@ -619,10 +619,7 @@ fn slow_mode_and_moderation_are_enforced_by_the_rust_state_machine() {
         let group_id = ConversationId::new("group:m6");
         let member_id = ActorId::new("human:member");
         let community = &state.communities[&group_id];
-        assert_eq!(
-            community.members[&member_id].status,
-            MemberStatus::Banned
-        );
+        assert_eq!(community.members[&member_id].status, MemberStatus::Banned);
         assert!(!state.conversations[&group_id]
             .participants
             .iter()
