@@ -57,7 +57,7 @@
 ## 实现与验证记录
 
 - **分支**：`codex/tfi-m6-repair`
-- **提交**：`f9316f500`（包含 `a5eb43137`、`f9316f500` 两轮修复，基于最新 `origin/main`）
+- **提交**：`ff07289fa`（包含 `a5eb43137`、`f9316f500`、`2cbcb29ed`、`e7b41cd70`、`ff07289fa` 五轮修复，基于最新 `origin/main`）
 - **PR**：待创建/受保护合并
 - **CI**：待 GitHub Actions
 - **实现文件**：`native/mahayana-messaging/src/{community,conversation,protocol,engine,service}.rs`、`desktop/src/{selfhosted-messaging-client-v2,messaging-shell-v2}.ts{,x}`
@@ -75,8 +75,9 @@
 - journal replay 统一清理历史 invite token、pending join request 和 admin log，避免旧持久化记录泄露。
 - 私有频道仅允许公开 admission 或已有 membership/subscription；无 Community 的 join request 不再创建占位状态；首次 Community 从 Conversation participants 构造并保留同 actor 的管理元数据；
 - 非 `topic:<id>` 的历史 thread root 保持普通 thread；Community topics 每次完整重建 compatibility projection；journal 写入 canonical Community，replay 按接收 actor 重新投影并重算 Topic unread。
+- `project_event` 对会话新增、资料、成员和归档等增量事件统一执行 actor-scoped Conversation projection；Electron `communityChanged` 同步更新对应会话的 Topic 列表，避免后续 stale Conversation 事件覆盖 Community 权威 Topic。
 
-最新提交仍待网页版复审；协议滚动兼容、邀请凭证完整校验、Electron privileged merge、membership mutation 双向收敛和负向契约测试仍未完成。在 CI、PR、protected merge 和 canonical-main packaged E2E/Release 完成前保持 `IN_PROGRESS`。
+`ff07289fa` 已 push，仍待网页版复审；协议滚动兼容、邀请凭证完整校验、Electron privileged merge、membership mutation 双向收敛和负向契约测试仍未完成。网页版审查会话随后因工作区额度耗尽中断，尚无该提交的最终 `WEB-ACCEPTED`/`WEB-REJECTED` 结论。在 CI、PR、protected merge 和 canonical-main packaged E2E/Release 完成前保持 `IN_PROGRESS`。
 
 ## 风险、阻塞与下一步
 
