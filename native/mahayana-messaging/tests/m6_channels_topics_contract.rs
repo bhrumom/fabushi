@@ -36,6 +36,7 @@ fn channel_conversation() -> Conversation {
 
 fn channel_community() -> CommunityState {
     let mut community = CommunityState::new(ConversationId::new("channel:m6"));
+    community.public_username = Some("m6".into());
     community.upsert_member(CommunityMember {
         actor_id: ActorId::new("human:owner"),
         status: MemberStatus::Owner,

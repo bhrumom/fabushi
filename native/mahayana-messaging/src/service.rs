@@ -1055,7 +1055,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
                     && message
                         .thread_root_message_id
                         .as_ref()
-                        .is_some_and(|root| topic_id_from_root(root) == topic_id)
+                        .is_some_and(|root| topic_id_from_root(root) == Some(topic_id))
                     && message
                         .scheduled_at_ms
                         .is_none_or(|scheduled| scheduled <= server_time_ms)
@@ -1087,6 +1087,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
             projected.admin_log.clear();
         }
         if !can_invite {
+            projected.pending_join_requests.clear();
             for invite in projected.invite_links.values_mut() {
                 // Invite tokens are bearer credentials and must never be included in a
                 // regular member/subscriber sync payload.
