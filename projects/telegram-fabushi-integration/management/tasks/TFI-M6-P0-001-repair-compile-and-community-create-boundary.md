@@ -3,18 +3,19 @@
 - **Project ID / Key:** `FAB-P0001 / TFI`
 - **Task ID:** `TFI-M6-P0-001`
 - **Program:** `FAB-ARCH-P0-20260904`
-- **Status:** `IMPLEMENTED / R1-B1-B2-B3-REPAIRED / CI-BLOCKED / REREVIEW-READY / CLOSURE-BLOCKED`
+- **Status:** `IMPLEMENTED / R2-B3-RECORD-REPAIR-PUSHED / CI-BLOCKED / R3-PENDING / CLOSURE-BLOCKED`
 - **Owner:** Execution project group
 - **Audited implementation input:** `codex/tfi-m6-repair@9e88a2e9c030fe05147460dfa580366cf9aa433d`
 - **Branch:** `fix/tfi-m6-p0-001-community-create-boundary`
 - **PR:** `#2323`, open/unmerged; exact base `9e88a2e9c030fe05147460dfa580366cf9aa433d`
 - **Application/compile repair:** `726b4210ddd4d9a967778193a8d374b5f8bad206`
 - **R1 repair head verified by Actions:** `4b6218e3aaa385ad0e3ef3ad0f908339c7b684dc`
+- **R2 reviewed execution head:** `1dc165489498889504a61b7e07d5164f25188cef`
 
 ## Objective and scope
 Repair the current M6 compile blocker and Community-backed create/update authority boundary without expanding into membership recovery, admission redesign, journal redesign, protocol v3 negotiation, renderer work, M6-P0-002/003/004/005, M7/M8, MSR or GBF.
 
-Allowed implementation surface is `native/mahayana-messaging/src/engine.rs`, `src/service.rs`, existing P0-001 tests, the additive task-specific validation workflow, and project/evidence write-back. No local Cargo/npm/Gradle/Xcode/build/test/E2E is permitted.
+The implementation phase allowed `native/mahayana-messaging/src/engine.rs`, `src/service.rs`, existing P0-001 tests, the additive task-specific validation workflow, and project/evidence write-back. **This R2-B3 repair round is records-only:** it changes only `projects/telegram-fabushi-integration/**` plus PR #2323 description/comments. No production source, regression test, or workflow change is permitted in this round. No local Cargo/npm/Gradle/Xcode/build/test/E2E is permitted.
 
 ## Implemented boundary
 - `RespondCommunityJoin` uses explicit optional-event construction. Approved Group/Channel joins emit `CommunityChanged` then `ConversationParticipantUpserted`; rejected joins emit only `CommunityChanged`.
@@ -24,23 +25,23 @@ Allowed implementation surface is `native/mahayana-messaging/src/engine.rs`, `sr
 - Missing-Community `RequestCommunityJoin` remains `CommunityNotFound` as a regression guard, not a new admission redesign.
 
 ## R1 review input — preserved
-Independent R1 remains historical and authoritative until fresh rereview:
+Independent R1 remains historical evidence and is not overwritten:
 - review-record PR #2325 head `7f594f10570822dcf23a4c3c02ddb0583ea94f14`;
-- PR #2323 review id `5114738170` = **REVIEW-REJECTED**;
+- PR #2323 review id `5114738170` = **REVIEW-REJECTED** on execution head `73a46d3089c4f12dfb2f5659b232d51c674ed5a6`;
 - durable records: `evidence/TFI-M6-P0-001/REVIEW-R1-2026-09-04.md`, `REVIEW-R1-HANDOFF.md`, and `management/tasks/TFI-M6-P0-001-review-R1-2026-09-04.md`.
 The execution repair does not overwrite or relabel that verdict.
 
-## R1-B1 — CLOSED FOR REREVIEW
-The existing `respond_community_join_emits_participant_projection_only_when_approved` test now directly inspects the real `Event::CommunityChanged { community }` payload and uses existing `CommunityAuditEntry`, `CommunityMember` and `CommunityState` fields. It asserts:
+## R1-B1 — CLOSED IN R2
+The existing `respond_community_join_emits_participant_projection_only_when_approved` test directly inspects the real `Event::CommunityChanged { community }` payload and uses existing `CommunityAuditEntry`, `CommunityMember` and `CommunityState` fields. It asserts:
 - approved `JoinApproved`: `actor_id = human:owner`, `target_actor_id = human:approved`;
 - approved member is `Member`, `invited_by = human:owner`, and its pending request is removed;
 - rejected `JoinRejected`: `actor_id = human:owner`, `target_actor_id = human:rejected`;
 - rejected requester is absent from `members` and removed from `pending_join_requests`.
 No new API or runtime product semantic was introduced.
 
-GitHub Actions proof on repair head `4b6218e3...`: atomic run `33889474580`, job `101077337394` = **SUCCESS**. Step `Compile M6 contract test binary` passed, then `Run TFI-M6-P0-001 regressions` passed all three named regressions.
+Exact R2-reviewed-head Actions proof: atomic run `33890057159`, job `101079256166` = **SUCCESS** on `1dc165489498889504a61b7e07d5164f25188cef`. Step `Compile M6 contract test binary` passed, then `Run TFI-M6-P0-001 regressions` passed all three named regressions.
 
-## R1-B2 — CLOSED FOR REREVIEW
+## R1-B2 — CLOSED IN R2
 Actual official upstream material read:
 - repository/revision: `tdlib/td@d1085f9cebc5a62379991ae1652673954f229c1f`;
 - exact file: `td/telegram/Requests.h`;
@@ -48,26 +49,37 @@ Actual official upstream material read:
 - exact license file: `LICENSE_1_0.txt`, **Boost Software License 1.0**.
 Only the create/join-request **boundary principle** was adopted. No TDLib, reconstructed Grok, Grok Bot, Codex, or other upstream implementation code was copied, translated, ported, adapted or transplanted.
 
-## R1-B3 — CLOSED BY CONSERVATIVE ATTRIBUTION CORRECTION
-The previous stronger wording that required rustfmt failures were **entirely inherited-only** is withdrawn. Current evidence proves only:
-- required PR-head Rust workflows fail at formatter steps before their Rust compile/tests;
-- exact audited base `9e88a2e9c030fe05147460dfa580366cf9aa433d` has no independent formatter run recorded in this task evidence;
-- the additive atomic workflow proves task compile/regressions but does not independently compare base-vs-head formatter output.
-Therefore no claim is made that every formatter difference is inherited. No required formatter gate is deleted, skipped, weakened, downgraded or represented as green.
+## R1-B3 / R2-B3 — RECORD-TRUTH REPAIR INPUT COMPLETED; R3 REQUIRED
+R1 correctly required withdrawal of the earlier stronger claim that required rustfmt failures were **entirely inherited-only**. R2 then found that generic durable TFI records and the PR description still retained unsupported `inherited rustfmt` / `inherited audited M6 drift` cause attribution. R2 therefore remained **REVIEW-REJECTED** even though B1/B2 were closed.
 
-## Current Actions evidence on R1 repair head
-- **Task-specific atomic:** run `33889474580`, job `101077337394` — **SUCCESS**; full M6 contract binary compile + all three P0-001 named regressions PASS.
-- **Required Mahayana fast checks:** run `33889474470`, job `101077337527` — **FAIL** at `Verify formatting before native package setup`; subsequent Rust checks skipped.
-- **Required Messaging Product Gate:** run `33889474495`; Rust job `101077337752` — **FAIL** at `Rustfmt self-hosted messaging`, subsequent tests/clippy skipped; Electron Messenger job `101077337355` — **SUCCESS**.
-- Historical pre-review atomic `33886105443` / `101066138054` = SUCCESS; historical required failures `33886105678` / `101066137829` and `33886105464` / `101066136842` remain provenance only.
+This records-only round synchronizes those durable records and PR metadata to the following evidence-bounded facts:
+- exact reviewed base: `codex/tfi-m6-repair@9e88a2e9c030fe05147460dfa580366cf9aa433d`;
+- exact R2-reviewed head: `1dc165489498889504a61b7e07d5164f25188cef`;
+- required PR-head Rust workflows fail at formatter steps before later Rust checks;
+- this evidence set contains **no independent exact base-vs-head formatter comparison**, so it cannot determine whether the formatter differences originate from the base, the PR, or both;
+- task-specific atomic PASS and Electron PASS are additive only and do not waive required Rust CI.
+
+Historical wording is not silently erased: affected current records explicitly mark the prior attribution as **withdrawn/superseded**, and the append-only changelog retains the original event text plus a dated correction.
+
+R2 provenance is preserved separately and unmodified in reviewer PR #2326 head `dfbae8a16531f325ab482e7dc4bdf6940b6f5f87`:
+- `evidence/TFI-M6-P0-001/REVIEW-R2-2026-09-04.md`;
+- `evidence/TFI-M6-P0-001/REVIEW-R2-HANDOFF.md`;
+- `management/tasks/TFI-M6-P0-001-review-R2-2026-09-04.md`.
+PR #2323 R2 comment `5543006832` remains the live reviewer handoff. This execution group does **not** relabel R2 as passed; a fresh independent R3 is required after the record repair lands.
+
+## Exact R2-reviewed-head Actions evidence
+- **Task-specific atomic:** run `33890057159`, job `101079256166` — **SUCCESS**; full M6 contract binary compile + all three P0-001 named regressions PASS.
+- **Required Mahayana fast checks:** run `33890057133`, job `101079256711` — **FAIL** at `Verify formatting before native package setup`; subsequent native/Rust checks skipped.
+- **Required Messaging Product Gate:** run `33890057218`; Rust job `101079257348` — **FAIL** at `Rustfmt self-hosted messaging`, subsequent tests/clippy skipped; Electron Messenger job `101079257046` — **SUCCESS**.
+- Developer Fiat Commerce `33890057119` and Explicit automerge `33890057132` were successful on that reviewed head, but neither substitutes for the failed required Rust gates.
 
 ## Six-category acceptance state
-- **Unit:** task-specific PASS on `33889474580` / `101077337394`.
+- **Unit:** task-specific PASS on `33890057159` / `101079256166` at R2-reviewed head.
 - **Contract:** task-specific PASS, including direct approved/rejected owner→requester audit and member/pending invariants.
-- **Integration:** task-specific compile/test PASS; required repository Rust gates still FAIL before their integration/test stages.
+- **Integration:** task-specific compile/test PASS; required repository Rust gates FAIL before their later integration/test stages.
 - **E2E:** PENDING; no exact accepted-main installable/package Messenger Group/Channel journey exists because PR is unmerged.
-- **Security:** task-specific negative authority tests + ownership/audit assertions PASS; independent rereview still required.
+- **Security:** task-specific negative authority tests + ownership/audit assertions PASS; R2 found no new application-code blocker, but R3 review remains required.
 - **Performance:** no dedicated microbenchmark claimed; no network/poll/timer/retry/wait/unbounded traversal added. Exact-main packaged regression remains PENDING.
 
 ## Closure / handoff
-Current state is **CI-BLOCKED / REREVIEW-READY / CLOSURE-BLOCKED**. Atomic PASS does not substitute for required CI, independent `REVIEW-PASS`, protected canonical-main merge, or exact-main package/E2E/Release evidence. Do not merge or release from this execution group. M6-P0-002 remains blocked until `FULL-CLOSE(M6-P0-001)`.
+Current state is **REVIEW-REJECTED(R2) / CI-BLOCKED / R3-PENDING / CLOSURE-BLOCKED**. The B3 record-truth repair input is now prepared in this execution round, but only an independent fresh review may close the review finding. Atomic/Electron PASS does not substitute for required CI, independent `REVIEW-PASS`, protected canonical-main merge, or exact-main package/E2E/Release evidence. Do not merge or release from this execution group. M6-P0-002 remains blocked until `FULL-CLOSE(M6-P0-001)`.
