@@ -29,4 +29,4 @@ jobs:
         with:
           workspaces: native/mahayana-messaging
       - name: Compile and run focused M6 contract
-        run: cargo test --manifest-path native/mahayana-messaging/Cargo.toml --locked --test m6_channels_topics_contract
+        run: cargo test --manifest-path native/mahayana-messaging/Cargo.toml --test m6_channels_topics_contract
