@@ -603,7 +603,9 @@ impl NativeEngine {
             let forced_review = multi_step_delivery
                 && turn == 0
                 && calls.is_empty()
-                && draft_text.as_deref().is_some_and(|text| !text.trim().is_empty());
+                && draft_text
+                    .as_deref()
+                    .is_some_and(|text| !text.trim().is_empty());
             if forced_review {
                 let draft = draft_text.as_deref().unwrap_or_default();
                 let review_call = FunctionCall {
@@ -1849,16 +1851,59 @@ struct FunctionCall {
 fn multi_step_delivery_required(prompt: &str) -> bool {
     let normalized = prompt.to_lowercase();
     let action = [
-        "创建", "做一个", "开发", "实现", "构建", "编写", "写一个", "修复", "改造", "重构",
-        "部署", "发布", "安装", "create ", "build ", "implement ", "develop ", "make ", "fix ",
-        "refactor ", "deploy ", "publish ", "install ",
+        "创建",
+        "做一个",
+        "开发",
+        "实现",
+        "构建",
+        "编写",
+        "写一个",
+        "修复",
+        "改造",
+        "重构",
+        "部署",
+        "发布",
+        "安装",
+        "create ",
+        "build ",
+        "implement ",
+        "develop ",
+        "make ",
+        "fix ",
+        "refactor ",
+        "deploy ",
+        "publish ",
+        "install ",
     ]
     .iter()
     .any(|marker| normalized.contains(marker));
     let artifact = [
-        "小程序", "小游戏", "游戏", "应用", "网页", "网站", "程序", "功能", "代码", "仓库", "项目",
-        "插件", "机器人", "app", "game", "website", "web app", "program", "feature", "code", "repo",
-        "project", "plugin", "bot", "cli", "mcp",
+        "小程序",
+        "小游戏",
+        "游戏",
+        "应用",
+        "网页",
+        "网站",
+        "程序",
+        "功能",
+        "代码",
+        "仓库",
+        "项目",
+        "插件",
+        "机器人",
+        "app",
+        "game",
+        "website",
+        "web app",
+        "program",
+        "feature",
+        "code",
+        "repo",
+        "project",
+        "plugin",
+        "bot",
+        "cli",
+        "mcp",
     ]
     .iter()
     .any(|marker| normalized.contains(marker));
@@ -2644,7 +2689,9 @@ mod tests {
     #[test]
     fn implementation_intent_requires_multi_step_delivery() {
         assert!(multi_step_delivery_required("创建一个打地鼠的小游戏"));
-        assert!(multi_step_delivery_required("implement a web app for notes"));
+        assert!(multi_step_delivery_required(
+            "implement a web app for notes"
+        ));
         assert!(multi_step_delivery_required("修复这个应用的登录功能"));
         assert!(!multi_step_delivery_required("解释一下什么是 WebMCP"));
         assert!(!multi_step_delivery_required("今天天气怎么样"));
