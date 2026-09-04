@@ -1930,7 +1930,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
             Event::StoryChanged { story } => ServerEvent::StoryChanged { story },
             Event::StoryDeleted { story_id } => ServerEvent::StoryDeleted { story_id },
             Event::CommunityChanged { community } => ServerEvent::CommunityChanged {
-                community: self.project_community_for_actor(_actor_id, &community, server_time_ms),
+                community: self.project_community_for_actor(actor_id, &community, server_time_ms),
             },
             Event::BotRegistryChanged {
                 profile, execution, ..
