@@ -83,3 +83,10 @@ PR #2323 R2 comment `5543006832` remains the live reviewer handoff. This executi
 
 ## Closure / handoff
 Current state is **REVIEW-REJECTED(R2) / CI-BLOCKED / R3-PENDING / CLOSURE-BLOCKED**. The B3 record-truth repair input is now prepared in this execution round, but only an independent fresh review may close the review finding. Atomic/Electron PASS does not substitute for required CI, independent `REVIEW-PASS`, protected canonical-main merge, or exact-main package/E2E/Release evidence. Do not merge or release from this execution group. M6-P0-002 remains blocked until `FULL-CLOSE(M6-P0-001)`.
+
+## 2026-09-05 TFI-M6-P0-001-FMT-001 execution addendum — append-only
+Architecture PR #2328 at exact head `7b1964294f15ff9aba352116a166ceef5ae499ae` froze the formatter-only child task `TFI-M6-P0-001-FMT-001`. Execution started from PR #2323 head `c32a0bd80922a2be6e62c2722fbbd3b14a18a252` and produced pure-format commit `d2f97c0c22411a49ef926c0bb9c049be18348b10`, changing exactly `engine.rs`, `service.rs`, and `m6_channels_topics_contract.rs` with 59 insertions / 36 deletions and no semantic/workflow/dependency/lock changes.
+
+Exact implementation-head Actions prove both required formatter steps now pass. Mahayana `33898023332` / `101105207119` is **SUCCESS** end-to-end. Messaging Product `33898023373` Rust `101105208748` passes `Rustfmt self-hosted messaging`, then fails at `Test messaging library and server binaries` because later-M6 `slow_mode_and_moderation_are_enforced_by_the_rust_state_machine` fails at line 632; three P0-001 regressions pass. Product Electron `101105208586` and atomic `33898023127` / `101105205848` are **SUCCESS** but do not waive Product Rust failure.
+
+FMT-001 therefore repaired the formatter baseline but exposed a subsequent required-CI blocker outside its frozen semantic scope. Current child-task execution handoff is **REQUIRED-RUST-STILL-BLOCKED**; do not relabel parent P0-001 FULL-CLOSE, do not merge/release, and do not start P0-002. Detailed evidence: `evidence/TFI-M6-P0-001/FMT-001-EXECUTION-2026-09-05.md`. Historical R1/R2/R3 conclusions above remain unchanged.
