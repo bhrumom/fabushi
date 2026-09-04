@@ -7,35 +7,43 @@
 - Architecture handoff: `#2339` comment `5547183136`.
 - Acceptance: `M6-PM-A01`.
 - Product PR: `#2341`.
+- Execution state: `BLOCKED / REQUIRED-CANONICAL-VERSION-GUARD-NOT-RUN`.
 
-## Source evidence
+## Source and implementation evidence
 - Canonical `app-version.json`: `version=1.2.22`, `androidVersionCode=29`, `iosBuildNumber=29`.
 - Base `mobile/ios/project.yml`: `CURRENT_PROJECT_VERSION: 28`.
 - Canonical guard `.github/scripts/assert-native-electron-canonical.sh` requires `CURRENT_PROJECT_VERSION == app-version.json.iosBuildNumber`.
-
-## Implementation evidence
-- Branch: `fix/tfi-m6-mainsafe-001-version-contract-001` created directly from canonical base.
-- Product implementation commit: `0e8f475f0cff2948f3e38beedc7af8440826ec8c`.
-- Product diff: exactly `mobile/ios/project.yml`, `CURRENT_PROJECT_VERSION: 28` -> `29`.
-- Validated pre-final-record head: `0d852fd1ba2a663a4a90145c1956a3ff52b289ab`.
-- Changed-files at that head: exactly one product file plus four TFI execution/governance records.
-- No `app-version.json`, Android, application/test/workflow/Cargo/dependency/version-generation changes were made.
+- Branch `fix/tfi-m6-mainsafe-001-version-contract-001` was created directly from canonical base.
+- Product implementation commit `0e8f475f0cff2948f3e38beedc7af8440826ec8c` changes exactly `mobile/ios/project.yml`, `CURRENT_PROJECT_VERSION: 28` -> `29`.
+- No `app-version.json`, Android, other application/test/workflow/Cargo/dependency/version-generation product change was made.
 
 ## Open-source / official evidence
 - Apple official bundle metadata semantics are the authority for iOS build-version meaning (`CFBundleVersion`). No code copied.
 - XcodeGen `yonaskolb/XcodeGen` is a mature Swift Xcode project generator under MIT; its YAML project specification is the relevant upstream model for this repository's `project.yml`. No code copied.
-- No new dependency or tool was adopted because the defect is a one-value mirror drift and any machinery would exceed the frozen scope.
+- No new dependency/tool was adopted.
 
-## GitHub Actions evidence for pre-final-record head
+## Exact-head GitHub Actions evidence before blocker write-back
 
-Exact head `0d852fd1ba2a663a4a90145c1956a3ff52b289ab`:
+Exact product/record head `c0bc37f649fdb4bae78cdde456e8c129c287ee2f` had exactly five workflow runs, all successful:
 
-- CI run `33926299157` — SUCCESS; canonical architecture guardrails job `101195472470` SUCCESS; full workflow conclusion SUCCESS.
-- Project portfolio governance run `33926299211` — SUCCESS; job `101195446591` (`Validate immutable Project IDs`) SUCCESS.
-- Developer Fiat Commerce run `33926299246` — SUCCESS; all five jobs SUCCESS.
-- Native mobile quality gate run `33926299245` — SUCCESS; job `101195446851` (`Native Android`) SUCCESS and result job `101195590840` SUCCESS. Heavy Android/iOS build and UI-test steps were skipped by the workflow's PR path classification, so they are recorded as skipped rather than claimed as executed.
+- CI `33926458962`: SUCCESS; `Canonical architecture guardrails` `101196051273` and `CI result` `101196401829` SUCCESS.
+- Project portfolio governance `33926458998`: SUCCESS; `Validate immutable Project IDs` `101195944369` SUCCESS.
+- Developer Fiat Commerce `33926459024`: SUCCESS; jobs `101195944453`, `101195944538`, `101195944609`, `101195944630`, `101195944672` SUCCESS.
+- Native mobile quality gate `33926458965`: SUCCESS; `Native Android` `101195989397`, `Native mobile result` `101196153499` SUCCESS. Raw logs prove PR fast-path checks ran and heavyweight Android/iOS build/simulator/UI-test steps were skipped.
+- Explicit automerge `33926459071`: SUCCESS; `Authorize green PRs for protected merge` `101195944844` SUCCESS. PR remained open/unmerged.
 
-## Verification boundary
-- No local build/test/rustfmt/clippy/E2E.
-- Repository text/diff/state inspection only outside GitHub Actions.
-- This write-back changes the PR head; a second exact-final-head Actions pass is mandatory before review handoff. Those final run/job IDs are to be recorded in the PR handoff comment so evidence does not self-invalidate the validated commit.
+## Required guard gap
+
+Frozen acceptance item 2 requires a **current-head GitHub architecture/version guard**. The successful CI job named `Canonical architecture guardrails` does not execute `.github/scripts/assert-native-electron-canonical.sh`; its substantive guard step only rejects retired Flutter/Tauri/Capacitor architecture. The Native mobile PR fast path likewise does not run the version script.
+
+Repository workflow inspection shows the canonical version script runs in Electron/release workflows, but Electron desktop pull-request path filters do not include `mobile/ios/project.yml`. The all-runs API for `c0bc37f...` returned exactly the five runs above, with no Electron/version-guard run.
+
+The connected GitHub Actions capability available to this execution can read and rerun existing jobs but cannot dispatch a workflow. Editing workflow paths would exceed the frozen product allowlist. Therefore there is no truthful exact-head GitHub evidence that the required version guard itself ran.
+
+## Stop decision
+
+`SCOPE-EXPANSION-OR-MANUAL-DISPATCH-REQUIRED / BLOCKED`.
+
+No review handoff, merge, test release or stable release is authorized. Architecture must decide how to run the existing canonical version guard on the product head without widening this task, or freeze a separate CI/governance repair.
+
+No local build/test/rustfmt/clippy/E2E was run by this execution session.
