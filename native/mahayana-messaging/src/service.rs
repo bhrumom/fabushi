@@ -1987,21 +1987,18 @@ impl<S: MessagingStateStore> MessagingService<S> {
         server_time_ms: i64,
     ) -> ServerEnvelope {
         if let ServerEvent::CommunityChanged { community } = &envelope.event {
-            if let Some(canonical) = self.engine.state().communities.get(&community.conversation_id)
-            {
-                return ServerEnvelope {
-                    protocol_version: envelope.protocol_version,
-                    cursor: envelope.cursor.clone(),
-                    server_time_ms: envelope.server_time_ms,
-                    event: ServerEvent::CommunityChanged {
-                        community: self.project_community_for_actor(
-                            actor_id,
-                            canonical,
-                            server_time_ms,
-                        ),
-                    },
-                };
-            }
+            return ServerEnvelope {
+                protocol_version: envelope.protocol_version,
+                cursor: envelope.cursor.clone(),
+                server_time_ms: envelope.server_time_ms,
+                event: ServerEvent::CommunityChanged {
+                    community: self.project_community_for_actor(
+                        actor_id,
+                        community,
+                        server_time_ms,
+                    ),
+                },
+            };
         }
         self.public_journal_envelope(envelope)
     }
