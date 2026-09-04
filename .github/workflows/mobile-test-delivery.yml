@@ -1,0 +1,58 @@
+name: Mobile test delivery
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact main ref or SHA to publish as a test build.
+        required: true
+        default: main
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: mobile-test-delivery
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch fast iOS TestFlight and Android internal-track builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_REF" --jq '.sha')"
+          main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          compare_status="$(gh api "repos/$GITHUB_REPOSITORY/compare/$source_sha...$main_sha" --jq '.status')"
+          if [ "$source_sha" != "$main_sha" ] && [ "$compare_status" != ahead ]; then
+            echo "Test release source must be on main history. source=$source_sha main=$main_sha status=$compare_status" >&2
+            exit 1
+          fi
+          version="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$GITHUB_REPOSITORY/contents/app-version.json?ref=$source_sha" | jq -r '.version')"
+          short_sha="${source_sha:0:12}"
+
+          gh workflow run apple-store-delivery.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f source_ref="$source_sha" -f target=ios -f release_tier=test
+
+          gh workflow run google-play-delivery.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f ref="$source_sha" -f track=internal -f release_status=completed \
+            -f changes_not_sent_for_review=false -f release_tier=test \
+            -f github_release_tag="android-test-v${version}-${short_sha}"
+
+          {
+            echo '## Mobile test delivery'
+            echo
+            echo "- Source: $source_sha"
+            echo "- Version: $version"
+            echo '- iOS: App Store Connect upload for TestFlight; no App Review submission'
+            echo '- Android: Google Play internal track, completed rollout'
+            echo '- Gate policy: main ancestry + normal CI only; long simulator/emulator simulated-user gates are not required'
+          } >> "$GITHUB_STEP_SUMMARY"

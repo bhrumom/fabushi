@@ -5,19 +5,25 @@ set -euo pipefail
 : "${RELEASE_TARGET:?RELEASE_TARGET is required}"
 : "${GH_TOKEN:?GH_TOKEN is required}"
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+RELEASE_TIER="${RELEASE_TIER:-formal}"
+
+case "$RELEASE_TIER" in
+  test|formal) ;;
+  *) echo "Unsupported RELEASE_TIER '$RELEASE_TIER'." >&2; exit 2 ;;
+esac
 
 case "$RELEASE_TARGET" in
   macos)
-    required_checks=('CI result' 'Electron desktop result' 'Electron macOS')
+    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Electron desktop result' 'Electron macOS'); fi
     ;;
   ios)
-    required_checks=('CI result' 'Native iOS')
+    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Native iOS'); fi
     ;;
   android)
-    required_checks=('CI result' 'Native mobile result')
+    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Native mobile result'); fi
     ;;
   both)
-    required_checks=('CI result' 'Electron desktop result' 'Electron macOS' 'Electron Windows' 'Native mobile result' 'Native iOS')
+    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Electron desktop result' 'Electron macOS' 'Electron Windows' 'Native mobile result' 'Native iOS'); fi
     ;;
   *)
     echo "Unsupported RELEASE_TARGET '$RELEASE_TARGET'." >&2
@@ -52,6 +58,7 @@ done
   echo
   echo "- Source: \`$SOURCE_SHA\`"
   echo "- Target: \`$RELEASE_TARGET\`"
+  echo "- Tier: \`$RELEASE_TIER\`"
   echo '- Protected main ancestry: verified'
   for required in "${required_checks[@]}"; do
     echo "- $required: success"
