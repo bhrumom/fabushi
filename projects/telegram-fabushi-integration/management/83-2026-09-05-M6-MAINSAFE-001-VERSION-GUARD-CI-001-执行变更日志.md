@@ -1,0 +1,21 @@
+# 83 — TFI-M6-MAINSAFE-001 VERSION-GUARD-CI-001 执行变更日志 — 2026-09-05
+
+- Re-read live canonical `main@dbf22b467d35c8af2a074896c355a41993c8c191`, root `AGENTS.md`, portfolio/project authority, #2340 frozen task/governance records, and #2341 blocked implementation provenance/comments.
+- Verified #2341 remains OPEN / UNMERGED at exact head `2241c856fb3da498ac99ade89007fe01dd335183`; blocker comment `5547296411` and architecture handoff `5547466413` remain intact. No #2341 mutation was performed.
+- Re-read canonical `.github/workflows/ci.yml`, `.github/scripts/assert-native-electron-canonical.sh`, live ruleset `15857448`, and FCM ADR-0005.
+- Confirmed protected main requires only `CI result`; pre-task `CI result` did not depend on a canonical version-contract child.
+- Open-source/official review recorded GitHub Actions job dependency/required-status/merge-queue/manual-workflow semantics and existing GitHub-maintained `actions/checkout` / `actions/github-script` MIT provenance; no external code copied and no new dependency added.
+- Created fresh branch `fix/tfi-m6-mainsafe-001-version-guard-ci-001` directly from canonical main; no #2340/#2341 lineage reused.
+- Implementation commit `3aa3fac353671a2b7203f242ee12d1ff3119d345` modifies only `.github/workflows/ci.yml`.
+- Added unconditional lightweight `Canonical version contract` job that sparse-checks out the unchanged canonical script's direct inputs and executes `bash .github/scripts/assert-native-electron-canonical.sh`.
+- Added that child to `CI result.needs` and made `CI result` require its conclusion to be exactly `success`; unlike existing diff-selected jobs, `skipped` cannot satisfy this child.
+- Left the existing changed-path classifier unchanged to preserve its unknown-non-doc `forceAll` behavior and all pre-existing domain selection semantics.
+- Created PR #2342 against canonical main; first evidence head `f57fb7ddc72db0db31c7e5ae45d32c786b2bf455` contained `.github/workflows/ci.yml` plus four TFI execution/evidence/status records only.
+- CI run `33928830797` proved the child really executes: `Canonical version contract` job `101203055760` ran the unchanged script and failed with `iOS build number drift: canonical=29 project=28`.
+- The same CI run proved aggregate binding: `CI result` job `101203097569` read `version_contract_result="failure"` and failed with `Canonical version contract failed: failure`.
+- `Canonical architecture guardrails` job `101203073047` succeeded independently; it remains the retired Flutter/Tauri/Capacitor workflow guard and was not substituted for version evidence.
+- The failure is the already-known canonical 29/28 drift, not a skipped/miswired child. Fixing it requires prohibited `mobile/ios/project.yml` and belongs to the separately frozen version repair.
+- Applied frozen stop rule: `EXECUTION-VERSION-GUARD-CI-001-BLOCKED / SCOPE-EXPANSION-REQUIRED / CANONICAL-DRIFT-PREVENTS-SELF-BOOTSTRAP`.
+- Did not modify canonical version script, Electron/native/release workflows, rulesets, product/test source, `mobile/ios/project.yml`, `app-version.json`, Android, Cargo/dependencies, release/version semantics, or any prohibited downstream task.
+- Did not start code review, merge, VERSION-CONTRACT-002, test release or stable release. Return to architecture is required.
+- No local build/test/rustfmt/clippy/E2E was run.
