@@ -1415,7 +1415,19 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 presence,
             }],
             ClientCommand::CreateConversation { conversation } => {
-                vec![Command::UpsertConversation { conversation }]
+                if self
+                    .engine
+                    .state()
+                    .communities
+                    .contains_key(&conversation.id)
+                {
+                    // Existing Community-backed conversations are idempotent on create.
+                    // CommunityState owns membership/owner authority, so a repeated or forged
+                    // generic create must not retype, re-own, or replace its participant projection.
+                    Vec::new()
+                } else {
+                    vec![Command::UpsertConversation { conversation }]
+                }
             }
             ClientCommand::UpdateConversation { conversation } => {
                 let is_community_backed = self
