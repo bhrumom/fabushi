@@ -479,16 +479,7 @@ impl NativeEngine {
         // still goes through authorization, execute_tool, loop protection,
         // and function_call_output history, so the UI reflects real work.
         let mut explicit_tool_plan = explicit_tool_request_plan(&prompt);
-        let multi_step_delivery = multi_step_delivery_required(&prompt);
         let mut last_workflow_id: Option<String> = None;
-
-        if multi_step_delivery {
-            emit_progress_message(
-                &events,
-                operation_id,
-                "我先把这个任务拆成实现、检查和交付几个步骤来做，实际进度会逐步发出来。",
-            )?;
-        }
 
         for turn in 0..self.config.max_model_turns {
             ensure_operation_active(control)?;
@@ -505,40 +496,18 @@ impl NativeEngine {
                 operation_id,
                 &events,
             )?;
-            let model_step_id = format!("model:{}", turn + 1);
-            let model_step_title = if turn == 0 && multi_step_delivery {
-                "分析需求并生成第一版".to_string()
-            } else if multi_step_delivery {
-                format!("根据执行结果继续完善 · 第 {} 轮", turn + 1)
-            } else {
-                format!("Mahayana reasoning turn {}", turn + 1)
-            };
             events.emit(KernelEvent::Activity {
                 operation_id: operation_id.clone(),
                 kind: "model".into(),
-                title: model_step_title.clone(),
-                detail: Some(if multi_step_delivery {
-                    "正在完成这一轮真实工作并决定下一步".into()
-                } else {
-                    "正在思考并决定下一步工作".into()
-                }),
-                metadata: json!({
-                    "engine": "mahayana-native",
-                    "turn": turn + 1,
-                    "stepId": model_step_id,
-                    "status": "running"
-                }),
+                title: format!("Mahayana reasoning turn {}", turn + 1),
+                detail: None,
+                metadata: json!({"engine": "mahayana-native"}),
             })?;
 
-            // For implementation/creation tasks the first model turn is treated
-            // as a draft/planning turn. Buffer it so raw source code is not
-            // prematurely streamed as if it were the final result. A real review
-            // step below decides whether this draft can be delivered.
-            let collector = Arc::new(if multi_step_delivery && turn == 0 {
-                ModelCollector::default()
-            } else {
-                ModelCollector::streaming(Arc::clone(&events), operation_id.clone())
-            });
+            let collector = Arc::new(ModelCollector::streaming(
+                Arc::clone(&events),
+                operation_id.clone(),
+            ));
             let sink: SharedModelEventSink = collector.clone();
             let started = Instant::now();
             let inference = self
@@ -586,8 +555,6 @@ impl NativeEngine {
                 KernelError::Backend("model runtime completed without a payload".into())
             })?;
             append_model_output(&mut session.history, &payload);
-            let draft_text = mahayana_model::responses::extract_output_text(&payload)
-                .or_else(|| collector.text().ok().filter(|text| !text.is_empty()));
             let mut calls = extract_function_calls(&payload)?;
             if calls.is_empty()
                 && let Some(call) = explicit_tool_plan.first().cloned()
@@ -595,63 +562,6 @@ impl NativeEngine {
                 explicit_tool_plan.remove(0);
                 calls.push(call);
             }
-
-            // Creation/implementation prompts must not collapse into one model
-            // answer. If the first turn produced only prose/source, use an actual
-            // isolated subagent review as the verification step, feed its result
-            // back into the next model turn, and only then allow final delivery.
-            let forced_review = multi_step_delivery
-                && turn == 0
-                && calls.is_empty()
-                && draft_text
-                    .as_deref()
-                    .is_some_and(|text| !text.trim().is_empty());
-            if forced_review {
-                let draft = draft_text.as_deref().unwrap_or_default();
-                let review_call = FunctionCall {
-                    call_id: format!("delivery-review:{}", Uuid::new_v4()),
-                    name: "subagent_run".into(),
-                    arguments: json!({
-                        "name": "delivery-reviewer",
-                        "goal": multi_step_review_goal(&prompt, draft),
-                    }),
-                };
-                session.history.push(json!({
-                    "type": "function_call",
-                    "call_id": review_call.call_id,
-                    "name": review_call.name,
-                    "arguments": serde_json::to_string(&review_call.arguments)
-                        .unwrap_or_else(|_| "{}".into()),
-                }));
-                calls.push(review_call);
-                emit_progress_message(
-                    &events,
-                    operation_id,
-                    "第一版已经生成，我正在做可运行性和完整性检查，确认后再给你最终可打开的版本。",
-                )?;
-            }
-
-            events.emit(KernelEvent::Activity {
-                operation_id: operation_id.clone(),
-                kind: "model".into(),
-                title: model_step_title,
-                detail: Some(if forced_review {
-                    "第一版已生成，已进入独立复核".into()
-                } else if calls.is_empty() {
-                    "这一轮已生成最终结果".into()
-                } else {
-                    format!("这一轮决定执行 {} 个实际步骤", calls.len())
-                }),
-                metadata: json!({
-                    "engine": "mahayana-native",
-                    "turn": turn + 1,
-                    "stepId": format!("model:{}", turn + 1),
-                    "status": "completed",
-                    "toolCalls": calls.len(),
-                    "forcedReview": forced_review
-                }),
-            })?;
-
             if !calls.is_empty() {
                 let called_names = calls
                     .iter()
@@ -660,11 +570,13 @@ impl NativeEngine {
                 explicit_tool_plan.retain(|planned| !called_names.contains(planned.name.as_str()));
             }
             if calls.is_empty() {
-                let text = draft_text.ok_or_else(|| {
-                    KernelError::Backend(
-                        "model completed without assistant text or tool calls".into(),
-                    )
-                })?;
+                let text = mahayana_model::responses::extract_output_text(&payload)
+                    .or_else(|| collector.text().ok().filter(|text| !text.is_empty()))
+                    .ok_or_else(|| {
+                        KernelError::Backend(
+                            "model completed without assistant text or tool calls".into(),
+                        )
+                    })?;
                 events.emit(KernelEvent::MessageDelta {
                     operation_id: operation_id.clone(),
                     delta: text.clone(),
@@ -1848,99 +1760,6 @@ struct FunctionCall {
     arguments: Value,
 }
 
-fn multi_step_delivery_required(prompt: &str) -> bool {
-    let normalized = prompt.to_lowercase();
-    let action = [
-        "创建",
-        "做一个",
-        "开发",
-        "实现",
-        "构建",
-        "编写",
-        "写一个",
-        "修复",
-        "改造",
-        "重构",
-        "部署",
-        "发布",
-        "安装",
-        "create ",
-        "build ",
-        "implement ",
-        "develop ",
-        "make ",
-        "fix ",
-        "refactor ",
-        "deploy ",
-        "publish ",
-        "install ",
-    ]
-    .iter()
-    .any(|marker| normalized.contains(marker));
-    let artifact = [
-        "小程序",
-        "小游戏",
-        "游戏",
-        "应用",
-        "网页",
-        "网站",
-        "程序",
-        "功能",
-        "代码",
-        "仓库",
-        "项目",
-        "插件",
-        "机器人",
-        "app",
-        "game",
-        "website",
-        "web app",
-        "program",
-        "feature",
-        "code",
-        "repo",
-        "project",
-        "plugin",
-        "bot",
-        "cli",
-        "mcp",
-    ]
-    .iter()
-    .any(|marker| normalized.contains(marker));
-    action && artifact
-}
-
-fn limited_chars(value: &str, limit: usize) -> String {
-    let mut text = value.chars().take(limit).collect::<String>();
-    if value.chars().count() > limit {
-        text.push_str("\n...[truncated]");
-    }
-    text
-}
-
-fn multi_step_review_goal(prompt: &str, draft: &str) -> String {
-    format!(
-        "Review the draft implementation below against the user's request. Check completeness, runtime correctness, interaction logic, obvious syntax/HTML/JavaScript problems, and whether the result is directly usable. Return a concise list of concrete corrections for the parent Agent; do not rewrite the whole artifact.\n\nUSER REQUEST:\n{}\n\nDRAFT:\n{}",
-        limited_chars(prompt, 4_000),
-        limited_chars(draft, 16_000),
-    )
-}
-
-fn emit_progress_message(
-    events: &SharedKernelEventSink,
-    operation_id: &OperationId,
-    message: &str,
-) -> Result<(), KernelError> {
-    events.emit(KernelEvent::MessageDelta {
-        operation_id: operation_id.clone(),
-        delta: message.to_string(),
-    })?;
-    events.emit(KernelEvent::MessageCompleted {
-        operation_id: operation_id.clone(),
-        text: message.to_string(),
-    })
-}
-
 fn explicit_tool_request_plan(prompt: &str) -> Vec<FunctionCall> {
     const TOOL_NAMES: [&str; 13] = [
         "workspace_read",
@@ -2676,7 +2495,7 @@ fn function_tool(name: &str, description: &str, parameters: Value) -> Value {
 }
 
 fn default_system_instructions() -> String {
-    "You are Mahayana, a product-owned coding and automation Agent. Inspect before editing; prefer minimal, reversible changes; use checkpoints before risky workspace mutations; use workflows for dependent tasks; delegate focused analysis to subagents; use web_search when live or external information is needed and web_fetch to inspect strong sources before drawing conclusions. When the user names an available tool or requests a verifiable multi-step operation, make the actual function call, wait for its result, and continue the Agent loop until the requested work is complete; do not replace an executable tool call with a prose claim. For creation, coding, fixing, deployment, installation, and other implementation tasks, do not collapse the work into one prose response: produce a first implementation, perform at least one real review/verification step, incorporate the result, and only then deliver. For a multi-step task, use send_message to publish short, human-readable milestone updates and the final answer as separate user-visible messages; keep internal reasoning private, never fabricate progress, and do not merge all milestones into one long response. If the final artifact is a standalone HTML Mini App, emit the complete HTML only in the final turn so the Fabushi client can render it as an openable app card; never dump the full source in intermediate progress messages. Never claim a tool succeeded unless its result says so; respect Mahayana approval and platform policy."
+    "You are Mahayana, a product-owned coding and automation Agent. Inspect before editing; prefer minimal, reversible changes; use checkpoints before risky workspace mutations; use workflows for dependent tasks; delegate focused analysis to subagents; use web_search when live or external information is needed and web_fetch to inspect strong sources before drawing conclusions. When the user names an available tool or requests a verifiable multi-step operation, make the actual function call, wait for its result, and continue the Agent loop until the requested work is complete; do not replace an executable tool call with a prose claim. For a multi-step task, use send_message to publish short, human-readable milestone updates and the final answer as separate user-visible messages; keep internal reasoning private, never fabricate progress, and do not merge all milestones into one long response. Never claim a tool succeeded unless its result says so; respect Mahayana approval and platform policy."
         .to_string()
 }
 
@@ -2685,25 +2504,6 @@ mod tests {
     use super::*;
     use mahayana_model::ModelProviderMode;
     use std::collections::VecDeque;
-
-    #[test]
-    fn implementation_intent_requires_multi_step_delivery() {
-        assert!(multi_step_delivery_required("创建一个打地鼠的小游戏"));
-        assert!(multi_step_delivery_required(
-            "implement a web app for notes"
-        ));
-        assert!(multi_step_delivery_required("修复这个应用的登录功能"));
-        assert!(!multi_step_delivery_required("解释一下什么是 WebMCP"));
-        assert!(!multi_step_delivery_required("今天天气怎么样"));
-    }
-
-    #[test]
-    fn multi_step_review_goal_contains_request_and_bounded_draft() {
-        let goal = multi_step_review_goal("创建一个小游戏", &"x".repeat(20_000));
-        assert!(goal.contains("创建一个小游戏"));
-        assert!(goal.contains("...[truncated]"));
-        assert!(goal.len() < 25_000);
-    }
 
     #[test]
     fn web_research_capability_and_tools_follow_provider_configuration() {
