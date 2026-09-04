@@ -1,42 +1,18 @@
 # Grok Bot -> Fabushi 全量融合项目
 
-本目录是 Grok Bot 能力/源码进入 Fabushi 的唯一长期项目基线。目标不是在 Fabushi 中长期保留一个平行的 `Grok Bot` 子产品，而是对已有 Grok Bot 融合源码进行逐项盘点、差异分析、重构和验证，把有价值的产品能力归入 Fabushi/Mahayana 的正式架构。
+本目录是 Grok-like 行为/能力进入 Fabushi 的长期项目基线。目标不是保留平行 Grok Runtime，而是把有价值的可观察产品行为、设备能力和 Agent Surface 契约归入 Fabushi/Mahayana 正式架构。
 
-## 当前已验证状态
+## Canonical state
+- `bhrumom/fabushi` protected `main` is implementation truth.
+- GBF owns observable Bot behavior and same-account device/App capability semantics; `FAB-P0005/MSR` owns execution/session/policy; `FAB-P0001/TFI` owns message transport/projection.
+- Existing GBF-409 and GBF-411 remain current dependencies; neither is accepted merely because implementation exists.
 
-- **M0 企业级项目基线已完成**：PR #1982 经 required `CI result` 成功并通过 merge queue 合入 `main`，merge commit `6d1e9cd7a475e8058d5d8512f5c3a0c21da8ed9c`；随后已从 `main` 重新读取项目元数据和原始需求验证 canonical state。
-- 当前阶段：**M4 — interactive runner MCP and agent surface**。
-- 历史 Grok 分支是只读审计输入，禁止整分支覆盖 `main`。
-- **M1–M8 的全部迁移仍不能因代码存在而宣称完成。**
+## 2026-09-04 P0 repair status
+PR #2320 architecture head `21ee56892db48925fe863320a1cd68b51c4596cd` was `REVIEW-REJECTED`; review write-back reached `a0333f32a5d0edc04723c49fc53a5997a3b0fe1e`. This repair is ready only for fresh latest-head review. `GBF-409` and `GBF-411` are both still `IN_PROGRESS`, and MSR-201/202 are still `in-progress`; therefore GBF-508 capability integration remains hard-blocked.
 
-## 2026-09-04 P0 cross-project contract
+`bhrum/grok-bot-0.18-reconstructed@107877b4e2134fd167d239411386f09e42eadd6d` has no root LICENSE and its provenance does not grant upstream source rights. It is clean-room **observable behavior/UI/IPC evidence only**. No implementation code may be copied; unverified/unclear-rights files are not adopted.
 
-Program `FAB-ARCH-P0-20260904` 复用 GBF，不新建项目。GBF 负责 Grok-like 可观察 Bot 行为、同账号设备能力和 Agent Surface 语义；真正执行仍由 `FAB-P0005/MSR` 唯一 Runtime/session 完成，TFI 只负责消息投影/传输。
+Authoritative P0 task: `management/tasks/GBF-508-group-bot-behavior-capability-routing.md`. The task file itself contains the complete execution/acceptance contract; shared docs cannot fill omissions.
 
-现有 `GBF-409`（同账号设备发现/授权 Computer Use）与 `GBF-411`（Web/App MCP Agent Surface）继续作为能力依赖；新增 `GBF-508` 只定义/实现缺失的 Bot group behavior 和设备/MiniApp capability routing 接缝。
-
-`bhrum/grok-bot-0.18-reconstructed@107877b4e2134fd167d239411386f09e42eadd6d` 本轮根 `LICENSE` 不存在，且其 `PROVENANCE.md` 明示不蕴含上游源码许可，所以只能 clean-room 参考可观察行为/边界，不复制实现代码。
-
-## 权威位置
-
-- Repository: `bhrumom/fabushi`
-- Branch: `main`
-- Project path: `projects/grok-bot-fabushi-integration/`
-- Source precedence: `SOURCE_OF_TRUTH.md`
-
-## Owner / Review
-
-- Accountable/execution owner: Fabushi/Mahayana maintainers
-- Required review: Fabushi maintainers；computer-control、敏感输入、本机执行等高风险能力还需安全审查
-
-## 项目级验收
-
-最终完成必须满足来源分类、单一正式 runtime、自动化/E2E、安全、受保护 main 和发布证据；本次架构记录不改变既有实现状态。
-
-## 目录导航
-
-- 原始需求/来源：`source/`
-- 规范：`docs/`
-- 执行管理：`management/`
-- ADR：`decisions/`
-- 证据：`evidence/`
+## Source of truth
+See `SOURCE_OF_TRUTH.md`.

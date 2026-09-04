@@ -1,5 +1,7 @@
 # MSR P0 release — FAB-ARCH-P0-20260904
 
-Execution chat completes one atomic task and records commit/PR -> code review reads real diff -> test-release group runs GitHub Actions/package and complete simulated-user evidence -> architecture/video review -> protected merge to canonical main -> exact-main packaged E2E -> formal release.
+Execution -> pushed atomic real diff -> independent code review -> GitHub Actions installable test package -> complete simulated-user pass/fail evidence -> architecture/video review -> protected canonical-main merge -> exact-main packaged E2E -> formal release.
 
-MSR-210 must be review-passed before TFI install->Bot/session closure. MSR-211 must be review-passed before device/MiniApp capability closure. No branch-only artifact is a formal release.
+Dependency acceptance is a hard prerequisite, never shorthand reuse: MSR-210 cannot pass before `MSR-201 REVIEW-PASS/accepted contract`; MSR-211 cannot pass before `MSR-202`, `MSR-210`, `GBF-409`, and `GBF-411` are review-passed/accepted. Each dependent task must then separately satisfy its own review, CI, protected merge, exact-main packaged E2E and Release evidence.
+
+Every package handoff records exact main SHA, app version, platform, workflow run/job, journey ID, timestamp, installable artifact, full video, step screenshots, trace, HTML/native report and logs. Upload pass and fail with an always-equivalent path, target 90-day retention or record the maximum lower limit. Any missing item blocks release. Branch-only/source-only artifacts are not formal releases.
