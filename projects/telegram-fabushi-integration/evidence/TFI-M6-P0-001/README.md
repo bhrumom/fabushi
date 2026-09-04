@@ -30,3 +30,11 @@ Official TDLib `tdlib/td@d1085f9cebc5a62379991ae1652673954f229c1f` was inspected
 `IMPLEMENTED / CI-BLOCKED / REVIEW-PENDING / CLOSURE-BLOCKED`.
 
 No protected-main merge, exact accepted-main packaged E2E, Release, or task-specific independent code `REVIEW-PASS` exists yet. Do not mark this task completed.
+
+## Final task-specific CI result
+- Compile/ownership repair: `726b4210ddd4d9a967778193a8d374b5f8bad206`.
+- Atomic verification config finalization: `75b319160c70db661739560e24134b636608b8cd`.
+- `TFI M6 P0-001 atomic gate` run `33885842476`, job `101065268536`: **SUCCESS**. `m6_channels_topics_contract` test binary compiled; all three P0-001 named regressions passed.
+- Diagnostic predecessor run `33885625325`, job `101064549625` compiled successfully and showed 4/5 whole-file tests passing; only the unchanged moderation/slow-mode test failed. That later-M6 semantic failure was intentionally not modified.
+- Required current-head failures remain: `33885842392` / `101065267398` (Mahayana fast checks, inherited rustfmt) and `33885842303` / `101065267283` (Messaging Product Gate Rust job, inherited rustfmt). Product run Electron Messenger job `101065266895` passed.
+- Overall closure verdict remains `CI-BLOCKED / REVIEW-PENDING / CLOSURE-BLOCKED`; task-specific success is not a required-gate waiver.
