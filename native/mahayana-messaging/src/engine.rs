@@ -594,7 +594,6 @@ pub struct MessagingEngine {
 #[derive(Debug, Clone, Copy)]
 enum CommunityAdminAction {
     ChangeInfo,
-    PostMessages,
     InviteMembers,
     BanMembers,
     ManageTopics,
@@ -622,7 +621,6 @@ fn require_community_admin(
         }
         match action {
             CommunityAdminAction::ChangeInfo => member.admin_rights.change_info,
-            CommunityAdminAction::PostMessages => member.admin_rights.post_messages,
             CommunityAdminAction::InviteMembers => member.admin_rights.invite_members,
             CommunityAdminAction::BanMembers => member.admin_rights.ban_members,
             CommunityAdminAction::ManageTopics => member.admin_rights.manage_topics,

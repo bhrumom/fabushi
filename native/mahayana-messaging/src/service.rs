@@ -680,20 +680,17 @@ impl<S: MessagingStateStore> MessagingService<S> {
                         ClientCommand::RemoveConversationParticipant {
                             actor_id: target_actor_id,
                             ..
-                        } => {
-                            if community
-                                .members
-                                .get(target_actor_id)
-                                .is_some_and(|member| {
-                                    matches!(
-                                        member.status,
-                                        MemberStatus::Owner | MemberStatus::Administrator
-                                    )
-                                })
-                                && !caller_is_owner
-                            {
-                                return Err(denied("admins cannot remove owner/admin members"));
-                            }
+                        } if community
+                            .members
+                            .get(target_actor_id)
+                            .is_some_and(|member| {
+                                matches!(
+                                    member.status,
+                                    MemberStatus::Owner | MemberStatus::Administrator
+                                )
+                            }) && !caller_is_owner =>
+                        {
+                            return Err(denied("admins cannot remove owner/admin members"));
                         }
                         _ => {}
                     }
