@@ -900,7 +900,9 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 } => *expires_at_ms > server_time_ms,
                 _ => true,
             })
-            .map(|entry| self.public_journal_envelope(&entry.envelope))
+            .map(|entry| {
+                self.project_journal_envelope_for_actor(actor_id, &entry.envelope, server_time_ms)
+            })
             .collect::<Vec<_>>();
         responses.push(self.sync_checkpoint_envelope(slice.checkpoint_cursor, server_time_ms));
         Ok(responses)
@@ -984,28 +986,19 @@ impl<S: MessagingStateStore> MessagingService<S> {
             .get(&conversation.id)
             .is_some_and(|actors| actors.contains(actor_id));
         if let Some(community) = state.communities.get(&conversation.id) {
-            if projected.topics.is_empty() {
-                projected.topics = community
-                    .topics
-                    .values()
-                    .map(|topic| Topic {
-                        id: topic.id.clone(),
-                        title: topic.title.clone(),
-                        icon: topic.icon.clone(),
-                        created_by: topic.creator_id.clone(),
-                        closed: topic.closed,
-                        hidden: topic.hidden,
-                        unread_count: 0,
-                    })
-                    .collect();
-            } else {
-                for topic in &mut projected.topics {
-                    if let Some(state_topic) = community.topics.get(&topic.id) {
-                        topic.closed = state_topic.closed;
-                        topic.hidden = state_topic.hidden;
-                    }
-                }
-            }
+            projected.topics = community
+                .topics
+                .values()
+                .map(|topic| Topic {
+                    id: topic.id.clone(),
+                    title: topic.title.clone(),
+                    icon: topic.icon.clone(),
+                    created_by: topic.creator_id.clone(),
+                    closed: topic.closed,
+                    hidden: topic.hidden,
+                    unread_count: 0,
+                })
+                .collect();
             for topic in &mut projected.topics {
                 topic.unread_count =
                     self.topic_unread_count(actor_id, &conversation.id, &topic.id, server_time_ms);
@@ -1946,7 +1939,24 @@ impl<S: MessagingStateStore> MessagingService<S> {
             .iter()
             .filter(|response| !matches!(&response.event, ServerEvent::SyncBatch { .. }))
             .map(|response| JournalEntry {
-                envelope: self.public_journal_envelope(response),
+                envelope: match &response.event {
+                    ServerEvent::CommunityChanged { community } => {
+                        let canonical = self
+                            .engine
+                            .state()
+                            .communities
+                            .get(&community.conversation_id)
+                            .cloned()
+                            .unwrap_or_else(|| community.clone());
+                        self.public_journal_envelope(&ServerEnvelope {
+                            protocol_version: response.protocol_version,
+                            cursor: response.cursor.clone(),
+                            server_time_ms: response.server_time_ms,
+                            event: ServerEvent::CommunityChanged { community: canonical },
+                        })
+                    }
+                    _ => self.public_journal_envelope(response),
+                },
                 audience: self.event_audience(initiator, &response.event),
             })
             .collect()
@@ -1960,11 +1970,40 @@ impl<S: MessagingStateStore> MessagingService<S> {
             // response and actor-scoped snapshot remain available to authorized admins.
             community.admin_log.clear();
             community.pending_join_requests.clear();
+            for topic in community.topics.values_mut() {
+                topic.unread_count = 0;
+            }
             for invite in community.invite_links.values_mut() {
                 invite.token.clear();
             }
         }
         envelope
+    }
+
+    fn project_journal_envelope_for_actor(
+        &self,
+        actor_id: &ActorId,
+        envelope: &ServerEnvelope,
+        server_time_ms: i64,
+    ) -> ServerEnvelope {
+        if let ServerEvent::CommunityChanged { community } = &envelope.event {
+            if let Some(canonical) = self.engine.state().communities.get(&community.conversation_id)
+            {
+                return ServerEnvelope {
+                    protocol_version: envelope.protocol_version,
+                    cursor: envelope.cursor.clone(),
+                    server_time_ms: envelope.server_time_ms,
+                    event: ServerEvent::CommunityChanged {
+                        community: self.project_community_for_actor(
+                            actor_id,
+                            canonical,
+                            server_time_ms,
+                        ),
+                    },
+                };
+            }
+        }
+        self.public_journal_envelope(envelope)
     }
 
     fn event_audience(&self, initiator: &ActorId, event: &ServerEvent) -> Vec<ActorId> {
