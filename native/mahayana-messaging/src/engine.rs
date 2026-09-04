@@ -2,8 +2,7 @@ use crate::actor::{Actor, ActorId, ActorKind, Participant, ParticipantRole, Pres
 use crate::bot::{BotExecution, BotInvocation, BotProfile, BotRegistry};
 use crate::community::{
     AdminRights, CommunityAuditAction, CommunityAuditEntry, CommunityError, CommunityMember,
-    CommunityState,
-    ForumTopicState, InviteLink, JoinRequest, MemberStatus,
+    CommunityState, ForumTopicState, InviteLink, JoinRequest, MemberStatus,
 };
 use crate::conversation::{
     Conversation, ConversationDraft, ConversationFolder, ConversationId, ConversationKind,
@@ -811,8 +810,10 @@ impl MessagingEngine {
                 {
                     return Err(EngineError::InvalidConversationParticipant);
                 }
-                if matches!(conversation.kind, ConversationKind::Group | ConversationKind::Channel)
-                {
+                if matches!(
+                    conversation.kind,
+                    ConversationKind::Group | ConversationKind::Channel
+                ) {
                     let mut community = self
                         .state
                         .communities
@@ -840,7 +841,9 @@ impl MessagingEngine {
                         });
                     member.status = status;
                     member.joined_at_ms = participant.joined_at_ms;
-                    community.members.insert(participant.actor_id.clone(), member);
+                    community
+                        .members
+                        .insert(participant.actor_id.clone(), member);
                     Ok(vec![
                         Event::CommunityChanged { community },
                         Event::ConversationParticipantUpserted {
@@ -863,8 +866,10 @@ impl MessagingEngine {
                 if conversation.owner_id.as_ref() == Some(&actor_id) {
                     return Err(EngineError::InvalidConversationParticipant);
                 }
-                if matches!(conversation.kind, ConversationKind::Group | ConversationKind::Channel)
-                {
+                if matches!(
+                    conversation.kind,
+                    ConversationKind::Group | ConversationKind::Channel
+                ) {
                     let mut community = self
                         .state
                         .communities
@@ -1726,23 +1731,24 @@ impl MessagingEngine {
                                         .map(|member| member.admin_rights.clone())
                                         .unwrap_or_default(),
                                 ),
-                                ParticipantRole::Member => (
-                                    MemberStatus::Member,
-                                    AdminRights::default(),
-                                ),
+                                ParticipantRole::Member => {
+                                    (MemberStatus::Member, AdminRights::default())
+                                }
                             };
                             (
                                 participant.actor_id.clone(),
                                 CommunityMember {
                                     actor_id: participant.actor_id.clone(),
                                     status,
-                                    admin_title: requested.and_then(|member| member.admin_title.clone()),
+                                    admin_title: requested
+                                        .and_then(|member| member.admin_title.clone()),
                                     admin_rights,
                                     restrictions: requested
                                         .map(|member| member.restrictions.clone())
                                         .unwrap_or_default(),
                                     joined_at_ms: participant.joined_at_ms,
-                                    invited_by: requested.and_then(|member| member.invited_by.clone()),
+                                    invited_by: requested
+                                        .and_then(|member| member.invited_by.clone()),
                                 },
                             )
                         })
@@ -1912,7 +1918,10 @@ impl MessagingEngine {
                     .conversations
                     .get(&conversation_id)
                     .is_some_and(|conversation| {
-                        matches!(conversation.kind, ConversationKind::Group | ConversationKind::Channel)
+                        matches!(
+                            conversation.kind,
+                            ConversationKind::Group | ConversationKind::Channel
+                        )
                     })
                     .then(|| {
                         community
@@ -2000,7 +2009,10 @@ impl MessagingEngine {
                     .conversations
                     .get(&conversation_id)
                     .is_some_and(|conversation| {
-                        matches!(conversation.kind, ConversationKind::Group | ConversationKind::Channel)
+                        matches!(
+                            conversation.kind,
+                            ConversationKind::Group | ConversationKind::Channel
+                        )
                     })
                     .then(|| {
                         community
@@ -2188,8 +2200,7 @@ impl MessagingEngine {
                                 conversation.kind,
                                 ConversationKind::Group | ConversationKind::Channel
                             )
-                        })
-                {
+                        }) {
                     community
                         .members
                         .get(&requester_id)
