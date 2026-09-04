@@ -8,11 +8,14 @@
 - Application/compile repair: `726b4210ddd4d9a967778193a8d374b5f8bad206`
 - R1 repair head verified by Actions: `4b6218e3aaa385ad0e3ef3ad0f908339c7b684dc`
 - Exact R2-reviewed execution head: `1dc165489498889504a61b7e07d5164f25188cef`
+- R2-B3 record-truth repair commit: `8610d0f6a6c143281a6ffede270ad4821dc780a9`
+- Execution handoff comment: PR #2323 comment `5543243769`
 
 ## Scope evidence
 1. Historical implementation scope on this PR: `native/mahayana-messaging/src/engine.rs`, `src/service.rs`, `native/mahayana-messaging/tests/m6_channels_topics_contract.rs`, and additive `.github/workflows/tfi-m6-p0-001-atomic-gate.yml`.
 2. **R2-B3 repair scope in this round:** only `projects/telegram-fabushi-integration/**` records plus PR #2323 description/comments. No application source, regression test, or workflow is modified by the record repair.
-3. No local Cargo/npm/Gradle/Xcode/build/test/E2E/native/app execution is used in this record repair.
+3. Commit diff `1dc165489498889504a61b7e07d5164f25188cef..8610d0f6a6c143281a6ffede270ad4821dc780a9` is exactly one commit and 15 files, all under `projects/telegram-fabushi-integration/**`.
+4. No local Cargo/npm/Gradle/Xcode/build/test/E2E/native/app execution is used in this record repair.
 
 ## R1 review provenance — preserved
 - Review-record PR #2325 head `7f594f10570822dcf23a4c3c02ddb0583ea94f14`.
@@ -51,12 +54,21 @@ The historical claim that required rustfmt failures were wholly/inherently inher
 - Atomic compile/test `33890057159` / `101079256166` = **SUCCESS**, but it does not provide base-vs-head formatter attribution and cannot waive required CI.
 - This evidence set contains no independent formatter run/diff that compares exact base `9e88a2e9c030fe05147460dfa580366cf9aa433d` with the PR head. Therefore the formatter failure source is **undetermined: base, PR, or mixed**.
 
-R2 correctly rejected the execution state while generic records still contradicted this conservative statement. This record-only round synchronizes those records and PR metadata; it does not claim R2 retroactively passed. Fresh R3 independent review is required.
+R2 correctly rejected the execution state while generic records still contradicted this conservative statement. The records-only repair synchronizes those records and PR metadata; it does not claim R2 retroactively passed. Fresh R3 independent review is required.
+
+## R2-B3 repair-head Actions evidence
+Commit `8610d0f6a6c143281a6ffede270ad4821dc780a9` triggered a fresh PR-head validation round after the record-only correction:
+- `TFI M6 P0-001 atomic gate` run `33893374373`, job `101090161050` — **SUCCESS**; compile + named P0-001 regressions passed.
+- `Mahayana fast checks` run `33893374391`, job `101090161882` — **FAIL** at `Verify formatting before native package setup`; all subsequent Rust/native checks skipped.
+- `Messaging Product Gate` run `33893374357`: Rust job `101090161844` — **FAIL** at `Rustfmt self-hosted messaging`; subsequent tests/clippy/bridge checks skipped. Electron job `101090161451` — **SUCCESS**.
+- `Developer Fiat Commerce` `33893374338` and `Explicit automerge` `33893374339` — **SUCCESS**.
+
+This fresh head reproduces the required formatter-stage blocker after a records-only commit. It still does **not** establish formatter provenance because no independent exact base-vs-head formatter comparison was performed. The correct statement remains: formatter failure is proven; cause attribution is undetermined.
 
 ## Six-category state
 | Category | Evidence | State |
 |---|---|---|
-| Unit | `33890057159` / `101079256166` | PASS task-specific |
+| Unit | `33893374373` / `101090161050` | PASS task-specific on repair head |
 | Contract | direct create/update + join-decision ownership regressions | PASS task-specific / R2 B1 CLOSED |
 | Integration | full M6 contract binary compiled and named P0-001 tests ran | PASS task-specific; required Rust workflows FAIL before later tests |
 | E2E | exact accepted-main installable Messenger Group/Channel journey | PENDING |
