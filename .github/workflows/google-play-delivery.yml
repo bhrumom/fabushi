@@ -42,6 +42,14 @@ on:
         required: false
         default: ''
         type: string
+      release_tier:
+        description: test skips long simulated-user source gates; formal requires the full release gate.
+        required: true
+        default: formal
+        type: choice
+        options:
+          - test
+          - formal
 
 permissions:
   contents: write
@@ -138,6 +146,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
           RELEASE_TARGET: android
+          RELEASE_TIER: ${{ inputs.release_tier }}
         run: bash .github/scripts/require-release-source-gates.sh
 
       - uses: actions/setup-java@v5
