@@ -614,6 +614,17 @@ fn slow_mode_and_moderation_are_enforced_by_the_rust_state_machine() {
             decided_at_ms: 10_102,
         })
         .unwrap();
+    {
+        let state = engine.state();
+        let group_id = ConversationId::new("group:m6");
+        let member_id = ActorId::new("human:member");
+        let community = &state.communities[&group_id];
+        assert_eq!(community.members[&member_id].status, MemberStatus::Banned);
+        assert!(!state.conversations[&group_id]
+            .participants
+            .iter()
+            .any(|participant| participant.actor_id == member_id));
+    }
     let banned_send_error = engine
         .execute(Command::QueueMessage {
             conversation_id: ConversationId::new("group:m6"),
@@ -631,7 +642,11 @@ fn slow_mode_and_moderation_are_enforced_by_the_rust_state_machine() {
         .unwrap_err();
     assert!(matches!(
         banned_send_error,
-        EngineError::CommunitySendRestricted(id) if id == ConversationId::new("group:m6")
+        EngineError::SenderNotParticipant {
+            conversation_id,
+            actor_id
+        } if conversation_id == ConversationId::new("group:m6")
+            && actor_id == ActorId::new("human:member")
     ));
 
     let final_community = &engine.state().communities[&ConversationId::new("group:m6")];
