@@ -5,8 +5,8 @@ use crate::community::{CommunityState, MemberStatus};
 use crate::conversation::{
     Conversation, ConversationDraft, ConversationId, ConversationKind, Topic, TopicDraft,
 };
-use crate::engine::{Command, EngineError, Event, MessagingEngine};
 use crate::engine::topic_id_from_root;
+use crate::engine::{Command, EngineError, Event, MessagingEngine};
 use crate::message::{ClientMessageId, DeliveryState, Message, MessageContent, MessageId};
 use crate::payment::Money;
 use crate::protocol::{
@@ -663,7 +663,8 @@ impl<S: MessagingStateStore> MessagingService<S> {
                     match command {
                         ClientCommand::SetConversationParticipant { participant, .. } => {
                             let target = community.members.get(&participant.actor_id);
-                            if target.is_some_and(|member| matches!(member.status, MemberStatus::Owner))
+                            if target
+                                .is_some_and(|member| matches!(member.status, MemberStatus::Owner))
                                 || matches!(participant.role, crate::actor::ParticipantRole::Owner)
                             {
                                 return Err(denied("community owner cannot be changed"));
@@ -679,13 +680,18 @@ impl<S: MessagingStateStore> MessagingService<S> {
                         ClientCommand::RemoveConversationParticipant {
                             actor_id: target_actor_id,
                             ..
-                        } => {
-                            if community.members.get(target_actor_id).is_some_and(|member| {
-                                matches!(member.status, MemberStatus::Owner | MemberStatus::Administrator)
-                            }) && !caller_is_owner
-                            {
-                                return Err(denied("admins cannot remove owner/admin members"));
-                            }
+                        } if community
+                            .members
+                            .get(target_actor_id)
+                            .is_some_and(|member| {
+                                matches!(
+                                    member.status,
+                                    MemberStatus::Owner | MemberStatus::Administrator
+                                )
+                            })
+                            && !caller_is_owner =>
+                        {
+                            return Err(denied("admins cannot remove owner/admin members"));
                         }
                         _ => {}
                     }
@@ -1124,7 +1130,10 @@ impl<S: MessagingStateStore> MessagingService<S> {
         let mut projected = community.clone();
         let member = community.members.get(actor_id);
         let is_admin = member.is_some_and(|member| {
-            matches!(member.status, MemberStatus::Owner | MemberStatus::Administrator)
+            matches!(
+                member.status,
+                MemberStatus::Owner | MemberStatus::Administrator
+            )
         });
         let can_invite = member.is_some_and(|member| {
             matches!(member.status, MemberStatus::Owner)
@@ -1839,15 +1848,13 @@ impl<S: MessagingStateStore> MessagingService<S> {
             Event::PresenceUpdated { actor_id, presence } => {
                 ServerEvent::PresenceChanged { actor_id, presence }
             }
-            Event::ConversationUpserted { conversation } => {
-                ServerEvent::ConversationChanged {
-                    conversation: self.project_conversation_for_actor(
-                        actor_id,
-                        &conversation,
-                        server_time_ms,
-                    ),
-                }
-            }
+            Event::ConversationUpserted { conversation } => ServerEvent::ConversationChanged {
+                conversation: self.project_conversation_for_actor(
+                    actor_id,
+                    &conversation,
+                    server_time_ms,
+                ),
+            },
             Event::ConversationInfoUpdated {
                 conversation_id, ..
             } => self
@@ -2049,7 +2056,9 @@ impl<S: MessagingStateStore> MessagingService<S> {
                             protocol_version: response.protocol_version,
                             cursor: response.cursor.clone(),
                             server_time_ms: response.server_time_ms,
-                            event: ServerEvent::CommunityChanged { community: canonical },
+                            event: ServerEvent::CommunityChanged {
+                                community: canonical,
+                            },
                         })
                     }
                     _ => self.public_journal_envelope(response),
