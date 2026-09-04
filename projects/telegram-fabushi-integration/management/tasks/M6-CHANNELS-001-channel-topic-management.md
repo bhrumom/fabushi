@@ -57,7 +57,7 @@
 ## 实现与验证记录
 
 - **分支**：`codex/tfi-m6-repair`
-- **提交**：`6160971cb`（基于最新 `origin/main` 重放）；本轮修复待提交
+- **提交**：`f9316f500`（包含 `a5eb43137`、`f9316f500` 两轮修复，基于最新 `origin/main`）
 - **PR**：待创建/受保护合并
 - **CI**：待 GitHub Actions
 - **实现文件**：`native/mahayana-messaging/src/{community,conversation,protocol,engine,service}.rs`、`desktop/src/{selfhosted-messaging-client-v2,messaging-shell-v2}.ts{,x}`
@@ -66,15 +66,17 @@
 
 ### 2026-09-04 — 网页版极高模型审查与修复
 
-网页版 ChatGPT 审查 `ba4e0c69e` 后返回 `WEB-REJECTED`，指出两项确定编译阻断和多项权限/隐私阻断。本轮已修复：
+网页版 ChatGPT 审查 `ba4e0c69e` 后返回 `WEB-REJECTED`，指出两项确定编译阻断和多项权限/隐私阻断。网页版随后审查 `dea59a912` 仍返回 `WEB-REJECTED`，补充指出入会策略、成员初始化、legacy thread、双 authority 和 actor journal 污染问题。本轮已继续修复：
 
 - 补齐 `Topic.unread_count` 及 projection 初始化；开放 engine 内部 topic root helper 的 crate 可见性；
 - `UpdateCommunity` 不再接受客户端覆盖成员、邀请、Topic、封禁、订阅者和审计日志，并在首次建档时仅由 owner 初始化全量权限；
 - 不再允许未知频道被任意订阅并创建空社区状态；
 - actor-scoped projection 仅向具备 `invite_members` 权限的 owner/admin 暴露邀请 token；
 - journal replay 统一清理历史 invite token、pending join request 和 admin log，避免旧持久化记录泄露。
+- 私有频道仅允许公开 admission 或已有 membership/subscription；无 Community 的 join request 不再创建占位状态；首次 Community 从 Conversation participants 构造并保留同 actor 的管理元数据；
+- 非 `topic:<id>` 的历史 thread root 保持普通 thread；Community topics 每次完整重建 compatibility projection；journal 写入 canonical Community，replay 按接收 actor 重新投影并重算 Topic unread。
 
-审查原始结论及剩余 P1 项已作为本任务下一轮 CI/网页版复审输入；在 CI、PR、protected merge 和 canonical-main packaged E2E/Release 完成前保持 `IN_PROGRESS`。
+最新提交仍待网页版复审；协议滚动兼容、邀请凭证完整校验、Electron privileged merge、membership mutation 双向收敛和负向契约测试仍未完成。在 CI、PR、protected merge 和 canonical-main packaged E2E/Release 完成前保持 `IN_PROGRESS`。
 
 ## 风险、阻塞与下一步
 
