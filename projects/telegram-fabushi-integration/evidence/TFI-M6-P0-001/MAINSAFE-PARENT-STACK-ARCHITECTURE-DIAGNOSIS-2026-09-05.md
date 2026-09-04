@@ -15,20 +15,24 @@ This record is architecture/governance only. It does not modify application/test
 - no PR with head `codex/tfi-m6-repair` exists. Commit-to-PR lookup for both `6160971...` and `9e88a2e...` resolves only to child PR #2323.
 
 ## Exact 12-commit parent stack, oldest -> newest
-1. `dea59a9120b1783764a8b75218341dccedbab54a` — Rust M6 channel/community semantics.
-2. `a5eb431375588068611a1b74a1ef2b2f6d215f23` — private-channel admission and Community creation boundary.
-3. `f9316f500d0ef4ee27937dfdb70051436f308986` — topic projection/journal canonicalization.
-4. `e7b41cd70f06242175384055b24449abc372232b` — Community/Conversation member convergence.
-5. `ff07289fad62ccc896cc372a491b174e37d6ab52` — actor-scoped projection / Electron topic projection continuity.
-6. `9916a77ed5941538c81e0cdb5884a3bee0b59ff5` — project_event actor fix + Electron CommunityChanged mapping fix.
-7. `0bd0b6d5dcc8b42573cdeb6b7c17a7160a1aafba` — intermediate M6 repair iteration superseded by later fixes but remains ancestry.
-8. `7a55bf366ad90b56d1af8ef1d4044f5e5aeac57d` — Community/member projection repair iteration.
-9. `2cbcb29edb391b709d08a2a748ae658c2127cd2b` — admission/projection/journal repair iteration.
-10. `af6fb35c30f9d64d6f731c8a0d1ebef959f95a73` — P0.1 membership authority / participant mutation convergence; source of later moderation/clippy latent behavior.
-11. `6160971cb3c477b809ae470d60f1e3c601606329` — additional M6 repair/record step; historical source of `CommunityAdminAction::PostMessages` selector later removed by CLIPPY-001.
-12. `9e88a2e9c030fe05147460dfa580366cf9aa433d` — parent-stack record/index head; includes `TFI-M6-CHANNELS-001` task record and preserves `IN_PROGRESS / PR pending / CI pending` truth.
+The sequence below is verified by each commit's real Git `parents[]` pointer, not by timestamp or message order:
+1. `6160971cb3c477b809ae470d60f1e3c601606329` — `feat(tfi): add channel and topic management primitives`; direct parent is canonical `688465e...`. This is the large initial M6 product/test/record change.
+2. `dea59a9120b1783764a8b75218341dccedbab54a` — `fix(tfi): harden channel state projections`.
+3. `a5eb431375588068611a1b74a1ef2b2f6d215f23` — `fix(messaging): enforce community admission and legacy threads`.
+4. `f9316f500d0ef4ee27937dfdb70051436f308986` — `fix(messaging): converge topic and journal projections`.
+5. `2cbcb29edb391b709d08a2a748ae658c2127cd2b` — `docs(tfi): record M6 repair review state`; records-only checkpoint.
+6. `e7b41cd70f06242175384055b24449abc372232b` — `fix(messaging): converge community membership events`.
+7. `ff07289fad62ccc896cc372a491b174e37d6ab52` — `fix(messaging): project topic deltas for actors`.
+8. `0bd0b6d5dcc8b42573cdeb6b7c17a7160a1aafba` — `docs(tfi): record topic projection repair`; records-only checkpoint.
+9. `9916a77ed5941538c81e0cdb5884a3bee0b59ff5` — `fix(messaging): close projection compile blockers`.
+10. `7a55bf366ad90b56d1af8ef1d4044f5e5aeac57d` — `docs(tfi): record compile blocker repair`; records-only checkpoint.
+11. `af6fb35c30f9d64d6f731c8a0d1ebef959f95a73` — `fix(messaging): make community membership canonical`.
+12. `9e88a2e9c030fe05147460dfa580366cf9aa433d` — `docs(tfi): record canonical membership batch`; records-only parent-stack head.
 
-The parent stack mixes Rust product source, Electron product source, Rust contract tests and project records. It has no independent canonical-main code-review PR. `TFI-M6-CHANNELS-001` itself does not exist on canonical main and cannot be treated as already accepted governance.
+Exact Git chain:
+`688465e... -> 6160971... -> dea59a9... -> a5eb431... -> f9316f5... -> 2cbcb29... -> e7b41cd... -> ff07289... -> 0bd0b6d... -> 9916a77... -> 7a55bf3... -> af6fb35... -> 9e88a2e...`.
+
+The `main..base` changed-file set contains exactly two Electron product files (`desktop/src/messaging-shell-v2.tsx`, `desktop/src/selfhosted-messaging-client-v2.ts`), five Rust product files (`community.rs`, `conversation.rs`, `engine.rs`, `protocol.rs`, `service.rs`), one Rust M6 contract test, and TFI-only ADR/source/management records. It has no independent canonical-main code-review PR. `TFI-M6-CHANNELS-001` itself does not exist on canonical main and its parent-stack copy still says `IN_PROGRESS / PR pending / CI pending`; it cannot be treated as already accepted governance.
 
 ## Child stack evidence boundaries
 `9e88a2... -> 1c314ef...` is 22 commits. Material product/validation boundaries are:
@@ -44,34 +48,34 @@ The parent stack mixes Rust product source, Electron product source, Rust contra
 ### Adopted: canonical-main-based semantic reconstruction with immutable source provenance
 Do NOT retarget #2323, merge it directly, force-push/rebase its history, or cherry-pick the 34 commits as a blind sequence.
 
-Create fresh product branches from the then-current canonical main, one atomic business boundary at a time. Each execution task must reconstruct the required end-state from the immutable historical source commits, record source SHA/file/hunk provenance, and prove equivalence with a `range-diff`/patch comparison or equivalent file-level semantic diff. Fresh commits are allowed because protected `main` uses squash merge; the audit invariant is source-patch provenance + acceptance evidence, not preservation of old commit IDs as main ancestors.
+Create fresh product branches from the then-current canonical main, one atomic business boundary at a time. Each execution task must reconstruct the required end-state from the immutable historical source commits, record source SHA/file/hunk provenance, and prove equivalence with `range-diff`, `patch-id`, or an equivalent file-level semantic comparison. Fresh commits are allowed because protected `main` uses squash merge; the audit invariant is immutable source-patch provenance + fresh acceptance evidence, not preservation of old commit IDs as main ancestors.
 
-This avoids duplicate semantic application: before each task, compare canonical main against the intended source patch; if the patch is already present/equivalent, STOP as `ALREADY-IN-MAIN` instead of reapplying it.
+Before each task, compare the then-current canonical main against the intended source patch. If the semantic patch is already present/equivalent, STOP as `ALREADY-IN-MAIN` instead of reapplying it. No blind cherry-pick is authorized.
 
 ### Rejected alternatives
-- **Retarget #2323 to main**: rejects because review scope expands from `9e88a2...`-relative child delta to the full 34-commit product delta.
-- **Direct merge/bypass**: ruleset forbids bypass and would admit unreviewed parent product code.
-- **Blind cherry-pick of old commits**: rejects because intermediate commits are superseded, mix records/product, include latent red-CI states, and create duplicate patch risk after squash merges.
-- **Rebase/force-push existing #2323**: rejects because it rewrites the evidence-bound reviewed object and invalidates existing exact-head review/Actions references.
-- **Old-style stacked PRs preserving existing SHA ancestry**: insufficient because the repository's squash merge means lower-layer commit SHAs do not become canonical ancestors; upper layers still need fresh main-based reconstruction and review after each accepted squash.
-- **Merge-base catch-all PR**: rejects because a large `main...head` PR defeats atomic review/rollback and repeats the original scope-expansion failure.
+- **Retarget #2323 to main**: review scope would expand from the audited `9e88a2...`-relative child delta to the full 34-commit product delta.
+- **Direct merge/bypass**: the ruleset has no bypass actor and this would admit unreviewed parent product code.
+- **Blind cherry-pick of old commits**: intermediate commits are superseded, mix records/product, include latent red-CI states, and create duplicate-patch risk after squash merges.
+- **Rebase/force-push existing #2323**: rewrites the evidence-bound reviewed object and invalidates exact-head review/Actions references.
+- **Old-SHA stacked PR chain**: insufficient under `SQUASH`; accepted lower-layer old SHAs do not become canonical ancestors, so upper layers still need fresh main-based reconstruction/review.
+- **Merge-base catch-all PR**: defeats atomic review/rollback and repeats the original scope-expansion failure.
 
 ## Open-source-first basis
 Official sources used:
-- GitHub Docs: changing PR base warns that changing the base can remove commits/comments and changes the comparison object; stacked PR docs require dependency ordering; merge queue docs validate queued changes against latest target branch and required checks.
-- Git `git-cherry-pick`: applies changes introduced by existing commits but creates new commits; conflict/context must be resolved explicitly.
-- Git `git-patch-id`: patch identity is independent of line numbers and is suitable as an aid for detecting equivalent patches after history rewriting; it is not a substitute for semantic review.
-- Git `git-merge-base --is-ancestor` / ancestry-path reasoning: used to prove base/head ancestry and gate against duplicate/reordered application.
-- Gerrit official dependent-changes model: dependencies should be explicit and reviewed independently rather than hidden inside a catch-all change.
+- GitHub Docs: changing a PR base changes the comparison object; stacked PRs require explicit dependency ordering; merge queue validates queued changes against the latest target branch and required checks.
+- Git `git-cherry-pick`: applies changes introduced by commits but creates new commits and may require explicit conflict resolution.
+- Git `git-patch-id`: provides a content-based patch identity useful to detect equivalent patches across history rewriting; it does not replace semantic review.
+- Git `git-merge-base --is-ancestor` and ancestry-path reasoning: prove source ancestry and guard ordering/duplicate application.
+- Gerrit official dependent-changes model: dependencies remain explicit and independently reviewed instead of being hidden in a catch-all change.
 
-No upstream implementation code is copied. Therefore no new third-party runtime/dependency/license/supply-chain surface is introduced by this architecture plan. Any future product task that introduces external code/dependencies must stop for a new supply-chain/license review.
+No upstream implementation code is copied and this architecture introduces no dependency. Any future task that adds external code/dependencies must stop for a separate license/supply-chain review.
 
 ## Recovery layers
-1. `TFI-M6-MAINSAFE-001-RUST-CANONICAL` — bottom-of-stack Rust M6 canonical state machine + contract-test end-state, including only required FMT/MOD/UNREAD/CLIPPY effects that belong to those Rust files.
+1. `TFI-M6-MAINSAFE-001-RUST-CANONICAL` — bottom-of-stack Rust M6 canonical state machine + contract-test end-state, incorporating only the FMT/MOD/UNREAD/CLIPPY effects that belong inside its frozen Rust/test file set.
 2. `TFI-M6-MAINSAFE-002-ELECTRON-PROJECTION` — Electron self-hosted consumer/projection layer, dependent on accepted canonical Rust layer.
 3. `TFI-M6-MAINSAFE-003-P0-CREATE-JOIN` — P0-001 create/join ownership boundary and focused regressions, reconstructed on accepted canonical layers; temporary atomic workflow is excluded.
 
-Each product task: one fresh execution-group chat, then one fresh independent code-review chat; required Actions must be green on exact task head; only then protected merge queue and canonical-main readback. If any task needs a third unplanned production file, new dependency/Cargo/workflow/version change, or exposes a new semantic/security failure, STOP with `SCOPE-EXPANSION-REQUIRED` or `ARCHITECTURE-MERGE-BLOCKED`.
+Each product task: one fresh execution-group chat, then one fresh independent code-review chat; required Actions must be green on the exact task head; only then protected merge queue and exact canonical-main readback. If a task needs any production/test file outside its frozen allowlist, any dependency/Cargo/workflow/version change, or exposes a new semantic/security failure, STOP with `SCOPE-EXPANSION-REQUIRED` or `ARCHITECTURE-MERGE-BLOCKED`.
 
 ## Test-release restart rule
-Test-release may restart only after all three recovery layers have independently passed review, required Actions, protected-main merge queue, and exact canonical-main readback, and after #2323 is either proven patch-equivalent/obsolete or replaced by a main-based residual PR whose diff contains only still-unmerged reviewed semantics. No canonical packaged E2E/test release before that point.
+Test-release may restart only after all three recovery layers have independently passed fresh review, required Actions, protected-main merge queue, and exact canonical-main readback, and after #2323 is proven patch-equivalent/obsolete or replaced by a main-based residual PR whose diff contains only still-unmerged reviewed semantics. No canonical packaged E2E/test release before that point.
