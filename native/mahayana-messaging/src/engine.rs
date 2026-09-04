@@ -1,7 +1,8 @@
 use crate::actor::{Actor, ActorId, ActorKind, Participant, ParticipantRole, Presence};
 use crate::bot::{BotExecution, BotInvocation, BotProfile, BotRegistry};
 use crate::community::{
-    CommunityAuditAction, CommunityAuditEntry, CommunityError, CommunityMember, CommunityState,
+    AdminRights, CommunityAuditAction, CommunityAuditEntry, CommunityError, CommunityMember,
+    CommunityState,
     ForumTopicState, InviteLink, JoinRequest, MemberStatus,
 };
 use crate::conversation::{
@@ -636,7 +637,7 @@ fn require_community_admin(
     }
 }
 
-fn topic_id_from_root(root: &MessageId) -> &str {
+pub(crate) fn topic_id_from_root(root: &MessageId) -> &str {
     root.0.strip_prefix("topic:").unwrap_or(root.0.as_str())
 }
 
@@ -1583,13 +1584,50 @@ impl MessagingEngine {
                     return Err(EngineError::CommunityPermissionDenied);
                 }
                 if let Some(existing) = self.state.communities.get(&community.conversation_id) {
-                    // Followers and the moderation history are server-owned state.
+                    // Membership, moderation, invites, topics and policy are server-owned.
+                    // Only the community metadata above is client-editable through this command.
+                    community.members = existing.members.clone();
+                    community.invite_links = existing.invite_links.clone();
+                    community.pending_join_requests = existing.pending_join_requests.clone();
+                    community.topics = existing.topics.clone();
+                    community.banned_words = existing.banned_words.clone();
                     community.subscribers = existing.subscribers.clone();
                     community.admin_log = existing.admin_log.clone();
                 } else {
-                    // A client cannot seed subscriber/audit state in the first snapshot.
+                    // Only the conversation owner may create the first community state.
+                    // Seed that owner as the sole owner so a non-owner cannot squat the state.
                     community.subscribers.clear();
                     community.admin_log.clear();
+                    community.members.clear();
+                    community.invite_links.clear();
+                    community.pending_join_requests.clear();
+                    community.topics.clear();
+                    community.banned_words.clear();
+                    community.slow_mode_seconds = None;
+                    community.members.insert(
+                        actor_id.clone(),
+                        CommunityMember {
+                            actor_id: actor_id.clone(),
+                            status: MemberStatus::Owner,
+                            admin_title: None,
+                            admin_rights: AdminRights {
+                                change_info: true,
+                                post_messages: true,
+                                edit_messages: true,
+                                delete_messages: true,
+                                ban_members: true,
+                                invite_members: true,
+                                pin_messages: true,
+                                manage_topics: true,
+                                manage_calls: true,
+                                add_admins: true,
+                                remain_anonymous: true,
+                            },
+                            restrictions: Default::default(),
+                            joined_at_ms: conversation.created_at_ms,
+                            invited_by: None,
+                        },
+                    );
                 }
                 Ok(vec![Event::CommunityChanged { community }])
             }
@@ -1608,7 +1646,7 @@ impl MessagingEngine {
                     .communities
                     .get(&conversation_id)
                     .cloned()
-                    .unwrap_or_else(|| CommunityState::new(conversation_id.clone()));
+                    .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
                 let was_subscriber = community.is_subscriber(&actor_id);
                 community.subscribe_channel(actor_id.clone(), subscribed_at_ms)?;
                 if !was_subscriber {

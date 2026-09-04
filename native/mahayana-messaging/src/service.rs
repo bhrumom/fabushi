@@ -6,6 +6,7 @@ use crate::conversation::{
     Conversation, ConversationDraft, ConversationId, ConversationKind, Topic, TopicDraft,
 };
 use crate::engine::{Command, EngineError, Event, MessagingEngine};
+use crate::engine::topic_id_from_root;
 use crate::message::{ClientMessageId, DeliveryState, Message, MessageContent, MessageId};
 use crate::payment::Money;
 use crate::protocol::{
@@ -899,7 +900,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 } => *expires_at_ms > server_time_ms,
                 _ => true,
             })
-            .map(|entry| entry.envelope)
+            .map(|entry| self.public_journal_envelope(&entry.envelope))
             .collect::<Vec<_>>();
         responses.push(self.sync_checkpoint_envelope(slice.checkpoint_cursor, server_time_ms));
         Ok(responses)
@@ -994,6 +995,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
                         created_by: topic.creator_id.clone(),
                         closed: topic.closed,
                         hidden: topic.hidden,
+                        unread_count: 0,
                     })
                     .collect();
             } else {
@@ -1071,15 +1073,20 @@ impl<S: MessagingStateStore> MessagingService<S> {
         server_time_ms: i64,
     ) -> CommunityState {
         let mut projected = community.clone();
-        let is_admin = community.members.get(actor_id).is_some_and(|member| {
-            matches!(
-                member.status,
-                MemberStatus::Owner | MemberStatus::Administrator
-            )
+        let member = community.members.get(actor_id);
+        let is_admin = member.is_some_and(|member| {
+            matches!(member.status, MemberStatus::Owner | MemberStatus::Administrator)
+        });
+        let can_invite = member.is_some_and(|member| {
+            matches!(member.status, MemberStatus::Owner)
+                || (matches!(member.status, MemberStatus::Administrator)
+                    && member.admin_rights.invite_members)
         });
         if !is_admin {
             projected.pending_join_requests.clear();
             projected.admin_log.clear();
+        }
+        if !can_invite {
             for invite in projected.invite_links.values_mut() {
                 // Invite tokens are bearer credentials and must never be included in a
                 // regular member/subscriber sync payload.
@@ -1951,6 +1958,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
             // tokens and private moderation history out of the replayable copy; the direct
             // response and actor-scoped snapshot remain available to authorized admins.
             community.admin_log.clear();
+            community.pending_join_requests.clear();
             for invite in community.invite_links.values_mut() {
                 invite.token.clear();
             }
