@@ -9,7 +9,9 @@
 - Reviewed head: `arch/p0-recovery-20260904@a5ce2e522cf124910c6627c72a646513b90960fa`
 - Review time: `2026-09-04 +08:00`
 - Write-back branch: `review/pr-2320-r2-20260904-a5ce2e5`
-- Write-back PR: `pending creation from this review branch`
+- Write-back PR: `#2321`
+- Initial evidence commit: `2fb3d8600dfaf905257e3aa4c0b5caef14ca0921`
+- Review PR creation head: `90ced0c111435a3fb4661d533a82beab30c44816`
 - Local build/test: **not run** (prohibited for this governance review)
 
 ## Independent review basis
