@@ -152,6 +152,28 @@ type PeerItem = {
   miniAppCalls?: MiniAppBotCallPrograms;
 };
 
+type GeneratedMiniAppPreview = {
+  id: string;
+  title: string;
+  html: string;
+  complete: boolean;
+};
+
+function generatedMiniAppPreview(text: string, stableId: string): GeneratedMiniAppPreview | null {
+  const fence = text.match(/```(?:html)?\s*\n([\s\S]*)/i);
+  const raw = fence?.[1] ?? text;
+  const start = raw.search(/<!doctype\s+html|<html\b/i);
+  if (start < 0) return null;
+  const candidate = raw.slice(start);
+  if (!/<body\b/i.test(candidate) || candidate.length < 160) return null;
+  const close = candidate.search(/<\/html>/i);
+  const html = close >= 0 ? candidate.slice(0, close + candidate.slice(close).match(/^<\/html>/i)![0].length) : candidate;
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = (titleMatch?.[1] ?? 'AI 生成小程序').replace(/<[^>]+>/g, '').trim().slice(0, 80) || 'AI 生成小程序';
+  const suffix = String(stableId || Date.now()).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 44) || 'preview';
+  return { id: `generated-${suffix}`.slice(0, 64), title, html, complete: close >= 0 };
+}
+
 type DisplayMessage = {
   id: string;
   source: PeerSource;
@@ -2710,14 +2732,30 @@ async function saveInvoiceDialog() {
       if (release.releaseManifest?.protocol !== 'mahayana.external-release.v1') {
         throw new Error('Mini App release is missing a verified external release manifest');
       }
-      await transport.pluginInstall(release.releaseManifest, 'desktop');
+      const pointer = await transport.pluginInstall(release.releaseManifest, 'desktop');
+      setInstalledMiniApps((current) => ({ ...current, [app.pluginId]: pointer }));
+      setMiniAppIdentityCatalog((current) => {
+        const next = new Map(current.map((entry) => [entry.pluginId, entry]));
+        const existing = next.get(app.pluginId);
+        next.set(app.pluginId, existing ? { ...existing, ...app } : app);
+        return [...next.values()];
+      });
       try {
         await invokeNativeDesktop('addMiniAppToAccount', { pluginId: app.pluginId });
       } catch (cause) {
         await transport.pluginUninstall(app.pluginId).catch(() => undefined);
+        setInstalledMiniApps((current) => {
+          const next = { ...current };
+          delete next[app.pluginId];
+          return next;
+        });
         throw cause;
       }
-      await refreshMiniApps(miniAppQuery);
+      const active = await transport.pluginActive(app.pluginId);
+      if (!active) throw new Error('Mini App 安装完成后没有生成本地激活指针。');
+      setInstalledMiniApps((current) => ({ ...current, [app.pluginId]: active }));
+      setAccountBots(await readAccountBots().catch(() => []));
+      await refreshMiniApps(miniAppQuery, false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -3007,10 +3045,14 @@ async function saveInvoiceDialog() {
                   <div><strong>{message.actionTitle}</strong>{message.actionDetail ? <span>{message.actionDetail}</span> : null}</div>
                   <small>{message.actionStatus === 'running' ? '进行中' : message.actionStatus === 'failed' ? '失败' : '完成'}</small>
                 </article>
-              ) : (
-                <article
+              ) : (() => {
+                const generatedPreview = message.role === 'peer'
+                  ? generatedMiniAppPreview(message.text, message.operationId ?? message.id)
+                  : null;
+                return <article
                   key={`${message.source}:${message.id}`}
                   className={message.role === 'me' ? styles.messageMine : styles.messagePeer}
+                  data-operation-id={message.operationId ?? undefined}
                   onContextMenu={(event) => {
                     if (message.kind === 'action' || message.kind === 'thinking') return;
                     event.preventDefault();
@@ -3022,11 +3064,15 @@ async function saveInvoiceDialog() {
                   {message.mediaType === 'photo' && blobMediaUrl(message.media) ? <img className={extra.messageMedia} src={blobMediaUrl(message.media)} alt={message.media?.fileName ?? '图片'} /> : null}
                   {message.mediaType === 'video' && blobMediaUrl(message.media) ? <video className={extra.messageMedia} controls playsInline autoPlay={desktopPreferences.autoPlayMedia} src={blobMediaUrl(message.media)} /> : null}
                   {message.mediaType === 'document' && blobMediaUrl(message.media) ? <a className={extra.messageFile} href={blobMediaUrl(message.media)} download={message.media?.fileName}><FileText size={17} />{message.media?.fileName ?? '文件'}</a> : null}
-                  <p>{message.text}</p>
+                  {generatedPreview ? <div className={extra.generatedMiniAppCard} data-testid="generated-miniapp-card">
+                    <AppWindow size={22} />
+                    <div><strong>{generatedPreview.title}</strong><span>{generatedPreview.complete ? '小程序已生成，可以直接打开试玩。' : '正在生成可运行的小程序…'}</span></div>
+                    {generatedPreview.complete ? <button type="button" data-testid="generated-miniapp-open" onClick={() => void showMiniAppDocument(generatedPreview.id, generatedPreview.title, generatedPreview.html)}>打开小程序</button> : null}
+                  </div> : <p>{message.text}</p>}
                   {message.reactions?.length ? <div className={extra.reactions}>{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div> : null}
                   <small>{formatTime(message.createdAtMs)} {message.role === 'me' ? <Check size={12} /> : null}</small>
-                </article>
-              ))}
+                </article>;
+              })())}
               {!matchingMessages.length ? <div className={styles.chatEmpty} data-testid="message-search-empty"><BotMark botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`} state={isAgentPeer(activePeer) ? botMarkStateForPeer(activePeer, selfBotExecutions, false, hostReady) : 'idle'} size={78} className={styles.agentAvatarMark} label={activePeer.title} /><strong>{activePeer.title}</strong><p>联系人、AI Bot、群组和频道使用同一个 Fabushi 消息产品层。</p></div> : null}
             </div>
             {replyTo ? <div className={extra.composerBanner}><Reply size={15} /><div><strong>回复</strong><span>{replyTo.text}</span></div><button type="button" onClick={() => setReplyTo(null)}><X size={14} /></button></div> : null}
@@ -3055,7 +3101,10 @@ async function saveInvoiceDialog() {
             </form>
           </>
         ) : (
-          <FeatureWorkspace section={section} onOpenMiniApp={openMiniApp} onInstallMiniApp={installMiniApp} onUninstallMiniApp={uninstallMiniApp} miniApps={marketplaceApps} installedMiniApps={installedMiniApps} miniAppQuery={miniAppQuery} onMiniAppQuery={setMiniAppQuery} miniAppLoading={miniAppLoading} miniAppBusy={miniAppBusy} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} settings={{ category: settingsCategory, onCategory: setSettingsCategory, preferences: desktopPreferences, onPreference: updateDesktopPreference, actor: currentActor, actorId: selfHosted.actorId, hostSettings, onHostSetting: updateHostSetting, onConfigureProviderSecret: configureProviderSecret, onRemoveProviderSecret: removeProviderSecret, routerStatus, usageSummary, onInstallUpdate: installDesktopUpdate, onLogout }} />
+          <>
+            {error ? <div className={styles.errorBanner} role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}><X size={14} /></button></div> : null}
+            <FeatureWorkspace section={section} onOpenMiniApp={openMiniApp} onInstallMiniApp={installMiniApp} onUninstallMiniApp={uninstallMiniApp} miniApps={marketplaceApps} installedMiniApps={installedMiniApps} miniAppQuery={miniAppQuery} onMiniAppQuery={setMiniAppQuery} miniAppLoading={miniAppLoading} miniAppBusy={miniAppBusy} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} settings={{ category: settingsCategory, onCategory: setSettingsCategory, preferences: desktopPreferences, onPreference: updateDesktopPreference, actor: currentActor, actorId: selfHosted.actorId, hostSettings, onHostSetting: updateHostSetting, onConfigureProviderSecret: configureProviderSecret, onRemoveProviderSecret: removeProviderSecret, routerStatus, usageSummary, onInstallUpdate: installDesktopUpdate, onLogout }} />
+          </>
         )}
       </section>
 
