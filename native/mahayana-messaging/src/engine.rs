@@ -760,6 +760,17 @@ impl MessagingEngine {
                 if !conversation.id.is_valid() || conversation.title.trim().is_empty() {
                     return Err(EngineError::InvalidConversation);
                 }
+                if let Some(existing) = self.state.conversations.get(&conversation.id) {
+                    if matches!(
+                        existing.kind,
+                        ConversationKind::Group | ConversationKind::Channel
+                    ) && (conversation.owner_id != existing.owner_id
+                        || conversation.participants != existing.participants
+                        || conversation.topics != existing.topics)
+                    {
+                        return Err(EngineError::InvalidConversationParticipant);
+                    }
+                }
                 for participant in &conversation.participants {
                     self.require_actor(&participant.actor_id)?;
                 }
@@ -800,10 +811,49 @@ impl MessagingEngine {
                 {
                     return Err(EngineError::InvalidConversationParticipant);
                 }
-                Ok(vec![Event::ConversationParticipantUpserted {
-                    conversation_id,
-                    participant,
-                }])
+                if matches!(conversation.kind, ConversationKind::Group | ConversationKind::Channel)
+                {
+                    let mut community = self
+                        .state
+                        .communities
+                        .get(&conversation_id)
+                        .cloned()
+                        .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
+                    let status = match participant.role {
+                        ParticipantRole::Owner => MemberStatus::Owner,
+                        ParticipantRole::Admin => MemberStatus::Administrator,
+                        ParticipantRole::Member => MemberStatus::Member,
+                        ParticipantRole::Restricted => MemberStatus::Restricted,
+                    };
+                    let mut member = community
+                        .members
+                        .get(&participant.actor_id)
+                        .cloned()
+                        .unwrap_or_else(|| CommunityMember {
+                            actor_id: participant.actor_id.clone(),
+                            status: MemberStatus::Member,
+                            admin_title: None,
+                            admin_rights: AdminRights::default(),
+                            restrictions: Default::default(),
+                            joined_at_ms: participant.joined_at_ms,
+                            invited_by: None,
+                        });
+                    member.status = status;
+                    member.joined_at_ms = participant.joined_at_ms;
+                    community.members.insert(participant.actor_id.clone(), member);
+                    Ok(vec![
+                        Event::CommunityChanged { community },
+                        Event::ConversationParticipantUpserted {
+                            conversation_id,
+                            participant,
+                        },
+                    ])
+                } else {
+                    Ok(vec![Event::ConversationParticipantUpserted {
+                        conversation_id,
+                        participant,
+                    }])
+                }
             }
             Command::RemoveConversationParticipant {
                 conversation_id,
@@ -813,10 +863,31 @@ impl MessagingEngine {
                 if conversation.owner_id.as_ref() == Some(&actor_id) {
                     return Err(EngineError::InvalidConversationParticipant);
                 }
-                Ok(vec![Event::ConversationParticipantRemoved {
-                    conversation_id,
-                    actor_id,
-                }])
+                if matches!(conversation.kind, ConversationKind::Group | ConversationKind::Channel)
+                {
+                    let mut community = self
+                        .state
+                        .communities
+                        .get(&conversation_id)
+                        .cloned()
+                        .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
+                    if let Some(member) = community.members.get_mut(&actor_id) {
+                        member.status = MemberStatus::Left;
+                    }
+                    community.subscribers.remove(&actor_id);
+                    Ok(vec![
+                        Event::CommunityChanged { community },
+                        Event::ConversationParticipantRemoved {
+                            conversation_id,
+                            actor_id,
+                        },
+                    ])
+                } else {
+                    Ok(vec![Event::ConversationParticipantRemoved {
+                        conversation_id,
+                        actor_id,
+                    }])
+                }
             }
             Command::ArchiveConversation {
                 conversation_id,
@@ -1840,7 +1911,9 @@ impl MessagingEngine {
                     .state
                     .conversations
                     .get(&conversation_id)
-                    .is_some_and(|conversation| matches!(conversation.kind, ConversationKind::Group))
+                    .is_some_and(|conversation| {
+                        matches!(conversation.kind, ConversationKind::Group | ConversationKind::Channel)
+                    })
                     .then(|| {
                         community
                             .members
@@ -1926,7 +1999,9 @@ impl MessagingEngine {
                     .state
                     .conversations
                     .get(&conversation_id)
-                    .is_some_and(|conversation| matches!(conversation.kind, ConversationKind::Group))
+                    .is_some_and(|conversation| {
+                        matches!(conversation.kind, ConversationKind::Group | ConversationKind::Channel)
+                    })
                     .then(|| {
                         community
                             .members
@@ -2108,7 +2183,9 @@ impl MessagingEngine {
                         .state
                         .conversations
                         .get(&conversation_id)
-                        .is_some_and(|conversation| matches!(conversation.kind, ConversationKind::Group))
+                        .is_some_and(|conversation| {
+                            matches!(conversation.kind, ConversationKind::Group | ConversationKind::Channel)
+                        })
                     .then(|| {
                         community
                             .members
