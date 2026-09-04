@@ -33,3 +33,24 @@
 ## 建议阅读顺序
 
 `00 项目章程` → `01 范围` → `02 PRD` → `03 系统架构` → `04 领域模型与协议` → `13 测试策略` → `15 路线图` → `19 完成定义` → `management/01-WBS原子任务.md`。
+
+## 2026-09-04 P0 recovery architecture
+
+架构恢复工作使用 Program ID `FAB-ARCH-P0-20260904`。它不创建新项目，继续复用 `FAB-P0001/TFI`，并与 `FAB-P0005/MSR`（唯一 Mahayana Runtime/session）和 `FAB-P0004/GBF`（Bot 行为、同账号设备能力）互相约束。
+
+先读：
+- `source/2026-09-04-p0-recovery-architecture.md`
+- `docs/2026-09-04-p0-requirements.md`
+- `docs/2026-09-04-p0-architecture.md`
+- `docs/2026-09-04-p0-testing.md`
+- `docs/2026-09-04-p0-release.md`
+- `docs/2026-09-04-p0-security.md`
+- `management/09-2026-09-04-P0-WBS.md`
+- `management/10-2026-09-04-P0-里程碑.md`
+- `management/11-2026-09-04-P0-验收追踪.md`
+- `management/12-2026-09-04-P0-风险与依赖.md`
+- `management/13-2026-09-04-P0-变更日志.md`
+- `decisions/ADR-0014-mahayana-bot-miniapp-cross-project-contract.md`
+- `evidence/FAB-ARCH-P0-20260904/README.md`
+
+`codex/tfi-m6-repair@9e88a2e9c030fe05147460dfa580366cf9aa433d` 是本轮审计输入，不是已验收状态；其 M6 P0.1 仍按严格审查结果视为拒绝，直到新任务逐项通过代码审查、Actions 和 canonical-main packaged evidence。
