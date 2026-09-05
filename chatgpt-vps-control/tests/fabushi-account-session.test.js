@@ -52,8 +52,8 @@ test("Fabushi CI account session logs in, stores credentials privately, and refr
   }
 });
 
-test("Fabushi account store accepts a short-lived GitHub-linked Runner session without refresh", async () => {
-  const root = await mkdtemp(join(tmpdir(), "fabushi-github-runner-session-"));
+test("Fabushi account store accepts a short-lived GitHub Actions macOS App session without refresh", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fabushi-github-actions-session-"));
   const sessionPath = join(root, "session.json");
   let timestamp = 1_000_000;
   let networkCalls = 0;
@@ -63,7 +63,7 @@ test("Fabushi account store accepts a short-lived GitHub-linked Runner session w
     now: () => timestamp,
     fetchImpl: async () => {
       networkCalls += 1;
-      throw new Error("short-lived Runner session must not refresh");
+      throw new Error("short-lived GitHub Actions session must not refresh");
     },
   });
   try {
@@ -72,7 +72,7 @@ test("Fabushi account store accepts a short-lived GitHub-linked Runner session w
       tokenType: "Bearer",
       accessTokenExpiresAt: Math.floor(timestamp / 1000) + 14_400,
       sessionId: "ci-runner:12345:2",
-      deviceId: "gha-12345-2-interactive",
+      deviceId: "gha-12345-2-macos-app",
       username: "linked-user",
       userId: "42",
       user: { id: "42", username: "linked-user" },
@@ -80,6 +80,7 @@ test("Fabushi account store accepts a short-lived GitHub-linked Runner session w
       ciRunner: true,
     });
     assert.equal(saved.ciRunner, true);
+    assert.equal(saved.deviceId, "gha-12345-2-macos-app");
     assert.equal("refreshToken" in saved, false);
     assert.equal((await stat(sessionPath)).mode & 0o777, 0o600);
     assert.equal(await store.accessToken(), "c".repeat(64));
@@ -92,8 +93,8 @@ test("Fabushi account store accepts a short-lived GitHub-linked Runner session w
   }
 });
 
-test("Fabushi account store rejects a malformed Runner identity or refresh credential", async () => {
-  const root = await mkdtemp(join(tmpdir(), "fabushi-github-runner-deny-"));
+test("Fabushi account store rejects a malformed bounded GitHub Actions identity or refresh credential", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fabushi-github-actions-deny-"));
   const store = createFabushiAccountSessionStore({
     sessionPath: join(root, "session.json"),
     baseUrl: "https://api.example.test",
