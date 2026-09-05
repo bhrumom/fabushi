@@ -9,6 +9,8 @@ import Foundation
 @MainActor
 final class FabushiAppAgentSurface {
     static let version = 1
+    static let maximumElementCount = 500
+    static let truncationAgentId = "fabushi.surface.truncated"
     static let toolNames = [
         "fabushi.app.status",
         "fabushi.app.snapshot",
@@ -113,7 +115,7 @@ final class FabushiAppAgentSurface {
         guard !screen.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               screen.count <= 160
         else { throw SurfaceError.invalidScreen }
-        guard elements.count <= 500 else { throw SurfaceError.elementLimit }
+
         var identifiers = Set<String>()
         for element in elements {
             guard Self.validAgentId(element.agentId),
@@ -123,10 +125,34 @@ final class FabushiAppAgentSurface {
             guard identifiers.insert(element.agentId).inserted else { throw SurfaceError.duplicateAgentId }
         }
         guard actions.keys.allSatisfy(identifiers.contains) else { throw SurfaceError.actionTargetMissing }
+
+        let retainedElements: [Element]
+        if elements.count > Self.maximumElementCount {
+            let retainedCallerCount = Self.maximumElementCount - 1
+            var bounded = Array(elements.prefix(retainedCallerCount))
+            let retainedIds = Set(bounded.map(\.agentId))
+            if retainedIds.contains(Self.truncationAgentId) {
+                bounded = Array(elements.prefix(Self.maximumElementCount))
+            } else {
+                bounded.append(.init(
+                    agentId: Self.truncationAgentId,
+                    role: "status",
+                    name: "Additional semantic elements omitted; refine the current view or navigate deeper.",
+                    visible: true,
+                    enabled: false
+                ))
+            }
+            retainedElements = bounded
+        } else {
+            retainedElements = elements
+        }
+        let retainedIds = Set(retainedElements.map(\.agentId))
+        let retainedActions = actions.filter { retainedIds.contains($0.key) }
+
         generation = generation == UInt64.max ? 1 : generation + 1
         self.screen = screen
-        self.elements = elements
-        self.actions = actions
+        self.elements = retainedElements
+        self.actions = retainedActions
         return snapshot()
     }
 
