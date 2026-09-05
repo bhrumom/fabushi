@@ -9,6 +9,12 @@ test("iOS interactive workflow installs a logged-in app that owns device registr
   const workflow = await read(".github/workflows/ios-interactive-app-e2e.yml");
   for (const required of [
     "branches: [main]",
+    "Initialize runner-owned paths after runner allocation",
+    "FABUSHI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/fabushi-account/session.json",
+    "FABUSHI_CI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/fabushi-ci-app/session.json",
+    "DERIVED_DATA=$RUNNER_TEMP/fabushi-ios-derived",
+    "EVIDENCE_DIR=$GITHUB_WORKSPACE/ios-interactive-evidence",
+    '>> "$GITHUB_ENV"',
     "secrets.FABUSHI_CI_TEST_USERNAME",
     "secrets.FABUSHI_CI_TEST_PASSWORD",
     "login-ci-test-account.mjs",
@@ -29,6 +35,7 @@ test("iOS interactive workflow installs a logged-in app that owns device registr
     "fabushi.app.assert",
   ]) assert.ok(workflow.includes(required), `missing iOS interactive invariant: ${required}`);
 
+  assert.doesNotMatch(workflow, /\$\{\{\s*runner\.temp\s*\}\}/u);
   assert.doesNotMatch(workflow, /fabushi-device-agent\.js/u);
   assert.doesNotMatch(workflow, /DEVICE_GATEWAY_TOKEN/u);
   assert.doesNotMatch(workflow, /FABUSHI_ACCOUNT_ACCESS_TOKEN/u);
