@@ -5,8 +5,10 @@
 - **Task ID:** `TFI-MACOS-INTERACTIVE-001`
 - **Scope:** cross-stage macOS desktop acceptance for current declared M3–M12 capabilities
 - **Status:** `TESTING`
-- **Canonical baseline:** `main@143c5cf10aed9e6d60810ec6c886acd2c20fa609`
-- **Latest macOS test release at task start:** `v1.2.23` -> `16b56277e2116b73f98f0406a323919de6d7728a`
+- **Current verified canonical source before this defect branch:** `main@50818ecdc6c222f2e0d0de6000b580d714888413`
+- **Latest published macOS test package actually tested:** `v1.2.25` -> `55fee5ce3d6f4de8bffd882dbd83498af75dfbaf`
+- **Current independent blocker:** stable App MCP action rejected by page-global generation churn (`219 -> expected 251`) in App-owned run `33973614630`.
+- **Atomic repair branch:** `fix/tfi-macos-stable-agent-rebase-20260905`, staging comparable macOS test version `1.2.26`.
 
 ## Product truth
 
@@ -50,6 +52,9 @@ No account session, refresh token, access token, password or secure-input envelo
 
 The platform-enablement change is one PR. Thereafter each real product defect found by the live macOS journey receives one issue/record and one independent defect PR. Keep PR checks narrow. Heavy package creation and complete journeys run only in GitHub Actions. Merge through protected main only, publish a version-comparable newer macOS test release, then test that newest published package again with `@fabushi test`. Do not close the task until the full journey and evidence gate are green on the newest published macOS test version.
 
+For the current Attempt 9 defect, exact generation rejection remains authoritative in the base DOM surface. A stale action may be rebound in the desktop private bridge only when it is backed by a prior snapshot lease, addresses one unique stable `agentId`, remains on the same route/screen, has an identical action-relevant target fingerprint, and completes within a bounded retry count. Positional refs and any semantic target change remain fail-closed.
+
 ## Evidence ledger
 
-See `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/README.md`.
+- Historical Attempts 1–6: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/README.md`.
+- Live Attempts 7–9 and the v1.2.25 blocker boundary: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-attempts-7-9.md`.
