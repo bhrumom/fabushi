@@ -5,10 +5,11 @@
 - **Task ID:** `TFI-MACOS-INTERACTIVE-001`
 - **Scope:** cross-stage macOS desktop acceptance for current declared M3–M12 capabilities
 - **Status:** `TESTING`
-- **Current verified canonical source before this defect branch:** `main@50818ecdc6c222f2e0d0de6000b580d714888413`
-- **Latest published macOS test package actually tested:** `v1.2.25` -> `55fee5ce3d6f4de8bffd882dbd83498af75dfbaf`
-- **Current independent blocker:** stable App MCP action rejected by page-global generation churn (`219 -> expected 251`) in App-owned run `33973614630`.
-- **Atomic repair branch:** `fix/tfi-macos-stable-agent-rebase-20260905`, staging comparable macOS test version `1.2.26`.
+- **Current canonical macOS product repair:** `main@9dae2ea92ad055b4f5af2dfd4b99e872d200c840` from PR `#2378`.
+- **Latest published macOS test package actually accepted for interactive testing:** `v1.2.25` -> `55fee5ce3d6f4de8bffd882dbd83498af75dfbaf` (Attempt 9 FAIL on stale global generation).
+- **v1.2.26 disposition:** not acceptable for release testing. Its push-triggered release run `33974806955` started from `main@9dae2ea9…` before the newly exposed release-source governance defect was closed; regardless of packaging outcome, it must not enter the App-owned acceptance chain.
+- **Current independent blocker:** macOS test-release workflow lacked the repository's canonical protected-main release-source gate; GBF rollback drill `33974694259` failed at the immutable/canonical gate contract after #2378.
+- **Atomic governance repair:** PR `#2380`, branch `fix/tfi-macos-release-gate-1-2-27-20260905`, staging the next acceptable comparable macOS test version `1.2.27` while leaving Android/iOS build counters unchanged.
 
 ## Product truth
 
@@ -50,11 +51,14 @@ No account session, refresh token, access token, password or secure-input envelo
 
 ## Defect / merge / release loop
 
-The platform-enablement change is one PR. Thereafter each real product defect found by the live macOS journey receives one issue/record and one independent defect PR. Keep PR checks narrow. Heavy package creation and complete journeys run only in GitHub Actions. Merge through protected main only, publish a version-comparable newer macOS test release, then test that newest published package again with `@fabushi test`. Do not close the task until the full journey and evidence gate are green on the newest published macOS test version.
+The platform-enablement change is one PR. Thereafter each real product or release-governance defect found by the live loop receives one issue/record and one independent defect PR. Keep PR checks narrow. Heavy package creation and complete journeys run only in GitHub Actions. Merge through protected main only, publish a version-comparable newer macOS test release, then test that newest published package again with `@fabushi test`. Do not close the task until the full journey and evidence gate are green on the newest published macOS test version.
 
-For the current Attempt 9 defect, exact generation rejection remains authoritative in the base DOM surface. A stale action may be rebound in the desktop private bridge only when it is backed by a prior snapshot lease, addresses one unique stable `agentId`, remains on the same route/screen, has an identical action-relevant target fingerprint, and completes within a bounded retry count. Positional refs and any semantic target change remain fail-closed.
+For Attempt 9, exact generation rejection remains authoritative in the base DOM surface. A stale action may be rebound in the desktop private bridge only when it is backed by a prior snapshot lease, addresses one unique stable `agentId`, remains on the same route/screen, has an identical action-relevant target fingerprint, and completes within a bounded retry count. Positional refs and any semantic target change remain fail-closed.
+
+For the current release-governance defect, the macOS test workflow must bind the exact current protected-main SHA and invoke `.github/scripts/require-release-source-gates.sh` with `RELEASE_TARGET=macos` and `RELEASE_TIER=test` before dependencies/build/signing. Existing-release publication remains fail-closed. The GBF rollback drill verifies that per-tier central contract plus immutable release semantics; it must not require unrelated formal mobile gate names to be duplicated inside a macOS-only test workflow.
 
 ## Evidence ledger
 
 - Historical Attempts 1–6: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/README.md`.
 - Live Attempts 7–9 and the v1.2.25 blocker boundary: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-attempts-7-9.md`.
+- Release-governance defect / v1.2.26 exclusion / 1.2.27 gate: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-release-gate-1.2.27.md`.
