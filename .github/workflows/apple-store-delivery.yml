@@ -31,6 +31,10 @@ on:
         options:
           - test
           - formal
+  push:
+    branches: [main]
+    paths:
+      - 'projects/fabushi-cicd-merge-governance/evidence/2026-09-05-ios-test-release-trigger.md'
   workflow_run:
     workflows:
       - Native mobile quality gate
@@ -88,7 +92,7 @@ jobs:
         if: steps.select.outputs.should_release == 'true'
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 1
 
       - id: release
@@ -99,7 +103,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ inputs.app_version }}
           INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
-          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_TARGET: ${{ github.event_name == 'push' && 'ios' || inputs.target }}
         run: |
           set -euo pipefail
           source_sha="$(git rev-parse HEAD)"
@@ -163,7 +167,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
           RELEASE_TARGET: ${{ steps.release.outputs.release_target }}
-          RELEASE_TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tier || 'formal' }}
+          RELEASE_TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tier || github.event_name == 'push' && 'test' || 'formal' }}
         run: bash .github/scripts/require-release-source-gates.sh
 
   macos-electron:
