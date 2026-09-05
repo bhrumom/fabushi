@@ -30,6 +30,10 @@ const QUERY_SELECTOR = [
   "[role]",
   "[contenteditable='true']",
 ].join(",");
+const TEXT_ACTION_TAGS = new Set(["button", "input", "textarea", "select", "a", "summary"]);
+const TEXT_ACTION_ROLES = new Set([
+  "button", "checkbox", "combobox", "link", "menuitem", "option", "radio", "slider", "switch", "tab", "textbox",
+]);
 
 type ElementState = {
   ref: string;
@@ -188,6 +192,40 @@ function stableAgentId(element: Element): string {
   return id ? `id:${id}` : "";
 }
 
+function textMutationTarget(node: Node): Element | null {
+  let element = node instanceof Element ? node : node.parentElement;
+  while (element) {
+    const tag = element.tagName.toLowerCase();
+    const role = lower(element.getAttribute("role"));
+    if (
+      TEXT_ACTION_TAGS.has(tag)
+      || TEXT_ACTION_ROLES.has(role)
+      || element.getAttribute("contenteditable") === "true"
+      || cleanText(element.getAttribute("data-agent-id"), 200)
+    ) {
+      return element;
+    }
+    element = element.parentElement;
+  }
+  return null;
+}
+
+function changedNodeContainsSemanticElement(node: Node): boolean {
+  if (!(node instanceof Element)) return false;
+  return node.matches(QUERY_SELECTOR) || Boolean(node.querySelector(QUERY_SELECTOR));
+}
+
+function mutationChangesActionSurface(mutation: MutationRecord): boolean {
+  if (mutation.type === "attributes") return true;
+  if (mutation.type === "characterData") return textMutationTarget(mutation.target) != null;
+  if (mutation.type === "childList") {
+    const changedNodes = [...mutation.addedNodes, ...mutation.removedNodes];
+    if (changedNodes.some(changedNodeContainsSemanticElement)) return true;
+    return textMutationTarget(mutation.target) != null;
+  }
+  return true;
+}
+
 function sensitiveElement(element: Element, agentId: string, name: string): boolean {
   const attributes = [
     agentId,
@@ -271,15 +309,18 @@ class DomAppSurface implements AppSurface {
   ) {
     this.appId = appId;
     this.lastRoute = routeValue();
-    this.observer = new MutationObserver(() => this.queueGeneration());
+    this.observer = new MutationObserver((mutations) => {
+      if (mutations.some(mutationChangesActionSurface)) this.queueGeneration();
+    });
     this.observer.observe(document.documentElement, {
       subtree: true,
       childList: true,
       attributes: true,
       characterData: true,
       attributeFilter: [
-        "aria-disabled", "aria-expanded", "aria-hidden", "aria-selected", "aria-checked",
-        "class", "data-agent-id", "data-agent-screen", "data-testid", "disabled", "hidden", "open", "role", "value",
+        "alt", "aria-checked", "aria-description", "aria-disabled", "aria-expanded", "aria-hidden", "aria-label",
+        "aria-labelledby", "aria-selected", "contenteditable", "data-agent-id", "data-agent-screen", "data-testid",
+        "disabled", "hidden", "href", "id", "name", "open", "placeholder", "role", "selected", "title", "type", "value",
       ],
     });
     this.onRouteEvent = () => this.bumpGeneration();
