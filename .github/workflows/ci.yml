@@ -386,6 +386,59 @@ jobs:
           fi
           echo "Canonical workflows contain no retired Flutter/Tauri/Capacitor build commands."
 
+  canonical-version-contract:
+    name: Canonical version contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout canonical version-contract inputs
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/scripts/assert-native-electron-canonical.sh
+            /.github/scripts/macos-codesign-wrapper/codesign
+            /.github/scripts/build-offline-asr-engine.mjs
+            /.github/workflows/electron-desktop.yml
+            /.github/workflows/native-mobile.yml
+            /.github/workflows/native-electron-release.yml
+            /.github/workflows/google-play-delivery.yml
+            /app-version.json
+            /desktop/package.json
+            /desktop/package-lock.json
+            /desktop/electron/main.cjs
+            /mobile/package.json
+            /mobile/package-lock.json
+            /mobile/android/settings.gradle
+            /mobile/android/app/build.gradle
+            /mobile/android/app/src/main/java/com/ombhrum/fabushi/MainActivity.kt
+            /mobile/ios/project.yml
+            /mobile/ios/Fabushi/FabushiApp.swift
+            /third_party/mahayana/mahayana-rs/mahayana-app-host/Cargo.toml
+            /third_party/mahayana/mahayana-rs/mahayana-app-host-desktop/Cargo.toml
+            /third_party/mahayana/mahayana-rs/mahayana-app-host-mobile/Cargo.toml
+      - name: Assert canonical version-contract checkout identity
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual_head="$(git rev-parse HEAD)"
+          printf 'canonical-version-contract event=%s expected_head=%s actual_head=%s\n' "$GITHUB_EVENT_NAME" "$EXPECTED_HEAD_SHA" "$actual_head"
+          if [ -z "$EXPECTED_HEAD_SHA" ]; then
+            echo "Expected checkout SHA is empty." >&2
+            exit 1
+          fi
+          if [ "$actual_head" != "$EXPECTED_HEAD_SHA" ]; then
+            echo "Canonical version-contract checkout mismatch: expected $EXPECTED_HEAD_SHA, got $actual_head" >&2
+            exit 1
+          fi
+      - name: Execute canonical native/Electron version contract
+        shell: bash
+        run: bash .github/scripts/assert-native-electron-canonical.sh
+
   electron-feature-host-contract:
     name: Electron Feature Host contract
     needs: changes
@@ -489,6 +542,7 @@ jobs:
       - worker
       - mcp-contracts
       - workflow-guardrails
+      - canonical-version-contract
       - electron-feature-host-contract
     if: always()
     steps:
@@ -496,6 +550,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          version_contract_result="${{ needs.canonical-version-contract.result }}"
+          if [ "$version_contract_result" != "success" ]; then
+            echo "Canonical version contract failed: $version_contract_result"
+            exit 1
+          fi
           for pair in \
             "Classifier:${{ needs.changes.result }}" \
             "Frontend:${{ needs.frontend.result }}" \
