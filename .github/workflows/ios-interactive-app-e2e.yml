@@ -207,6 +207,21 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - id: install
+        name: Install exact Simulator test build before protected account login
+        shell: bash
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+          APP_PATH: ${{ steps.build.outputs.app_path }}
+        run: |
+          set -euo pipefail
+          xcrun simctl install "$UDID" "$APP_PATH"
+          app_container="$(xcrun simctl get_app_container "$UDID" com.ombhrum.fabushi data)"
+          test -d "$app_container"
+          echo "app_container=$app_container" >> "$GITHUB_OUTPUT"
+          xcrun simctl spawn "$UDID" defaults write com.ombhrum.fabushi fabushi.mobile.onboarding-complete.v1 -bool YES
+          xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/001-app-installed.png"
+
       - name: Login protected Fabushi test account and export bounded app session
         shell: bash
         env:
@@ -221,30 +236,26 @@ jobs:
           node chatgpt-vps-control/scripts/login-ci-test-account.mjs
           node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
           chmod 600 "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
-          echo 'Protected test account authenticated; only the bounded refresh-token-free app session will be injected into the Simulator app.'
+          echo 'Protected test account authenticated after exact app installation; only the bounded refresh-token-free app session will be injected into the Simulator app.'
 
       - id: launch
-        name: Install exact test build and let the app own device registration
+        name: Launch authenticated exact test build and let the app own device registration
         shell: bash
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
-          APP_PATH: ${{ steps.build.outputs.app_path }}
+          APP_CONTAINER: ${{ steps.install.outputs.app_container }}
         run: |
           set -euo pipefail
-          xcrun simctl install "$UDID" "$APP_PATH"
-          app_container="$(xcrun simctl get_app_container "$UDID" com.ombhrum.fabushi data)"
-          test -d "$app_container"
-          app_session="$app_container/Documents/fabushi-ci-session.json"
+          test -d "$APP_CONTAINER"
+          app_session="$APP_CONTAINER/Documents/fabushi-ci-session.json"
           cp "$FABUSHI_CI_ACCOUNT_SESSION_FILE" "$app_session"
           chmod 600 "$app_session"
-          xcrun simctl spawn "$UDID" defaults write com.ombhrum.fabushi fabushi.mobile.onboarding-complete.v1 -bool YES
-          xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/001-app-installed.png"
 
-          trace="$app_container/Library/Application Support/com.ombhrum.fabushi/device-gateway-trace.jsonl"
+          trace="$APP_CONTAINER/Library/Application Support/com.ombhrum.fabushi/device-gateway-trace.jsonl"
           mkdir -p "$(dirname "$trace")"
           : > "$trace"
           chmod 600 "$trace"
-          echo "app_container=$app_container" >> "$GITHUB_OUTPUT"
+          echo "app_container=$APP_CONTAINER" >> "$GITHUB_OUTPUT"
           echo "trace_path=$trace" >> "$GITHUB_OUTPUT"
 
           export SIMCTL_CHILD_GITHUB_ACTIONS=true
@@ -270,7 +281,7 @@ jobs:
           while [ "$SECONDS" -lt "$deadline" ]; do
             if grep -q '"phase":"registered"' "$trace" 2>/dev/null; then
               xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/002-app-registered.png"
-              echo 'The installed iOS app registered its own account-scoped device gateway.'
+              echo 'The installed and authenticated iOS app registered its own account-scoped device gateway.'
               exit 0
             fi
             sleep 2
@@ -370,7 +381,8 @@ jobs:
             echo "- Run: \`$GITHUB_RUN_ID\` attempt \`$GITHUB_RUN_ATTEMPT\`"
             echo "- Device: \`$DEVICE_ID\`"
             echo "- External semantic control: \`$status\`"
-            echo '- Test build was uploaded before interaction and the exact same `.app` was installed.'
+            echo '- Full-session recording starts immediately after Simulator boot and covers build/test, app installation, protected test-account authentication, app-owned registration, and external semantic control.'
+            echo '- Test build was uploaded before interaction and the exact same `.app` was installed before protected test-account authentication.'
             echo '- Login used the protected test account; only a bounded refresh-token-free application session was injected.'
             echo '- Device registration was owned by the installed iOS application; no runner-side Fabushi device agent was started.'
           } > "$EVIDENCE_DIR/README.md"
