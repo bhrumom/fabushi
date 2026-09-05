@@ -382,16 +382,25 @@ test("paired clients require a possession-bound token before a control session c
 
 test("the exact-main platform deployment is recoverable and smokes remote-control fail-closed behavior", () => {
   const release = source(".github/workflows/native-electron-release.yml");
-  for (const gate of [
-    "Computer control security result",
-    "Canonical architecture guardrails",
-    "Resolve Worker source and deployment impact",
-  ]) assert.ok(release.includes(gate), `unified release is missing ${gate}`);
-  assert.match(release, /git merge-base --is-ancestor/);
-  assert.match(release, /test "\$RELEASE_TAG" = "v\$version"/);
-  assert.match(release, /release-assets\/fabushi-release-manifest\.json/);
-  assert.match(release, /Conflicting public release asset name/);
-  assert.match(release, /find release-assets -maxdepth 1 -type f/);
+  const releaseGate = source(".github/scripts/require-release-source-gates.sh");
+  for (const marker of [
+    "bash .github/scripts/require-release-source-gates.sh",
+    "export RELEASE_TARGET=macos",
+    "export RELEASE_TIER=test",
+    "already exists; refusing to mutate an existing release",
+    'gh release create "$RELEASE_TAG"',
+    '--target "$HEAD_SHA"',
+    "SHA256SUMS.txt",
+  ]) assert.ok(release.includes(marker), `macOS test release is missing ${marker}`);
+  assert.match(release, /test "\$\(git rev-parse HEAD\)" = "\$\(git rev-parse refs\/remotes\/origin\/main\)"/);
+  for (const marker of [
+    "compare/main...$SOURCE_SHA",
+    "ahead_by",
+    "Required release gate '$required'",
+    "'CI result'",
+    "'Electron desktop result'",
+    "'Native mobile result'",
+  ]) assert.ok(releaseGate.includes(marker), `canonical release-source gate is missing ${marker}`);
 
   const security = source(".github/workflows/computer-control-security.yml");
   assert.match(security, /name: Computer control security result/);
