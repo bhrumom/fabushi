@@ -1,0 +1,27 @@
+name: TFI dispatch Electron gate for PR 2371
+
+on:
+  push:
+    branches:
+      - ops/tfi-dispatch-electron-gate-2371
+    paths:
+      - '.github/workflows/tfi-dispatch-electron-gate-2371.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Dispatch existing manual Electron gate on exact release head
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            repos/${GITHUB_REPOSITORY}/actions/workflows/electron-desktop.yml/dispatches \
+            -f ref='release/tfi-macos-test-1.2.24'
