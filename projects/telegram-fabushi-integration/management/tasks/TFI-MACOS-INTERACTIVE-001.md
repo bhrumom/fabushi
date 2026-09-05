@@ -5,21 +5,20 @@
 - **Task ID:** `TFI-MACOS-INTERACTIVE-001`
 - **Scope:** cross-stage macOS desktop acceptance for current declared M3–M12 capabilities
 - **Status:** `TESTING`
-- **Current canonical macOS product repair:** `main@9dae2ea92ad055b4f5af2dfd4b99e872d200c840` from PR `#2378`.
-- **Latest published macOS test package actually accepted for interactive testing:** `v1.2.25` -> `55fee5ce3d6f4de8bffd882dbd83498af75dfbaf` (Attempt 9 FAIL on stale global generation).
-- **v1.2.26 disposition:** not acceptable for release testing. Its push-triggered release run `33974806955` started from `main@9dae2ea9…` before the newly exposed release-source governance defect was closed; regardless of packaging outcome, it must not enter the App-owned acceptance chain.
-- **Current independent blocker:** macOS test-release workflow lacked the repository's canonical protected-main release-source gate; GBF rollback drill `33974694259` failed at the immutable/canonical gate contract after #2378.
-- **Atomic governance repair:** PR `#2380`, branch `fix/tfi-macos-release-gate-1-2-27-20260905`, staging the next acceptable comparable macOS test version `1.2.27` while leaving Android/iOS build counters unchanged.
+- **Latest governed macOS test release actually tested:** `v1.2.27` -> `ecebd0373c158c6eb8ee225ac184cc3ca2e9e6dc`.
+- **Attempt 10:** run `33975902199`, App-owned device `gha-33975902199-1-macos-app`; stable App-target rebase passed, then native Computer Use failed because the direct App-owned MCP lost the package-derived `Fabushi Computer Control.app` helper environment.
+- **Current blocker:** `computer_elements` resolved `/Users/runner/Applications/Fabushi Computer Control.app` instead of the signed helper embedded under the installed Fabushi package.
+- **Atomic repair branch:** `fix/tfi-macos-app-owned-native-helper-env-20260905`, staging comparable macOS test version `1.2.28`; Android/iOS build counters remain unchanged.
 
 ## Product truth
 
 The macOS GitHub Actions machine is only the host environment. The installed Fabushi Test macOS application must be launched and logged into the protected CI test account; only then may the application-owned remote-device supervisor obtain `feature.auth.deviceAgentSession` and register that application with the account-scoped device gateway. `@fabushi test` discovers and controls that newly registered application. KRIS, a pre-online Runner, `interactive-runner`, and a runner-started standalone device agent are forbidden as the device source.
 
-This task is intentionally not assigned to M11: canonical M11 is the iOS/Android mobile shared-Core milestone, while this macOS journey validates the desktop product surface across multiple existing milestones.
+`v1.2.26` remains excluded from acceptance because its release run started before the canonical protected-main source gate was restored. `v1.2.27` is the first governed release after that repair and is valid evidence for Attempt 10.
 
-## Required first journey
+## Required journey
 
-Start recording before package installation, install the newest published macOS test package, log the protected test account into the app through the existing bounded CI session mechanism, wait for App-owned device registration, then control that exact App through `@fabushi test` and cover the current declared macOS capabilities without deleting real assertions merely to obtain green CI:
+Start recording before package installation, install the newest published governed macOS test package, log the protected test account into the app through the bounded CI session mechanism, wait for App-owned device registration, then control that exact App through `@fabushi test` and cover without weakened assertions:
 
 - startup / login / main workspace;
 - conversation list and search;
@@ -34,31 +33,29 @@ Start recording before package installation, install the newest published macOS 
 - updater and logout;
 - any additional capability present in the current macOS product surface.
 
+Stable agent IDs may use the bounded target-level rebase landed by #2378. Positional generation refs remain exact and fail closed. Non-stable UI navigation may use native accessibility only through the same App-owned registered device.
+
 ## Evidence contract
 
-Every attempt, PASS or FAIL, preserves with `if: always()`:
+Every attempt, PASS or FAIL, preserves with `if: always()` whole-session video beginning before install, per-remote-call/final screenshots, redacted device-call trace, packaged Playwright report/trace/video/results, App and unified logs, exact release metadata/digests, machine report/README, workflow run/job/source SHA/device id. No account session, refresh/access token, password, or secure-input envelope may be uploaded.
 
-- whole-session macOS video beginning before install;
-- per-remote-call screenshots and final screenshot;
-- redacted device-call trace;
-- Playwright HTML report, trace, video and test results for the packaged App Agent Surface as secondary evidence;
-- App stdout/stderr and macOS unified logs;
-- release metadata (tag, title, target SHA, release/asset URL, asset digest, installed bundle version/build, package hash);
-- machine-readable report and human README;
-- exact workflow run/job, source SHA, UTC timestamp and device id.
+## Current atomic repair contract
 
-No account session, refresh token, access token, password or secure-input envelope may be uploaded.
+The signed v1.2.27 package already passed packaged Computer Control verification, so the helper content is present. The remaining defect is the App-owned direct-MCP environment boundary. The supervisor may propagate only package-derived runtime values selected by `embeddedComputerControlEnvironment()`:
+
+- `MAHAYANA_COMPUTER_MCP_HOME` -> `CHATGPT_COMPUTER_HOME`;
+- `MAHAYANA_COMPUTER_MCP_NATIVE_HELPER` -> `CHATGPT_COMPUTER_NATIVE_HELPER`;
+- `MAHAYANA_COMPUTER_MCP_MAC_APP_DIR` -> `CHATGPT_COMPUTER_MAC_APP_DIR`.
+
+Those package-derived values must override inherited shell values. This does not change account/session parsing, gateway ownership, device identity, Computer Use policy, or stale-ref safety. A narrow GitHub test must construct a packaged runtime and prove the spawned App-owned device agent/direct MCP receives only the signed bundle helper path. Heavy build/package/journey validation remains post-main in GitHub Actions.
 
 ## Defect / merge / release loop
 
-The platform-enablement change is one PR. Thereafter each real product or release-governance defect found by the live loop receives one issue/record and one independent defect PR. Keep PR checks narrow. Heavy package creation and complete journeys run only in GitHub Actions. Merge through protected main only, publish a version-comparable newer macOS test release, then test that newest published package again with `@fabushi test`. Do not close the task until the full journey and evidence gate are green on the newest published macOS test version.
-
-For Attempt 9, exact generation rejection remains authoritative in the base DOM surface. A stale action may be rebound in the desktop private bridge only when it is backed by a prior snapshot lease, addresses one unique stable `agentId`, remains on the same route/screen, has an identical action-relevant target fingerprint, and completes within a bounded retry count. Positional refs and any semantic target change remain fail-closed.
-
-For the current release-governance defect, the macOS test workflow must bind the exact current protected-main SHA and invoke `.github/scripts/require-release-source-gates.sh` with `RELEASE_TARGET=macos` and `RELEASE_TIER=test` before dependencies/build/signing. Existing-release publication remains fail-closed. The GBF rollback drill verifies that per-tier central contract plus immutable release semantics; it must not require unrelated formal mobile gate names to be duplicated inside a macOS-only test workflow.
+Each independent product or release-governance failure gets one defect PR, protected-main merge, strictly newer comparable governed macOS test version, then full retest of that newest package. Do not close this task until the full journey and evidence gate are green.
 
 ## Evidence ledger
 
-- Historical Attempts 1–6: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/README.md`.
-- Live Attempts 7–9 and the v1.2.25 blocker boundary: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-attempts-7-9.md`.
-- Release-governance defect / v1.2.26 exclusion / 1.2.27 gate: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-release-gate-1.2.27.md`.
+- Attempts 1–6: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/README.md`.
+- Attempts 7–9: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-attempts-7-9.md`.
+- v1.2.26 exclusion / v1.2.27 release gate: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-release-gate-1.2.27.md`.
+- Attempt 10 / v1.2.27 native helper blocker: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-attempt-10-native-helper.md`.
