@@ -1,0 +1,501 @@
+name: macOS interactive app device E2E
+
+on:
+  push:
+    branches:
+      - main
+      - feat/tfi-macos-app-interactive-e2e-20260905
+    paths:
+      - '.github/workflows/macos-interactive-app-e2e.yml'
+      - 'desktop/electron/main.cjs'
+      - 'desktop/electron/remote-device-agent-supervisor.cjs'
+      - 'desktop/electron/app-agent-surface-server.cjs'
+      - 'desktop/e2e/app-agent-surface.spec.ts'
+      - 'chatgpt-vps-control/lib/**'
+      - 'chatgpt-vps-control/bin/**'
+      - 'chatgpt-vps-control/scripts/**'
+      - 'chatgpt-vps-control/tests/macos-interactive-app-e2e-contract.test.js'
+  release:
+    types: [prereleased]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: macos-interactive-app-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos-interactive:
+    name: Install latest release, login, register, and expose macOS App
+    runs-on: macos-15
+    timeout-minutes: 55
+    env:
+      DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-macos-app
+      DEVICE_NAME: Fabushi Test macOS ${{ github.run_id }}/${{ github.run_attempt }}
+      FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+      MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+
+    steps:
+      - name: Checkout exact workflow source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize isolated paths and source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          session_dir="$RUNNER_TEMP/fabushi-macos-interactive"
+          account_dir="$RUNNER_TEMP/fabushi-account"
+          app_session_dir="$RUNNER_TEMP/fabushi-ci-app"
+          app_data="$RUNNER_TEMP/fabushi-macos-app-data"
+          evidence="$GITHUB_WORKSPACE/macos-interactive-evidence"
+          mkdir -p "$session_dir" "$account_dir" "$app_session_dir" "$app_data" "$evidence/steps" "$evidence/release"
+          chmod 700 "$session_dir" "$account_dir" "$app_session_dir" "$app_data"
+          {
+            echo "FABUSHI_CI_SESSION_DIR=$session_dir"
+            echo "FABUSHI_ACCOUNT_SESSION_FILE=$account_dir/session.json"
+            echo "FABUSHI_CI_ACCOUNT_SESSION_FILE=$app_session_dir/session.json"
+            echo "FABUSHI_COMPUTER_POLICY_FILE=$session_dir/computer-policy.json"
+            echo "FABUSHI_DEVICE_CALL_TRACE_FILE=$session_dir/device-calls.jsonl"
+            echo "FABUSHI_APP_AGENT_DISCOVERY_FILE=$session_dir/app-agent-bridge.json"
+            echo "FABUSHI_APP_DATA=$app_data"
+            echo "EVIDENCE_DIR=$evidence"
+          } >> "$GITHUB_ENV"
+          cat > "$session_dir/computer-policy.json" <<'JSON'
+          {"localExecution":true,"aiComputerControlEnabled":true,"localToolPermission":"always","remoteControlEnabled":true}
+          JSON
+          chmod 600 "$session_dir/computer-policy.json"
+          {
+            echo "workflow_source_sha=$GITHUB_SHA"
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "run_attempt=$GITHUB_RUN_ATTEMPT"
+            echo "job=$GITHUB_JOB"
+            echo "device_id=$DEVICE_ID"
+            echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "runner_os=$RUNNER_OS"
+            echo "runner_arch=$RUNNER_ARCH"
+          } > "$evidence/source.env"
+          jq -n \
+            --arg phase recording-start \
+            --arg message 'Starting whole-session recording before resolving or installing the macOS test release.' \
+            --arg deviceId "$DEVICE_ID" \
+            --arg runUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{phase:$phase,message:$message,appReady:false,appExecutable:"",deviceId:$deviceId,runUrl:$runUrl,updatedAt:(now|todateiso8601)}' \
+            > "$session_dir/status.json"
+
+      - name: Start whole-session macOS recording
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$EVIDENCE_DIR/macos-session.mov"
+          /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/000-recording-start.png"
+          RUNNER_TRACKING_ID= nohup /usr/sbin/screencapture -v -V 3300 -D 1 "$EVIDENCE_DIR/macos-session.mov" \
+            > "$EVIDENCE_DIR/screencapture.log" 2>&1 &
+          recorder_pid=$!
+          echo "$recorder_pid" > "$EVIDENCE_DIR/screencapture.pid"
+          sleep 3
+          kill -0 "$recorder_pid"
+          echo 'Whole-session recorder is live before release resolution or installation.'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            chatgpt-vps-control/package-lock.json
+            desktop/package-lock.json
+
+      - name: Install protected account helper dependencies
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+
+      - name: Run narrow macOS workflow ownership contract
+        run: node --test chatgpt-vps-control/tests/macos-interactive-app-e2e-contract.test.js
+
+      - id: release
+        name: Resolve newest published macOS test release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$EVIDENCE_DIR/release/releases.json"
+          jq '[
+            .[]
+            | select(.draft == false and .prerelease == true)
+            | select(any(.assets[]?; (.name // "") | test("^fabushi-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$")))
+          ] | sort_by(.published_at // .created_at) | last' \
+            "$EVIDENCE_DIR/release/releases.json" > "$EVIDENCE_DIR/release/release.json"
+          jq -e 'type == "object" and (.tag_name | type == "string")' "$EVIDENCE_DIR/release/release.json" >/dev/null
+          jq '[.assets[] | select((.name // "") | test("^fabushi-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$"))] | first' \
+            "$EVIDENCE_DIR/release/release.json" > "$EVIDENCE_DIR/release/asset.json"
+          jq -e 'type == "object" and (.browser_download_url | type == "string")' "$EVIDENCE_DIR/release/asset.json" >/dev/null
+          tag="$(jq -r .tag_name "$EVIDENCE_DIR/release/release.json")"
+          target="$(jq -r .target_commitish "$EVIDENCE_DIR/release/release.json")"
+          asset_name="$(jq -r .name "$EVIDENCE_DIR/release/asset.json")"
+          release_id="$(jq -r .id "$EVIDENCE_DIR/release/release.json")"
+          asset_id="$(jq -r .id "$EVIDENCE_DIR/release/asset.json")"
+          published_at="$(jq -r .published_at "$EVIDENCE_DIR/release/release.json")"
+          resolved_target="$(gh api "repos/$GITHUB_REPOSITORY/commits/$target" --jq .sha)"
+          printf '%s\n' "$resolved_target" > "$EVIDENCE_DIR/release/target-sha.txt"
+          {
+            echo "tag=$tag"
+            echo "target_sha=$resolved_target"
+            echo "asset_name=$asset_name"
+            echo "release_id=$release_id"
+            echo "asset_id=$asset_id"
+            echo "published_at=$published_at"
+          } >> "$GITHUB_OUTPUT"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$asset_name" --dir "$EVIDENCE_DIR/release"
+          archive="$EVIDENCE_DIR/release/$asset_name"
+          test -s "$archive"
+          actual_sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
+          declared_digest="$(jq -r '.digest // ""' "$EVIDENCE_DIR/release/asset.json")"
+          if [[ "$declared_digest" == sha256:* ]]; then
+            test "$actual_sha" = "${declared_digest#sha256:}"
+          fi
+          printf '%s  %s\n' "$actual_sha" "$asset_name" > "$EVIDENCE_DIR/release/SHA256SUMS.txt"
+          /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/001-release-downloaded.png"
+
+      - id: install
+        name: Install exact published macOS test app
+        shell: bash
+        env:
+          ASSET_NAME: ${{ steps.release.outputs.asset_name }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/fabushi-release-stage"
+          rm -rf "$stage"
+          mkdir -p "$stage"
+          ditto -x -k "$EVIDENCE_DIR/release/$ASSET_NAME" "$stage"
+          /usr/bin/find "$stage" -print > "$EVIDENCE_DIR/release/archive-layout.txt"
+          shopt -s nullglob
+          top_level_apps=("$stage"/*.app)
+          printf '%s\n' "${top_level_apps[@]}" > "$EVIDENCE_DIR/release/app-candidates.txt"
+          test "${#top_level_apps[@]}" -eq 1
+          source_app="${top_level_apps[0]}"
+          test -d "$source_app"
+          sudo rm -rf /Applications/Fabushi.app
+          sudo ditto "$source_app" /Applications/Fabushi.app
+          app=/Applications/Fabushi.app
+          executable="$app/Contents/MacOS/fabushi"
+          test -d "$app"
+          test -x "$executable"
+          file "$executable" | tee "$EVIDENCE_DIR/release/executable-file.txt"
+          grep -qi arm64 "$EVIDENCE_DIR/release/executable-file.txt"
+          codesign --verify --deep --strict --verbose=2 "$app" 2> "$EVIDENCE_DIR/release/codesign-verify.log"
+          spctl --assess --type execute --verbose=2 "$app" 2> "$EVIDENCE_DIR/release/gatekeeper-assess.log"
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+          build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")"
+          expected="${RELEASE_TAG#v}"
+          test "$bundle_id" = 'com.ombhrum.fabushi'
+          test "$version" = "$expected"
+          jq -n \
+            --arg installPath "$app" \
+            --arg sourceBundle "$source_app" \
+            --arg executable "$executable" \
+            --arg bundleId "$bundle_id" \
+            --arg version "$version" \
+            --arg build "$build" \
+            --arg releaseTag "$RELEASE_TAG" \
+            '{installPath:$installPath,sourceBundle:$sourceBundle,executable:$executable,bundleId:$bundleId,version:$version,build:$build,releaseTag:$releaseTag}' \
+            > "$EVIDENCE_DIR/release/installed-bundle.json"
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "executable=$executable" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/002-app-installed.png"
+
+      - name: Login protected Fabushi test account and export bounded app session
+        shell: bash
+        env:
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$FABUSHI_CI_TEST_USERNAME"
+          test -n "$FABUSHI_CI_TEST_PASSWORD"
+          node chatgpt-vps-control/scripts/login-ci-test-account.mjs
+          node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
+          chmod 600 "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
+          jq -e '.refreshToken | not' "$FABUSHI_CI_ACCOUNT_SESSION_FILE" >/dev/null
+          echo 'Protected test account authenticated; the installed App receives only the bounded refresh-token-free GitHub Actions session.'
+
+      - id: launch
+        name: Launch installed Fabushi app and wait for App-owned registration
+        shell: bash
+        env:
+          APP_EXECUTABLE: ${{ steps.install.outputs.executable }}
+        run: |
+          set -euo pipefail
+          : > "$FABUSHI_DEVICE_CALL_TRACE_FILE"
+          chmod 600 "$FABUSHI_DEVICE_CALL_TRACE_FILE"
+          jq -n \
+            --arg phase app-launching \
+            --arg message 'Launching the installed macOS Fabushi App; only the App may register the account-scoped device.' \
+            --arg appExecutable "$APP_EXECUTABLE" \
+            --arg deviceId "$DEVICE_ID" \
+            --arg runUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{phase:$phase,message:$message,appReady:false,appExecutable:$appExecutable,deviceId:$deviceId,runUrl:$runUrl,updatedAt:(now|todateiso8601)}' \
+            > "$FABUSHI_CI_SESSION_DIR/status.json"
+          RUNNER_TRACKING_ID= nohup "$APP_EXECUTABLE" > "$EVIDENCE_DIR/fabushi-app.log" 2>&1 &
+          app_pid=$!
+          echo "$app_pid" > "$EVIDENCE_DIR/fabushi-app.pid"
+          sleep 2
+          osascript -e 'tell application "Fabushi" to activate' >/dev/null 2>&1 || true
+          /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/003-app-launched.png"
+          registered=false
+          for attempt in $(seq 1 120); do
+            kill -0 "$app_pid"
+            if grep -q 'controllable device online' "$EVIDENCE_DIR/fabushi-app.log" 2>/dev/null; then
+              registered=true
+              break
+            fi
+            sleep 1
+          done
+          test "$registered" = true || {
+            echo 'Installed macOS App did not register its own Fabushi device within 120 seconds.' >&2
+            tail -n 200 "$EVIDENCE_DIR/fabushi-app.log" >&2 || true
+            exit 1
+          }
+          test -f "$FABUSHI_APP_AGENT_DISCOVERY_FILE"
+          /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/004-app-registered.png"
+          jq -n \
+            --arg phase app-ready \
+            --arg message 'Installed macOS Fabushi App is logged in, registered its own device, and is ready for @fabushi test.' \
+            --arg appExecutable "$APP_EXECUTABLE" \
+            --arg deviceId "$DEVICE_ID" \
+            --arg runUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{phase:$phase,message:$message,appReady:true,appExecutable:$appExecutable,deviceId:$deviceId,runUrl:$runUrl,updatedAt:(now|todateiso8601)}' \
+            > "$FABUSHI_CI_SESSION_DIR/status.json"
+          echo "app_pid=$app_pid" >> "$GITHUB_OUTPUT"
+          {
+            echo '## macOS Fabushi App ready for live plugin control'
+            echo
+            echo "- Application device ID: \`$DEVICE_ID\`"
+            echo "- Release: \`${{ steps.release.outputs.tag }}\` -> \`${{ steps.release.outputs.target_sha }}\`"
+            echo "- Installed bundle: \`${{ steps.install.outputs.version }}\` build \`${{ steps.install.outputs.build }}\`"
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo '- The installed App owns device registration. No standalone Runner/KRIS/interactive-runner device agent is started.'
+            echo '- Use `@fabushi test` list_devices, call all six `fabushi.app.*` semantic tools, execute the complete current macOS journey, and call `ci_session_status`.'
+            echo '- After every category passes except logout, write `ci_session_note` beginning `TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=startup,login,main,conversations,search,send,receive,reply,edit,delete,forward,draft,pin,mute,unread,contacts,groups,bot,agent,miniapp,webmcp,media,file,notifications,sync,settings,update` and make the final App action invoke `settings-logout`.'
+            echo '- On any failure, write a `TFI_MACOS_FULL_JOURNEY FAIL ...` note and call `ci_session_finish`; never delete an assertion to force green.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - id: control
+        name: Hold for @fabushi test complete macOS journey
+        if: steps.launch.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          finish_file="$FABUSHI_CI_SESSION_DIR/finish-requested.json"
+          notes_file="$FABUSHI_CI_SESSION_DIR/remote-notes.jsonl"
+          app_pid="${{ steps.launch.outputs.app_pid }}"
+          last=0
+          deadline=$((SECONDS + 1500))
+          echo waiting-for-fabushi-test > "$EVIDENCE_DIR/remote-control-status.txt"
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            kill -0 "$app_pid" || {
+              echo app-exited > "$EVIDENCE_DIR/remote-control-status.txt"
+              exit 1
+            }
+            completed="$(jq -c 'select(.phase == "completed" and .ok == true)' "$FABUSHI_DEVICE_CALL_TRACE_FILE" 2>/dev/null || true)"
+            total="$(printf '%s\n' "$completed" | sed '/^$/d' | wc -l | tr -d ' ')"
+            while [ "$last" -lt "$total" ]; do
+              last=$((last + 1))
+              line="$(printf '%s\n' "$completed" | sed -n "${last}p")"
+              tool="$(printf '%s' "$line" | jq -r '.toolName // "device-call"' 2>/dev/null || echo device-call)"
+              safe_tool="$(printf '%s' "$tool" | tr -cs 'A-Za-z0-9._-' '-')"
+              /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/$(printf '%03d' $((last + 4)))-${safe_tool}.png" || true
+            done
+            ready_note=false
+            if grep -q 'TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=' "$notes_file" 2>/dev/null; then
+              ready_note=true
+            fi
+            logout_complete=false
+            if jq -e 'select(.phase == "completed" and .ok == true and .toolName == "fabushi.app.action" and .arguments.agentId == "settings-logout" and .arguments.action == "invoke")' \
+              "$FABUSHI_DEVICE_CALL_TRACE_FILE" >/dev/null 2>&1; then
+              logout_complete=true
+            fi
+            if [ "$ready_note" = true ] && [ "$logout_complete" = true ]; then
+              echo passed > "$EVIDENCE_DIR/remote-control-status.txt"
+              /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/998-full-journey-logout.png" || true
+              exit 0
+            fi
+            if test -f "$finish_file"; then
+              echo failed > "$EVIDENCE_DIR/remote-control-status.txt"
+              echo 'Remote finish arrived before the required READY_FOR_LOGOUT PASS note plus completed settings-logout App action.' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          echo timeout > "$EVIDENCE_DIR/remote-control-status.txt"
+          echo 'Timed out waiting for @fabushi test complete macOS journey.' >&2
+          exit 1
+
+      - name: Stop live application before secondary Playwright evidence
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if test -f "$EVIDENCE_DIR/fabushi-app.pid"; then
+            kill -TERM "$(cat "$EVIDENCE_DIR/fabushi-app.pid")" 2>/dev/null || true
+            sleep 3
+          fi
+
+      - name: Install existing Electron test dependencies
+        if: always()
+        working-directory: desktop
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - id: playwright
+        name: Run packaged App Agent Surface Playwright evidence
+        if: always()
+        continue-on-error: true
+        working-directory: desktop
+        shell: bash
+        env:
+          FABUSHI_ELECTRON_EXECUTABLE: /Applications/Fabushi.app/Contents/MacOS/fabushi
+          FABUSHI_FEATURE_HOST_MODE: test
+        run: |
+          set -euo pipefail
+          env -u FABUSHI_CI_ACCOUNT_SESSION_FILE \
+              -u FABUSHI_ACCOUNT_SESSION_FILE \
+              -u FABUSHI_CI_SESSION_DIR \
+              -u FABUSHI_DEVICE_CALL_TRACE_FILE \
+              -u FABUSHI_APP_AGENT_DISCOVERY_FILE \
+              -u FABUSHI_APP_DATA \
+              -u DEVICE_ID \
+              -u DEVICE_NAME \
+              -u GITHUB_ACTIONS \
+              npx playwright test e2e/app-agent-surface.spec.ts
+
+      - name: Collect macOS App, device-call, Playwright, and release evidence
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_TARGET_SHA: ${{ steps.release.outputs.target_sha }}
+          RELEASE_ASSET_ID: ${{ steps.release.outputs.asset_id }}
+          INSTALLED_VERSION: ${{ steps.install.outputs.version }}
+          INSTALLED_BUILD: ${{ steps.install.outputs.build }}
+          PLAYWRIGHT_OUTCOME: ${{ steps.playwright.outcome }}
+        run: |
+          set +e
+          /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/999-final.png" || true
+          if test -f "$EVIDENCE_DIR/screencapture.pid"; then
+            recorder_pid="$(cat "$EVIDENCE_DIR/screencapture.pid")"
+            kill -INT "$recorder_pid" 2>/dev/null || true
+            for attempt in $(seq 1 20); do
+              kill -0 "$recorder_pid" 2>/dev/null || break
+              sleep 1
+            done
+            kill -TERM "$recorder_pid" 2>/dev/null || true
+          fi
+          log show --style compact --last 60m --predicate 'process == "fabushi" OR process == "Fabushi"' \
+            > "$EVIDENCE_DIR/fabushi-system.log" 2>&1 || true
+          cp "$FABUSHI_DEVICE_CALL_TRACE_FILE" "$EVIDENCE_DIR/device-calls.jsonl" 2>/dev/null || : > "$EVIDENCE_DIR/device-calls.jsonl"
+          cp "$FABUSHI_CI_SESSION_DIR/remote-notes.jsonl" "$EVIDENCE_DIR/remote-notes.jsonl" 2>/dev/null || : > "$EVIDENCE_DIR/remote-notes.jsonl"
+          cp "$FABUSHI_CI_SESSION_DIR/finish-requested.json" "$EVIDENCE_DIR/finish-requested.json" 2>/dev/null || true
+          cp "$FABUSHI_CI_SESSION_DIR/status.json" "$EVIDENCE_DIR/final-ci-session-status.json" 2>/dev/null || true
+          node chatgpt-vps-control/scripts/compile-ci-device-trace.mjs \
+            "$FABUSHI_DEVICE_CALL_TRACE_FILE" "$EVIDENCE_DIR/generated-regression.json" || true
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            > "$EVIDENCE_DIR/workflow-jobs.json" 2>/dev/null || true
+          control_status="$(cat "$EVIDENCE_DIR/remote-control-status.txt" 2>/dev/null || echo not-run)"
+          completed_tools="$(jq -r 'select(.phase == "completed" and .ok == true) | (.toolName // empty)' "$EVIDENCE_DIR/device-calls.jsonl" 2>/dev/null | sort -u | jq -R -s 'split("\n") | map(select(length > 0))')"
+          [ -n "$completed_tools" ] || completed_tools='[]'
+          journey_note="$(jq -r 'select(.note | contains("TFI_MACOS_FULL_JOURNEY")) | .note' "$EVIDENCE_DIR/remote-notes.jsonl" 2>/dev/null | tail -n 1)"
+          jq -n \
+            --arg schema fabushi.macos.interactive-evidence.v1 \
+            --arg workflowSourceSha "$GITHUB_SHA" \
+            --arg releaseTag "${RELEASE_TAG:-unknown}" \
+            --arg releaseTargetSha "${RELEASE_TARGET_SHA:-unknown}" \
+            --arg releaseAssetId "${RELEASE_ASSET_ID:-unknown}" \
+            --arg installedVersion "${INSTALLED_VERSION:-unknown}" \
+            --arg installedBuild "${INSTALLED_BUILD:-unknown}" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg job "$GITHUB_JOB" \
+            --arg runUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg deviceId "$DEVICE_ID" \
+            --arg controlStatus "$control_status" \
+            --arg playwrightOutcome "${PLAYWRIGHT_OUTCOME:-unknown}" \
+            --arg journeyNote "$journey_note" \
+            --arg completedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson completedTools "$completed_tools" \
+            '{schema:$schema,workflowSourceSha:$workflowSourceSha,releaseTag:$releaseTag,releaseTargetSha:$releaseTargetSha,releaseAssetId:$releaseAssetId,installedVersion:$installedVersion,installedBuild:$installedBuild,runId:$runId,runAttempt:$runAttempt,job:$job,runUrl:$runUrl,deviceId:$deviceId,controlStatus:$controlStatus,playwrightOutcome:$playwrightOutcome,journeyNote:$journeyNote,completedTools:$completedTools,completedAt:$completedAt}' \
+            > "$EVIDENCE_DIR/report.json"
+          {
+            echo '# Fabushi macOS interactive evidence'
+            echo
+            echo "- Workflow source SHA: \`$GITHUB_SHA\`"
+            echo "- Release: \`${RELEASE_TAG:-unknown}\` -> \`${RELEASE_TARGET_SHA:-unknown}\`"
+            echo "- Installed version/build: \`${INSTALLED_VERSION:-unknown}\` / \`${INSTALLED_BUILD:-unknown}\`"
+            echo "- Run: \`$GITHUB_RUN_ID\` attempt \`$GITHUB_RUN_ATTEMPT\` / job \`$GITHUB_JOB\`"
+            echo "- Device: \`$DEVICE_ID\`"
+            echo "- @fabushi test journey: \`$control_status\`"
+            echo "- Playwright packaged App Surface: \`${PLAYWRIGHT_OUTCOME:-unknown}\`"
+            echo "- Journey note: ${journey_note:-missing}"
+            echo '- Release upload alone is not treated as pass evidence.'
+            echo '- Device registration is valid only when owned by the installed macOS App after protected-account login.'
+          } > "$EVIDENCE_DIR/README.md"
+          /usr/bin/find "$EVIDENCE_DIR" -type f -print | sort > "$EVIDENCE_DIR/evidence-files.txt"
+
+      - name: Upload complete macOS interactive evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-macos-interactive-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            macos-interactive-evidence/
+            desktop/playwright-report/
+            desktop/test-results/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Remove private account material and temporary app data
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if test -f "$EVIDENCE_DIR/fabushi-app.pid"; then kill -TERM "$(cat "$EVIDENCE_DIR/fabushi-app.pid")" 2>/dev/null || true; fi
+          rm -rf "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE" "$FABUSHI_APP_DATA"
+          rm -f "$FABUSHI_CI_SESSION_DIR/account-access-token" 2>/dev/null || true
+
+      - name: Enforce truthful macOS external journey and evidence gate
+        if: always()
+        shell: bash
+        env:
+          CONTROL_OUTCOME: ${{ steps.control.outcome }}
+          PLAYWRIGHT_OUTCOME: ${{ steps.playwright.outcome }}
+        run: |
+          set -euo pipefail
+          test "$CONTROL_OUTCOME" = success
+          test "$(cat "$EVIDENCE_DIR/remote-control-status.txt")" = passed
+          note="$(jq -r 'select(.note | startswith("TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=")) | .note' "$EVIDENCE_DIR/remote-notes.jsonl" | tail -n 1)"
+          test -n "$note"
+          for category in startup login main conversations search send receive reply edit delete forward draft pin mute unread contacts groups bot agent miniapp webmcp media file notifications sync settings update; do
+            printf '%s' "$note" | grep -Eq "(^|,|=)${category}(,|$| )"
+          done
+          test "$PLAYWRIGHT_OUTCOME" = success
+          test -s "$EVIDENCE_DIR/macos-session.mov"
+          test "$(stat -f %z "$EVIDENCE_DIR/macos-session.mov")" -gt 100000
+          test -s "$EVIDENCE_DIR/device-calls.jsonl"
+          for tool in fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert ci_session_status ci_session_note; do
+            jq -e --arg tool "$tool" 'select(.phase == "completed" and .ok == true and .toolName == $tool)' \
+              "$EVIDENCE_DIR/device-calls.jsonl" >/dev/null
+          done
+          jq -e 'select(.phase == "completed" and .ok == true and .toolName == "fabushi.app.action" and .arguments.agentId == "settings-logout" and .arguments.action == "invoke")' \
+            "$EVIDENCE_DIR/device-calls.jsonl" >/dev/null
+          test "$(/usr/bin/find "$EVIDENCE_DIR/steps" -type f -name '*.png' -print | wc -l | tr -d ' ')" -ge 10
