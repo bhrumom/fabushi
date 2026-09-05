@@ -1,0 +1,77 @@
+name: TFI macOS App session validator fix
+
+on:
+  push:
+    branches:
+      - fix/tfi-macos-app-session-validator-20260905
+    paths:
+      - '.github/workflows/tfi-macos-session-validator-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - name: Patch only the released App CI-session compatibility defect
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          rust = Path('third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs')
+          text = rust.read_text()
+          old = '        && device_id.ends_with("-interactive")\n'
+          new = '        && (device_id.ends_with("-interactive") || device_id.ends_with("-macos-app"))\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one Rust device suffix guard, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          needle = '''        assert_eq!(
+              validate_ci_account_session(session.clone(), now),
+              Ok(session.clone())
+          );
+          '''
+          addition = needle + '''        let mut macos_app = session.clone();
+          macos_app["deviceId"] = Value::String("gha-12345-1-macos-app".into());
+          assert_eq!(
+              validate_ci_account_session(macos_app.clone(), now),
+              Ok(macos_app)
+          );
+          '''
+          if text.count(needle) != 1:
+              raise SystemExit(f'expected one Rust CI-session positive assertion, found {text.count(needle)}')
+          text = text.replace(needle, addition, 1)
+          rust.write_text(text)
+
+          contract = Path('chatgpt-vps-control/tests/interactive-runner-account-binding.test.js')
+          js = contract.read_text()
+          old_js = '  assert.match(source, /device_id\\.ends_with\\("-interactive"\\)/u);\n'
+          new_js = old_js + '  assert.match(source, /device_id\\.ends_with\\("-macos-app"\\)/u);\n'
+          if js.count(old_js) != 1:
+              raise SystemExit(f'expected one JS Rust-suffix contract, found {js.count(old_js)}')
+          contract.write_text(js.replace(old_js, new_js, 1))
+          PY
+          git diff --check
+          git diff -- third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs chatgpt-vps-control/tests/interactive-runner-account-binding.test.js
+      - name: Run narrow source contract
+        run: node --test chatgpt-vps-control/tests/interactive-runner-account-binding.test.js
+      - name: Run targeted Rust session validator test
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test -p mahayana-platform-client ci_account_session_requires_short_lived_github_actions_provenance
+      - name: Commit verified product fix and remove staging workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tfi-macos-session-validator-fix.yml
+          git add third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs chatgpt-vps-control/tests/interactive-runner-account-binding.test.js .github/workflows/tfi-macos-session-validator-fix.yml
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(tfi): accept App-owned macOS CI sessions'
+          git push origin HEAD:${GITHUB_REF_NAME}
