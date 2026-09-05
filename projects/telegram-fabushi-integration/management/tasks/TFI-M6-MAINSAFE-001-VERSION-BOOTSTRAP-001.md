@@ -3,11 +3,14 @@
 - Project: `FAB-P0001 / TFI`
 - Requirement ID: `M6-PM-VB-R01`
 - Acceptance ID: `M6-PM-VB-A01`
-- Status: `FROZEN / NEXT-ONLY-EXECUTABLE`
+- Status: `REVIEW-FAILED / PROVENANCE-ONLY`
 - Architecture baseline: `main@dbf22b467d35c8af2a074896c355a41993c8c191`
 - Historical product-only predecessor: `TFI-M6-MAINSAFE-001-VERSION-CONTRACT-001` / PR #2341 @ `2241c856fb3da498ac99ade89007fe01dd335183`
 - Historical guard-only predecessor: `TFI-M6-MAINSAFE-001-VERSION-GUARD-CI-001` / PR #2342 @ `570b874318bfe42406c6f46f51798baed8c89e48`
 - Architecture evidence: `projects/telegram-fabushi-integration/evidence/TFI-M6-MAINSAFE-001/VERSION-BOOTSTRAP-CYCLE-DIAGNOSIS-2026-09-05.md`
+- Failed product candidate: PR #2343 @ `bf62cd9769cc24ae29fcf03c16a1f662bc7019aa`
+- Independent failed review: PR #2344 @ `b60b8e2483333db21ca6cea068b7a1be9c0f4851`, handoff comment `5547912758`
+- Successor: `TFI-M6-MAINSAFE-001-VERSION-EXACT-HEAD-CHECKOUT-001`
 
 ## Goal
 
@@ -25,11 +28,11 @@ The former plan required `VERSION-GUARD-CI-001` to merge before the version repa
 
 PR #2341 proves the other half of the cycle: its one-line `mobile/ios/project.yml` 28 -> 29 patch matches the intended product scope, but its base does not contain the required version child, so its green `CI result` cannot prove the authoritative script ran on that exact head.
 
-A manual dispatch/rerun, skipped child, special-case, separate optional status, or historical-head run does not break this protected-main dependency. The smallest mergeable unit is therefore the two implementation files below on one exact head.
+A manual dispatch/rerun, skipped child, special-case, separate optional status, or historical-head run does not break this protected-main dependency. The smallest mergeable unit was therefore the two implementation files below on one exact head.
 
 ## Exact implementation allowlist
 
-Only these implementation/config files may change:
+Only these implementation/config files were permitted:
 
 1. `.github/workflows/ci.yml`
    - carry forward the minimal topology already proven on #2342: an automatic lightweight `Canonical version contract` child that executes the existing canonical script;
@@ -38,9 +41,9 @@ Only these implementation/config files may change:
 2. `mobile/ios/project.yml`
    - exactly one semantic value change: `CURRENT_PROJECT_VERSION: 28` -> `29`.
 
-Permitted additional writes in the execution PR are limited to this task's evidence/status/changelog records under `projects/telegram-fabushi-integration/**`.
+Permitted additional writes in the execution PR were limited to this task's evidence/status/changelog records under `projects/telegram-fabushi-integration/**`.
 
-Anything else is outside the allowlist.
+Anything else was outside the allowlist.
 
 ## Explicit prohibitions
 
@@ -54,21 +57,19 @@ Anything else is outside the allowlist.
 
 ## Execution preconditions
 
-Before implementation, execution must re-read live GitHub and verify all of the following:
+Before implementation, execution had to re-read live GitHub and verify all of the following:
 
-1. canonical main exact SHA and branch are freshly read, not assumed from this file;
+1. canonical main exact SHA and branch were freshly read, not assumed from this file;
 2. on that main, `app-version.json.iosBuildNumber == 29` and `mobile/ios/project.yml CURRENT_PROJECT_VERSION == 28`;
-3. `.github/scripts/assert-native-electron-canonical.sh` still treats `app-version.json` as authority and requires the iOS project mirror to equal it;
-4. ruleset protecting `main` still requires `CI result` and uses the merge queue;
-5. #2341 and #2342 have not merged into canonical main.
-
-If any precondition has changed, STOP as `BASELINE-MOVED / ARCHITECTURE-RETURN`; do not mechanically apply the 28 -> 29 patch or old workflow diff.
+3. `.github/scripts/assert-native-electron-canonical.sh` still treated `app-version.json` as authority and required the iOS project mirror to equal it;
+4. ruleset protecting `main` still required `CI result` and used the merge queue;
+5. #2341 and #2342 had not merged into canonical main.
 
 ## Required implementation design
 
 ### CI topology half
 
-Use the already-proven repository design from #2342 as evidence, not as a bypass:
+The intended design was:
 
 - the child must run automatically and execute exactly `bash .github/scripts/assert-native-electron-canonical.sh` against a checkout containing every direct input the unchanged script requires;
 - `CI result` must list the child in `needs` and, under its `always()` aggregation, explicitly fail unless `needs.<child>.result == success`;
@@ -85,93 +86,63 @@ No other iOS setting changes.
 
 ## Exact-head acceptance — pull request
 
-All of the following must be true on the **same final bootstrap PR head**:
+The frozen acceptance required all of the following on the **same final bootstrap PR head**:
 
-1. changed implementation/config files are exactly `.github/workflows/ci.yml` and `mobile/ios/project.yml`; all other changed files, if any, are task-specific TFI records;
-2. `mobile/ios/project.yml` semantic diff is exactly `CURRENT_PROJECT_VERSION 28 -> 29`;
-3. `.github/scripts/assert-native-electron-canonical.sh` is byte-for-byte unchanged by the task and remains the single version/architecture assertion implementation;
+1. changed implementation/config files exactly `.github/workflows/ci.yml` and `mobile/ios/project.yml`; all other changed files, if any, task-specific TFI records;
+2. `mobile/ios/project.yml` semantic diff exactly `CURRENT_PROJECT_VERSION 28 -> 29`;
+3. `.github/scripts/assert-native-electron-canonical.sh` byte-for-byte unchanged and still the single version/architecture assertion implementation;
 4. automatic `pull_request` CI contains `Canonical version contract`; the job is executed, not skipped;
 5. raw step/job evidence shows actual execution of `bash .github/scripts/assert-native-electron-canonical.sh` on that exact head;
 6. `Canonical version contract` is `success` and same-head `CI result` is `success`;
-7. automatically applicable portfolio/governance/product checks are truthful and green; no unrelated skipped heavyweight check is substituted for the canonical version child;
+7. automatically applicable portfolio/governance/product checks are truthful and green; no unrelated skipped heavyweight check substitutes for the canonical version child;
 8. no manual-dispatch/rerun/different-SHA result is used as the required evidence;
 9. independent code review approves the exact final bootstrap head. Architecture does not perform that review.
 
 ## Protected merge queue acceptance
 
-After exact-head review acceptance:
+After exact-head review acceptance the task would have required:
 
-1. use the protected merge queue only; no direct merge or bypass;
-2. the `merge_group` run must report the required `CI result` for the merge-group head;
-3. the same canonical version child must execute, not skip, on the merge-group run and succeed;
-4. `CI result` must succeed with the child as a dependency;
+1. protected merge queue only; no direct merge or bypass;
+2. `merge_group` required `CI result` for the merge-group head;
+3. same canonical version child executes, not skips, on the merge-group run and succeeds;
+4. `CI result` succeeds with the child as a dependency;
 5. only then may the queue merge.
 
-The pull-request head result is necessary but is not a substitute for merge-group evidence.
+The pull-request head result was necessary but not a substitute for merge-group evidence.
 
 ## Canonical main readback
 
-After protected merge, execution/test-release handoff must re-read canonical GitHub main and prove:
-
-- the new exact main SHA is the accepted queue result;
-- `app-version.json.iosBuildNumber == 29`;
-- `mobile/ios/project.yml CURRENT_PROJECT_VERSION == 29`;
-- `ci.yml` contains the accepted canonical-version child + `CI result` dependency and still handles `merge_group`;
-- the canonical script itself was not modified by this bootstrap task.
-
-Only this readback closes `M6-PM-VB-A01` from the repository perspective.
+After protected merge the task would have required re-reading canonical main and proving the accepted queue result, iOS 29/29, accepted CI topology, and unchanged canonical script.
 
 ## Historical PR disposition / provenance
 
 - #2341 remains historical **version-only / pre-required-topology** evidence.
 - #2342 remains historical **guard-only / canonical-drift-self-bootstrap failure** evidence.
-- Neither old PR may be merged, rebased, retargeted, force-pushed, or used as the replacement lineage.
-- Once the new bootstrap execution PR exists from freshly read canonical main and its description/records cite #2341@`2241c856...`, #2342@`570b874...`, blocker comments `5547296411` and `5547556953`, the appropriate execution/product owner may close #2341 and #2342 as superseded. Closing is not authorized before that replacement provenance exists.
+- Neither old PR may be merged, rebased, retargeted, force-pushed, or used as replacement lineage.
 
-## Stop conditions
+## 2026-09-05 — independent review disposition — authoritative latest
 
-STOP and return to Architecture without widening scope if any of these occurs:
+The implementation candidate created for this task is PR #2343, base `dbf22b467d35c8af2a074896c355a41993c8c191`, final product head `bf62cd9769cc24ae29fcf03c16a1f662bc7019aa`.
 
-- canonical baseline or 29/28 facts changed before execution;
-- any implementation file outside the two-file allowlist is required;
-- the canonical script would need modification;
-- the version child is skipped, missing, neutral, or cannot run on pull_request/merge_group;
-- same-head child or `CI result` remains failing after the two allowed implementation changes;
-- failure exposes another semantic/version/architecture defect;
-- ruleset/required-status topology changed;
-- merge queue does not receive the required `CI result` on `merge_group`;
-- review requests scope outside the allowlist.
+Its static scope/topology intent does not close this task because the frozen dynamic exact-head condition failed:
 
-No waiver, special-case or temporary bypass is permitted.
+- automatic CI run `33930830358` / canonical child job `101208897330` reported SUCCESS;
+- raw log proves `actions/checkout@v5` checked out `refs/remotes/pull/2343/merge`, actual HEAD `265ceea6496b21ffdbd53d4fa8fc0b3374edd3ac`;
+- log identifies that synthetic commit as `Merge bf62cd... into dbf22b...`;
+- only after that synthetic checkout did `bash .github/scripts/assert-native-electron-canonical.sh` run.
 
-## Downstream order
+Therefore item 5 of the frozen exact-head acceptance was not met. Independent review #2344 / comment `5547912758` returned `REVIEW-FAIL-VERSION-BOOTSTRAP-001`. No sibling green check, job association metadata, manual/rerun or different-SHA evidence can waive the mismatch.
 
-The only allowed next execution task is this task.
+Disposition:
 
-`VERSION-BOOTSTRAP-001 execution -> exact-head Actions -> independent code review -> protected merge queue + merge_group Actions -> canonical main readback -> remaining post-main prerequisites -> test release`
-
-Test release remains blocked after this bootstrap until the separately frozen/required `TFI-M6-MAINSAFE-001-IOS-FIXTURE-001`, `TFI-M6-MAINSAFE-001-EVIDENCE-CONTRACT-001`, and `TFI-M6-MAINSAFE-001-EVIDENCE-JOURNEY-001` gates applicable to the broader MAINSAFE recovery are satisfied. Stable release remains a later independent gate.
+- this task is `REVIEW-FAILED / PROVENANCE-ONLY`;
+- #2343 remains OPEN / UNMERGED and is not authorized for MERGE, test release or stable release;
+- its failed candidate head and synthetic merge SHA must remain recorded as provenance;
+- the unique successor is `TFI-M6-MAINSAFE-001-VERSION-EXACT-HEAD-CHECKOUT-001`, which explicitly repairs event-aware checkout identity while preserving the atomic two-file bootstrap intent;
+- #2341/#2342/#2343/#2344 are not to be closed, merged, rebased, retargeted or force-pushed by Architecture.
 
 ## Open-source-first / official-source decision
 
-Adopted:
-
-- GitHub Actions official `jobs.<job_id>.needs` and `needs.<job_id>.result` model for explicit dependency/aggregation semantics: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax and https://docs.github.com/en/actions/reference/workflows-and-actions/contexts
-- GitHub required-status-check semantics: required checks must pass for the relevant latest commit; https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks
-- GitHub merge queue guidance: Actions required checks must listen for the separate `merge_group` event; same official troubleshooting page and merge-queue documentation.
-- repository ruleset `15857448`: required status is exactly `CI result`, no bypass actors.
-- repository precedent #2342: automatic canonical child + `CI result` dependency is operationally proven to propagate failure.
-- `actions/checkout` (MIT) already used by repository; no new dependency.
-- `actions/github-script` (MIT) remains the existing classifier mechanism; no new dependency or copied upstream implementation.
-- Fabushi FCM ADR-0005: preserve cheap deterministic PR checks, aggregate `CI result`, merge queue and post-main heavy validation.
-
-Rejected:
-
-- a separate optional version status not required by `CI result`;
-- manual dispatch/rerun as protected-main proof;
-- accepting `skipped` or special-casing the bootstrap PR;
-- modifying rulesets/branch protection;
-- duplicating canonical version logic in workflow YAML;
-- two sequential protected PRs whose first is provably unable to pass its own newly-required truth gate.
+The original architecture correctly retained existing GitHub Actions primitives and rejected optional/manual bypasses. The successor diagnosis adds the missing checkout-identity detail using the official `actions/checkout@v5` documented PR-head pattern and GitHub `pull_request` / `merge_group` event semantics; see ADR-0014 and `VERSION-EXACT-HEAD-CHECKOUT-DIAGNOSIS-2026-09-05.md`.
 
 No upstream code is copied by this architecture decision.
