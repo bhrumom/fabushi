@@ -308,7 +308,7 @@ jobs:
             fabushi.app.assert
           )
           last=0
-          deadline=$((SECONDS + 360))
+          deadline=$((SECONDS + 600))
           echo 'waiting-for-fabushi-test' > "$EVIDENCE_DIR/control-status.txt"
           while [ "$SECONDS" -lt "$deadline" ]; do
             completed="$(grep '"phase":"call-completed"' "$TRACE_PATH" 2>/dev/null || true)"
@@ -328,13 +328,15 @@ jobs:
                 break
               fi
             done
-            if [ "$missing" -eq 0 ]; then
+            if [ "$missing" -eq 0 ] && [ "$(cat "$EVIDENCE_DIR/control-status.txt" 2>/dev/null || true)" != passed ]; then
               echo passed > "$EVIDENCE_DIR/control-status.txt"
               xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/999-semantic-control-passed.png" || true
-              exit 0
             fi
             sleep 1
           done
+          if [ "$(cat "$EVIDENCE_DIR/control-status.txt" 2>/dev/null || true)" = passed ]; then
+            exit 0
+          fi
           echo failed > "$EVIDENCE_DIR/control-status.txt"
           echo 'Timed out before @fabushi test completed all six registered semantic tools.' >&2
           exit 1

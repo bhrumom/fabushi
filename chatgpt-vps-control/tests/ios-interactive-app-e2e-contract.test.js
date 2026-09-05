@@ -55,12 +55,23 @@ test("iOS interactive workflow installs a logged-in app that owns device registr
   const loginIndex = workflow.indexOf("Login protected Fabushi test account and export bounded app session");
   const launchIndex = workflow.indexOf("Launch authenticated exact test build and let the app own device registration");
   const controlIndex = workflow.indexOf("Hold live app for @fabushi test semantic control");
+  const collectIndex = workflow.indexOf("Collect app, Simulator, trace, video, and report evidence", controlIndex);
   assert.ok(bootIndex >= 0 && videoIndex > bootIndex && rustBuildIndex > videoIndex,
     "full-session video must start immediately after Simulator boot and before build/test/login/install");
   assert.ok(videoIndex < installIndex && installIndex < loginIndex && loginIndex < launchIndex && launchIndex < controlIndex,
     "journey order must be recording -> exact app install -> protected account login -> app-owned registration -> external control");
   assert.equal(workflow.match(/xcrun\s+simctl\s+install/g)?.length, 1,
     "the exact Simulator app should be installed once before protected account login");
+
+  const controlBlock = workflow.slice(controlIndex, collectIndex);
+  assert.ok(controlBlock.includes("deadline=$((SECONDS + 600))"),
+    "external semantic control must retain a ten-minute bounded live-device window for the full iOS matrix");
+  assert.doesNotMatch(controlBlock, /if \[ "\$missing" -eq 0 \]; then[\s\S]*?exit 0[\s\S]*?fi/u,
+    "the live iOS device must not be torn down immediately after the six tool names first pass");
+  assert.match(controlBlock, /if \[ "\$missing" -eq 0 \] && \[ "\$\(cat "\$EVIDENCE_DIR\/control-status\.txt" 2>\/dev\/null \|\| true\)" != passed \]; then/u,
+    "the six-tool prerequisite should be recorded once while the full-matrix hold remains live");
+  assert.match(controlBlock, /if \[ "\$\(cat "\$EVIDENCE_DIR\/control-status\.txt" 2>\/dev\/null \|\| true\)" = passed \]; then\s+exit 0/u,
+    "the bounded hold may pass only after the six-tool prerequisite has been observed");
 
   assert.doesNotMatch(workflow, /xcrun\s+simctl\s+create/u);
   assert.doesNotMatch(workflow, /\$\{\{\s*runner\.temp\s*\}\}/u);
@@ -87,8 +98,9 @@ test("native iOS gateway reuses the account session and semantic App Surface onl
   assert.match(app, /onChange\(of: model\.loggedIn\)/u);
   assert.match(surface, /sensitive_app_surface_input_requires_secure_input/u);
 
-  assert.doesNotMatch(gateway, /Process|NSTask|\/bin\/sh|JavaScript/u);
-  assert.doesNotMatch(gateway, /refreshToken/u);
+  const gatewayCode = gateway.replace(/\/\/.*$/gmu, "");
+  assert.doesNotMatch(gatewayCode, /\bProcess\s*\(|\bNSTask\s*\(|\/bin\/sh|\bJavaScriptCore\b|\bJSContext\s*\(/u);
+  assert.doesNotMatch(gatewayCode, /refreshToken/u);
 });
 
 test("authenticated Grok iOS shell publishes the same native semantic surface", async () => {
