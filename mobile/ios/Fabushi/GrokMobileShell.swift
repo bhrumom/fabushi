@@ -144,6 +144,7 @@ internal struct ClothGhostAvatar: View {
 private struct MobileBotChat: View {
     let bot: MobileBotSummary
     let host: MahayanaHost
+    let appAgentSurface: FabushiAppAgentSurface
     let onClose: () -> Void
 
     @State private var draft = ""
@@ -217,6 +218,7 @@ private struct MobileBotChat: View {
                     .padding(.horizontal, 14).padding(.vertical, 11)
                     .background(Color.black.opacity(0.055), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .onSubmit { if !busy { Task { await send() } } }
+                    .accessibilityIdentifier("mobile-bot-draft")
                 Button {
                     if busy { Task { await stop() } } else { Task { await send() } }
                 } label: {
@@ -234,6 +236,53 @@ private struct MobileBotChat: View {
         }
         .background(Color(red: 0.985, green: 0.985, blue: 0.975))
         .accessibilityIdentifier("mobile-bot-chat")
+        .task(id: semanticFingerprint) { publishAppAgentSurface() }
+    }
+
+    private var semanticFingerprint: String {
+        [
+            bot.id,
+            draft,
+            String(busy),
+            activeOperationId ?? "",
+            errorText ?? "",
+            entries.map { "\($0.id):\($0.kind.rawValue):\($0.role.rawValue)" }.joined(separator: ","),
+        ].joined(separator: "|")
+    }
+
+    @MainActor
+    private func publishAppAgentSurface() {
+        var elements: [FabushiAppAgentSurface.Element] = [
+            .init(agentId: "mobile-bot-chat", role: "application", name: "Bot \(String(bot.name.prefix(160)))"),
+            .init(agentId: "mobile-bot-close", role: "button", name: "关闭 Bot 对话"),
+            .init(agentId: "mobile-bot-draft", role: "textbox", name: "Bot 消息"),
+        ]
+        let sendId = busy ? "mobile-bot-stop" : "mobile-bot-send"
+        elements.append(.init(
+            agentId: sendId,
+            role: "button",
+            name: busy ? "停止 Bot" : "发送 Bot 消息",
+            enabled: busy || !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ))
+        for entry in entries.suffix(50) {
+            let id = Self.semanticId("mobile-bot-entry-\(entry.id)")
+            let roleName = entry.role == .user ? "用户消息" : entry.kind == .action ? "Bot 动作" : entry.kind == .thinking ? "Bot 思考" : "Bot 消息"
+            elements.append(.init(agentId: id, role: "log", name: roleName))
+        }
+        var actions: [String: FabushiAppAgentSurface.Action] = [
+            "mobile-bot-close": .init(allowed: ["invoke"]) { _ in onClose() },
+            "mobile-bot-draft": .init(allowed: ["setValue"]) { value in draft = value ?? "" },
+        ]
+        actions[sendId] = .init(allowed: ["invoke"]) { _ in
+            if busy { Task { await stop() } } else { Task { await send() } }
+        }
+        try? appAgentSurface.publish(screen: "bot-chat", elements: elements, actions: actions)
+    }
+
+    private static func semanticId(_ value: String) -> String {
+        String(value.map { character in
+            character.isASCII && (character.isLetter || character.isNumber || "._:/@-".contains(character)) ? character : "-"
+        }.prefix(200))
     }
 
     @ViewBuilder
@@ -390,7 +439,7 @@ internal struct GrokMobileShell: View {
         if model.onboardingStep < 3 || !model.authResolved || !model.loggedIn {
             ContentView(model: model, messaging: messaging, appAgentSurface: appAgentSurface)
         } else if let selectedBot {
-            MobileBotChat(bot: selectedBot, host: host) { self.selectedBot = nil }
+            MobileBotChat(bot: selectedBot, host: host, appAgentSurface: appAgentSurface) { self.selectedBot = nil }
         } else if legacyOpen {
             ZStack(alignment: .topLeading) {
                 ContentView(model: model, messaging: messaging, appAgentSurface: appAgentSurface)
@@ -404,7 +453,96 @@ internal struct GrokMobileShell: View {
             home
                 .task { await loadBots() }
                 .task { await messaging.refresh() }
+                .task(id: appAgentSurfaceFingerprint) { publishAppAgentSurface() }
         }
+    }
+
+    private var appAgentSurfaceFingerprint: String {
+        [
+            query,
+            String(composeOpen),
+            String(createBotOpen),
+            botName,
+            botDescription,
+            String(botBusy),
+            botError ?? "",
+            bots.map { "\($0.id):\($0.name)" }.joined(separator: ","),
+            messaging.conversations.map { "\($0.id):\($0.unreadCount):\($0.isArchived)" }.joined(separator: ","),
+        ].joined(separator: "|")
+    }
+
+    @MainActor
+    private func publishAppAgentSurface() {
+        var elements: [FabushiAppAgentSurface.Element] = []
+        var actions: [String: FabushiAppAgentSurface.Action] = [:]
+        func add(
+            _ id: String,
+            role: String,
+            name: String,
+            enabled: Bool = true,
+            action: FabushiAppAgentSurface.Action? = nil
+        ) {
+            let normalizedId = Self.semanticId(id)
+            elements.append(.init(
+                agentId: normalizedId,
+                role: String(role.prefix(80)),
+                name: String(name.prefix(240)),
+                enabled: enabled
+            ))
+            if let action { actions[normalizedId] = action }
+        }
+
+        if createBotOpen {
+            add("grok-create-bot", role: "dialog", name: "新建 Bot")
+            add("new-bot-name", role: "textbox", name: "Bot 名称", action: .init(allowed: ["setValue"]) { value in botName = value ?? "" })
+            add("new-bot-description", role: "textbox", name: "Bot 描述", action: .init(allowed: ["setValue"]) { value in botDescription = value ?? "" })
+            add(
+                "create-bot-submit",
+                role: "button",
+                name: botBusy ? "正在创建 Bot" : "创建 Bot",
+                enabled: !botBusy && !botName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                action: .init(allowed: ["invoke"]) { _ in Task { await createBot() } }
+            )
+            add("create-bot-cancel", role: "button", name: "取消创建 Bot", action: .init(allowed: ["invoke"]) { _ in createBotOpen = false })
+            if botError != nil { add("create-bot-error", role: "status", name: "Bot 创建失败") }
+            try? appAgentSurface.publish(screen: "grok-create-bot", elements: elements, actions: actions)
+            return
+        }
+
+        if composeOpen {
+            add("grok-compose", role: "dialog", name: "创建")
+            add("grok-compose-bot", role: "button", name: "新建 Bot", action: .init(allowed: ["invoke"]) { _ in composeOpen = false; createBotOpen = true })
+            add("grok-compose-message", role: "button", name: "新消息", action: .init(allowed: ["invoke"]) { _ in composeOpen = false; legacyOpen = true })
+            add("grok-compose-group", role: "button", name: "新建群组", action: .init(allowed: ["invoke"]) { _ in composeOpen = false; legacyOpen = true })
+            add("grok-compose-channel", role: "button", name: "新建频道", action: .init(allowed: ["invoke"]) { _ in composeOpen = false; legacyOpen = true })
+            add("grok-compose-cancel", role: "button", name: "取消", action: .init(allowed: ["invoke"]) { _ in composeOpen = false })
+            try? appAgentSurface.publish(screen: "grok-compose", elements: elements, actions: actions)
+            return
+        }
+
+        add("grok-mobile-home", role: "application", name: "Fabushi")
+        add("grok-mobile-legacy", role: "button", name: "打开完整消息工作台", action: .init(allowed: ["invoke"]) { _ in legacyOpen = true })
+        add("grok-mobile-search-field", role: "textbox", name: "搜索", action: .init(allowed: ["setValue"]) { value in query = value ?? "" })
+        add("grok-mobile-add", role: "button", name: "创建", action: .init(allowed: ["invoke"]) { _ in composeOpen = true })
+        add("grok-bot-mahayana-assistant", role: "button", name: "Mahayana", action: .init(allowed: ["invoke"]) { _ in selectedBot = MobileBotSummary(id: "mahayana-assistant", name: "Mahayana", description: "Ready to help") })
+        for bot in filteredBots.prefix(100) {
+            add("grok-bot-\(bot.id)", role: "button", name: bot.name, action: .init(allowed: ["invoke"]) { _ in selectedBot = bot })
+        }
+        for conversation in filteredConversations.prefix(100) {
+            add(
+                "grok-conversation-\(conversation.id)",
+                role: "button",
+                name: conversation.title,
+                action: .init(allowed: ["invoke"]) { _ in legacyOpen = true }
+            )
+        }
+        try? appAgentSurface.publish(screen: "grok-home", elements: elements, actions: actions)
+    }
+
+    private static func semanticId(_ value: String) -> String {
+        String(value.map { character in
+            character.isASCII && (character.isLetter || character.isNumber || "._:/@-".contains(character)) ? character : "-"
+        }.prefix(200))
     }
 
     private var home: some View {
