@@ -92,3 +92,11 @@
 - [x] current-head GitHub Actions 全绿（PR-head CI 33052057013）。
 - [x] protected merge queue、canonical-main readback（merge SHA `a9f7c8e8a98a17fdbd2358232048607198069a0b`）。
 - [x] production Cloudflare HTTP/runtime/crawler probes 与 exact-main web delivery evidence（Worker 33052308128；Mini Apps 33052308170）。
+
+## 2026-09-05 — MAINSAFE exact-head checkout defect replanning — authoritative latest
+
+- `TFI-M6-MAINSAFE-001-VERSION-BOOTSTRAP-001` — `REVIEW-FAILED / PROVENANCE-ONLY`: product PR #2343 final head `bf62cd9769cc24ae29fcf03c16a1f662bc7019aa` has green CI metadata, but raw run `33930830358` / job `101208897330` checked out synthetic merge SHA `265ceea6496b21ffdbd53d4fa8fc0b3374edd3ac` before the canonical script ran. Independent review #2344 / comment `5547912758` therefore returned `REVIEW-FAIL-VERSION-BOOTSTRAP-001`; #2343 is not merge/test/release evidence.
+- `TFI-M6-MAINSAFE-001-VERSION-EXACT-HEAD-CHECKOUT-001` — `FROZEN / NEXT-ONLY-EXECUTABLE`; Requirement `M6-PM-VEHC-R01`, Acceptance `M6-PM-VEHC-A01`.
+- A new product PR must start from freshly re-read canonical main. Implementation/config allowlist remains exactly `.github/workflows/ci.yml` plus `mobile/ios/project.yml` `CURRENT_PROJECT_VERSION 28 -> 29`, with only task-specific TFI records in addition.
+- `pull_request` acceptance requires raw proof that actual checkout HEAD equals the final product head before the unchanged canonical script runs. `merge_group` acceptance separately requires actual checkout HEAD equals the current merge-group SHA. Required `CI result` must remain fail-closed on exact child `success`.
+- Historical #2341/#2342/#2343/#2344 remain immutable provenance in this architecture round; no merge/rebase/retarget/force-push/close is authorized. Test release and stable release remain blocked.
