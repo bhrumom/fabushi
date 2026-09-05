@@ -100,3 +100,11 @@
 - A new product PR must start from freshly re-read canonical main. Implementation/config allowlist remains exactly `.github/workflows/ci.yml` plus `mobile/ios/project.yml` `CURRENT_PROJECT_VERSION 28 -> 29`, with only task-specific TFI records in addition.
 - `pull_request` acceptance requires raw proof that actual checkout HEAD equals the final product head before the unchanged canonical script runs. `merge_group` acceptance separately requires actual checkout HEAD equals the current merge-group SHA. Required `CI result` must remain fail-closed on exact child `success`.
 - Historical #2341/#2342/#2343/#2344 remain immutable provenance in this architecture round; no merge/rebase/retarget/force-push/close is authorized. Test release and stable release remain blocked.
+
+## 2026-09-05 — M3-DESKTOP-003 test-driven acceptance replan
+
+- `M3-DESKTOP-003` remains `TEST-FAIL / BLOCKED`. Exact-head run `33959034172` is green across Linux/macOS/Windows and the successful packaged returning-user attempt did not reproduce the reported ~1 minute delay, but that does not close the diagnostic task.
+- `M3-DESKTOP-003-SEED-001` — `FROZEN / NEXT-ONLY-EXECUTABLE`: remove only the returning-user scenario setup race that allowed Linux `seededConversationId == ""` on the first packaged attempt. The target must pass on the original attempt without retry-policy changes or product semantic changes.
+- `M3-DESKTOP-003-EVIDENCE-001` — `FROZEN / BLOCKED-BY-SEED-001`: after deterministic setup is independently accepted, capture dedicated target `.webm` plus app/main-process logs from the same exact packaged returning-user attempt while retaining timing/P0–P9/screenshot/trace evidence.
+- Both subtasks have exact implementation allowlist `desktop/e2e/messenger.spec.ts` plus task-specific TFI records/evidence only. Workflow, `desktop/src/**`, native, auth/Host/protocol/schema, dependencies, version/release, MiniApp, MSR and GBF are out of scope.
+- `M3-DESKTOP-004` stays blocked. No product performance fix is authorized until parent `M3-DESKTOP-003` has deterministic, complete exact-scenario evidence and Architecture can identify a measured bottleneck.
