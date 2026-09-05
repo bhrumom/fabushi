@@ -4,7 +4,8 @@
 - Task: `TFI-MACOS-INTERACTIVE-001`
 - Status: `TESTING`
 - Canonical baseline at enablement start: `143c5cf10aed9e6d60810ec6c886acd2c20fa609`
-- Latest published macOS test package at enablement start: `v1.2.23`, target `16b56277e2116b73f98f0406a323919de6d7728a`
+- Current canonical `main` re-read during enablement: `fc4be781e01442c7fa041a4d5442c029f90d929c`
+- Latest published macOS test package at enablement start and through Attempt 5: `v1.2.23`, target `16b56277e2116b73f98f0406a323919de6d7728a`
 
 ## Attempt ledger
 
@@ -48,12 +49,18 @@
 - Artifact archive-layout evidence: the exact release ZIP contains top-level `fabushi.app/Contents/MacOS/fabushi`; the lane incorrectly assumed case-sensitive `Fabushi.app` while looking for the source bundle.
 - Result: **infrastructure FAIL**, not a product FAIL. Recording, static ownership contract, release resolution/download/digest and secondary evidence collection passed; login/App registration were correctly skipped because install identity discovery failed. No Fabushi device was registered.
 
-### Attempt 5 — running
+### Attempt 5 — infrastructure FAIL at protected account handoff
 
 - Workflow source SHA: `93a5cd5d0f416b5a8893cb4f931c527f372b1207`
-- Run: `33970295856`
-- Run URL: https://github.com/bhrumom/fabushi/actions/runs/33970295856
-- Change under validation: accept exactly one top-level `.app` bundle regardless of filename casing, then continue to require fixed bundle ID `com.ombhrum.fabushi`, arm64 executable, code signature, Gatekeeper acceptance and release-version equality before protected-account login.
+- Run / job: `33970295856` / `101317481633`
+- Started / completed: `2026-09-05T13:55:31Z` / `2026-09-05T13:57:23Z`
+- Run: https://github.com/bhrumom/fabushi/actions/runs/33970295856
+- Release: `v1.2.23` -> `16b56277e2116b73f98f0406a323919de6d7728a`; asset `fabushi-1.2.23-macos-arm64.zip` (`545705797`)
+- Install verification: PASS — one top-level `fabushi.app` copied to `/Applications/Fabushi.app`; Mach-O arm64, `codesign --verify`, Gatekeeper assessment, bundle id `com.ombhrum.fabushi`, installed version/build `1.2.23 / 1.2.23` all passed.
+- Secondary packaged App Agent Surface Playwright: PASS (`1 passed`).
+- Failure: `login-ci-test-account.mjs` rejected `DEVICE_ID=gha-33970295856-1-macos-app` with `DEVICE_ID must be the protected interactive Runner id.` This is a legacy account-helper identity guard, not a product journey failure. App launch/registration were correctly skipped; no macOS Fabushi device was registered.
+- Evidence artifact: `fabushi-macos-interactive-evidence-33970295856-1`, artifact `9970733917`, SHA-256 `82739298fb775ea21cc637f0be0c4254b5fc94498878e46b328c8d3c128f917a`, size `138476115` bytes, https://github.com/bhrumom/fabushi/actions/runs/33970295856/artifacts/9970733917
+- Resolution under verification: protected account login/export/session parsing now accept the bounded App-owned `gha-<run>-<attempt>-macos-app` identity while preserving legacy CI wire fields only for compatibility. Those fields do not own or register the device gateway; the installed App remains the only registration owner.
 
 ## Evidence rules
 
