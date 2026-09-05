@@ -5,10 +5,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/ios-interactive-app-e2e.yml'
-      - 'mobile/ios/Fabushi/FabushiApp.swift'
-      - 'mobile/ios/Fabushi/FabushiAppAgentSurface.swift'
-      - 'mobile/ios/Fabushi/FabushiRemoteDeviceGateway.swift'
-      - 'mobile/ios/FabushiTests/FabushiRemoteDeviceGatewayTests.swift'
+      - 'mobile/ios/Fabushi/**'
+      - 'mobile/ios/FabushiTests/**'
+      - 'mobile/ios/project.yml'
       - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
   workflow_dispatch:
