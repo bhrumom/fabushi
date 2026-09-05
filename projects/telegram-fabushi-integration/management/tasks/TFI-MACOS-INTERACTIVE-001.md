@@ -9,8 +9,10 @@
 - **Attempt 10:** run `33975902199`, App-owned device `gha-33975902199-1-macos-app`; stable App-target rebase passed, then native Computer Use failed because the direct App-owned MCP lost the package-derived `Fabushi Computer Control.app` helper environment.
 - **Live reconciliation:** PR `#2381` was already merged as `main@36868f9c5ba389c6b627f93f792ce9a7d52192e3` before this continuation and immutable prerelease `v1.2.28` already exists, but its merge/publish happened while the canonical Electron quality gate was paused. It is not a post-restoration acceptance candidate.
 - **Gate restoration:** PR `#2382` restored the exact pre-pause Electron quality workflow blob and protected-queue merged as `main@31ac7659b85cce27d31dfa7dcc54537c26e8e15e` without `automerge-force`.
-- **Current independent blocker:** restored Electron main run `33999314440`, Linux job `101395223837`, fails before dependency install on canonical version drift (`1.2.28` vs stale `1.2.22` package/lock metadata; iOS marketing metadata is stale as well).
-- **Atomic repair branch:** `fix/tfi-macos-version-parity-1-2-29-20260906`, staging comparable macOS test version `1.2.29` while Android/iOS build counters remain unchanged.
+- **Version-parity repair:** PR `#2383` protected-queue merged as `main@8cf204380559d4a997c96ddf6b44ae876dd3eb0d`; merge-group CI `33999592781` passed.
+- **Release-contract PR:** `#2384` is open; restored Electron run `33999715376` now reaches the next contracts and remains blocked.
+- **Current independent blocker:** `.github/workflows/computer-control-security.yml` is still the 2026-09-05 manual paused stub; Electron job `101396275595` proves the repository source contract expects the real `Computer control security result`.
+- **Atomic repair branch:** `fix/tfi-restore-computer-control-security-gate-20260906`, restoring exact pre-pause security-workflow blob `acfc957e0cfd5e0829e23677cf06455abb6b7782` and staging `1.2.30` while Android/iOS build counters remain unchanged.
 
 ## Product truth
 
@@ -45,9 +47,9 @@ Every attempt, PASS or FAIL, preserves with `if: always()` whole-session video b
 
 The App-owned native-helper propagation defect from Attempt 10 landed in #2381 and must not be duplicated. The restored canonical Electron gate now owns the next failure boundary. Its architecture assertion requires all canonical semantic-version sources to match `app-version.json`, including desktop package/lock, native-mobile package/lock, and iOS `MARKETING_VERSION`.
 
-The current repair synchronizes those version sources and the existing exact macOS release-control guards to `1.2.29`. Android `androidVersionCode=29` and iOS `iosBuildNumber=29` remain unchanged. No branch-protection rule, test assertion, application behavior, account/session parser, App-owned gateway path, or Computer Use safety rule changes in this slice.
+PR #2383 already repaired canonical version parity. The next independent governance failure is the paused Computer-control security gate. This slice restores that workflow byte-for-byte from the exact pre-pause blob and stages `1.2.30`; canonical desktop/native-mobile/iOS marketing versions and existing CI/release guards move together while Android `androidVersionCode=29` and iOS `iosBuildNumber=29` remain unchanged. No branch-protection rule, security assertion, application behavior, account/session parser, App-owned gateway path, remote-control opt-in rule, or Computer Use safety rule changes in this slice.
 
-The PR must pass the restored real Electron PR gate. After protected merge, only an immutable protected-main `v1.2.29` macOS test release may enter Attempt 11. Native recording must begin before installation; the App must log in and self-register its device gateway before `@fabushi test` is used for discovery/control.
+The PR must enter protected main normally and its real security/CI gates must run. Any `v1.2.30` release produced while the exact-main Electron gate remains red is intermediate evidence only; interactive Attempt 11 still waits for the newest immutable protected-main release whose restored Electron gate is green. Native recording must begin before installation; the App must log in and self-register its device gateway before `@fabushi test` is used for discovery/control.
 
 ## Defect / merge / release loop
 
@@ -60,3 +62,4 @@ Each independent product or release-governance failure gets one defect PR, prote
 - v1.2.26 exclusion / v1.2.27 release gate: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-release-gate-1.2.27.md`.
 - Attempt 10 / v1.2.27 native helper blocker: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-attempt-10-native-helper.md`.
 - Restored Electron gate / version-parity failure / v1.2.29 repair: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-06-electron-gate-version-parity-1.2.29.md`.
+- Restored Computer-control security gate / v1.2.30 repair: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-06-computer-control-security-gate-1.2.30.md`.
