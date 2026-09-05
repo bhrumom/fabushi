@@ -81,14 +81,33 @@ jobs:
           shared-key: ios-interactive-app-host-v1
 
       - id: simulator
-        name: Create and boot isolated iOS Simulator
+        name: Create and boot isolated compatible iOS Simulator
         shell: bash
         run: |
           set -euo pipefail
-          runtime="$(xcrun simctl list runtimes available -j | jq -r '[.runtimes[] | select(.identifier | contains("SimRuntime.iOS-"))] | sort_by(.version) | last | .identifier')"
-          device_type="$(xcrun simctl list devicetypes -j | jq -r '[.devicetypes[] | select(.name | startswith("iPhone"))] | last | .identifier')"
+          selection="$(
+            xcrun simctl list devices available -j \
+              | jq -r '
+                  .devices
+                  | to_entries[]
+                  | .key as $runtime
+                  | .value[]
+                  | select(.name | startswith("iPhone"))
+                  | select(.deviceTypeIdentifier != null)
+                  | [$runtime, .deviceTypeIdentifier, .name]
+                  | @tsv
+                ' \
+              | tail -n 1
+          )"
+          test -n "$selection"
+          IFS=$'\t' read -r runtime device_type template_name <<< "$selection"
           test -n "$runtime"
           test -n "$device_type"
+          {
+            echo "runtime=$runtime"
+            echo "device_type=$device_type"
+            echo "template_name=$template_name"
+          } > "$EVIDENCE_DIR/simulator-selection.txt"
           udid="$(xcrun simctl create "Fabushi-iOS-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" "$device_type" "$runtime")"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           echo "$udid" > "$EVIDENCE_DIR/simulator-udid.txt"
