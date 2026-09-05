@@ -1,4 +1,4 @@
-name: TFI dispatch Electron gate for PR 2371
+name: TFI re-evaluate release PR 2371
 
 on:
   push:
@@ -18,10 +18,11 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Dispatch existing manual Electron gate on exact release head
+      - name: Re-evaluate exact release PR through existing automerge policy
         shell: bash
         run: |
           set -euo pipefail
           gh api --method POST \
-            repos/${GITHUB_REPOSITORY}/actions/workflows/electron-desktop.yml/dispatches \
-            -f ref='release/tfi-macos-test-1.2.24'
+            repos/${GITHUB_REPOSITORY}/actions/workflows/automerge.yml/dispatches \
+            -f ref='main' \
+            -f 'inputs[pr_number]=2371'
