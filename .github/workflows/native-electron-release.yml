@@ -2,6 +2,13 @@ name: Native Electron macOS test release
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app-version.json'
+      - 'desktop/package.json'
+      - 'desktop/src/selfhosted-messaging-client-v2.ts'
+      - '.github/workflows/native-electron-release.yml'
 
 permissions:
   contents: write
