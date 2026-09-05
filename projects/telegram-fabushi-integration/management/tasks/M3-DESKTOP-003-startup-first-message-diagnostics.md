@@ -10,6 +10,9 @@
 - Risk: medium; diagnostic-only production instrumentation + packaged E2E
 - Architecture base: `arch/fabushi-bot-miniapp-mahayana-20260905@8fb9c16493f6b78a466356137820b57f200f4ed0`
 - Execution branch: `feat/tfi-m3-desktop-003-startup-diagnostics`
+- Pull request: `#2349` — `https://github.com/bhrumom/fabushi/pull/2349`
+- Implementation commits: `493c244d642417a94ad27508f3939229e6a6a7b7`, `8b8d283c74333eeaa290b383daea4453608c6a36`
+- Evidence/status commits before PR record: `59f40b037828ca3099faba8c19b25ed66b9d9cbb`, `5ea652e856aa9e44250d65b8a210a663104b4aa5`
 
 ## Single objective
 
