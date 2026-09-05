@@ -59,12 +59,12 @@ test('evidence upload allowlist excludes private account sessions and includes r
   assert.doesNotMatch(upload, /FABUSHI_ACCOUNT_SESSION_FILE/u);
   assert.doesNotMatch(upload, /FABUSHI_CI_ACCOUNT_SESSION_FILE/u);
 
+  assert.match(source, /macos-session\.mov/u);
   const collection = stepBlock(
     source,
     'Collect macOS App, device-call, Playwright, and release evidence',
     'Upload complete macOS interactive evidence even on failure',
   );
-  assert.match(collection, /macos-session\.mov/u);
   assert.match(collection, /steps\/999-final\.png/u);
   assert.match(collection, /device-calls\.jsonl/u);
   assert.match(collection, /fabushi-system\.log/u);
