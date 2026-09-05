@@ -119,6 +119,7 @@ final class FabushiAppAgentSurface {
         var identifiers = Set<String>()
         for element in elements {
             guard Self.validAgentId(element.agentId),
+                  element.agentId != Self.truncationAgentId,
                   element.role.count <= 80,
                   element.name.count <= 240
             else { throw SurfaceError.invalidElement }
@@ -128,20 +129,14 @@ final class FabushiAppAgentSurface {
 
         let retainedElements: [Element]
         if elements.count > Self.maximumElementCount {
-            let retainedCallerCount = Self.maximumElementCount - 1
-            var bounded = Array(elements.prefix(retainedCallerCount))
-            let retainedIds = Set(bounded.map(\.agentId))
-            if retainedIds.contains(Self.truncationAgentId) {
-                bounded = Array(elements.prefix(Self.maximumElementCount))
-            } else {
-                bounded.append(.init(
-                    agentId: Self.truncationAgentId,
-                    role: "status",
-                    name: "Additional semantic elements omitted; refine the current view or navigate deeper.",
-                    visible: true,
-                    enabled: false
-                ))
-            }
+            var bounded = Array(elements.prefix(Self.maximumElementCount - 1))
+            bounded.append(.init(
+                agentId: Self.truncationAgentId,
+                role: "status",
+                name: "Additional semantic elements omitted; refine the current view or navigate deeper.",
+                visible: true,
+                enabled: false
+            ))
             retainedElements = bounded
         } else {
             retainedElements = elements
