@@ -78,3 +78,12 @@ apps/
 - `fabushi-agent-network` 复用 Participant/Conversation/Message，不建立第二套聊天模型。
 - `fabushi-miniapp-core` 与 `fabushi-pay-core` 必须通过显式权限/意图对象与消息域交互。
 - 每个新 crate/service 必须在 PR 中说明所属域、依赖方向和替代的旧模块。
+
+## 2026-09-05 — MAINSAFE exact-head repair boundary
+
+`TFI-M6-MAINSAFE-001-VERSION-EXACT-HEAD-CHECKOUT-001` is an Actions checkout-identity repair, not a Rust/workspace repair.
+
+- No `Cargo.toml`, `Cargo.lock`, Rust crate, Rust test, generated binding, dependency version or workspace membership may change.
+- `.github/scripts/assert-native-electron-canonical.sh` remains unchanged and continues to be the single canonical version assertion implementation.
+- The only implementation/config surfaces are `.github/workflows/ci.yml` and `mobile/ios/project.yml CURRENT_PROJECT_VERSION 28 -> 29`; task-specific TFI records may accompany them.
+- Any execution discovery that requires a Rust/Cargo/dependency change is a stop condition requiring a new Architecture decision rather than scope expansion.
