@@ -3,6 +3,9 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const workflowPath = new URL('../../.github/workflows/macos-interactive-app-e2e.yml', import.meta.url);
+const loginPath = new URL('../scripts/login-ci-test-account.mjs', import.meta.url);
+const exportPath = new URL('../scripts/export-ci-app-account-session.mjs', import.meta.url);
+const sessionStorePath = new URL('../lib/fabushi-account-session.js', import.meta.url);
 
 async function workflow() {
   return readFile(workflowPath, 'utf8');
@@ -36,6 +39,22 @@ test('macOS interactive E2E keeps the installed app as the only device-registrat
   assert.doesNotMatch(source, /node\s+[^\n]*fabushi-device-agent\.js/u);
   assert.doesNotMatch(source, /uses:\s*[^\n]*interactive-runner/iu);
   assert.doesNotMatch(source, /run:\s*[^\n]*(?:KRIS|interactive-runner)/iu);
+});
+
+test('protected account helpers accept the App-owned macOS Actions id without assigning gateway ownership', async () => {
+  const [loginSource, exportSource, sessionStoreSource] = await Promise.all([
+    readFile(loginPath, 'utf8'),
+    readFile(exportPath, 'utf8'),
+    readFile(sessionStorePath, 'utf8'),
+  ]);
+  for (const source of [loginSource, exportSource, sessionStoreSource]) {
+    assert.match(source, /macos-app/u);
+  }
+  assert.match(loginSource, /protected GitHub Actions test device id/u);
+  assert.match(exportSource, /do not grant device-gateway ownership/u);
+  assert.match(sessionStoreSource, /does not mean the Actions runner owns device registration/u);
+  assert.doesNotMatch(loginSource, /must be the protected interactive Runner id/u);
+  assert.doesNotMatch(exportSource, /must be the protected interactive Runner id/u);
 });
 
 test('whole-session recording is ordered before release resolution and installation', async () => {
