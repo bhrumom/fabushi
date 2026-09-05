@@ -11,7 +11,7 @@ function required(name) {
   return value;
 }
 
-function privateRunnerPath(value, runnerTemp, name) {
+function privateActionsPath(value, runnerTemp, name) {
   const path = resolve(value);
   const root = resolve(runnerTemp);
   if (!path.startsWith(`${root}${sep}`)) {
@@ -24,20 +24,24 @@ function validCredential(value) {
   return value.length >= 24 && value.length <= 16 * 1024 && !/\s/u.test(value);
 }
 
+function isProtectedActionsTestDeviceId(value) {
+  return /^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app)$/u.test(value);
+}
+
 if (process.env.GITHUB_ACTIONS !== "true") {
   throw new Error("CI application sessions can be exported only inside GitHub Actions.");
 }
 
 const runnerTemp = required("RUNNER_TEMP");
-const sourcePath = privateRunnerPath(required("FABUSHI_ACCOUNT_SESSION_FILE"), runnerTemp, "FABUSHI_ACCOUNT_SESSION_FILE");
-const outputPath = privateRunnerPath(required("FABUSHI_CI_ACCOUNT_SESSION_FILE"), runnerTemp, "FABUSHI_CI_ACCOUNT_SESSION_FILE");
+const sourcePath = privateActionsPath(required("FABUSHI_ACCOUNT_SESSION_FILE"), runnerTemp, "FABUSHI_ACCOUNT_SESSION_FILE");
+const outputPath = privateActionsPath(required("FABUSHI_CI_ACCOUNT_SESSION_FILE"), runnerTemp, "FABUSHI_CI_ACCOUNT_SESSION_FILE");
 if (sourcePath === outputPath) throw new Error("The source and application session paths must differ.");
 
 const deviceId = required("DEVICE_ID");
 const runId = required("GITHUB_RUN_ID");
 const runAttempt = required("GITHUB_RUN_ATTEMPT");
-if (!/^gha-[0-9]+-[0-9]+-interactive$/u.test(deviceId)) {
-  throw new Error("DEVICE_ID must be the protected interactive Runner id.");
+if (!isProtectedActionsTestDeviceId(deviceId)) {
+  throw new Error("DEVICE_ID must be a protected GitHub Actions test device id.");
 }
 if (!/^[0-9]+$/u.test(runId) || !/^[0-9]+$/u.test(runAttempt)) {
   throw new Error("GitHub run identity is invalid.");
@@ -71,6 +75,9 @@ if (source?.ciRunner === true || source?.provider === "github-actions") {
   throw new Error("Expected an ordinary refreshable Fabushi account session.");
 }
 
+// `ciRunner` and the `ci-runner:` session prefix are retained as wire-compatibility
+// markers for existing consumers. They describe a bounded GitHub Actions session;
+// they do not grant device-gateway ownership. The launched App registers that gateway.
 const exported = {
   accessToken,
   tokenType: "Bearer",
