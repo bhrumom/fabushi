@@ -1,7 +1,7 @@
 # TFI-M11-IOS-INTERACTIVE-001 — iOS packaged interactive release-test loop
 
 - Project: `FAB-P0001 / TFI`
-- Status: `IN_PROGRESS`
+- Status: `PASS`
 - Platform: iOS Simulator packaged test build
 - Updated: 2026-09-05
 
@@ -9,33 +9,43 @@
 
 The GitHub Actions macOS runner is only the host. The exact packaged Fabushi iOS test app must be installed and authenticated first; the launched app itself must register its account-scoped device gateway. Only then may `@fabushi test` discover and control the newly registered app. KRIS, pre-online runners, `interactive-runner`, standalone runner-owned device agents, and runner-owned device registration are not valid device sources.
 
-## Current atomic blocker
+## Closed atomic blocker
 
-Canonical iOS packaged E2E reached the Xcode build and failed because `mobile/ios/Fabushi/ContentView.swift` built `appAgentSurfaceFingerprint` from one monolithic 51-value heterogeneous-looking String expression list, causing Swift 6 / Xcode 16.4 type inference to time out before install/login/App registration. Failure evidence locator: artifact `9971188137` from the preceding canonical run.
+The preceding canonical iOS packaged E2E failed in `mobile/ios/Fabushi/ContentView.swift` because `appAgentSurfaceFingerprint` used one monolithic 51-value String expression list and Swift 6 / Xcode 16.4 timed out during type inference before install/login/App registration. Failure evidence is retained as artifact `9971188137`.
 
-## Atomic fix contract
+PR #2376 split the fingerprint into three explicitly typed `[String]` chunks while preserving all 51 values, exact order, and final `|` join semantics. The narrow regression contract locks those invariants and prevents restoration of the monolithic literal.
 
-1. Preserve all 51 fingerprint values and their exact order and final `|` join semantics.
-2. Split the values into small explicitly typed `[String]` chunks and concatenate those typed chunks.
-3. Add a narrow regression contract that asserts exactly 51 values, identical order, explicit `[String]` chunk typing, ordered concatenation, and absence of the original monolithic return literal.
-4. Do not weaken product assertions or change App Surface semantics.
-5. Keep this fix isolated from macOS/release work already merged on `main`.
+## Accepted canonical provenance
+
+- Product PR: `#2376` — `fix(tfi): split iOS fingerprint type inference`.
+- Protected merge SHA / canonical tested `main`: `50818ecdc6c222f2e0d0de6000b580d714888413`.
+- Canonical post-main workflow run: `33973551821`, attempt `1`, conclusion `success`.
+- Run-scoped App-owned device: `gha-33973551821-1-interactive`.
+- Comparable Simulator test artifact: `9971856295` — `fabushi-ios-simulator-test-50818ecdc6c222f2e0d0de6000b580d714888413`.
+- Comparable artifact digest: `sha256:45528c7f1d0fc54a697d92e3dbe28e81cc3998cab6e6a35c2110331650fdc062`.
+- Packaged app archive digest from `SHA256SUMS.txt`: `sha256:1ab7a5d092210e175e83bea87905d278f711aa76018adc65225b361d94e6ca00`.
+- Packaged app identity: bundle `com.ombhrum.fabushi`, `CFBundleShortVersionString=1.2.22`, `CFBundleVersion=29`.
+- Complete PASS evidence artifact: `9971876450` — `fabushi-ios-interactive-evidence-33973551821-1`.
+- Evidence artifact digest: `sha256:740fb4e2c6e7ce0cfc4cfc181d45adcdb9cb0e9ee31284605381bc052f47afe3`.
 
 ## Verification gates
 
 - [x] Narrow Actions contract exercised the explicit-typing/order invariant successfully before the product commit was published.
-- [ ] Final PR head lightweight checks pass.
-- [ ] Product PR merges through the repository protected-main path.
-- [ ] A post-merge canonical iOS packaged run is bound to the accepted `main` SHA and publishes the comparable Simulator test build before interaction.
-- [ ] Full-session recording starts before install; exact build install precedes protected-account login; the installed authenticated App registers its own gateway.
-- [ ] `@fabushi test` selects only the newly registered run-scoped iOS device and successfully exercises the required six `fabushi.app.*` semantic tools.
-- [ ] PASS or FAIL evidence is retained via `always()`: full video, step screenshots, device-call/gateway trace, `xcresult`, app/Simulator/build logs and reports, source/release metadata, artifact identity/digest.
+- [x] Final PR head lightweight checks passed.
+- [x] Product PR merged through the repository protected-main merge queue.
+- [x] Canonical post-merge iOS packaged run was bound to accepted `main@50818ecdc6c222f2e0d0de6000b580d714888413` and published the comparable Simulator test artifact before interaction.
+- [x] Xcode 16.4 `build-for-testing` passed, proving the original Swift 6 fingerprint type-inference blocker is closed in a real product build.
+- [x] Fast native contract tests passed with `FabushiContracts.xcresult` retained in evidence.
+- [x] Full-session recording started immediately after Simulator boot and before install; exact build install preceded protected-account login.
+- [x] The installed authenticated iOS App registered its own gateway; no runner-side Fabushi device agent was started.
+- [x] `@fabushi test` selected only `gha-33973551821-1-interactive`; older iOS sessions were offline and not used.
+- [x] App trace contains successful `call-completed` records for all six required semantic tools: `fabushi.app.status`, `fabushi.app.snapshot`, `fabushi.app.find`, `fabushi.app.action`, `fabushi.app.wait`, and `fabushi.app.assert`.
+- [x] `report.json` records `controlStatus: passed` and all six tools in `completedTools`; the final semantic-control evidence gate passed.
+- [x] PASS evidence retains the full session video, step screenshots, gateway/device-call trace, `xcresult`, Xcode/app/Simulator logs and reports, source identity, exact test-build archive, and artifact digests.
 
-## Current implementation provenance
+## Evidence interpretation
 
-- Implementation commit: `2256c53f9c91ae2b76e1c3ae03606a9415d46af0` (`fix(tfi): split iOS fingerprint type inference`).
-- The branch is aligned without history rewrite to the current canonical-main lineage before PR creation.
-- Post-main E2E run/device/artifact identifiers remain intentionally pending until protected merge completes.
+The accepted App trace records App-owned registration at 2026-09-05T15:17:59Z, followed by successful external semantic tool completions from 15:18:22Z through 15:18:50Z. The workflow then collected evidence, uploaded it via the unconditional evidence path, deleted the isolated Simulator, and passed the final external semantic-control enforcement step. The run-scoped device correctly became offline after Simulator teardown.
 
 ## Failure policy
 
