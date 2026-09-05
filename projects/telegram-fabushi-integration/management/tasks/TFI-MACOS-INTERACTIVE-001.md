@@ -7,18 +7,17 @@
 - **Status:** `TESTING`
 - **Latest governed macOS test release actually tested:** `v1.2.27` -> `ecebd0373c158c6eb8ee225ac184cc3ca2e9e6dc`.
 - **Attempt 10:** run `33975902199`, App-owned device `gha-33975902199-1-macos-app`; stable App-target rebase passed, then native Computer Use failed because the direct App-owned MCP lost the package-derived `Fabushi Computer Control.app` helper environment.
-- **Live reconciliation:** PR `#2381` was already merged as `main@36868f9c5ba389c6b627f93f792ce9a7d52192e3` before this continuation and immutable prerelease `v1.2.28` already exists, but its merge/publish happened while the canonical Electron quality gate was paused. It is not a post-restoration acceptance candidate.
-- **Gate restoration:** PR `#2382` restored the exact pre-pause Electron quality workflow blob and protected-queue merged as `main@31ac7659b85cce27d31dfa7dcc54537c26e8e15e` without `automerge-force`.
-- **Current independent blocker:** restored Electron main run `33999314440`, Linux job `101395223837`, fails before dependency install on canonical version drift (`1.2.28` vs stale `1.2.22` package/lock metadata; iOS marketing metadata is stale as well).
+- **Live reconciliation:** PR `#2381` was already merged as `main@36868f9c5ba389c6b627f93f792ce9a7d52192e3` before this continuation and immutable prerelease `v1.2.28` already existed, but its merge/publish happened while the canonical Electron quality gate was paused. It is not a post-restoration acceptance candidate.
+- **Electron gate restoration:** PR `#2382` restored the exact pre-pause Electron workflow and protected-queue merged as `main@31ac7659b85cce27d31dfa7dcc54537c26e8e15e` without `automerge-force`.
 - **Version-parity repair:** PR `#2383` protected-queue merged as `main@8cf204380559d4a997c96ddf6b44ae876dd3eb0d`; merge-group CI `33999592781` passed.
-- **Current independent blocker:** real restored Electron run `33999527798` now passes the canonical architecture/version assertion, then fails dependency-free packaged-runtime release contracts: the macOS test release hides the Computer Use install inside a combined shell step and a source test still asserts obsolete unified-release markers instead of the current tiered canonical source-gate/immutable-release policy.
-- **Atomic repair branch:** `fix/tfi-electron-release-contract-1-2-30-20260906`, staging comparable macOS test version `1.2.30` while Android/iOS build counters remain unchanged.
+- **Computer-control security gate restoration:** PR `#2385` restored exact pre-pause blob `acfc957e0cfd5e0829e23677cf06455abb6b7782` and protected-queue merged as `main@ad9ddc38a99656d0ca09fd196d7ccb162e2a74dd`; merge-group CI `33999910843` passed.
+- **Current independent blocker:** release-contract PR `#2384`; restored Electron run `33999715376`, Linux job `101396275595`, reached dependency-free contracts and exposed stale packaged-release/source-test assumptions. PR #2384 has absorbed latest protected main and now stages strictly newer `1.2.31`.
 
 ## Product truth
 
 The macOS GitHub Actions machine is only the host environment. The installed Fabushi Test macOS application must be launched and logged into the protected CI test account; only then may the application-owned remote-device supervisor obtain `feature.auth.deviceAgentSession` and register that application with the account-scoped device gateway. `@fabushi test` discovers and controls that newly registered application. KRIS, a pre-online Runner, `interactive-runner`, and a runner-started standalone device agent are forbidden as the device source.
 
-`v1.2.26` remains excluded from acceptance because its release run started before the canonical protected-main source gate was restored. `v1.2.27` is the first governed release after that repair and is valid evidence for Attempt 10. `v1.2.28` remains published but is excluded from this resumed post-restoration acceptance sequence because its PR merge and package publication occurred while the Electron quality gate was paused. The next acceptable candidate must be a strictly newer protected-main release after the restored gate is green.
+`v1.2.26` remains excluded from acceptance because its release run started before the canonical protected-main source gate was restored. `v1.2.27` is valid evidence for Attempt 10. `v1.2.28` is excluded because it merged/published while the Electron quality gate was paused. `v1.2.29` and `v1.2.30`, if published, are intermediate governance releases while later restored gates remained red. The next acceptable candidate must be the newest strictly newer protected-main release whose exact source has the restored Electron and Computer-control security gates green.
 
 ## Required journey
 
@@ -45,11 +44,13 @@ Every attempt, PASS or FAIL, preserves with `if: always()` whole-session video b
 
 ## Current atomic repair contract
 
-The App-owned native-helper propagation defect from Attempt 10 landed in #2381 and must not be duplicated. The restored canonical Electron gate now owns the next failure boundary. Its architecture assertion requires all canonical semantic-version sources to match `app-version.json`, including desktop package/lock, native-mobile package/lock, and iOS `MARKETING_VERSION`.
+The App-owned native-helper propagation defect from Attempt 10 landed in #2381 and must not be duplicated. PRs #2382/#2383/#2385 restored the real Electron gate, canonical version parity, and full Computer-control security gate through protected merge queue.
 
-PR #2383 synchronized those canonical version sources to `1.2.29` and protected-queue merged. The restored Electron gate then exposed a separate packaged-runtime/release-source contract drift. The current repair keeps all Computer-control security and platform fail-closed assertions, makes the existing Computer Use dependency installation auditable as its own working-directory step before bundle staging, migrates only stale unified-release assertions to the live tiered canonical source-gate/immutable-release policy, and stages `1.2.30`. Android `androidVersionCode=29` and iOS `iosBuildNumber=29` remain unchanged.
+PR #2384 owns only the remaining packaged-release source-contract drift. It keeps all actual packagers under explicit Computer Use install/stage/sign/verify assertions, makes the Native Electron release install step auditable with `working-directory: chatgpt-vps-control`, updates obsolete unified-release assertions to the live tiered canonical protected-main source gate and immutable prerelease policy, and explicitly verifies that the superseded macOS hot-package workflow is paused/manual rather than treating it as a full packager. The repaired full Computer-control security workflow and fail-closed platform assertions remain required.
 
-The PR must pass the restored real Electron PR gate and protected merge. Only the newest immutable protected-main release whose exact source has the restored Electron gate green may enter Attempt 11. Native recording must begin before installation; the App must log in and self-register its device gateway before `@fabushi test` is used for discovery/control.
+Because `1.2.30` belongs to the independent security-gate repair, PR #2384 now stages `1.2.31`. Android `androidVersionCode=29` and iOS `iosBuildNumber=29` remain unchanged. No branch-protection rule, security assertion, application behavior, account/session parser, App-owned gateway path, remote-control opt-in rule, or Computer Use safety rule is weakened.
+
+The PR must pass the restored real Electron PR gate and restored security gate, then protected merge normally. Only the newest immutable protected-main release whose exact source has those restored gates green may enter Attempt 11. Native recording must begin before installation; the App must log in and self-register its device gateway before `@fabushi test` is used for discovery/control.
 
 ## Defect / merge / release loop
 
@@ -62,4 +63,5 @@ Each independent product or release-governance failure gets one defect PR, prote
 - v1.2.26 exclusion / v1.2.27 release gate: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-release-gate-1.2.27.md`.
 - Attempt 10 / v1.2.27 native helper blocker: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-05-attempt-10-native-helper.md`.
 - Restored Electron gate / version-parity failure / v1.2.29 repair: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-06-electron-gate-version-parity-1.2.29.md`.
-- Restored Electron gate / packaged-runtime release-contract drift / v1.2.30 repair: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-06-electron-gate-release-contract-1.2.30.md`.
+- Restored Computer-control security gate / v1.2.30 repair: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-06-computer-control-security-gate-1.2.30.md`.
+- Restored Electron gate / packaged-release source-contract repair / v1.2.31: `projects/telegram-fabushi-integration/evidence/TFI-MACOS-INTERACTIVE-001/2026-09-06-electron-gate-release-contract-1.2.31.md`.

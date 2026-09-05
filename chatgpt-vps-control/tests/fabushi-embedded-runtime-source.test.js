@@ -161,8 +161,11 @@ test("every full Electron packager installs and stages Computer Use before seali
   }
 
   const hotPackage = source(".github/workflows/electron-macos-hot-package.yml");
-  assert.match(hotPackage, /- 'chatgpt-vps-control\/\*\*'/);
-  assert.match(hotPackage, /grep -Eq '\^chatgpt-vps-control\/'[\s\S]*full_required=true/);
+  assert.match(hotPackage, /workflow_dispatch:/);
+  assert.match(hotPackage, /jobs:\s*\n\s*paused:/);
+  assert.ok(hotPackage.includes("Superseded by the single Native Electron macOS test release workflow."));
+  assert.doesNotMatch(hotPackage, /electron-builder/);
+  assert.doesNotMatch(hotPackage, /prepare-fabushi-bundle/);
 
   const ci = source(".github/workflows/ci.yml");
   assert.match(ci, /\^chatgpt-vps-control/);
