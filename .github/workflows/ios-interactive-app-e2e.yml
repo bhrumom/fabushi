@@ -277,7 +277,7 @@ jobs:
 
             missing=0
             for tool in "${required[@]}"; do
-              if ! grep -q "\"toolName\":\"$tool\".*\"ok\":true" "$TRACE_PATH" 2>/dev/null; then
+              if ! jq -e --arg tool "$tool" 'select(.phase == "call-completed" and .ok == true and .toolName == $tool)' "$TRACE_PATH" >/dev/null 2>&1; then
                 missing=1
                 break
               fi
