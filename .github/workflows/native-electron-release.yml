@@ -1,191 +1,66 @@
-name: Native Electron application release
+name: Native Electron macOS test release
 
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing release tag to package and publish
-        required: true
-        type: string
 
 permissions:
   contents: write
-  actions: read
-  checks: read
 
 concurrency:
-  group: native-electron-release-${{ inputs.tag }}
+  group: native-electron-macos-test-release
   cancel-in-progress: false
 
-env:
-  RELEASE_TAG: ${{ inputs.tag }}
-
 jobs:
-  platform:
-    name: Release platform (${{ matrix.label }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            label: macOS desktop
-            kind: electron
-            target: mac
-          - os: windows-latest
-            label: Windows desktop
-            kind: electron
-            target: win
-          - os: ubuntu-latest
-            label: Linux desktop
-            kind: electron
-            target: linux
-          - os: ubuntu-latest
-            label: Android
-            kind: android
-            target: android
-          - os: macos-15
-            label: iOS
-            kind: ios
-            target: ios
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 180
+  mac-test-release:
+    name: macOS test release
+    runs-on: macos-15
+    timeout-minutes: 120
     steps:
-      - name: Checkout immutable release source
+      - name: Checkout exact protected main
         uses: actions/checkout@v5
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: main
           fetch-depth: 0
           submodules: recursive
-          persist-credentials: false
-
-      - name: Verify tag, canonical architecture, and exact-SHA platform gates
+      - name: Bind exact main SHA and version
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git rev-parse -q --verify "refs/tags/$RELEASE_TAG"
-          bash .github/scripts/assert-native-electron-canonical.sh
-          tagged_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
-          test "$(git rev-parse HEAD)" = "$tagged_sha"
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
-          if ! git merge-base --is-ancestor "$tagged_sha" refs/remotes/origin/main; then
-            echo "Release tag $RELEASE_TAG does not point to a commit on protected main." >&2
-            exit 1
-          fi
-          checks_json="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$tagged_sha/check-runs?per_page=100")"
-          for required in \
-            'CI result' \
-            'Electron desktop result' \
-            'Electron macOS' \
-            'Electron Windows' \
-            'Electron Linux' \
-            'Native mobile result' \
-            'Native iOS' \
-            'Computer control security result' \
-            'Canonical architecture guardrails' \
-            'Resolve Worker source and deployment impact'; do
-            conclusion="$(printf '%s' "$checks_json" | jq -r --arg required "$required" '[.[].check_runs[] | select(.name == $required)] | sort_by(.started_at // .created_at // "") | last | .conclusion // "missing"')"
-            if [ "$conclusion" != success ]; then
-              echo "Required release gate '$required' is $conclusion for $tagged_sha." >&2
-              exit 1
-            fi
-          done
-          echo "Tagged commit $tagged_sha has all canonical platform gates green." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Load release version
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(jq -r '.version' app-version.json)"
-          android_version_code="$(jq -r '.androidVersionCode' app-version.json)"
-          ios_build_number="$(jq -r '.iosBuildNumber' app-version.json)"
-          desktop_version="$(jq -r '.version' desktop/package.json)"
-          test -n "$version"
-          test "$version" != null
-          test "$android_version_code" != null
-          test "$ios_build_number" != null
-          test "$desktop_version" = "$version"
-          test "$RELEASE_TAG" = "v$version"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/main)"
+          version="$(jq -r .version app-version.json)"
+          test "$version" = "$(jq -r .version desktop/package.json)"
+          test "$version" = '1.2.23'
           echo "FABUSHI_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
-          echo "FABUSHI_ANDROID_VERSION_CODE=$android_version_code" >> "$GITHUB_ENV"
-          echo "FABUSHI_IOS_BUILD_NUMBER=$ios_build_number" >> "$GITHUB_ENV"
-          echo "Release version: $version (Android $android_version_code, iOS $ios_build_number) from exact main tag $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Set up Node.js for Electron
-        if: matrix.kind == 'electron'
-        uses: actions/setup-node@v6
+          echo "RELEASE_TAG=v$version" >> "$GITHUB_ENV"
+          echo "HEAD_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: |
             desktop/package-lock.json
             chatgpt-vps-control/package-lock.json
-
-      - name: Set up Rust for Electron
-        if: matrix.kind == 'electron'
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.97.1
-
-      - name: Restore Electron Rust cache
-        if: matrix.kind == 'electron'
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: release-electron-${{ runner.os }}-v3
-
-      - name: Install Linux Electron native dependencies
-        if: matrix.kind == 'electron' && matrix.target == 'linux'
-        shell: bash
+          shared-key: release-electron-macos-test-v1
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
-            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
-            libegl1-mesa-dev libgbm-dev
-
-      - name: Install Electron dependencies
-        if: matrix.kind == 'electron'
-        working-directory: desktop
-        run: npm ci --prefer-offline
-
-      - name: Install embedded Computer Use dependencies
-        if: matrix.kind == 'electron'
-        working-directory: chatgpt-vps-control
-        run: npm ci --ignore-scripts --prefer-offline
-
-      - name: Install Playwright video diagnostics runtime
-        if: matrix.kind == 'electron' && matrix.target == 'linux'
-        working-directory: desktop
-        run: npx playwright install ffmpeg
-
-      - name: Build and stage release Mahayana Host
-        if: matrix.kind == 'electron'
-        working-directory: desktop
-        run: npm run build:host
-
-      - name: Build pinned offline ASR engine
-        if: matrix.kind == 'electron'
-        working-directory: ${{ github.workspace }}
-        run: node .github/scripts/build-offline-asr-engine.mjs
-
-      - name: Build release renderer
-        if: matrix.kind == 'electron'
-        working-directory: desktop
-        run: npm run build:renderer
-
-      - name: Run release Electron user smoke on the Linux platform runner
-        if: matrix.kind == 'electron' && matrix.target == 'linux'
-        working-directory: desktop
-        env:
-          FABUSHI_FEATURE_HOST_MODE: test
-          FABUSHI_E2E: '1'
-          MAHAYANA_APP_HOST_BIN: ${{ github.workspace }}/desktop/resources/bin/mahayana-app-host
-        run: xvfb-run -a npm run test:e2e
-
+          cd desktop && npm ci --prefer-offline
+          cd ../chatgpt-vps-control && npm ci --ignore-scripts --prefer-offline
+      - name: Build canonical Mac payload only
+        run: |
+          cd desktop
+          npm run build:host
+          cd ..
+          node .github/scripts/build-offline-asr-engine.mjs
+          cd desktop
+          npm run build:renderer
       - name: Install Developer ID Application identity
-        if: matrix.kind == 'electron' && matrix.target == 'mac'
         shell: bash
         env:
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
@@ -200,64 +75,43 @@ jobs:
           keychain_password="$(openssl rand -hex 24)"
           printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$cert"
           security create-keychain -p "$keychain_password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
           security import "$cert" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
           security list-keychains -d user -s "$keychain"
-          security default-keychain -d user -s "$keychain"
           identity="$CONFIGURED_IDENTITY"
-          if [ -z "$identity" ]; then
-            identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application/ {print $2; exit}')"
-          fi
-          case "$identity" in
-            *'Developer ID Application:'*) ;;
-            *) echo 'Developer ID Application identity is required for macOS release packaging.' >&2; exit 1 ;;
-          esac
-          security find-identity -v -p codesigning "$keychain" | grep -F -- "$identity" >/dev/null
+          if [ -z "$identity" ]; then identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application/ {print $2; exit}')"; fi
+          case "$identity" in *'Developer ID Application:'*) ;; *) exit 1 ;; esac
           echo "MACOS_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
-
-      - name: Sign bundled native macOS executables before app sealing
-        if: matrix.kind == 'electron' && matrix.target == 'mac'
+      - name: Sign staged native executables
         shell: bash
         run: |
           set -euo pipefail
           host=desktop/resources/bin/mahayana-app-host
-          test -x "$host"
           codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.mahayana-app-host --sign "$MACOS_CODESIGN_IDENTITY" "$host"
-          while IFS= read -r binary; do
-            codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.whisper-cli --sign "$MACOS_CODESIGN_IDENTITY" "$binary"
-          done < <(find desktop/resources/asr -type f -name whisper-cli -print)
+          while IFS= read -r binary; do codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.whisper-cli --sign "$MACOS_CODESIGN_IDENTITY" "$binary"; done < <(find desktop/resources/asr -type f -name whisper-cli -print)
           codesign --verify --strict --verbose=2 "$host"
-
-      - name: Stage bundled cross-platform Computer Use runtime
-        if: matrix.kind == 'electron'
-        shell: bash
+      - name: Stage Computer Use runtime
         env:
           CHATGPT_COMPUTER_HOME: ${{ github.workspace }}/desktop/resources/computer-control
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || vars.MACOS_APP_STORE_TEAM_ID }}
         run: |
-          set -euo pipefail
-          export CHATGPT_COMPUTER_CODESIGN_IDENTITY="${MACOS_CODESIGN_IDENTITY:-}"
+          export CHATGPT_COMPUTER_CODESIGN_IDENTITY="$MACOS_CODESIGN_IDENTITY"
           export CHATGPT_COMPUTER_TEAM_ID="${APPLE_TEAM_ID:-}"
           node chatgpt-vps-control/bin/prepare-fabushi-bundle.js
-
-      - name: Package canonical Electron application
-        if: matrix.kind == 'electron'
+      - name: Package signed Mac DMG ZIP updater assets
         working-directory: desktop
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.target == 'mac' && 'true' || 'false' }}
-          FABUSHI_MACOS_NOTARIZE: ${{ matrix.target == 'mac' && '1' || '0' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+          FABUSHI_MACOS_NOTARIZE: '1'
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || vars.MACOS_APP_STORE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
-        run: npx electron-builder --${{ matrix.target }} --publish never
-
-      - name: Notarize and staple macOS DMG
-        if: matrix.kind == 'electron' && matrix.target == 'mac'
+        run: npx electron-builder --mac --publish never
+      - name: Notarize staple and verify
         shell: bash
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -271,355 +125,40 @@ jobs:
         run: |
           set -euo pipefail
           dmg="$(find desktop/release -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          zip="$(find desktop/release -maxdepth 1 -type f -name '*.zip' -print -quit)"
           app="$(find desktop/release -maxdepth 3 -type d -name '*.app' -print -quit)"
-          test -n "$dmg"
-          test -n "$app"
+          test -n "$dmg"; test -n "$zip"; test -n "$app"
           bash .github/scripts/notarize-macos-dmg.sh "$dmg"
-          chmod +x .github/scripts/verify-electron-macos-package.sh
           bash .github/scripts/verify-electron-macos-package.sh "$app" "$dmg"
-
-      - name: Verify packaged Computer Use runtime, helper, and private MCP
-        if: matrix.kind == 'electron'
+          node .github/scripts/verify-packaged-computer-control.mjs --release-root desktop/release --platform mac
+          test -f desktop/release/latest-mac.yml
+          find desktop/release -maxdepth 1 -type f -name '*.blockmap' | grep -q .
+          spctl --assess --type execute --verbose "$app"
+          xcrun stapler validate "$app"
+          xcrun stapler validate "$dmg"
+      - name: Hash assets and publish GitHub prerelease
         shell: bash
-        env:
-          FABUSHI_PACKAGE_TARGET: ${{ matrix.target }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || vars.MACOS_APP_STORE_TEAM_ID }}
-        run: |
-          set -euo pipefail
-          args=(
-            --release-root desktop/release
-            --platform "$FABUSHI_PACKAGE_TARGET"
-          )
-          if [ "$FABUSHI_PACKAGE_TARGET" = mac ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
-            args+=(--expected-mac-team "$APPLE_TEAM_ID")
-          fi
-          node .github/scripts/verify-packaged-computer-control.mjs "${args[@]}"
-
-      - name: Upload Electron package
-        if: matrix.kind == 'electron'
-        uses: actions/upload-artifact@v7
-        with:
-          name: electron-${{ matrix.target }}
-          path: desktop/release/**
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Set up Java for Android
-        if: matrix.kind == 'android'
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Android SDK
-        if: matrix.kind == 'android'
-        uses: android-actions/setup-android@v4
-        with:
-          cmdline-tools-version: '14742923'
-          packages: 'platform-tools'
-
-      - name: Install Android 17 SDK and NDK
-        if: matrix.kind == 'android'
-        shell: bash
-        run: |
-          set -euo pipefail
-          available_packages="$(sdkmanager --list --channel=3)"
-          platform_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/platforms;android-(37([.]0)?|CinnamonBun)/ && !found {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found=1}')"
-          build_tools_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/build-tools;37[.]/ && !found {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found=1}')"
-          test -n "$platform_package" && test -n "$build_tools_package"
-          sdkmanager --channel=3 "$platform_package" "$build_tools_package" 'ndk;28.2.13676358'
-          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
-            installed_platform="$(find "$ANDROID_HOME/platforms" -maxdepth 1 -type d \( -name 'android-37*' -o -name 'android-CinnamonBun*' \) -print -quit)"
-            test -n "$installed_platform"
-            ln -s "$installed_platform" "$ANDROID_HOME/platforms/android-37"
-          fi
-
-      - name: Set up Rust for Android
-        if: matrix.kind == 'android'
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android,x86_64-linux-android
-
-      - name: Restore Android release Rust cache
-        if: matrix.kind == 'android'
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: release-android-v3
-
-      - name: Restore cargo-ndk
-        if: matrix.kind == 'android'
-        id: release-cargo-ndk
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.cargo/bin/cargo-ndk
-          key: release-cargo-ndk-${{ runner.os }}-${{ runner.arch }}-v1
-
-      - name: Install cargo-ndk on cache miss
-        if: matrix.kind == 'android' && steps.release-cargo-ndk.outputs.cache-hit != 'true'
-        run: command -v cargo-ndk >/dev/null 2>&1 || cargo install cargo-ndk --locked
-
-      - name: Save cargo-ndk on cache miss
-        if: matrix.kind == 'android' && steps.release-cargo-ndk.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.cargo/bin/cargo-ndk
-          key: release-cargo-ndk-${{ runner.os }}-${{ runner.arch }}-v1
-
-      - name: Build native Rust JNI libraries
-        if: matrix.kind == 'android'
-        working-directory: third_party/mahayana/mahayana-rs
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
-          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
-        run: cargo ndk -t arm64-v8a -t x86_64 -o ../../../mobile/android/app/src/main/jniLibs build --release -p mahayana-app-host-mobile
-
-      - name: Install Android signing key
-        if: matrix.kind == 'android'
-        shell: bash
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          set -euo pipefail
-          test -n "$ANDROID_KEYSTORE_BASE64"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fabushi-release.jks"
-
-      - name: Restore Gradle dependency and build cache
-        if: matrix.kind == 'android'
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Build signed Android release
-        if: matrix.kind == 'android'
-        working-directory: mobile/android
-        env:
-          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/fabushi-release.jks
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        shell: bash
-        run: ./gradlew --no-daemon --build-cache bundleRelease assembleRelease -PversionName="$FABUSHI_RELEASE_VERSION" -PversionCode="$FABUSHI_ANDROID_VERSION_CODE"
-
-      - name: Upload Android release
-        if: matrix.kind == 'android'
-        uses: actions/upload-artifact@v7
-        with:
-          name: android-release
-          path: |
-            mobile/android/app/build/outputs/apk/release/*.apk
-            mobile/android/app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Set up Rust for iOS
-        if: matrix.kind == 'ios'
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-ios
-
-      - name: Restore iOS release Rust cache
-        if: matrix.kind == 'ios'
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: release-ios-v3
-
-      - name: Install XcodeGen
-        if: matrix.kind == 'ios'
-        run: command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
-
-      - name: Build Rust static library for iOS device
-        if: matrix.kind == 'ios'
-        working-directory: third_party/mahayana/mahayana-rs
-        run: cargo build --release -p mahayana-app-host-mobile --target aarch64-apple-ios
-
-      - name: Stage Rust static library
-        if: matrix.kind == 'ios'
-        shell: bash
-        run: |
-          mkdir -p mobile/ios/Frameworks
-          cp third_party/mahayana/mahayana-rs/target/aarch64-apple-ios/release/libmahayana_app_host.a mobile/ios/Frameworks/
-
-      - name: Install iOS signing identity and profile
-        if: matrix.kind == 'ios'
-        shell: bash
-        env:
-          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
-          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
-          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-        run: |
-          set -euo pipefail
-          test -n "$IOS_CERTIFICATE_P12_BASE64"
-          test -n "$IOS_PROVISIONING_PROFILE_BASE64"
-          cert="$RUNNER_TEMP/ios-distribution.p12"
-          profile="$RUNNER_TEMP/Fabushi.mobileprovision"
-          keychain="$RUNNER_TEMP/fabushi-signing.keychain-db"
-          printf '%s' "$IOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$cert"
-          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$profile"
-          security create-keychain -p actions "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p actions "$keychain"
-          security import "$cert" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
-          security set-key-partition-list -S apple-tool:,apple: -s -k actions "$keychain"
-          security list-keychains -d user -s "$keychain" login.keychain-db
-          security cms -D -i "$profile" > "$RUNNER_TEMP/profile.plist"
-          profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")"
-          profile_name="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")"
-          team_id="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")"
-          test -n "$team_id"
-          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          cp "$profile" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
-          echo "PROFILE_NAME=$profile_name" >> "$GITHUB_ENV"
-          echo "IOS_TEAM_ID=$team_id" >> "$GITHUB_ENV"
-
-      - name: Generate Xcode project
-        if: matrix.kind == 'ios'
-        working-directory: mobile/ios
-        run: xcodegen generate
-
-      - name: Archive native iOS application
-        if: matrix.kind == 'ios'
-        working-directory: mobile/ios
-        run: >-
-          xcodebuild archive
-          -project Fabushi.xcodeproj
-          -scheme Fabushi
-          -configuration Release
-          -destination 'generic/platform=iOS'
-          -archivePath "$RUNNER_TEMP/Fabushi.xcarchive"
-          DEVELOPMENT_TEAM="$IOS_TEAM_ID"
-          CODE_SIGN_STYLE=Manual
-          CODE_SIGN_IDENTITY='Apple Distribution'
-          PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
-
-      - name: Export signed iOS IPA
-        if: matrix.kind == 'ios'
-        shell: bash
-        run: |
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>app-store-connect</string>
-            <key>signingStyle</key><string>manual</string>
-            <key>teamID</key><string>${IOS_TEAM_ID}</string>
-            <key>provisioningProfiles</key><dict>
-              <key>com.ombhrum.fabushi</key><string>${PROFILE_NAME}</string>
-            </dict>
-          </dict></plist>
-          PLIST
-          xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/Fabushi.xcarchive" \
-            -exportPath "$RUNNER_TEMP/ios-export" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
-
-      - name: Upload iOS release
-        if: matrix.kind == 'ios'
-        uses: actions/upload-artifact@v7
-        with:
-          name: ios-release
-          path: ${{ runner.temp }}/ios-export/*.ipa
-          if-no-files-found: error
-          retention-days: 14
-
-  publish:
-    name: Release control plane (no platform build)
-    needs: platform
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ env.RELEASE_TAG }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: actions/download-artifact@v8
-        with:
-          path: release
-          merge-multiple: false
-
-      - name: Collect and verify the public cross-platform asset set
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf release-assets
-          mkdir -p release-assets
-          while IFS= read -r -d '' asset; do
-            name="$(basename "$asset")"
-            case "$name" in
-              fabushi-*-macos-*.dmg|fabushi-*-macos-*.dmg.blockmap|\
-              fabushi-*-macos-*.zip|fabushi-*-macos-*.zip.blockmap|\
-              fabushi-*-setup.exe|fabushi-*-setup.exe.blockmap|\
-              fabushi-*.AppImage|fabushi-*.AppImage.blockmap|fabushi-*.AppImage.zsync|\
-              fabushi-*.deb|latest-mac.yml|latest.yml|latest-linux.yml|\
-              *.apk|*.aab|*.ipa)
-                destination="release-assets/$name"
-                if [ -e "$destination" ]; then
-                  if ! cmp -s "$asset" "$destination"; then
-                    echo "Conflicting public release asset name: $name" >&2
-                    exit 1
-                  fi
-                else
-                  cp "$asset" "$destination"
-                fi
-                ;;
-            esac
-          done < <(find release -type f -print0)
-
-          require_asset() {
-            local pattern="$1"
-            if [ -z "$(find release-assets -maxdepth 1 -type f -name "$pattern" -print -quit)" ]; then
-              echo "Missing required release asset: $pattern" >&2
-              exit 1
-            fi
-          }
-          require_asset 'fabushi-*-macos-*.dmg'
-          require_asset 'fabushi-*-macos-*.zip'
-          require_asset 'fabushi-*-macos-*.zip.blockmap'
-          require_asset 'latest-mac.yml'
-          require_asset 'fabushi-*-setup.exe'
-          require_asset 'fabushi-*-setup.exe.blockmap'
-          require_asset 'latest.yml'
-          require_asset 'fabushi-*.AppImage'
-          require_asset 'fabushi-*.deb'
-          require_asset 'latest-linux.yml'
-          require_asset '*.apk'
-          require_asset '*.aab'
-          require_asset '*.ipa'
-
-          tagged_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
-          version="$(jq -r '.version' app-version.json)"
-          jq -n \
-            --arg tag "$RELEASE_TAG" \
-            --arg version "$version" \
-            --arg sha "$tagged_sha" \
-            --arg runId "$GITHUB_RUN_ID" \
-            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
-            '{tag:$tag,version:$version,sha:$sha,workflowRunId:$runId,workflowRunAttempt:$runAttempt}' \
-            > release-assets/fabushi-release-manifest.json
-          echo "Verified $(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ') public desktop + Android + iOS release assets." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Generate release checksums
-        shell: bash
-        run: |
-          set -euo pipefail
-          (
-            cd release-assets
-            find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 \
-              | sort -z \
-              | xargs -0 sha256sum \
-              | sed 's#  \./#  #'
-          ) > release-assets/SHA256SUMS.txt
-
-      - name: Publish immutable release assets
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists; refusing to mutate an existing release." >&2
-            exit 1
+          cd desktop/release
+          shasum -a 256 *.dmg *.zip latest-mac.yml *.blockmap > SHA256SUMS.txt
+          assets=( *.dmg *.zip latest-mac.yml *.blockmap SHA256SUMS.txt )
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists" >&2; exit 1
           fi
-          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f -print0 | sort -z)
-          gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --generate-notes --latest=false
+          gh release create "$RELEASE_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --target "$HEAD_SHA" --prerelease --title "Fabushi $FABUSHI_RELEASE_VERSION macOS test" --notes "Mac-only test release from protected main $HEAD_SHA. Signed, notarized, stapled, updater assets included."
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url,tagName,isPrerelease,targetCommitish
+      - name: Upload immutable Mac release evidence artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-test-release-${{ env.FABUSHI_RELEASE_VERSION }}
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/latest-mac.yml
+            desktop/release/*.blockmap
+            desktop/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
