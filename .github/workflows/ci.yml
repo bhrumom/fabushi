@@ -22,9 +22,10 @@ jobs:
         run: |
           set -euo pipefail
           test "$(jq -r .version app-version.json)" = "$(jq -r .version desktop/package.json)"
-          test "$(jq -r .version app-version.json)" = "1.2.25"
+          test "$(jq -r .version app-version.json)" = "1.2.26"
           grep -F 'workflow_dispatch:' .github/workflows/native-electron-release.yml >/dev/null
           grep -F 'runs-on: macos-15' .github/workflows/native-electron-release.yml >/dev/null
           ! grep -Eq 'windows-latest|ubuntu-latest|Android|Native iOS' .github/workflows/native-electron-release.yml
+          node desktop/scripts/check-app-agent-stable-rebase-contract.mjs
           git diff --check HEAD^ HEAD || true
-          echo 'Required CI result: fast release-control gate only.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Required CI result: fast release-control and macOS App target-rebase contract gate only.' >> "$GITHUB_STEP_SUMMARY"
