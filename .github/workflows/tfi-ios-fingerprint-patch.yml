@@ -23,7 +23,6 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
-          import textwrap
 
           source_path = Path("mobile/ios/Fabushi/ContentView.swift")
           source = source_path.read_text()
@@ -35,64 +34,61 @@ jobs:
           literal_end = body.index(literal_end_marker, literal_start) + len(literal_end_marker)
           old_block = body[literal_start:literal_end]
 
-          expected_values = [
-              'destinationRevision',
-              'String(isSearching)',
-              'homeQuery',
-              'String(profileMenuPresented)',
-              'String(composeMenuPresented)',
-              'composeKind?.rawValue ?? ""',
-              'composeName',
-              'composeDescription',
-              'composeParticipantIds.sorted().joined(separator: ",")',
-              'activeSection?.rawValue ?? ""',
-              'String(contactGroupsPresented)',
-              'String(folderEditorPresented)',
-              'folderTitle',
-              'folderConversationIds.sorted().joined(separator: ",")',
-              'String(folderIncludeGroups)',
-              'String(folderIncludeChannels)',
-              'String(agentChatPresented)',
-              'model.chatDraft',
-              'String(model.chatBusy)',
-              'agentRevision',
-              'selectedConversation?.id ?? ""',
-              'messageDraft',
-              'replyTarget?.id ?? ""',
-              'editingMessage?.id ?? ""',
-              'forwardMessage?.id ?? ""',
-              'mediaViewerMessage?.id ?? ""',
-              'String(conversationInfoPresented)',
-              'String(chatSearchPresented)',
-              'chatSearchQuery',
-              'String(attachmentPickerPresented)',
-              'String(locationSharePresented)',
-              'String(contactSharePresented)',
-              'String(pollComposerPresented)',
-              'pollQuestion',
-              'pollOption1',
-              'pollOption2',
-              'pollOption3',
-              'String(voiceRecorder.isRecording)',
-              'model.query',
-              'model.message',
-              'String(model.loading)',
-              'model.installingPluginId ?? ""',
-              'model.permissionRequest?.pluginId ?? ""',
-              'openedMiniApp?.pluginId ?? ""',
-              'pluginRevision',
-              'conversationRevision',
-              'contactRevision',
-              'folderRevision',
-              'selectedMessagesRevision',
-              'String(messaging.loading)',
-              'messaging.errorMessage ?? ""',
-          ]
-          actual_values = [
-              line.strip().removesuffix(",")
-              for line in old_block.splitlines()[1:-1]
-              if line.strip()
-          ]
+          expected_values = '''
+          destinationRevision
+          String(isSearching)
+          homeQuery
+          String(profileMenuPresented)
+          String(composeMenuPresented)
+          composeKind?.rawValue ?? ""
+          composeName
+          composeDescription
+          composeParticipantIds.sorted().joined(separator: ",")
+          activeSection?.rawValue ?? ""
+          String(contactGroupsPresented)
+          String(folderEditorPresented)
+          folderTitle
+          folderConversationIds.sorted().joined(separator: ",")
+          String(folderIncludeGroups)
+          String(folderIncludeChannels)
+          String(agentChatPresented)
+          model.chatDraft
+          String(model.chatBusy)
+          agentRevision
+          selectedConversation?.id ?? ""
+          messageDraft
+          replyTarget?.id ?? ""
+          editingMessage?.id ?? ""
+          forwardMessage?.id ?? ""
+          mediaViewerMessage?.id ?? ""
+          String(conversationInfoPresented)
+          String(chatSearchPresented)
+          chatSearchQuery
+          String(attachmentPickerPresented)
+          String(locationSharePresented)
+          String(contactSharePresented)
+          String(pollComposerPresented)
+          pollQuestion
+          pollOption1
+          pollOption2
+          pollOption3
+          String(voiceRecorder.isRecording)
+          model.query
+          model.message
+          String(model.loading)
+          model.installingPluginId ?? ""
+          model.permissionRequest?.pluginId ?? ""
+          openedMiniApp?.pluginId ?? ""
+          pluginRevision
+          conversationRevision
+          contactRevision
+          folderRevision
+          selectedMessagesRevision
+          String(messaging.loading)
+          messaging.errorMessage ?? ""
+          '''.strip().splitlines()
+          expected_values = [value.strip() for value in expected_values]
+          actual_values = [line.strip().removesuffix(",") for line in old_block.splitlines()[1:-1] if line.strip()]
           if actual_values != expected_values:
               raise SystemExit(f"fingerprint contract changed before patch: expected 51 original values in order, got {len(actual_values)}")
 
@@ -162,9 +158,12 @@ jobs:
 
           patched_body = body[:literal_start] + replacement + body[literal_end:]
           source_path.write_text(source[:function_start] + patched_body + source[function_end:])
+          PY
 
-          test_path = Path("chatgpt-vps-control/tests/ios-contentview-fingerprint-compile-contract.test.js")
-          test_path.write_text(textwrap.dedent(r'''\
+      - name: Write narrow fingerprint contract check
+        shell: bash
+        run: |
+          cat > chatgpt-vps-control/tests/ios-contentview-fingerprint-compile-contract.test.js <<'EOF'
           import assert from "node:assert/strict";
           import { readFile } from "node:fs/promises";
           import test from "node:test";
@@ -247,10 +246,7 @@ jobs:
             assert.ok(fingerprint.includes('return fingerprintParts.joined(separator: "|")'));
             assert.doesNotMatch(fingerprint, /return\s+\[\s*destinationRevision/u, "do not restore the monolithic literal");
           });
-          '''))
-
-          Path(".github/workflows/tfi-ios-fingerprint-patch.yml").unlink()
-          PY
+          EOF
 
       - name: Run narrow fingerprint contract check
         run: node --test chatgpt-vps-control/tests/ios-contentview-fingerprint-compile-contract.test.js
@@ -258,6 +254,7 @@ jobs:
       - name: Commit atomic fix
         shell: bash
         run: |
+          rm .github/workflows/tfi-ios-fingerprint-patch.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add mobile/ios/Fabushi/ContentView.swift chatgpt-vps-control/tests/ios-contentview-fingerprint-compile-contract.test.js .github/workflows/tfi-ios-fingerprint-patch.yml
