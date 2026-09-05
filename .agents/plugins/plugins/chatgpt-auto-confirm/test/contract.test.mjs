@@ -69,6 +69,18 @@ const syncCredentialSkill = readFileSync(
   new URL('../skills/sync-action-credentials/SKILL.md', import.meta.url),
   'utf8',
 );
+const projectOrchestrationSkill = readFileSync(
+  new URL('../skills/chatgpt-project-orchestration/SKILL.md', import.meta.url),
+  'utf8',
+);
+const projectOrchestrationReference = readFileSync(
+  new URL('../skills/chatgpt-project-orchestration/references/orchestration-protocol.md', import.meta.url),
+  'utf8',
+);
+const projectOrchestrationMetadata = readFileSync(
+  new URL('../skills/chatgpt-project-orchestration/agents/openai.yaml', import.meta.url),
+  'utf8',
+);
 
 test('home contract', () => {
   assert.equal(HOME.schema, 'mahayana.miniapp.home.v1');
@@ -95,6 +107,19 @@ test('renderer recovery skill is packaged with the miniapp', () => {
   assert.match(rendererRecoveryReference, /needs_login/);
   assert.match(rendererRecoveryMetadata, /display_name:/);
   assert.match(rendererRecoveryMetadata, /\$recover-actions-chatgpt-renderer/);
+});
+test('project orchestration skill is packaged with the miniapp', () => {
+  assert.equal(plugin.skills, './skills');
+  assert.match(projectOrchestrationSkill, /name: chatgpt-project-orchestration/);
+  assert.match(projectOrchestrationSkill, /聊天\/Chat/);
+  assert.match(projectOrchestrationSkill, /停止回答\/Stop answering/);
+  assert.match(projectOrchestrationSkill, /一个 ChatGPT 浏览器标签页/);
+  assert.match(projectOrchestrationSkill, /TEST_RELEASE → VIDEO_REVIEW → FORMAL_RELEASE/);
+  assert.match(projectOrchestrationReference, /PROJECT_TEAM_REPORT_V1/);
+  assert.match(projectOrchestrationReference, /screenshots\[\]/);
+  assert.match(projectOrchestrationReference, /exact protected-main SHA|精确 main SHA/);
+  assert.match(projectOrchestrationMetadata, /display_name:/);
+  assert.match(projectOrchestrationMetadata, /\$chatgpt-project-orchestration/);
 });
 test('article bodies stay lazy', () => assert.ok(Object.keys(RESOURCES).length >= 1));
 test('continuous Actions runner preserves secrets and chains incomplete sessions', () => {
