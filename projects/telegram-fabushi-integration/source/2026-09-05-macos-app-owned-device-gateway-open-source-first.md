@@ -1,7 +1,8 @@
 # 2026-09-05 — macOS App-owned device gateway open-source-first review
 
 - Project: `FAB-P0001 / TFI`
-- Work item: `TFI-M11-MACOS-INTERACTIVE-001`
+- Work item: `TFI-MACOS-INTERACTIVE-001`
+- Cross-stage acceptance scope: current declared macOS desktop capabilities spanning M3–M12; this is intentionally not classified as M11 because canonical M11 is the iOS/Android mobile shared-Core milestone.
 - Canonical baseline re-read before implementation: `main@143c5cf10aed9e6d60810ec6c886acd2c20fa609`
 - Latest published macOS test package at planning time: prerelease `v1.2.23`, target `16b56277e2116b73f98f0406a323919de6d7728a`.
 - Required ownership model: the installed, logged-in **macOS Fabushi application** owns account-scoped device registration. GitHub Actions supplies the temporary macOS environment and bounded test-account session only. A pre-online Runner, `interactive-runner`, KRIS, or runner-side `fabushi-device-agent.js` is not a device source.
