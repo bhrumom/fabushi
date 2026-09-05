@@ -37,10 +37,20 @@ jobs:
           test "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/main)"
           version="$(jq -r .version app-version.json)"
           test "$version" = "$(jq -r .version desktop/package.json)"
-          test "$version" = '1.2.26'
+          test "$version" = '1.2.27'
           echo "FABUSHI_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=v$version" >> "$GITHUB_ENV"
           echo "HEAD_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Require canonical protected-main test release gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export SOURCE_SHA="$HEAD_SHA"
+          export RELEASE_TARGET=macos
+          export RELEASE_TIER=test
+          bash .github/scripts/require-release-source-gates.sh
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -153,7 +163,8 @@ jobs:
           shasum -a 256 *.dmg *.zip latest-mac.yml *.blockmap > SHA256SUMS.txt
           assets=( *.dmg *.zip latest-mac.yml *.blockmap SHA256SUMS.txt )
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists" >&2; exit 1
+            echo "Release $RELEASE_TAG already exists; refusing to mutate an existing release." >&2
+            exit 1
           fi
           gh release create "$RELEASE_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --target "$HEAD_SHA" --prerelease --latest=false --title "Fabushi $FABUSHI_RELEASE_VERSION macOS test" --notes "Mac-only test release from protected main $HEAD_SHA. Signed, notarized, stapled, updater assets included."
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url,tagName,isPrerelease,targetCommitish

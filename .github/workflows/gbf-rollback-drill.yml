@@ -97,13 +97,17 @@ jobs:
         run: |
           set -euo pipefail
           release=.github/workflows/native-electron-release.yml
-          grep -q "Required release gate '" "$release"
-          grep -q "CI result" "$release"
-          grep -q "Electron desktop result" "$release"
-          grep -q "Native mobile result" "$release"
-          grep -q 'already exists; refusing to mutate an existing release' "$release"
-          grep -q 'gh release create' "$release"
-          echo 'current release workflow preserves immutable release semantics' >> "$GITHUB_STEP_SUMMARY"
+          gate=.github/scripts/require-release-source-gates.sh
+          grep -Fq 'bash .github/scripts/require-release-source-gates.sh' "$release"
+          grep -Fq 'RELEASE_TARGET=macos' "$release"
+          grep -Fq 'RELEASE_TIER=test' "$release"
+          grep -Fq "Required release gate '" "$gate"
+          grep -Fq "'CI result'" "$gate"
+          grep -Fq "'Electron desktop result'" "$gate"
+          grep -Fq "'Native mobile result'" "$gate"
+          grep -Fq 'already exists; refusing to mutate an existing release' "$release"
+          grep -Fq 'gh release create' "$release"
+          echo 'current macOS test-release workflow uses the canonical source gate and preserves immutable release semantics' >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
