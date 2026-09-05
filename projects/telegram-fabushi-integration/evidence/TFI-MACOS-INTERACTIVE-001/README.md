@@ -4,8 +4,8 @@
 - Task: `TFI-MACOS-INTERACTIVE-001`
 - Status: `TESTING`
 - Canonical baseline at enablement start: `143c5cf10aed9e6d60810ec6c886acd2c20fa609`
-- Current canonical `main` re-read during enablement: `fc4be781e01442c7fa041a4d5442c029f90d929c`
-- Latest published macOS test package at enablement start and through Attempt 5: `v1.2.23`, target `16b56277e2116b73f98f0406a323919de6d7728a`
+- Current canonical `main` re-read during enablement: `f6f2bbfc096e62dd42732a64e1a89745e202803d`
+- Latest published macOS test package through Attempt 6: `v1.2.23`, target `16b56277e2116b73f98f0406a323919de6d7728a`
 
 ## Attempt ledger
 
@@ -60,10 +60,26 @@
 - Secondary packaged App Agent Surface Playwright: PASS (`1 passed`).
 - Failure: `login-ci-test-account.mjs` rejected `DEVICE_ID=gha-33970295856-1-macos-app` with `DEVICE_ID must be the protected interactive Runner id.` This is a legacy account-helper identity guard, not a product journey failure. App launch/registration were correctly skipped; no macOS Fabushi device was registered.
 - Evidence artifact: `fabushi-macos-interactive-evidence-33970295856-1`, artifact `9970733917`, SHA-256 `82739298fb775ea21cc637f0be0c4254b5fc94498878e46b328c8d3c128f917a`, size `138476115` bytes, https://github.com/bhrumom/fabushi/actions/runs/33970295856/artifacts/9970733917
-- Resolution under verification: protected account login/export/session parsing now accept the bounded App-owned `gha-<run>-<attempt>-macos-app` identity while preserving legacy CI wire fields only for compatibility. Those fields do not own or register the device gateway; the installed App remains the only registration owner.
+- Resolution: protected account login/export/session parsing now accept the bounded App-owned `gha-<run>-<attempt>-macos-app` identity while preserving legacy CI wire fields only for compatibility. Those fields do not own or register the device gateway; the installed App remains the only registration owner.
+
+### Attempt 6 — released App FAIL before App-owned gateway registration
+
+- Workflow source SHA: `23493ebf2aeb59b9ea016db0333120b4ed17d559`
+- Run / job: `33970506757` / `101318141899`
+- Started / completed: `2026-09-05T14:00:15Z` / `2026-09-05T14:04:38Z`
+- Run: https://github.com/bhrumom/fabushi/actions/runs/33970506757
+- Release: `v1.2.23` -> `16b56277e2116b73f98f0406a323919de6d7728a`; asset `fabushi-1.2.23-macos-arm64.zip` (`545705797`)
+- Install verification: PASS — exact published package, Mach-O arm64, code signing, Gatekeeper, bundle id `com.ombhrum.fabushi`, version/build `1.2.23 / 1.2.23`.
+- Protected account login/export: PASS for App-owned `DEVICE_ID=gha-33970506757-1-macos-app`; refresh-token-free bounded application session created successfully.
+- App launch: PARTIAL PASS — the installed App emitted `fabushi.app-agent-surface.ready`, proving the packaged semantic loopback surface started, but the Mahayana host channel then failed with `EPIPE`; after 120 seconds the App had not emitted `controllable device online` and no macOS device appeared in `@fabushi test`.
+- Root cause: published source `16b56277e2116b73f98f0406a323919de6d7728a` validates CI application sessions with `device_id.ends_with("-interactive")` in `third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs`. The App-owned `gha-...-macos-app` identity is therefore rejected before `RemoteDeviceAgentSupervisor` can spawn the App-owned gateway agent. This is an account-session compatibility defect; it is not permission to fall back to a Runner/KRIS/interactive-runner device.
+- `@fabushi test` journey: correctly `not-run`; zero device actions and zero journey notes because no valid macOS App device was registered.
+- Secondary packaged App Agent Surface Playwright: PASS (`1 passed`).
+- Evidence artifact: `fabushi-macos-interactive-evidence-33970506757-1`, artifact `9970831215`, SHA-256 `3cd50173b2264fc8fb15aa5c0ad8f51343535a089875cadd9009d314ae11c554`, size `138664631` bytes, https://github.com/bhrumom/fabushi/actions/runs/33970506757/artifacts/9970831215
+- Resolution plan: merge the truthful macOS test-lane enablement through protected `main`, then fix this independent Rust session-validator defect in its own PR, publish a strictly newer macOS prerelease, and retest only the new release.
 
 ## Evidence rules
 
 A GitHub release upload is not proof of interaction. An online GitHub runner is not a Fabushi device. Evidence is valid only when the installed macOS Fabushi App has logged into the protected test account, registered itself through the account-scoped device gateway, been discovered by `@fabushi test`, and preserved the required video/screenshots/trace/reports/logs on both PASS and FAIL.
 
-Infrastructure failures before login/registration are recorded here but are never counted as a product journey PASS or FAIL. Product defects begin only after the exact published App is successfully installed, logged in, App-registered, and handed to `@fabushi test`.
+Infrastructure failures before App-owned registration are recorded here but are never counted as a full product journey PASS. The live feature journey begins only after the exact published App is successfully installed, logged in, App-registered, and handed to `@fabushi test`.
