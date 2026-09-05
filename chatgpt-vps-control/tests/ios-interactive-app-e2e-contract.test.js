@@ -25,6 +25,10 @@ test("iOS interactive workflow installs a logged-in app that owns device registr
     "recordVideo",
     "FabushiContracts.xcresult",
     "Upload comparable Simulator test version before interaction",
+    "Start end-to-end Simulator recording before app installation",
+    "Install exact Simulator test build before account login",
+    "Login protected Fabushi test account and export bounded app session",
+    "Launch authenticated exact test build and let the app own device registration",
     "Upload complete evidence even on failure",
     "if: always()",
     "fabushi.app.status",
@@ -34,6 +38,16 @@ test("iOS interactive workflow installs a logged-in app that owns device registr
     "fabushi.app.wait",
     "fabushi.app.assert",
   ]) assert.ok(workflow.includes(required), `missing iOS interactive invariant: ${required}`);
+
+  const recording = workflow.indexOf("Start end-to-end Simulator recording before app installation");
+  const install = workflow.indexOf("Install exact Simulator test build before account login");
+  const login = workflow.indexOf("Login protected Fabushi test account and export bounded app session");
+  const launch = workflow.indexOf("Launch authenticated exact test build and let the app own device registration");
+  const control = workflow.indexOf("Hold live app for @fabushi test semantic control");
+  assert.ok(recording < install, "recording must start before app installation");
+  assert.ok(install < login, "exact app must be installed before protected test-account login");
+  assert.ok(login < launch, "test-account session must exist before authenticated app launch");
+  assert.ok(launch < control, "app-owned registration must precede external semantic control");
 
   assert.doesNotMatch(workflow, /\$\{\{\s*runner\.temp\s*\}\}/u);
   assert.doesNotMatch(workflow, /fabushi-device-agent\.js/u);
