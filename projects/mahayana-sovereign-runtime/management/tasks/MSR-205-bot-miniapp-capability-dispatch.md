@@ -20,8 +20,7 @@ Expose only the current account's installed MiniApps as Mahayana capabilities an
 
 - `third_party/mahayana/mahayana-rs/mahayana-kernel/src/extension.rs`
 - `third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs`
-- `third_party/mahayana/mahayana-rs/mahayana-platform-client/src/lib.rs`
-- `third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs`
+- `third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs` (Cargo package `mahayana-platform-client`)
 - `third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs`
 - `projects/mahayana-sovereign-runtime/evidence/MSR-205/**`
 
