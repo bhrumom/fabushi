@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: fix/tfi-ios-fingerprint-compile-20260905
 
       - name: Apply atomic fingerprint compile fix
@@ -23,15 +23,78 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import textwrap
 
           source_path = Path("mobile/ios/Fabushi/ContentView.swift")
           source = source_path.read_text()
           function_start = source.index("    private var appAgentSurfaceFingerprint: String {")
           function_end = source.index("\n    @MainActor", function_start)
           body = source[function_start:function_end]
-          literal_start = body.index("        return [\n")
-          literal_end_marker = "        ].joined(separator: \"|\")"
+          literal_start = body.index("        return [")
+          literal_end_marker = '        ].joined(separator: "|")'
           literal_end = body.index(literal_end_marker, literal_start) + len(literal_end_marker)
+          old_block = body[literal_start:literal_end]
+
+          expected_values = [
+              'destinationRevision',
+              'String(isSearching)',
+              'homeQuery',
+              'String(profileMenuPresented)',
+              'String(composeMenuPresented)',
+              'composeKind?.rawValue ?? ""',
+              'composeName',
+              'composeDescription',
+              'composeParticipantIds.sorted().joined(separator: ",")',
+              'activeSection?.rawValue ?? ""',
+              'String(contactGroupsPresented)',
+              'String(folderEditorPresented)',
+              'folderTitle',
+              'folderConversationIds.sorted().joined(separator: ",")',
+              'String(folderIncludeGroups)',
+              'String(folderIncludeChannels)',
+              'String(agentChatPresented)',
+              'model.chatDraft',
+              'String(model.chatBusy)',
+              'agentRevision',
+              'selectedConversation?.id ?? ""',
+              'messageDraft',
+              'replyTarget?.id ?? ""',
+              'editingMessage?.id ?? ""',
+              'forwardMessage?.id ?? ""',
+              'mediaViewerMessage?.id ?? ""',
+              'String(conversationInfoPresented)',
+              'String(chatSearchPresented)',
+              'chatSearchQuery',
+              'String(attachmentPickerPresented)',
+              'String(locationSharePresented)',
+              'String(contactSharePresented)',
+              'String(pollComposerPresented)',
+              'pollQuestion',
+              'pollOption1',
+              'pollOption2',
+              'pollOption3',
+              'String(voiceRecorder.isRecording)',
+              'model.query',
+              'model.message',
+              'String(model.loading)',
+              'model.installingPluginId ?? ""',
+              'model.permissionRequest?.pluginId ?? ""',
+              'openedMiniApp?.pluginId ?? ""',
+              'pluginRevision',
+              'conversationRevision',
+              'contactRevision',
+              'folderRevision',
+              'selectedMessagesRevision',
+              'String(messaging.loading)',
+              'messaging.errorMessage ?? ""',
+          ]
+          actual_values = [
+              line.strip().removesuffix(",")
+              for line in old_block.splitlines()[1:-1]
+              if line.strip()
+          ]
+          if actual_values != expected_values:
+              raise SystemExit(f"fingerprint contract changed before patch: expected 51 original values in order, got {len(actual_values)}")
 
           replacement = '''        let fingerprintChunk1: [String] = [
               destinationRevision,
@@ -101,7 +164,8 @@ jobs:
           source_path.write_text(source[:function_start] + patched_body + source[function_end:])
 
           test_path = Path("chatgpt-vps-control/tests/ios-contentview-fingerprint-compile-contract.test.js")
-          test_path.write_text('''import assert from "node:assert/strict";
+          test_path.write_text(textwrap.dedent(r'''\
+          import assert from "node:assert/strict";
           import { readFile } from "node:fs/promises";
           import test from "node:test";
 
@@ -111,78 +175,79 @@ jobs:
           test("iOS app-agent fingerprint stays explicitly typed and order-stable", async () => {
             const source = await read("mobile/ios/Fabushi/ContentView.swift");
             const start = source.indexOf("    private var appAgentSurfaceFingerprint: String {");
-            const end = source.indexOf("\\n    @MainActor", start);
+            const end = source.indexOf("\n    @MainActor", start);
             assert.ok(start >= 0 && end > start, "missing appAgentSurfaceFingerprint body");
             const fingerprint = source.slice(start, end);
 
             const expectedValues = [
-              "destinationRevision",
-              "String(isSearching)",
-              "homeQuery",
-              "String(profileMenuPresented)",
-              "String(composeMenuPresented)",
-              "composeKind?.rawValue ?? \\\"\\\"",
-              "composeName",
-              "composeDescription",
-              "composeParticipantIds.sorted().joined(separator: \\",\\\")",
-              "activeSection?.rawValue ?? \\\"\\\"",
-              "String(contactGroupsPresented)",
-              "String(folderEditorPresented)",
-              "folderTitle",
-              "folderConversationIds.sorted().joined(separator: \\",\\\")",
-              "String(folderIncludeGroups)",
-              "String(folderIncludeChannels)",
-              "String(agentChatPresented)",
-              "model.chatDraft",
-              "String(model.chatBusy)",
-              "agentRevision",
-              "selectedConversation?.id ?? \\\"\\\"",
-              "messageDraft",
-              "replyTarget?.id ?? \\\"\\\"",
-              "editingMessage?.id ?? \\\"\\\"",
-              "forwardMessage?.id ?? \\\"\\\"",
-              "mediaViewerMessage?.id ?? \\\"\\\"",
-              "String(conversationInfoPresented)",
-              "String(chatSearchPresented)",
-              "chatSearchQuery",
-              "String(attachmentPickerPresented)",
-              "String(locationSharePresented)",
-              "String(contactSharePresented)",
-              "String(pollComposerPresented)",
-              "pollQuestion",
-              "pollOption1",
-              "pollOption2",
-              "pollOption3",
-              "String(voiceRecorder.isRecording)",
-              "model.query",
-              "model.message",
-              "String(model.loading)",
-              "model.installingPluginId ?? \\\"\\\"",
-              "model.permissionRequest?.pluginId ?? \\\"\\\"",
-              "openedMiniApp?.pluginId ?? \\\"\\\"",
-              "pluginRevision",
-              "conversationRevision",
-              "contactRevision",
-              "folderRevision",
-              "selectedMessagesRevision",
-              "String(messaging.loading)",
-              "messaging.errorMessage ?? \\\"\\\"",
+              'destinationRevision',
+              'String(isSearching)',
+              'homeQuery',
+              'String(profileMenuPresented)',
+              'String(composeMenuPresented)',
+              'composeKind?.rawValue ?? ""',
+              'composeName',
+              'composeDescription',
+              'composeParticipantIds.sorted().joined(separator: ",")',
+              'activeSection?.rawValue ?? ""',
+              'String(contactGroupsPresented)',
+              'String(folderEditorPresented)',
+              'folderTitle',
+              'folderConversationIds.sorted().joined(separator: ",")',
+              'String(folderIncludeGroups)',
+              'String(folderIncludeChannels)',
+              'String(agentChatPresented)',
+              'model.chatDraft',
+              'String(model.chatBusy)',
+              'agentRevision',
+              'selectedConversation?.id ?? ""',
+              'messageDraft',
+              'replyTarget?.id ?? ""',
+              'editingMessage?.id ?? ""',
+              'forwardMessage?.id ?? ""',
+              'mediaViewerMessage?.id ?? ""',
+              'String(conversationInfoPresented)',
+              'String(chatSearchPresented)',
+              'chatSearchQuery',
+              'String(attachmentPickerPresented)',
+              'String(locationSharePresented)',
+              'String(contactSharePresented)',
+              'String(pollComposerPresented)',
+              'pollQuestion',
+              'pollOption1',
+              'pollOption2',
+              'pollOption3',
+              'String(voiceRecorder.isRecording)',
+              'model.query',
+              'model.message',
+              'String(model.loading)',
+              'model.installingPluginId ?? ""',
+              'model.permissionRequest?.pluginId ?? ""',
+              'openedMiniApp?.pluginId ?? ""',
+              'pluginRevision',
+              'conversationRevision',
+              'contactRevision',
+              'folderRevision',
+              'selectedMessagesRevision',
+              'String(messaging.loading)',
+              'messaging.errorMessage ?? ""',
             ];
 
-            const chunks = [...fingerprint.matchAll(/let fingerprintChunk\\d+: \\[String\\] = \\[\\n([\\s\\S]*?)\\n\\s*\\]/gu)];
+            const chunks = [...fingerprint.matchAll(/let fingerprintChunk\d+: \[String\] = \[\n([\s\S]*?)\n\s*\]/gu)];
             assert.equal(chunks.length, 3, "fingerprint must stay split into three explicitly typed String chunks");
             const actualValues = chunks.flatMap((match) => match[1]
-              .split("\\n")
+              .split("\n")
               .map((line) => line.trim())
               .filter(Boolean)
               .map((line) => line.endsWith(",") ? line.slice(0, -1) : line));
+            assert.equal(actualValues.length, 51, "fingerprint must contain exactly 51 values");
             assert.deepEqual(actualValues, expectedValues, "all 51 fingerprint values and their order must remain identical");
-            assert.match(fingerprint, /var fingerprintParts: \\[String\\] = \\[\\]/u);
-            assert.match(fingerprint, /fingerprintParts\\.append\\(contentsOf: fingerprintChunk1\\)[\\s\\S]*fingerprintParts\\.append\\(contentsOf: fingerprintChunk2\\)[\\s\\S]*fingerprintParts\\.append\\(contentsOf: fingerprintChunk3\\)/u);
-            assert.match(fingerprint, /return fingerprintParts\\.joined\\(separator: "\\|"\\)/u);
-            assert.doesNotMatch(fingerprint, /return\\s+\\[\\s*destinationRevision/u, "do not restore the monolithic literal");
+            assert.match(fingerprint, /var fingerprintParts: \[String\] = \[\]/u);
+            assert.match(fingerprint, /fingerprintParts\.append\(contentsOf: fingerprintChunk1\)[\s\S]*fingerprintParts\.append\(contentsOf: fingerprintChunk2\)[\s\S]*fingerprintParts\.append\(contentsOf: fingerprintChunk3\)/u);
+            assert.ok(fingerprint.includes('return fingerprintParts.joined(separator: "|")'));
+            assert.doesNotMatch(fingerprint, /return\s+\[\s*destinationRevision/u, "do not restore the monolithic literal");
           });
-          ''')
+          '''))
 
           Path(".github/workflows/tfi-ios-fingerprint-patch.yml").unlink()
           PY
@@ -190,13 +255,11 @@ jobs:
       - name: Run narrow fingerprint contract check
         run: node --test chatgpt-vps-control/tests/ios-contentview-fingerprint-compile-contract.test.js
 
-      - name: Commit atomic fix and align current main
+      - name: Commit atomic fix
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add mobile/ios/Fabushi/ContentView.swift chatgpt-vps-control/tests/ios-contentview-fingerprint-compile-contract.test.js .github/workflows/tfi-ios-fingerprint-patch.yml
           git commit -m "fix(tfi): split iOS fingerprint type inference"
-          git fetch origin main
-          git merge --no-edit origin/main
           git push origin HEAD:fix/tfi-ios-fingerprint-compile-20260905
