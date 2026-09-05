@@ -87,3 +87,27 @@ test("native iOS gateway reuses the account session and semantic App Surface onl
   assert.doesNotMatch(gateway, /Process|NSTask|\/bin\/sh|JavaScript/u);
   assert.doesNotMatch(gateway, /refreshToken/u);
 });
+
+test("authenticated Grok iOS shell publishes the same native semantic surface", async () => {
+  const grok = await read("mobile/ios/Fabushi/GrokMobileShell.swift");
+  for (const required of [
+    "let appAgentSurface: FabushiAppAgentSurface",
+    ".task(id: appAgentSurfaceFingerprint) { publishAppAgentSurface() }",
+    'appAgentSurface.publish(screen: "grok-home"',
+    'appAgentSurface.publish(screen: "grok-compose"',
+    'appAgentSurface.publish(screen: "grok-create-bot"',
+    'appAgentSurface.publish(screen: "bot-chat"',
+    '"grok-mobile-legacy"',
+    '"grok-mobile-search-field"',
+    '"grok-mobile-add"',
+    '"grok-bot-mahayana-assistant"',
+    '"mobile-bot-draft"',
+    '"mobile-bot-send"',
+    'allowed: ["setValue"]',
+    'allowed: ["invoke"]',
+  ]) assert.ok(grok.includes(required), `missing Grok iOS semantic invariant: ${required}`);
+
+  assert.match(grok, /for bot in filteredBots\.prefix\(100\)/u);
+  assert.match(grok, /for conversation in filteredConversations\.prefix\(100\)/u);
+  assert.doesNotMatch(grok, /fabushi-device-agent|Process\(|NSTask|\/bin\/sh/u);
+});
