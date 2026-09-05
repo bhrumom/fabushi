@@ -81,20 +81,52 @@ jobs:
           shared-key: ios-interactive-app-host-v1
 
       - id: simulator
-        name: Create and boot isolated iOS Simulator
+        name: Select, erase, and boot compatible iOS Simulator
         shell: bash
         run: |
           set -euo pipefail
-          runtime="$(xcrun simctl list runtimes available -j | jq -r '[.runtimes[] | select(.identifier | contains("SimRuntime.iOS-"))] | sort_by(.version) | last | .identifier')"
-          device_type="$(xcrun simctl list devicetypes -j | jq -r '[.devicetypes[] | select(.name | startswith("iPhone"))] | last | .identifier')"
-          test -n "$runtime"
-          test -n "$device_type"
-          udid="$(xcrun simctl create "Fabushi-iOS-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" "$device_type" "$runtime")"
+          runtimes_json="$EVIDENCE_DIR/simulator-runtimes.json"
+          devices_json="$EVIDENCE_DIR/simulator-devices.json"
+          xcrun simctl list runtimes available -j > "$runtimes_json"
+          xcrun simctl list devices available -j > "$devices_json"
+
+          pair="$({
+            jq -r '
+              [.runtimes[] | select(.isAvailable == true and (.identifier | contains("SimRuntime.iOS-")))]
+              | sort_by(.version | split(".") | map(tonumber))
+              | reverse
+              | .[].identifier
+            ' "$runtimes_json" | while IFS= read -r runtime; do
+              udid="$(jq -r --arg runtime "$runtime" '.devices[$runtime] // [] | map(select(.isAvailable == true)) | first | .udid // empty' "$devices_json")"
+              if [ -n "$udid" ]; then
+                printf '%s|%s\n' "$runtime" "$udid"
+                break
+              fi
+            done
+          } || true)"
+          runtime="${pair%%|*}"
+          udid="${pair#*|}"
+          if [ -z "$runtime" ] || [ -z "$udid" ] || [ "$runtime" = "$udid" ]; then
+            echo 'No runner-provisioned iOS Simulator has a compatible available runtime/device pair.' >&2
+            exit 1
+          fi
+
+          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
-          echo "$udid" > "$EVIDENCE_DIR/simulator-udid.txt"
+          {
+            echo "runtime=$runtime"
+            echo "udid=$udid"
+          } > "$EVIDENCE_DIR/simulator-selection.env"
+
+          xcrun simctl shutdown "$udid" 2>/dev/null || true
+          xcrun simctl erase "$udid"
+          xcrun simctl rename "$udid" "Fabushi-iOS-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
           xcrun simctl io "$udid" screenshot "$EVIDENCE_DIR/steps/000-simulator-booted.png"
+
+          xcrun simctl io "$udid" recordVideo --codec=h264 "$EVIDENCE_DIR/ios-session.mp4" > "$EVIDENCE_DIR/video-recorder.log" 2>&1 &
+          echo $! > "$EVIDENCE_DIR/video-recorder.pid"
 
       - name: Build Mahayana Host for iOS Simulator
         working-directory: third_party/mahayana/mahayana-rs
@@ -214,9 +246,6 @@ jobs:
           chmod 600 "$trace"
           echo "app_container=$app_container" >> "$GITHUB_OUTPUT"
           echo "trace_path=$trace" >> "$GITHUB_OUTPUT"
-
-          xcrun simctl io "$UDID" recordVideo --codec=h264 "$EVIDENCE_DIR/ios-session.mp4" > "$EVIDENCE_DIR/video-recorder.log" 2>&1 &
-          echo $! > "$EVIDENCE_DIR/video-recorder.pid"
 
           export SIMCTL_CHILD_GITHUB_ACTIONS=true
           export SIMCTL_CHILD_FABUSHI_CI_ACCOUNT_SESSION_FILE="$app_session"
