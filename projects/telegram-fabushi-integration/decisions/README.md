@@ -13,3 +13,4 @@ ADR 用于记录会长期影响代码结构、协议或平台边界的决策。�
 | ADR-0007 | 支付采用 PaymentIntent + Provider Adapter + Ledger | Accepted |
 | ADR-0013 | canonical version required-gate bootstrap 在 guard-only 无法穿越既有 drift 时必须以同一 exact-head 原子事务完成 | Accepted |
 | ADR-0014 | canonical version gate 按事件显式绑定 checkout 身份：pull_request=exact PR head，merge_group=current group SHA | Accepted |
+| ADR-0015 | post-merge deterministic iOS fixture、exact evidence provenance 与 packaged OWNERSHIP proof 分离为三个 fail-closed capability | Accepted |

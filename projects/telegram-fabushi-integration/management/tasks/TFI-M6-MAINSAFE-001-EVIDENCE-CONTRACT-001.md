@@ -1,55 +1,75 @@
 # TFI-M6-MAINSAFE-001-EVIDENCE-CONTRACT-001 — packaged/native evidence contract
 
 - Project: `FAB-P0001 / TFI`
-- Status: `FROZEN / NOT_STARTED`
-- Baseline: `main@dbf22b467d35c8af2a074896c355a41993c8c191`
-- Parent boundary: `TFI-M6-MAINSAFE-001`; completed `OWNERSHIP-001` is not reopened. `MAINSAFE-002/003` remain stopped.
+- Status: `FROZEN / READY_FOR_EXECUTION_HANDOFF`
+- Requirement ID: `M6-PM-EVC-R01`
+- Acceptance ID: `M6-PM-EVC-A01`
+- Accepted product baseline: `main@63e49b87d1ca5ad64d988e73769bf4a4ed796a19`
+- Parent boundary: `TFI-M6-MAINSAFE-001`; no application/product semantics are part of this task.
 
-## Why this task exists
+## M6-PM-EVC-R01 — requirement
 
-Current exact-main evidence is useful but does not satisfy the requested acceptance contract:
+Make packaged Electron and Native Android/iOS acceptance evidence deterministic and non-substitutable: pass and fail paths must upload the evidence produced by the run, identities must bind evidence to exact source/run/job/platform/journey, and acceptance artifacts should be retained for 90 days wherever repository/org/platform limits permit.
 
-- Electron Playwright config records trace=`on`, video=`on`, but screenshots=`only-on-failure`.
-- Electron main-push diagnostics are uploaded with `if: always()` and 90-day retention, which is the correct direction.
-- Current Electron delivery manifest records version, exact SHA, run id/run number, and platform, but does not encode job, journey, or timestamp.
-- Native Android and iOS report/xcresult artifacts are retained for 14 days, not the 90-day target.
-- Existing artifact child names are not a deterministic exact-SHA/platform/run/job/journey/timestamp evidence namespace.
-- A failed required step must still publish whatever report/log/trace/screenshot/video/xcresult evidence was produced; a missing artifact may not silently turn a failed journey into an unverifiable failure.
+## Accepted-main evidence gap
 
-## Future execution allowlist
+- Electron packaged run `33939200878` succeeds and the repository already uses Playwright trace/video/HTML-report primitives plus an `always()` diagnostics upload with 90-day retention.
+- Native run `33939200888` fails only on iOS; Android job is successful. The accepted-main workflow uploads Native reports/xcresult with `if: always()` but explicitly uses `retention-days: 14`.
+- iOS artifact `9961442374` (`ios-native-xcresult`) is therefore scheduled to expire `2026-09-19T02:43:45Z`, demonstrating a real retention-contract gap even though failure evidence itself was preserved.
+- current evidence identity is not uniformly bound to exact main SHA + run + job + platform + journey/test ID inside a manifest and artifact namespace.
+
+This task file already existed on #2340 and is reused. Its exact path is still 404 on accepted `main@63e49b87...`; that is a records-delivery topology gap, not the evidence-runtime defect itself.
+
+## Inputs / dependencies
+
+- implementation starts from freshly re-read canonical main (currently `63e49b87...`);
+- Architecture contract is the latest #2340 head;
+- repository-native Electron Playwright and Native GitHub Actions evidence pipeline is authoritative;
+- implementation may execute in parallel with `IOS-FIXTURE-001`;
+- `EVIDENCE-JOURNEY-001` may author its journey in parallel, but its acceptance cannot close before this contract has passed protected-main + canonical-readback.
+
+## Exact implementation allowlist
 
 Evidence plumbing only:
 
 - `.github/workflows/electron-desktop.yml`
 - `.github/workflows/native-mobile.yml`
 - `desktop/playwright.config.ts`
-- a narrowly-scoped new evidence helper/manifest script under `.github/scripts/` or `desktop/e2e/` only if required to generate deterministic metadata/names; it may not implement product semantics.
+- one narrowly scoped evidence-only helper/manifest file under `.github/scripts/` or `desktop/e2e/` only if required for deterministic metadata/naming; it may not implement product semantics.
+- task-specific records under `projects/telegram-fabushi-integration/**`.
 
-No application/product source is allowed. If product behavior, Rust/Cargo/dependency, release versioning, or semantic test assertions are required, STOP and return to architecture.
+## Forbidden files / actions
 
-## Required contract
+- all application/product source, Rust core, iOS/Android product source;
+- semantic test assertion rewrites or product journey weakening;
+- Cargo/dependency/lockfile changes or introducing a parallel evidence service/test framework;
+- version/release-number logic, `app-version.json`, `mobile/ios/project.yml`;
+- unrelated workflows, rulesets/branch-protection, root governance files;
+- evidence copied from another run/SHA/platform/journey as substitute.
 
-1. **Always upload on pass/fail** for packaged/native journey diagnostics where a runner reached execution, with explicit step names and `if: always()`/equivalent failure-safe behavior.
-2. **Meaningful-step screenshots**: successful journeys capture labelled screenshots at acceptance boundaries, not only on failure. Failure screenshots remain required.
-3. **Complete video** for the dedicated packaged journey, plus Playwright trace and HTML/report output where applicable.
-4. **Runtime/native logs**: Electron runtime/Host logs and native Android/iOS test logs/xcresult are preserved when produced.
-5. **Manifest and naming** include exact source SHA, platform, workflow run id, job identity, journey id, UTC timestamp, and artifact format/version. Manifest data must be inside the artifact as well as useful in the artifact name where GitHub permits.
-6. **Retention target 90 days** for acceptance evidence, subject to repository/org maximum; if the platform cap is lower, the job must fail or record the verified cap rather than silently claim 90 days.
-7. **No evidence substitution**: reports/artifacts from another run, SHA, platform, or journey cannot satisfy the gate.
+Any need outside the allowlist fails closed to Architecture.
 
-## Acceptance
+## Required evidence contract
 
-- current-head workflow/config checks pass;
-- a controlled passing packaged journey publishes the full evidence family and manifest;
-- a controlled failing journey still publishes failure evidence with the same identity contract;
-- native Android/iOS evidence uses the target retention and exact identity manifest/naming;
-- independent code review passes exact head;
-- protected main merge queue only, followed by canonical main readback;
-- a fresh exact-main test-release session validates the contract from the new accepted SHA.
+1. **Always-path upload:** where the runner reached execution, screenshot/video/trace/HTML-or-native-report/runtime logs/xcresult that were produced are uploaded on both success and failure using `if: always()` or equivalent failure-safe behavior.
+2. **Screenshots:** dedicated acceptance journeys capture labelled screenshots at meaningful acceptance boundaries on success; failure screenshots remain required.
+3. **Complete video + trace/report:** packaged owned journey preserves complete video, Playwright trace and HTML/report output. Native preserves Android reports/logs and iOS xcresult/raw logs when produced.
+4. **Identity manifest:** each acceptance artifact contains a manifest with exact source SHA, packaged app identity/version where applicable, platform/OS, workflow name, run id/run number, job id/name, stable journey/test ID, UTC timestamp, artifact format/version and final result. Artifact names should carry as much of the same namespace as GitHub permits.
+5. **No substitution:** evidence whose SHA/run/job/platform/journey identity does not match the acceptance record cannot satisfy the gate.
+6. **Retention:** target `90` days. If repository/org/platform maximum prevents 90, execution must record the verified limit and explicit exception in task evidence; it may not silently claim 90. A configured 14-day value when 90 is allowed is noncompliant.
+7. **Fail closed:** missing required evidence/manifest identity fails the acceptance even if a functional test is green.
 
-## Open-source-first references
+## Open-source-first decision
 
-- GitHub Actions cache / `actions/cache`: official implementation, MIT. Adopt key/match semantics and cache-vs-artifact separation; do not copy implementation code.
-- GitHub `actions/upload-artifact`: official implementation, MIT. Adopt documented artifact/retention behavior; do not copy implementation code.
-- Playwright: official Microsoft project, Apache-2.0. Adopt trace/video/screenshot/test-step attachment concepts; implement repository-specific evidence naming rather than copying upstream code.
-- Apple XCTest/XCUI: use Apple XCTest activities/attachments as the iOS evidence model; Swift open-source XCTest is Apache-2.0 with runtime-library exception. Adopt concepts only; no upstream code copied.
+Reuse repository-native mature components: `actions/upload-artifact` (official GitHub, MIT) for artifact upload/retention; Microsoft Playwright (Apache-2.0) for trace/video/screenshot/HTML-report; Swift XCTest reference (`swiftlang/swift-corelibs-xctest`, Apache-2.0) plus platform XCTest/XCUITest for native result bundles. No upstream implementation code is copied and no new third-party dependency/service is introduced.
+
+## M6-PM-EVC-A01 — acceptance / gates
+
+1. Final execution diff is allowlist-only and current-head CI/config validation passes.
+2. A controlled passing packaged journey produces the complete evidence family + identity manifest.
+3. A controlled failing journey still publishes the available failure evidence with the same identity contract.
+4. Android/iOS success/failure paths preserve reports/logs/xcresult and use 90-day retention where permitted; any lower enforced maximum is explicitly evidenced.
+5. Independent Code Review approves the exact final head and verifies no product semantics or assertion weakening entered this task.
+6. Protected `merge_group` required gates pass; then canonical main is re-read and proves the reviewed evidence contract landed.
+7. Only the new accepted SHA may be used by later test release. Manual/rerun/historical/different-SHA artifacts are not substitutes.
+8. Any missing always-path artifact, identity manifest, exact-SHA binding, retention truth, or scope violation fails closed.

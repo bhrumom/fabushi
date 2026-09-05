@@ -7,10 +7,11 @@ Operational runbooks for the canonical Fabushi self-hosted messaging stack.
 - `messaging-server.md` — start/configure/health-triage the self-hosted messaging server.
 - `sqlite-storage-migration.md` — migrate legacy JSON state to SQLite and verify no rollback overwrite.
 - `rollback.md` — rollback rules for messaging/storage changes without violating protocol/data compatibility.
+- `mainsafe-postmerge-blocker.md` — exact-main failure triage, evidence provenance, three-task release gate and protected rollback rules for MAINSAFE post-merge blockers.
 
 ## Evidence rule
 
-A runbook command is guidance, not acceptance evidence by itself. Production/project acceptance must link the corresponding GitHub Actions run, deployment/release evidence, or verified runtime report.
+A runbook command is guidance, not acceptance evidence by itself. Production/project acceptance must link the corresponding GitHub Actions run, deployment/release evidence, or verified runtime report. MAINSAFE acceptance additionally binds evidence to exact main SHA, run/job/platform and stable journey/test identity.
 
 ## Canonical boundaries
 
