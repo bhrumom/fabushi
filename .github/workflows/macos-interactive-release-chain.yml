@@ -1,0 +1,54 @@
+name: Chain macOS test release to interactive App E2E
+
+on:
+  workflow_run:
+    workflows:
+      - Native Electron macOS test release
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/macos-interactive-release-chain.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: macos-interactive-release-chain
+  cancel-in-progress: false
+
+jobs:
+  dispatch-interactive:
+    name: Dispatch App-owned macOS interactive lane
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record upstream release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '## macOS release -> interactive App E2E chain'
+            echo
+            echo "- Trigger event: $GITHUB_EVENT_NAME"
+            echo "- Dispatch ref: main"
+            if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
+              echo "- Upstream release run: ${{ github.event.workflow_run.id }}"
+              echo "- Upstream conclusion: ${{ github.event.workflow_run.conclusion }}"
+              test "${{ github.event.workflow_run.name }}" = 'Native Electron macOS test release'
+              test "${{ github.event.workflow_run.conclusion }}" = success
+            else
+              echo '- Bootstrap dispatch after this chain workflow lands on protected main.'
+            fi
+            echo '- This workflow only dispatches the existing interactive lane; it never registers a device or starts a runner-owned gateway.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Dispatch existing App-owned macOS interactive workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run macos-interactive-app-e2e.yml --repo "$GITHUB_REPOSITORY" --ref main
