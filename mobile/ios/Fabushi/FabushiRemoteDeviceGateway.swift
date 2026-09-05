@@ -366,7 +366,8 @@ final class FabushiRemoteDeviceGateway {
         let accessToken = String(object["accessToken"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let deviceId = String(object["deviceId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let sessionId = String(object["sessionId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let username = String((object["username"] as? String) ?? ((object["user"] as? [String: Any])?["username"] as? String) ?? "").prefix(200)
+        let usernameValue = (object["username"] as? String) ?? ((object["user"] as? [String: Any])?["username"] as? String) ?? ""
+        let username = String(usernameValue.prefix(200))
         let expiry = (object["accessTokenExpiresAt"] as? NSNumber)?.int64Value ?? 0
         guard accessToken.count >= 24,
               accessToken.count <= 16 * 1024,
