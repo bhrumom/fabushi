@@ -26,60 +26,14 @@ jobs:
 
           source_path = Path("mobile/ios/Fabushi/ContentView.swift")
           source = source_path.read_text()
-          old = r'''        return [
-              destinationRevision,
-              String(isSearching),
-              homeQuery,
-              String(profileMenuPresented),
-              String(composeMenuPresented),
-              composeKind?.rawValue ?? "",
-              composeName,
-              composeDescription,
-              composeParticipantIds.sorted().joined(separator: ","),
-              activeSection?.rawValue ?? "",
-              String(contactGroupsPresented),
-              String(folderEditorPresented),
-              folderTitle,
-              folderConversationIds.sorted().joined(separator: ","),
-              String(folderIncludeGroups),
-              String(folderIncludeChannels),
-              String(agentChatPresented),
-              model.chatDraft,
-              String(model.chatBusy),
-              agentRevision,
-              selectedConversation?.id ?? "",
-              messageDraft,
-              replyTarget?.id ?? "",
-              editingMessage?.id ?? "",
-              forwardMessage?.id ?? "",
-              mediaViewerMessage?.id ?? "",
-              String(conversationInfoPresented),
-              String(chatSearchPresented),
-              chatSearchQuery,
-              String(attachmentPickerPresented),
-              String(locationSharePresented),
-              String(contactSharePresented),
-              String(pollComposerPresented),
-              pollQuestion,
-              pollOption1,
-              pollOption2,
-              pollOption3,
-              String(voiceRecorder.isRecording),
-              model.query,
-              model.message,
-              String(model.loading),
-              model.installingPluginId ?? "",
-              model.permissionRequest?.pluginId ?? "",
-              openedMiniApp?.pluginId ?? "",
-              pluginRevision,
-              conversationRevision,
-              contactRevision,
-              folderRevision,
-              selectedMessagesRevision,
-              String(messaging.loading),
-              messaging.errorMessage ?? "",
-          ].joined(separator: "|")'''
-          new = r'''        let fingerprintChunk1: [String] = [
+          function_start = source.index("    private var appAgentSurfaceFingerprint: String {")
+          function_end = source.index("\n    @MainActor", function_start)
+          body = source[function_start:function_end]
+          literal_start = body.index("        return [\n")
+          literal_end_marker = "        ].joined(separator: \"|\")"
+          literal_end = body.index(literal_end_marker, literal_start) + len(literal_end_marker)
+
+          replacement = '''        let fingerprintChunk1: [String] = [
               destinationRevision,
               String(isSearching),
               homeQuery,
@@ -143,12 +97,11 @@ jobs:
           fingerprintParts.append(contentsOf: fingerprintChunk3)
           return fingerprintParts.joined(separator: "|")'''
 
-          if source.count(old) != 1:
-              raise SystemExit(f"expected exactly one monolithic fingerprint literal, found {source.count(old)}")
-          source_path.write_text(source.replace(old, new, 1))
+          patched_body = body[:literal_start] + replacement + body[literal_end:]
+          source_path.write_text(source[:function_start] + patched_body + source[function_end:])
 
           test_path = Path("chatgpt-vps-control/tests/ios-contentview-fingerprint-compile-contract.test.js")
-          test_path.write_text(r'''import assert from "node:assert/strict";
+          test_path.write_text('''import assert from "node:assert/strict";
           import { readFile } from "node:fs/promises";
           import test from "node:test";
 
@@ -158,73 +111,76 @@ jobs:
           test("iOS app-agent fingerprint stays explicitly typed and order-stable", async () => {
             const source = await read("mobile/ios/Fabushi/ContentView.swift");
             const start = source.indexOf("    private var appAgentSurfaceFingerprint: String {");
-            const end = source.indexOf("\n    @MainActor", start);
+            const end = source.indexOf("\\n    @MainActor", start);
             assert.ok(start >= 0 && end > start, "missing appAgentSurfaceFingerprint body");
             const fingerprint = source.slice(start, end);
 
-            const expectedChunks = `        let fingerprintChunk1: [String] = [
-              destinationRevision,
-              String(isSearching),
-              homeQuery,
-              String(profileMenuPresented),
-              String(composeMenuPresented),
-              composeKind?.rawValue ?? "",
-              composeName,
-              composeDescription,
-              composeParticipantIds.sorted().joined(separator: ","),
-              activeSection?.rawValue ?? "",
-              String(contactGroupsPresented),
-              String(folderEditorPresented),
-              folderTitle,
-              folderConversationIds.sorted().joined(separator: ","),
-              String(folderIncludeGroups),
-              String(folderIncludeChannels),
-              String(agentChatPresented),
-          ]
-          let fingerprintChunk2: [String] = [
-              model.chatDraft,
-              String(model.chatBusy),
-              agentRevision,
-              selectedConversation?.id ?? "",
-              messageDraft,
-              replyTarget?.id ?? "",
-              editingMessage?.id ?? "",
-              forwardMessage?.id ?? "",
-              mediaViewerMessage?.id ?? "",
-              String(conversationInfoPresented),
-              String(chatSearchPresented),
-              chatSearchQuery,
-              String(attachmentPickerPresented),
-              String(locationSharePresented),
-              String(contactSharePresented),
-              String(pollComposerPresented),
-              pollQuestion,
-          ]
-          let fingerprintChunk3: [String] = [
-              pollOption1,
-              pollOption2,
-              pollOption3,
-              String(voiceRecorder.isRecording),
-              model.query,
-              model.message,
-              String(model.loading),
-              model.installingPluginId ?? "",
-              model.permissionRequest?.pluginId ?? "",
-              openedMiniApp?.pluginId ?? "",
-              pluginRevision,
-              conversationRevision,
-              contactRevision,
-              folderRevision,
-              selectedMessagesRevision,
-              String(messaging.loading),
-              messaging.errorMessage ?? "",
-          ]`;
+            const expectedValues = [
+              "destinationRevision",
+              "String(isSearching)",
+              "homeQuery",
+              "String(profileMenuPresented)",
+              "String(composeMenuPresented)",
+              "composeKind?.rawValue ?? \\\"\\\"",
+              "composeName",
+              "composeDescription",
+              "composeParticipantIds.sorted().joined(separator: \\",\\\")",
+              "activeSection?.rawValue ?? \\\"\\\"",
+              "String(contactGroupsPresented)",
+              "String(folderEditorPresented)",
+              "folderTitle",
+              "folderConversationIds.sorted().joined(separator: \\",\\\")",
+              "String(folderIncludeGroups)",
+              "String(folderIncludeChannels)",
+              "String(agentChatPresented)",
+              "model.chatDraft",
+              "String(model.chatBusy)",
+              "agentRevision",
+              "selectedConversation?.id ?? \\\"\\\"",
+              "messageDraft",
+              "replyTarget?.id ?? \\\"\\\"",
+              "editingMessage?.id ?? \\\"\\\"",
+              "forwardMessage?.id ?? \\\"\\\"",
+              "mediaViewerMessage?.id ?? \\\"\\\"",
+              "String(conversationInfoPresented)",
+              "String(chatSearchPresented)",
+              "chatSearchQuery",
+              "String(attachmentPickerPresented)",
+              "String(locationSharePresented)",
+              "String(contactSharePresented)",
+              "String(pollComposerPresented)",
+              "pollQuestion",
+              "pollOption1",
+              "pollOption2",
+              "pollOption3",
+              "String(voiceRecorder.isRecording)",
+              "model.query",
+              "model.message",
+              "String(model.loading)",
+              "model.installingPluginId ?? \\\"\\\"",
+              "model.permissionRequest?.pluginId ?? \\\"\\\"",
+              "openedMiniApp?.pluginId ?? \\\"\\\"",
+              "pluginRevision",
+              "conversationRevision",
+              "contactRevision",
+              "folderRevision",
+              "selectedMessagesRevision",
+              "String(messaging.loading)",
+              "messaging.errorMessage ?? \\\"\\\"",
+            ];
 
-            assert.ok(fingerprint.includes(expectedChunks), "fingerprint chunks must preserve all 51 values and their order");
-            assert.match(fingerprint, /var fingerprintParts: \[String\] = \[\]/u);
-            assert.match(fingerprint, /fingerprintParts\.append\(contentsOf: fingerprintChunk1\)[\s\S]*fingerprintParts\.append\(contentsOf: fingerprintChunk2\)[\s\S]*fingerprintParts\.append\(contentsOf: fingerprintChunk3\)/u);
-            assert.match(fingerprint, /return fingerprintParts\.joined\(separator: "\\\|"\)/u);
-            assert.doesNotMatch(fingerprint, /return\s+\[\s*destinationRevision/u, "do not restore the monolithic 51-value literal");
+            const chunks = [...fingerprint.matchAll(/let fingerprintChunk\\d+: \\[String\\] = \\[\\n([\\s\\S]*?)\\n\\s*\\]/gu)];
+            assert.equal(chunks.length, 3, "fingerprint must stay split into three explicitly typed String chunks");
+            const actualValues = chunks.flatMap((match) => match[1]
+              .split("\\n")
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((line) => line.endsWith(",") ? line.slice(0, -1) : line));
+            assert.deepEqual(actualValues, expectedValues, "all 51 fingerprint values and their order must remain identical");
+            assert.match(fingerprint, /var fingerprintParts: \\[String\\] = \\[\\]/u);
+            assert.match(fingerprint, /fingerprintParts\\.append\\(contentsOf: fingerprintChunk1\\)[\\s\\S]*fingerprintParts\\.append\\(contentsOf: fingerprintChunk2\\)[\\s\\S]*fingerprintParts\\.append\\(contentsOf: fingerprintChunk3\\)/u);
+            assert.match(fingerprint, /return fingerprintParts\\.joined\\(separator: "\\|"\\)/u);
+            assert.doesNotMatch(fingerprint, /return\\s+\\[\\s*destinationRevision/u, "do not restore the monolithic literal");
           });
           ''')
 
@@ -234,11 +190,13 @@ jobs:
       - name: Run narrow fingerprint contract check
         run: node --test chatgpt-vps-control/tests/ios-contentview-fingerprint-compile-contract.test.js
 
-      - name: Commit atomic fix
+      - name: Commit atomic fix and align current main
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add mobile/ios/Fabushi/ContentView.swift chatgpt-vps-control/tests/ios-contentview-fingerprint-compile-contract.test.js .github/workflows/tfi-ios-fingerprint-patch.yml
           git commit -m "fix(tfi): split iOS fingerprint type inference"
+          git fetch origin main
+          git merge --no-edit origin/main
           git push origin HEAD:fix/tfi-ios-fingerprint-compile-20260905
