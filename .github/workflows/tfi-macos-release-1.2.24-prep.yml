@@ -1,0 +1,74 @@
+name: TFI macOS 1.2.24 release prep
+
+on:
+  push:
+    branches:
+      - release/tfi-macos-test-1.2.24
+    paths:
+      - '.github/workflows/tfi-macos-release-1.2.24-prep.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-release-metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - name: Bump only the comparable macOS test release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          old = '1.2.23'
+          new = '1.2.24'
+
+          app = Path('app-version.json')
+          payload = json.loads(app.read_text())
+          if payload.get('version') != old:
+              raise SystemExit(f"unexpected app version {payload.get('version')!r}")
+          if payload.get('androidVersionCode') != 29 or payload.get('iosBuildNumber') != 29:
+              raise SystemExit('mobile build counters changed unexpectedly')
+          payload['version'] = new
+          app.write_text(json.dumps(payload, indent=2) + '\n')
+
+          desktop = Path('desktop/package.json')
+          package = json.loads(desktop.read_text())
+          if package.get('version') != old:
+              raise SystemExit(f"unexpected desktop version {package.get('version')!r}")
+          package['version'] = new
+          desktop.write_text(json.dumps(package, indent=2) + '\n')
+
+          for filename in ['.github/workflows/ci.yml', '.github/workflows/native-electron-release.yml']:
+              path = Path(filename)
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{filename}: expected one {old} release pin, found {count}')
+              path.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          test "$(jq -r .version app-version.json)" = '1.2.24'
+          test "$(jq -r .version desktop/package.json)" = '1.2.24'
+          test "$(jq -r .androidVersionCode app-version.json)" = '29'
+          test "$(jq -r .iosBuildNumber app-version.json)" = '29'
+          grep -F "test \"\$version\" = '1.2.24'" .github/workflows/native-electron-release.yml >/dev/null
+          grep -F 'runs-on: macos-15' .github/workflows/native-electron-release.yml >/dev/null
+          ! grep -Eq 'windows-latest|ubuntu-latest|Android|Native iOS' .github/workflows/native-electron-release.yml
+      - name: Commit verified release-only diff and remove staging workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tfi-macos-release-1.2.24-prep.yml
+          git add app-version.json desktop/package.json .github/workflows/ci.yml .github/workflows/native-electron-release.yml .github/workflows/tfi-macos-release-1.2.24-prep.yml
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'release(tfi): prepare macOS test 1.2.24'
+          git push origin HEAD:${GITHUB_REF_NAME}
