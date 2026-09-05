@@ -100,3 +100,9 @@
 - A new product PR must start from freshly re-read canonical main. Implementation/config allowlist remains exactly `.github/workflows/ci.yml` plus `mobile/ios/project.yml` `CURRENT_PROJECT_VERSION 28 -> 29`, with only task-specific TFI records in addition.
 - `pull_request` acceptance requires raw proof that actual checkout HEAD equals the final product head before the unchanged canonical script runs. `merge_group` acceptance separately requires actual checkout HEAD equals the current merge-group SHA. Required `CI result` must remain fail-closed on exact child `success`.
 - Historical #2341/#2342/#2343/#2344 remain immutable provenance in this architecture round; no merge/rebase/retarget/force-push/close is authorized. Test release and stable release remain blocked.
+
+## 2026-09-05 — MAINSAFE protected merge / test-release execution
+
+- `TFI-M6-MAINSAFE-001-VERSION-EXACT-HEAD-CHECKOUT-001` — `MERGED / CANONICAL-READBACK-PASS`: reviewed product `#2345@9c46c1d8f030be390995cc78f321aac0d96b7f44` entered the active protected merge queue from `main@dbf22b467d35c8af2a074896c355a41993c8c191`; merge-group run `33939126976` proved actual HEAD equals group SHA `63e49b87d1ca5ad64d988e73769bf4a4ed796a19`, canonical child `101232897597` SUCCESS, required `CI result` `101233054947` SUCCESS; #2345 merged and canonical `main` read back at the same SHA.
+- `TFI-M6-MAINSAFE-001-TEST-RELEASE-001` — `BLOCKED / REQUIRED-MAINSAFE-POST-MAIN-PREREQUISITES-NOT-SATISFIED`: exact canonical main does not contain the separately frozen `IOS-FIXTURE-001`, `EVIDENCE-CONTRACT-001`, or `EVIDENCE-JOURNEY-001` prerequisites. Automatic exact-main Electron/native runs are observational evidence only and cannot waive that prerequisite set.
+- Evidence: `evidence/TFI-M6-MAINSAFE-001/TEST-RELEASE-2026-09-05.md` and `management/93-2026-09-05-M6-MAINSAFE-001-测试发布合并与阻塞记录.md`.
