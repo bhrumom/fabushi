@@ -8,6 +8,14 @@ async function workflow() {
   return readFile(workflowPath, 'utf8');
 }
 
+function stepBlock(source, stepName, nextStepName) {
+  const start = source.indexOf(`- name: ${stepName}`);
+  assert.ok(start >= 0, `missing step: ${stepName}`);
+  const end = nextStepName ? source.indexOf(`- name: ${nextStepName}`, start + 1) : source.length;
+  assert.ok(end > start, `missing next step after: ${stepName}`);
+  return source.slice(start, end);
+}
+
 test('macOS interactive E2E keeps the installed app as the only device-registration owner', async () => {
   const source = await workflow();
   assert.match(source, /runs-on:\s*macos-15/u);
@@ -23,10 +31,11 @@ test('macOS interactive E2E keeps the installed app as the only device-registrat
   assert.match(source, /ci_session_finish/u);
   assert.match(source, /if:\s*always\(\)/u);
   assert.match(source, /Upload complete macOS interactive evidence even on failure/u);
+  assert.match(source, /No standalone Runner\/KRIS\/interactive-runner device agent is started/u);
 
   assert.doesNotMatch(source, /node\s+[^\n]*fabushi-device-agent\.js/u);
-  assert.doesNotMatch(source, /interactive-runner-mcp/u);
-  assert.doesNotMatch(source, /KRIS/u);
+  assert.doesNotMatch(source, /uses:\s*[^\n]*interactive-runner/iu);
+  assert.doesNotMatch(source, /run:\s*[^\n]*(?:KRIS|interactive-runner)/iu);
 });
 
 test('whole-session recording is ordered before release resolution and installation', async () => {
@@ -37,17 +46,28 @@ test('whole-session recording is ordered before release resolution and installat
   assert.ok(record >= 0 && resolve > record && install > resolve);
 });
 
-test('evidence allowlist excludes account session files and includes required classes', async () => {
+test('evidence upload allowlist excludes private account sessions and includes required classes', async () => {
   const source = await workflow();
-  const upload = source.slice(source.indexOf('Upload complete macOS interactive evidence even on failure'));
-  assert.match(upload, /macos-session\.mov/u);
-  assert.match(upload, /steps\//u);
-  assert.match(upload, /device-calls\.jsonl/u);
-  assert.match(upload, /playwright-report/u);
-  assert.match(upload, /test-results/u);
-  assert.match(upload, /fabushi-app\.log/u);
-  assert.match(upload, /release\.json/u);
-  assert.match(upload, /report\.json/u);
+  const upload = stepBlock(
+    source,
+    'Upload complete macOS interactive evidence even on failure',
+    'Remove private account material and temporary app data',
+  );
+  assert.match(upload, /macos-interactive-evidence\//u);
+  assert.match(upload, /playwright-report\//u);
+  assert.match(upload, /test-results\//u);
   assert.doesNotMatch(upload, /FABUSHI_ACCOUNT_SESSION_FILE/u);
   assert.doesNotMatch(upload, /FABUSHI_CI_ACCOUNT_SESSION_FILE/u);
+
+  const collection = stepBlock(
+    source,
+    'Collect macOS App, device-call, Playwright, and release evidence',
+    'Upload complete macOS interactive evidence even on failure',
+  );
+  assert.match(collection, /macos-session\.mov/u);
+  assert.match(collection, /steps\/999-final\.png/u);
+  assert.match(collection, /device-calls\.jsonl/u);
+  assert.match(collection, /fabushi-system\.log/u);
+  assert.match(collection, /releaseTag/u);
+  assert.match(collection, /report\.json/u);
 });
