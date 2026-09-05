@@ -9,6 +9,9 @@ test("iOS interactive workflow installs a logged-in app that owns device registr
   const workflow = await read(".github/workflows/ios-interactive-app-e2e.yml");
   for (const required of [
     "branches: [main]",
+    "mobile/ios/Fabushi/**",
+    "mobile/ios/FabushiTests/**",
+    "mobile/ios/project.yml",
     "Initialize runner-owned paths after runner allocation",
     "FABUSHI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/fabushi-account/session.json",
     "FABUSHI_CI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/fabushi-ci-app/session.json",
