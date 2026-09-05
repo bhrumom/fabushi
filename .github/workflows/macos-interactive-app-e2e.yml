@@ -100,7 +100,7 @@ jobs:
           echo "$recorder_pid" > "$EVIDENCE_DIR/screencapture.pid"
           sleep 3
           kill -0 "$recorder_pid"
-          echo "Whole-session recorder is live before release resolution or installation."
+          echo 'Whole-session recorder is live before release resolution or installation.'
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -126,10 +126,14 @@ jobs:
         run: |
           set -euo pipefail
           gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$EVIDENCE_DIR/release/releases.json"
-          jq '[.[] | select(.draft == false and .prerelease == true and (((.name // "") | test("macOS test"; "i")) or ((.tag_name // "") | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))))] | sort_by(.published_at // .created_at) | last' \
+          jq '[
+            .[]
+            | select(.draft == false and .prerelease == true)
+            | select(any(.assets[]?; (.name // "") | test("^fabushi-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$")))
+          ] | sort_by(.published_at // .created_at) | last' \
             "$EVIDENCE_DIR/release/releases.json" > "$EVIDENCE_DIR/release/release.json"
           jq -e 'type == "object" and (.tag_name | type == "string")' "$EVIDENCE_DIR/release/release.json" >/dev/null
-          jq '[.assets[] | select(.name | test("^fabushi-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$"))] | first' \
+          jq '[.assets[] | select((.name // "") | test("^fabushi-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$"))] | first' \
             "$EVIDENCE_DIR/release/release.json" > "$EVIDENCE_DIR/release/asset.json"
           jq -e 'type == "object" and (.browser_download_url | type == "string")' "$EVIDENCE_DIR/release/asset.json" >/dev/null
           tag="$(jq -r .tag_name "$EVIDENCE_DIR/release/release.json")"
@@ -171,8 +175,12 @@ jobs:
           rm -rf "$stage"
           mkdir -p "$stage"
           ditto -x -k "$EVIDENCE_DIR/release/$ASSET_NAME" "$stage"
-          source_app="$(find "$stage" -maxdepth 3 -type d -name 'Fabushi.app' -print -quit)"
-          test -n "$source_app"
+          /usr/bin/find "$stage" -print > "$EVIDENCE_DIR/release/archive-layout.txt"
+          /usr/bin/find "$stage" -type d -name 'Fabushi.app' -print > "$EVIDENCE_DIR/release/app-candidates.txt"
+          candidate_count="$(wc -l < "$EVIDENCE_DIR/release/app-candidates.txt" | tr -d ' ')"
+          test "$candidate_count" = 1
+          source_app="$(cat "$EVIDENCE_DIR/release/app-candidates.txt")"
+          test -d "$source_app"
           sudo rm -rf /Applications/Fabushi.app
           sudo ditto "$source_app" /Applications/Fabushi.app
           app=/Applications/Fabushi.app
@@ -183,17 +191,20 @@ jobs:
           grep -qi arm64 "$EVIDENCE_DIR/release/executable-file.txt"
           codesign --verify --deep --strict --verbose=2 "$app" 2> "$EVIDENCE_DIR/release/codesign-verify.log"
           spctl --assess --type execute --verbose=2 "$app" 2> "$EVIDENCE_DIR/release/gatekeeper-assess.log"
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
           version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
           build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")"
           expected="${RELEASE_TAG#v}"
+          test "$bundle_id" = 'com.ombhrum.fabushi'
           test "$version" = "$expected"
           jq -n \
             --arg installPath "$app" \
             --arg executable "$executable" \
+            --arg bundleId "$bundle_id" \
             --arg version "$version" \
             --arg build "$build" \
             --arg releaseTag "$RELEASE_TAG" \
-            '{installPath:$installPath,executable:$executable,version:$version,build:$build,releaseTag:$releaseTag}' \
+            '{installPath:$installPath,executable:$executable,bundleId:$bundleId,version:$version,build:$build,releaseTag:$releaseTag}' \
             > "$EVIDENCE_DIR/release/installed-bundle.json"
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "executable=$executable" >> "$GITHUB_OUTPUT"
@@ -233,8 +244,7 @@ jobs:
             --arg runUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             '{phase:$phase,message:$message,appReady:false,appExecutable:$appExecutable,deviceId:$deviceId,runUrl:$runUrl,updatedAt:(now|todateiso8601)}' \
             > "$FABUSHI_CI_SESSION_DIR/status.json"
-          RUNNER_TRACKING_ID= nohup "$APP_EXECUTABLE" \
-            > "$EVIDENCE_DIR/fabushi-app.log" 2>&1 &
+          RUNNER_TRACKING_ID= nohup "$APP_EXECUTABLE" > "$EVIDENCE_DIR/fabushi-app.log" 2>&1 &
           app_pid=$!
           echo "$app_pid" > "$EVIDENCE_DIR/fabushi-app.pid"
           sleep 2
@@ -273,7 +283,9 @@ jobs:
             echo "- Installed bundle: \`${{ steps.install.outputs.version }}\` build \`${{ steps.install.outputs.build }}\`"
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo '- The installed App owns device registration. No standalone Runner/KRIS/interactive-runner device agent is started.'
-            echo '- Use `@fabushi test` list_devices, inspect the App tools, execute the complete current macOS journey, record a `TFI_MACOS_FULL_JOURNEY PASS ...` or `FAIL ...` note, then call `ci_session_finish`.'
+            echo '- Use `@fabushi test` list_devices, call all six `fabushi.app.*` semantic tools, execute the complete current macOS journey, and call `ci_session_status`.'
+            echo '- After every category passes except logout, write `ci_session_note` beginning `TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=startup,login,main,conversations,search,send,receive,reply,edit,delete,forward,draft,pin,mute,unread,contacts,groups,bot,agent,miniapp,webmcp,media,file,notifications,sync,settings,update` and make the final App action invoke `settings-logout`.'
+            echo '- On any failure, write a `TFI_MACOS_FULL_JOURNEY FAIL ...` note and call `ci_session_finish`; never delete an assertion to force green.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - id: control
@@ -294,23 +306,32 @@ jobs:
               echo app-exited > "$EVIDENCE_DIR/remote-control-status.txt"
               exit 1
             }
-            completed="$(jq -c 'select((.phase == "completed" or .phase == "call-completed") and (.ok == true or .ok == null))' "$FABUSHI_DEVICE_CALL_TRACE_FILE" 2>/dev/null || true)"
+            completed="$(jq -c 'select(.phase == "completed" and .ok == true)' "$FABUSHI_DEVICE_CALL_TRACE_FILE" 2>/dev/null || true)"
             total="$(printf '%s\n' "$completed" | sed '/^$/d' | wc -l | tr -d ' ')"
             while [ "$last" -lt "$total" ]; do
               last=$((last + 1))
               line="$(printf '%s\n' "$completed" | sed -n "${last}p")"
-              tool="$(printf '%s' "$line" | jq -r '.toolName // .tool // "device-call"' 2>/dev/null || echo device-call)"
+              tool="$(printf '%s' "$line" | jq -r '.toolName // "device-call"' 2>/dev/null || echo device-call)"
               safe_tool="$(printf '%s' "$tool" | tr -cs 'A-Za-z0-9._-' '-')"
               /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/$(printf '%03d' $((last + 4)))-${safe_tool}.png" || true
             done
+            ready_note=false
+            if grep -q 'TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=' "$notes_file" 2>/dev/null; then
+              ready_note=true
+            fi
+            logout_complete=false
+            if jq -e 'select(.phase == "completed" and .ok == true and .toolName == "fabushi.app.action" and .arguments.agentId == "settings-logout" and .arguments.action == "invoke")' \
+              "$FABUSHI_DEVICE_CALL_TRACE_FILE" >/dev/null 2>&1; then
+              logout_complete=true
+            fi
+            if [ "$ready_note" = true ] && [ "$logout_complete" = true ]; then
+              echo passed > "$EVIDENCE_DIR/remote-control-status.txt"
+              /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/998-full-journey-logout.png" || true
+              exit 0
+            fi
             if test -f "$finish_file"; then
-              if grep -q 'TFI_MACOS_FULL_JOURNEY PASS' "$notes_file" 2>/dev/null; then
-                echo passed > "$EVIDENCE_DIR/remote-control-status.txt"
-                /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/998-full-journey-passed.png" || true
-                exit 0
-              fi
               echo failed > "$EVIDENCE_DIR/remote-control-status.txt"
-              echo 'Remote finish arrived without a TFI_MACOS_FULL_JOURNEY PASS evidence note.' >&2
+              echo 'Remote finish arrived before the required READY_FOR_LOGOUT PASS note plus completed settings-logout App action.' >&2
               exit 1
             fi
             sleep 1
@@ -390,7 +411,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
             > "$EVIDENCE_DIR/workflow-jobs.json" 2>/dev/null || true
           control_status="$(cat "$EVIDENCE_DIR/remote-control-status.txt" 2>/dev/null || echo not-run)"
-          completed_tools="$(jq -r 'select((.phase == "completed" or .phase == "call-completed") and (.ok == true or .ok == null)) | (.toolName // .tool // empty)' "$EVIDENCE_DIR/device-calls.jsonl" 2>/dev/null | sort -u | jq -R -s 'split("\n") | map(select(length > 0))')"
+          completed_tools="$(jq -r 'select(.phase == "completed" and .ok == true) | (.toolName // empty)' "$EVIDENCE_DIR/device-calls.jsonl" 2>/dev/null | sort -u | jq -R -s 'split("\n") | map(select(length > 0))')"
           [ -n "$completed_tools" ] || completed_tools='[]'
           journey_note="$(jq -r 'select(.note | contains("TFI_MACOS_FULL_JOURNEY")) | .note' "$EVIDENCE_DIR/remote-notes.jsonl" 2>/dev/null | tail -n 1)"
           jq -n \
@@ -427,7 +448,7 @@ jobs:
             echo '- Release upload alone is not treated as pass evidence.'
             echo '- Device registration is valid only when owned by the installed macOS App after protected-account login.'
           } > "$EVIDENCE_DIR/README.md"
-          find "$EVIDENCE_DIR" -type f -maxdepth 3 -print | sort > "$EVIDENCE_DIR/evidence-files.txt"
+          /usr/bin/find "$EVIDENCE_DIR" -type f -print | sort > "$EVIDENCE_DIR/evidence-files.txt"
 
       - name: Upload complete macOS interactive evidence even on failure
         if: always()
@@ -460,13 +481,19 @@ jobs:
           set -euo pipefail
           test "$CONTROL_OUTCOME" = success
           test "$(cat "$EVIDENCE_DIR/remote-control-status.txt")" = passed
-          grep -q 'TFI_MACOS_FULL_JOURNEY PASS' "$EVIDENCE_DIR/remote-notes.jsonl"
+          note="$(jq -r 'select(.note | startswith("TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=")) | .note' "$EVIDENCE_DIR/remote-notes.jsonl" | tail -n 1)"
+          test -n "$note"
+          for category in startup login main conversations search send receive reply edit delete forward draft pin mute unread contacts groups bot agent miniapp webmcp media file notifications sync settings update; do
+            printf '%s' "$note" | grep -Eq "(^|,|=)${category}(,|$| )"
+          done
           test "$PLAYWRIGHT_OUTCOME" = success
           test -s "$EVIDENCE_DIR/macos-session.mov"
           test "$(stat -f %z "$EVIDENCE_DIR/macos-session.mov")" -gt 100000
           test -s "$EVIDENCE_DIR/device-calls.jsonl"
-          for tool in fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert ci_session_status ci_session_note ci_session_finish; do
-            jq -e --arg tool "$tool" 'select((.phase == "completed" or .phase == "call-completed") and (.ok == true or .ok == null) and ((.toolName // .tool) == $tool))' \
+          for tool in fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert ci_session_status ci_session_note; do
+            jq -e --arg tool "$tool" 'select(.phase == "completed" and .ok == true and .toolName == $tool)' \
               "$EVIDENCE_DIR/device-calls.jsonl" >/dev/null
           done
-          test "$(find "$EVIDENCE_DIR/steps" -type f -name '*.png' | wc -l | tr -d ' ')" -ge 10
+          jq -e 'select(.phase == "completed" and .ok == true and .toolName == "fabushi.app.action" and .arguments.agentId == "settings-logout" and .arguments.action == "invoke")' \
+            "$EVIDENCE_DIR/device-calls.jsonl" >/dev/null
+          test "$(/usr/bin/find "$EVIDENCE_DIR/steps" -type f -name '*.png' -print | wc -l | tr -d ' ')" -ge 10
