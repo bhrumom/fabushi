@@ -92,4 +92,24 @@ final class FabushiTests: XCTestCase {
         XCTAssertTrue(retainedInvoked)
         XCTAssertFalse(droppedInvoked)
     }
+
+    @MainActor
+    func testAppAgentSurfaceReservesItsSyntheticTruncationIdentifier() {
+        let surface = FabushiAppAgentSurface(appId: "fabushi.ios.test")
+        XCTAssertThrowsError(try surface.publish(
+            screen: "caller-owned-marker",
+            elements: [
+                .init(
+                    agentId: FabushiAppAgentSurface.truncationAgentId,
+                    role: "button",
+                    name: "Caller marker"
+                ),
+            ],
+            actions: [
+                FabushiAppAgentSurface.truncationAgentId: .init(allowed: ["invoke"]) { _ in },
+            ]
+        )) { error in
+            XCTAssertEqual(error as? FabushiAppAgentSurface.SurfaceError, .invalidElement)
+        }
+    }
 }
