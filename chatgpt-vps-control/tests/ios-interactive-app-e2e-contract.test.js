@@ -22,6 +22,9 @@ test("iOS interactive workflow installs a logged-in app that owns device registr
     "xcrun simctl bootstatus",
     "simulator-runtimes.json",
     "simulator-devices.json",
+    "Install exact Simulator test build before protected account login",
+    "Login protected Fabushi test account and export bounded app session",
+    "Launch authenticated exact test build and let the app own device registration",
     "secrets.FABUSHI_CI_TEST_USERNAME",
     "secrets.FABUSHI_CI_TEST_PASSWORD",
     "login-ci-test-account.mjs",
@@ -45,8 +48,16 @@ test("iOS interactive workflow installs a logged-in app that owns device registr
   const bootIndex = workflow.indexOf('xcrun simctl boot "$udid"');
   const videoIndex = workflow.indexOf("recordVideo");
   const rustBuildIndex = workflow.indexOf("Build Mahayana Host for iOS Simulator");
+  const installIndex = workflow.indexOf("Install exact Simulator test build before protected account login");
+  const loginIndex = workflow.indexOf("Login protected Fabushi test account and export bounded app session");
+  const launchIndex = workflow.indexOf("Launch authenticated exact test build and let the app own device registration");
+  const controlIndex = workflow.indexOf("Hold live app for @fabushi test semantic control");
   assert.ok(bootIndex >= 0 && videoIndex > bootIndex && rustBuildIndex > videoIndex,
     "full-session video must start immediately after Simulator boot and before build/test/login/install");
+  assert.ok(videoIndex < installIndex && installIndex < loginIndex && loginIndex < launchIndex && launchIndex < controlIndex,
+    "journey order must be recording -> exact app install -> protected account login -> app-owned registration -> external control");
+  assert.equal(workflow.match(/xcrun\s+simctl\s+install/g)?.length, 1,
+    "the exact Simulator app should be installed once before protected account login");
 
   assert.doesNotMatch(workflow, /xcrun\s+simctl\s+create/u);
   assert.doesNotMatch(workflow, /\$\{\{\s*runner\.temp\s*\}\}/u);
