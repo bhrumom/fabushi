@@ -1,8 +1,281 @@
 name: Computer control security gate
+
 on:
+  pull_request:
+    paths:
+      - 'chatgpt-vps-control/**'
+      - 'desktop/electron/**'
+      - 'desktop/src/app-agent-surface.ts'
+      - 'desktop/src/main.tsx'
+      - 'desktop/e2e/app-agent-surface.spec.ts'
+      - 'desktop/package.json'
+      - 'desktop/tsconfig.json'
+      - 'desktop/vite.config.ts'
+      - 'frontend/apps/web/src/app/**'
+      - 'frontend/apps/web/src/components/fabushi-app-agent-surface.tsx'
+      - 'frontend/apps/web/src/lib/app-agent-surface/**'
+      - 'frontend/apps/web/src/lib/fabushi-runtime/native-desktop.ts'
+      - 'frontend/apps/web/src/lib/remote-computer/**'
+      - 'frontend/packages/mcp-app-sdk/**'
+      - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/**'
+      - 'mobile/android/app/src/test/java/com/ombhrum/fabushi/**'
+      - 'mobile/android/app/src/androidTest/java/com/ombhrum/fabushi/**'
+      - 'mobile/ios/Fabushi/**'
+      - 'mobile/ios/FabushiTests/**'
+      - 'frontend/apps/web/src/lib/mahayana-host/contracts.ts'
+      - 'third_party/mahayana/mahayana-rs/mahayana-computer/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/ci_runner.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/lib.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/schema_tests.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0014_remote_computer_client_tokens.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0015_remote_computer_inventory.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - '.github/workflows/apple-store-delivery.yml'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/computer-control-security.yml'
+      - '.github/workflows/interactive-runner-mcp.yml'
+      - '.github/scripts/verify-packaged-computer-control.mjs'
+      - '.github/scripts/verify-app-agent-surface-contract.mjs'
+      - 'chatgpt-vps-control/tests/packaged-computer-control-verifier.test.js'
+      - '.github/workflows/electron-desktop.yml'
+      - '.github/workflows/electron-macos-hot-package.yml'
+      - '.github/workflows/native-electron-release.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'chatgpt-vps-control/**'
+      - 'desktop/electron/**'
+      - 'desktop/src/app-agent-surface.ts'
+      - 'desktop/src/main.tsx'
+      - 'desktop/e2e/app-agent-surface.spec.ts'
+      - 'desktop/package.json'
+      - 'desktop/tsconfig.json'
+      - 'desktop/vite.config.ts'
+      - 'frontend/apps/web/src/app/**'
+      - 'frontend/apps/web/src/components/fabushi-app-agent-surface.tsx'
+      - 'frontend/apps/web/src/lib/app-agent-surface/**'
+      - 'frontend/apps/web/src/lib/fabushi-runtime/native-desktop.ts'
+      - 'frontend/apps/web/src/lib/remote-computer/**'
+      - 'frontend/packages/mcp-app-sdk/**'
+      - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/**'
+      - 'mobile/android/app/src/test/java/com/ombhrum/fabushi/**'
+      - 'mobile/android/app/src/androidTest/java/com/ombhrum/fabushi/**'
+      - 'mobile/ios/Fabushi/**'
+      - 'mobile/ios/FabushiTests/**'
+      - 'frontend/apps/web/src/lib/mahayana-host/contracts.ts'
+      - 'third_party/mahayana/mahayana-rs/mahayana-computer/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/ci_runner.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/lib.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/schema_tests.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0014_remote_computer_client_tokens.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0015_remote_computer_inventory.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - '.github/workflows/apple-store-delivery.yml'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/computer-control-security.yml'
+      - '.github/workflows/interactive-runner-mcp.yml'
+      - '.github/scripts/verify-packaged-computer-control.mjs'
+      - '.github/scripts/verify-app-agent-surface-contract.mjs'
+      - 'chatgpt-vps-control/tests/packaged-computer-control-verifier.test.js'
+      - '.github/workflows/electron-desktop.yml'
+      - '.github/workflows/electron-macos-hot-package.yml'
+      - '.github/workflows/native-electron-release.yml'
   workflow_dispatch:
+
+concurrency:
+  group: computer-control-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  paused:
+  node-security:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: chatgpt-vps-control
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+      - name: Verify dependency-free embedded runtime source contract
+        if: runner.os == 'Linux'
+        run: node --test tests/fabushi-embedded-runtime-source.test.js tests/rustdesk-device-presence-contract.test.js tests/fabushi-computer-policy.test.js tests/interactive-runner-account-binding.test.js
+      - run: npm ci --ignore-scripts
+      - name: Check JavaScript syntax
+        run: >-
+          npm run check &&
+          node --check bin/fabushi-computer-mcp.js &&
+          node --check bin/prepare-fabushi-bundle.js &&
+          node --check lib/fabushi-computer-policy.js &&
+          node --check lib/app-agent-surface-client.js &&
+          node --check lib/app-agent-tools.js &&
+          node --check lib/device-agent.js &&
+          node --check ../desktop/electron/app-agent-surface-server.cjs
+      - name: Verify OAuth and credential boundary
+        run: node security-gate.mjs
+      - name: Run browser, target, sensitive-input and native broker tests
+        run: >-
+          node --test
+          tests/app-agent-surface-client.test.js
+          tests/app-agent-tools.test.js
+          tests/device-agent-trace-redaction.test.js
+          tests/browser-extension.test.js
+          tests/browser-session.test.js
+          tests/secure-input.test.js
+          tests/native-request-service.test.js
+          tests/runtime-install.test.js
+          tests/packaged-computer-control-verifier.test.js
+          tests/tool-descriptors.test.js
+          tests/semantic-computer.test.js
+          tests/linux-helper-source.test.js
+          tests/macos-helper-source.test.js
+          ../desktop/electron/app-agent-surface-server.test.cjs
+          ../desktop/electron/remote-device-agent-supervisor.test.cjs
+      - name: Verify shared WebMCP/App MCP contract
+        if: runner.os == 'Linux'
+        run: >-
+          node --experimental-strip-types --experimental-specifier-resolution=node --test
+          ../frontend/packages/mcp-app-sdk/test/app-surface.test.ts
+          ../frontend/packages/mcp-app-sdk/test/webmcp.test.ts
+      - name: Verify additive WebMCP/App MCP and native semantic fallback contract
+        if: runner.os == 'Linux'
+        working-directory: ${{ github.workspace }}
+        run: node .github/scripts/verify-app-agent-surface-contract.mjs
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+
+  rust-contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          cache-on-failure: true
+      - name: Install Linux native capture/input dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
+      - name: Check computer-control Rust formatting
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt -p mahayana-host-protocol -p mahayana-computer -p mahayana-feature-host -p mahayana-agent-codex -- --check
+      - name: Check computer-control crates
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo check --locked -p mahayana-host-protocol -p mahayana-computer -p mahayana-feature-host -p mahayana-agent-codex
+      - name: Run protocol, computer-control, and Feature Host unit tests
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test --locked -p mahayana-host-protocol -p mahayana-computer -p mahayana-feature-host
+
+  platform-worker-security:
+    name: Remote control platform worker security
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: rustfmt
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: computer-control-platform-worker
+      - name: Check Platform Worker Rust formatting
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt -p mahayana-platform-worker -- --check
+      - name: Verify migration and host-side schema contracts
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test --locked -p mahayana-platform-worker
+      - name: Compile the remote-control Worker handlers for Cloudflare Wasm
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo check --locked --target wasm32-unknown-unknown -p mahayana-platform-worker
+
+  linux-managed-semantic-desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: chatgpt-vps-control
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Install X11 and AT-SPI test dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            xdotool wmctrl ffmpeg x11-utils x11-xserver-utils xvfb x11vnc xfwm4 dbus-x11 \
+            at-spi2-core python3-pyatspi gir1.2-atspi-2.0 libglib2.0-bin python3-gi gir1.2-gtk-3.0
+      - name: Verify Linux helper and managed-desktop contracts
+        shell: bash
+        run: |
+          node --test tests/linux-helper-source.test.js tests/semantic-computer.test.js tests/browser-session.test.js
+          xvfb-run -a node scripts/check.mjs
+
+
+  result:
+    name: Computer control security result
+    if: always()
+    needs:
+      - node-security
+      - rust-contracts
+      - platform-worker-security
+      - linux-managed-semantic-desktop
     runs-on: ubuntu-latest
     steps:
-      - run: echo 'Automatic computer-control security gate paused for 2026-09-05 Mac test release.'
+      - name: Require every Computer Control security job
+        env:
+          NODE_SECURITY_RESULT: ${{ needs.node-security.result }}
+          RUST_CONTRACTS_RESULT: ${{ needs.rust-contracts.result }}
+          PLATFORM_WORKER_RESULT: ${{ needs.platform-worker-security.result }}
+          LINUX_DESKTOP_RESULT: ${{ needs.linux-managed-semantic-desktop.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for result in \
+            "$NODE_SECURITY_RESULT" \
+            "$RUST_CONTRACTS_RESULT" \
+            "$PLATFORM_WORKER_RESULT" \
+            "$LINUX_DESKTOP_RESULT"; do
+            if [ "$result" != success ]; then
+              echo "Computer Control security dependency finished with $result." >&2
+              exit 1
+            fi
+          done
+          echo 'All Computer Control security jobs passed.' >> "$GITHUB_STEP_SUMMARY"
