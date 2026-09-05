@@ -42,6 +42,21 @@ test("iOS interactive workflow installs a logged-in app that owns device registr
   assert.doesNotMatch(workflow, /nohup\s+node/u);
 });
 
+test("iOS interactive simulator bootstrap derives a compatible available pair", async () => {
+  const workflow = await read(".github/workflows/ios-interactive-app-e2e.yml");
+  for (const required of [
+    "Create and boot isolated compatible iOS Simulator",
+    "xcrun simctl list devices available -j",
+    ".deviceTypeIdentifier",
+    "simulator-selection.txt",
+    "template_name",
+    'udid="$(xcrun simctl create',
+  ]) assert.ok(workflow.includes(required), `missing compatible Simulator invariant: ${required}`);
+
+  assert.doesNotMatch(workflow, /xcrun simctl list runtimes available -j/u);
+  assert.doesNotMatch(workflow, /xcrun simctl list devicetypes -j/u);
+});
+
 test("native iOS gateway reuses the account session and semantic App Surface only", async () => {
   const gateway = await read("mobile/ios/Fabushi/FabushiRemoteDeviceGateway.swift");
   const app = await read("mobile/ios/Fabushi/FabushiApp.swift");
