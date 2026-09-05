@@ -32,5 +32,6 @@ jobs:
           grep -F 'already exists; refusing to mutate an existing release' "$release" >/dev/null
           ! grep -Eq 'windows-latest|ubuntu-latest|Android|Native iOS' "$release"
           node desktop/scripts/check-app-agent-stable-rebase-contract.mjs
+          node --test chatgpt-vps-control/tests/ios-interactive-app-e2e-contract.test.js
           git diff --check HEAD^ HEAD || true
-          echo 'Required CI result: fast release-control, canonical test-release source gate, and macOS App target-rebase contract only.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Required CI result: fast release-control, canonical test-release source gate, macOS App target-rebase, and iOS interactive hold contracts.' >> "$GITHUB_STEP_SUMMARY"
