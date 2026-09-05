@@ -15,6 +15,13 @@ test("iOS interactive workflow installs a logged-in app that owns device registr
     "DERIVED_DATA=$RUNNER_TEMP/fabushi-ios-derived",
     "EVIDENCE_DIR=$GITHUB_WORKSPACE/ios-interactive-evidence",
     '>> "$GITHUB_ENV"',
+    "Select, erase, and boot compatible iOS Simulator",
+    "xcrun simctl list runtimes available -j",
+    "xcrun simctl list devices available -j",
+    "xcrun simctl erase",
+    "xcrun simctl bootstatus",
+    "simulator-runtimes.json",
+    "simulator-devices.json",
     "secrets.FABUSHI_CI_TEST_USERNAME",
     "secrets.FABUSHI_CI_TEST_PASSWORD",
     "login-ci-test-account.mjs",
@@ -35,6 +42,13 @@ test("iOS interactive workflow installs a logged-in app that owns device registr
     "fabushi.app.assert",
   ]) assert.ok(workflow.includes(required), `missing iOS interactive invariant: ${required}`);
 
+  const bootIndex = workflow.indexOf('xcrun simctl boot "$udid"');
+  const videoIndex = workflow.indexOf("recordVideo");
+  const rustBuildIndex = workflow.indexOf("Build Mahayana Host for iOS Simulator");
+  assert.ok(bootIndex >= 0 && videoIndex > bootIndex && rustBuildIndex > videoIndex,
+    "full-session video must start immediately after Simulator boot and before build/test/login/install");
+
+  assert.doesNotMatch(workflow, /xcrun\s+simctl\s+create/u);
   assert.doesNotMatch(workflow, /\$\{\{\s*runner\.temp\s*\}\}/u);
   assert.doesNotMatch(workflow, /fabushi-device-agent\.js/u);
   assert.doesNotMatch(workflow, /DEVICE_GATEWAY_TOKEN/u);
