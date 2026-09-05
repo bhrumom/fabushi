@@ -27,16 +27,23 @@ jobs:
     timeout-minutes: 35
     env:
       DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-interactive
-      FABUSHI_ACCOUNT_SESSION_FILE: ${{ runner.temp }}/fabushi-account/session.json
-      FABUSHI_CI_ACCOUNT_SESSION_FILE: ${{ runner.temp }}/fabushi-ci-app/session.json
       FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
-      DERIVED_DATA: ${{ runner.temp }}/fabushi-ios-derived
-      EVIDENCE_DIR: ${{ github.workspace }}/ios-interactive-evidence
     steps:
       - name: Checkout exact source
         uses: actions/checkout@v5
         with:
           fetch-depth: 1
+
+      - name: Initialize runner-owned paths after runner allocation
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "FABUSHI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/fabushi-account/session.json"
+            echo "FABUSHI_CI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/fabushi-ci-app/session.json"
+            echo "DERIVED_DATA=$RUNNER_TEMP/fabushi-ios-derived"
+            echo "EVIDENCE_DIR=$GITHUB_WORKSPACE/ios-interactive-evidence"
+          } >> "$GITHUB_ENV"
 
       - name: Record source identity
         shell: bash
