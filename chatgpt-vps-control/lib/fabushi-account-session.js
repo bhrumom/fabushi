@@ -9,11 +9,17 @@ function validCredential(value) {
   return value.length >= 24 && value.length <= 16 * 1024 && !/\s/u.test(value);
 }
 
+function validActionsTestDeviceId(value) {
+  return /^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app)$/u.test(value);
+}
+
 function cleanSession(payload) {
   const accessToken = String(payload?.accessToken || "").trim();
   const refreshToken = String(payload?.refreshToken || "").trim();
   const tokenType = String(payload?.tokenType || "Bearer");
   const provider = String(payload?.provider || "official");
+  // `ciRunner` is a legacy wire-compatibility marker for bounded GitHub Actions
+  // sessions. It does not mean the Actions runner owns device registration.
   const ciRunner = payload?.ciRunner === true && provider === "github-actions";
   const accessTokenExpiresAt = Number(payload?.accessTokenExpiresAt || 0);
   const refreshTokenExpiresAt = Number(payload?.refreshTokenExpiresAt || 0);
@@ -25,7 +31,7 @@ function cleanSession(payload) {
   const ciIdentityValid = !ciRunner || (
     tokenType === "Bearer"
     && /^ci-runner:[0-9]+:[0-9]+$/u.test(sessionId)
-    && /^gha-[0-9]+-[0-9]+-interactive$/u.test(deviceId)
+    && validActionsTestDeviceId(deviceId)
     && !refreshToken
     && accessTokenExpiresAt > 0
     && nestedUserId === userId
@@ -132,7 +138,7 @@ export function createFabushiAccountSessionStore(options = {}) {
     if (current.ciRunner || !current.refreshToken) {
       throw new FabushiAccountAuthError(
         "ci_runner_session_expired",
-        "The GitHub Actions Runner session is short-lived and cannot be refreshed.",
+        "The GitHub Actions CI session is short-lived and cannot be refreshed.",
         401,
       );
     }
@@ -153,7 +159,7 @@ export function createFabushiAccountSessionStore(options = {}) {
       if (session.ciRunner) {
         throw new FabushiAccountAuthError(
           "ci_runner_session_expired",
-          "The GitHub Actions Runner session expired; start a new workflow run.",
+          "The GitHub Actions CI session expired; start a new workflow run.",
           401,
         );
       }
