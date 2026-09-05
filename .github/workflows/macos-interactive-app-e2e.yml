@@ -176,10 +176,11 @@ jobs:
           mkdir -p "$stage"
           ditto -x -k "$EVIDENCE_DIR/release/$ASSET_NAME" "$stage"
           /usr/bin/find "$stage" -print > "$EVIDENCE_DIR/release/archive-layout.txt"
-          /usr/bin/find "$stage" -type d -name 'Fabushi.app' -print > "$EVIDENCE_DIR/release/app-candidates.txt"
-          candidate_count="$(wc -l < "$EVIDENCE_DIR/release/app-candidates.txt" | tr -d ' ')"
-          test "$candidate_count" = 1
-          source_app="$(cat "$EVIDENCE_DIR/release/app-candidates.txt")"
+          shopt -s nullglob
+          top_level_apps=("$stage"/*.app)
+          printf '%s\n' "${top_level_apps[@]}" > "$EVIDENCE_DIR/release/app-candidates.txt"
+          test "${#top_level_apps[@]}" -eq 1
+          source_app="${top_level_apps[0]}"
           test -d "$source_app"
           sudo rm -rf /Applications/Fabushi.app
           sudo ditto "$source_app" /Applications/Fabushi.app
@@ -199,12 +200,13 @@ jobs:
           test "$version" = "$expected"
           jq -n \
             --arg installPath "$app" \
+            --arg sourceBundle "$source_app" \
             --arg executable "$executable" \
             --arg bundleId "$bundle_id" \
             --arg version "$version" \
             --arg build "$build" \
             --arg releaseTag "$RELEASE_TAG" \
-            '{installPath:$installPath,executable:$executable,bundleId:$bundleId,version:$version,build:$build,releaseTag:$releaseTag}' \
+            '{installPath:$installPath,sourceBundle:$sourceBundle,executable:$executable,bundleId:$bundleId,version:$version,build:$build,releaseTag:$releaseTag}' \
             > "$EVIDENCE_DIR/release/installed-bundle.json"
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "executable=$executable" >> "$GITHUB_OUTPUT"
