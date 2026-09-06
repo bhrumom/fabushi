@@ -1,20 +1,8 @@
 name: macOS interactive app device E2E
 
 on:
-  push:
-    branches:
-      - main
-      - feat/tfi-macos-app-interactive-e2e-20260905
-    paths:
-      - '.github/workflows/macos-interactive-app-e2e.yml'
-      - 'desktop/electron/main.cjs'
-      - 'desktop/electron/remote-device-agent-supervisor.cjs'
-      - 'desktop/electron/app-agent-surface-server.cjs'
-      - 'desktop/e2e/app-agent-surface.spec.ts'
-      - 'chatgpt-vps-control/lib/**'
-      - 'chatgpt-vps-control/bin/**'
-      - 'chatgpt-vps-control/scripts/**'
-      - 'chatgpt-vps-control/tests/macos-interactive-app-e2e-contract.test.js'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -27,6 +15,7 @@ concurrency:
 
 jobs:
   macos-interactive:
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'desktop-') }}
     name: Install exact-main release, login, register, and expose macOS App
     runs-on: macos-15
     timeout-minutes: 55

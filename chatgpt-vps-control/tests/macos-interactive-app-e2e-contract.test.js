@@ -23,6 +23,10 @@ function stepBlock(source, stepName, nextStepName) {
 test('macOS interactive E2E keeps the installed app as the only device-registration owner', async () => {
   const source = await workflow();
   assert.match(source, /runs-on:\s*macos-15/u);
+  assert.match(source, /release:\s*\n\s*types: \[published\]/u);
+  assert.match(source, /startsWith\(github\.event\.release\.tag_name, 'desktop-'\)/u);
+  assert.match(source, /workflow_dispatch:/u);
+  assert.doesNotMatch(source, /\n  push:/u);
   assert.match(source, /Start whole-session macOS recording/u);
   assert.match(source, /Wait for exact-main published macOS test release/u);
   assert.match(source, /Install exact published macOS test app/u);
