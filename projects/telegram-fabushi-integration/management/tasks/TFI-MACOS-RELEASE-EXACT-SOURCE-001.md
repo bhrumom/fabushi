@@ -27,3 +27,7 @@ Run `34023374833` was therefore cancelled before package/sign/notarize/publish w
 - Because `1.2.44` has never been published, the merge may keep the same strictly-newer candidate version `1.2.44` relative to the last published macOS `v1.2.40`.
 - The workflow change itself triggers a new macOS test-release run whose `head_sha` equals its checkout/build `HEAD_SHA`; release `v1.2.44` must target that exact SHA.
 - Full latest-release App-owned macOS interactive retest remains mandatory afterward.
+
+## PR validation round 1
+
+PR #2424 head `f937567652d339d37c6289506f6f456361d21396` passed `CI result`, Delivery governance, Project portfolio governance and GBF rollback drill. Computer-control Ubuntu node-security failed only because its embedded-runtime contract still required the superseded mutable-main assertion `HEAD == refs/remotes/origin/main`. The test already exercises release-source safety, so the follow-up updates it to require `ref: ${{ github.sha }}`, require `HEAD == $GITHUB_SHA`, forbid `ref: main`, and continues to require the existing protected-main ancestry/release gate markers. No security requirement is removed.
