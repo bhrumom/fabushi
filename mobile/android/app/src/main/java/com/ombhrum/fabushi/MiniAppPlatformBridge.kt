@@ -6,6 +6,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.util.UUID
 
 /**
  * Android adapter for the canonical Fabushi Mini App control plane.
@@ -53,54 +54,69 @@ internal class MiniAppPlatformBridge(
     fun callOfficialMcpTool(pluginId: String, name: String, arguments: JSONObject): JSONObject {
         requirePluginId(pluginId)
         require(ToolName.matches(name)) { "Invalid Mini App MCP tool name" }
-        val token = delegatedPluginToken(pluginId)
-        val endpoint = "$API_BASE/api/mcp/apps/$pluginId"
-        val initialize = JSONObject()
-            .put("jsonrpc", "2.0")
-            .put("id", 1)
-            .put("method", "initialize")
-            .put(
-                "params",
-                JSONObject()
-                    .put("protocolVersion", MCP_PROTOCOL)
-                    .put("capabilities", JSONObject())
-                    .put(
-                        "clientInfo",
-                        JSONObject()
-                            .put("name", "fabushi-android-miniapp-host")
-                            .put("version", BuildConfig.VERSION_NAME),
-                    ),
-            )
-        val initialized = mcpPost(endpoint, token, null, initialize, expectJson = true)
-        val sessionId = initialized.sessionId
-            ?: error("Mini App MCP initialize did not return mcp-session-id")
-        ensureNoMcpError(initialized.body, "initialize")
-        try {
-            val notification = JSONObject()
+        val operationId = "miniapp:$pluginId:${UUID.randomUUID()}"
+        publishOperation(pluginId, operationId, name, "started", "正在连接统一 WebMCP")
+        return try {
+            val token = delegatedPluginToken(pluginId)
+            val endpoint = "$API_BASE/api/mcp/apps/$pluginId"
+            val initialize = JSONObject()
                 .put("jsonrpc", "2.0")
-                .put("method", "notifications/initialized")
-                .put("params", JSONObject())
-            mcpPost(endpoint, token, sessionId, notification, expectJson = false)
-
-            val call = JSONObject()
-                .put("jsonrpc", "2.0")
-                .put("id", 2)
-                .put("method", "tools/call")
+                .put("id", 1)
+                .put("method", "initialize")
                 .put(
                     "params",
                     JSONObject()
-                        .put("name", name)
-                        .put("arguments", arguments),
+                        .put("protocolVersion", MCP_PROTOCOL)
+                        .put("capabilities", JSONObject())
+                        .put(
+                            "clientInfo",
+                            JSONObject()
+                                .put("name", "fabushi-android-miniapp-host")
+                                .put("version", BuildConfig.VERSION_NAME),
+                        ),
                 )
-            val response = mcpPost(endpoint, token, sessionId, call, expectJson = true).body
-                ?: error("Mini App MCP tools/call returned an empty response")
-            ensureNoMcpError(response, "tools/call")
-            val result = response.optJSONObject("result")
-                ?: error("Mini App MCP tools/call did not return result")
-            enforceProtectedHostRequest(pluginId, result)
-            return result
-        } finally {
-            runCatching { mcpDelete(endpoint, token, sessionId) }
+            val initialized = mcpPost(endpoint, token, null, initialize, expectJson = true)
+            val sessionId = initialized.sessionId
+                ?: error("Mini App MCP initialize did not return mcp-session-id")
+            ensureNoMcpError(initialized.body, "initialize")
+            publishOperation(pluginId, operationId, name, "running", "WebMCP 会话已建立")
+            try {
+                val notification = JSONObject()
+                    .put("jsonrpc", "2.0")
+                    .put("method", "notifications/initialized")
+                    .put("params", JSONObject())
+                mcpPost(endpoint, token, sessionId, notification, expectJson = false)
+
+                val call = JSONObject()
+                    .put("jsonrpc", "2.0")
+                    .put("id", 2)
+                    .put("method", "tools/call")
+                    .put(
+                        "params",
+                        JSONObject()
+                            .put("name", name)
+                            .put("arguments", arguments),
+                    )
+                val response = mcpPost(endpoint, token, sessionId, call, expectJson = true).body
+                    ?: error("Mini App MCP tools/call returned an empty response")
+                ensureNoMcpError(response, "tools/call")
+                val result = response.optJSONObject("result")
+                    ?: error("Mini App MCP tools/call did not return result")
+                enforceProtectedHostRequest(pluginId, result)
+                publishOperation(pluginId, operationId, name, "completed", "WebMCP Tool 已完成")
+                result
+            } finally {
+                runCatching { mcpDelete(endpoint, token, sessionId) }
+            }
+        } catch (error: Throwable) {
+            publishOperation(
+                pluginId,
+                operationId,
+                name,
+                "failed",
+                error.message?.take(240) ?: "WebMCP Tool 调用失败",
+            )
+            throw error
         }
     }
 
@@ -130,6 +146,25 @@ internal class MiniAppPlatformBridge(
         path = "/v1/purchases/restore",
         body = JSONObject(),
     )
+
+    private fun publishOperation(
+        pluginId: String,
+        operationId: String,
+        tool: String,
+        status: String,
+        message: String,
+    ) {
+        host.publishFeatureEvent(
+            JSONObject()
+                .put("type", "miniapp.operation")
+                .put("miniAppId", pluginId)
+                .put("pluginId", pluginId)
+                .put("operationId", operationId)
+                .put("tool", tool)
+                .put("status", status)
+                .put("message", message),
+        )
+    }
 
     private fun enforceProtectedHostRequest(pluginId: String, result: JSONObject) {
         val hostRequest = result.optJSONObject("structuredContent")?.optJSONObject("hostRequest") ?: return
