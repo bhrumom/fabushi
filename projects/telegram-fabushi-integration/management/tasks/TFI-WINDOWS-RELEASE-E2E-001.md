@@ -129,3 +129,26 @@ Protected merge of the allowlist repair PR `#2408` produced canonical `main@f733
 ## 原子问题 003 — post-main iOS UI test 仍假设认证后直接进入 legacy app-shell
 
 Windows `1.2.40` exact-main Electron run `34020086944` 已证明 Windows package 与 packaged Windows journey 成功，但 governed post-main delivery 被 exact-source Native mobile run `34020086941` 阻塞。Native iOS job `101450938184` 的两个真实 UI case 各两次稳定失败在旧 helper 的 `app-shell` 等待；当前产品认证后先进入 `GrokMobileShell` 的 `grok-mobile-home`，legacy workbench 是显式入口。修复必须只补现有入口的稳定 XCTest identifier 并校正测试导航，不修改产品登录/导航语义。完整证据见 `evidence/TFI-WINDOWS-RELEASE-E2E-001/2026-09-06-postmain-ios-grok-shell-test-contract.md`。
+
+## 原子问题 004 — Windows protected login helper 硬编码 POSIX RUNNER_TEMP 分隔符
+
+### Live failure
+
+- Windows interactive run `34023032996` / job `101458986749` 在 `main@2ec0fbd5cc30a61e043e5050dff4a70e8a33e06e` 上执行。
+- Workflow 成功解析并安装当时仍为最新的 Windows installer：`desktop-1.2.21-4bc3e832fffe` -> `4bc3e832fffe4eaff21aa6fbf617a33133302c62`，`fabushi-1.2.21-setup.exe`，installed `1.2.21.0`。
+- Whole-session recording 已在 installer 前启动；Windows workflow ownership/allowlist contract 4/4 通过。
+- 受保护账号登录前，`login-ci-test-account.mjs` 抛出 `Fabushi account session must live under RUNNER_TEMP.`。该 run 的合法路径实际为 `D:\a\_temp\fabushi-account\session.json`。
+- App 因此未启动、未自注册；本 run 没有可选 Windows App-owned device，semantic device-call 成功数为 0。
+- always evidence artifact: `9986191161`, `fabushi-windows-interactive-evidence-34023032996-1`, 118,121,951 bytes, SHA256 `6c5587b847e69d7ce1ebcc30b4d96de758ae8191562ef4725928496f0aca8da3`。
+
+### Root cause / smallest repair
+
+`login-ci-test-account.mjs` 用 `sessionPath.startsWith(`${RUNNER_TEMP}/`)` 校验私有 session 路径，硬编码 `/`；Windows Actions 的 `RUNNER_TEMP` 和 session path 使用 `\`，所以合法路径被 fail-closed。仓库现有 `export-ci-app-account-session.mjs` 与 `renew-ci-app-account-session.mjs` 已使用 Node `path.resolve()` + platform `path.sep` 做同一安全边界，因此本修复复用该成熟模式，不引入新路径协议。
+
+修复仅：
+1. 对 login helper 的 session path 与 RUNNER_TEMP 做 `resolve()`；
+2. 用 `${root}${sep}` 做 platform-aware descendant 检查；
+3. 增加 Windows contract regression，禁止重新出现 `RUNNER_TEMP + '/'`；
+4. 不修改账号凭据、token 生命周期、device-id allowlist、App-owned gateway ownership、发布选择或其它平台语义。
+
+Branch: `fix/tfi-windows-runner-temp-path-20260906`。重型验证继续只走 GitHub Actions；修复合并后必须从最新 canonical main 严格升版并发布新的 Windows installer，再只用该 release/run 新注册的 App-owned Windows device 完成六工具与全 journey 验收。
