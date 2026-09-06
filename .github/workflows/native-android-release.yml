@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: write
-  actions: read
+  actions: write
   checks: read
 
 concurrency:
@@ -268,3 +268,15 @@ jobs:
             --title 'Fabushi Android ${{ steps.release.outputs.version_name }} (${{ steps.release.outputs.version_code }})' \
             --notes 'GitHub Android test release from protected main after the exact-source CI result passed. The APK includes the GitHub self-update channel.' \
             --latest=false
+
+      - name: Dispatch Android App-owned interactive E2E
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run android-interactive-app-e2e.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f release_tag='${{ steps.release.outputs.release_tag }}' \
+            -f release_sha='${{ steps.source.outputs.sha }}'
