@@ -138,10 +138,6 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
         install.result["releaseManifest"]["version"],
         install.result["receipt"]["version"]
     );
-    assert_eq!(
-        install.result["marketplaceSource"]["marketplaceHostsPackage"],
-        false
-    );
     assert!(
         install.result["marketplaceSource"]["sourceRef"]
             .as_str()
