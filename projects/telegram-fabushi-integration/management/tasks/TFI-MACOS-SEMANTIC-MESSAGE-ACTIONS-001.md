@@ -64,3 +64,17 @@ The product stale-generation gate remains unchanged. The regression now performs
 PR #2419 is merged as `2ec0fbd5cc30a61e043e5050dff4a70e8a33e06e`, and its exact-head Electron desktop quality run `34022856663` passed the >500-element stable semantic target regression. Canonical `main` subsequently advanced through independent release/fix work to `d26783f3dcabe859b28976539d5b3ecdd3dd5f97`; while the macOS retest PR was being prepared, Android PR `#2430` protected-merged and advanced canonical main again to `c1533dadc47eca5cfe99ff6ff047d8f1d2e1fb8f` with global semantic version `1.2.46`. Immutable macOS prerelease `v1.2.45` already targets earlier main `48bbcbbb2094e296e2fda0ed829bee68af1a12fa`.
 
 The next eligible macOS package is therefore `1.2.47`, resynced to exact `main@c1533dadc47eca5cfe99ff6ff047d8f1d2e1fb8f` after the Android version drift. Acceptance remains `IN_PROGRESS` until protected merge, exact-main macOS Release publication, installation/login, brand-new App-owned macOS self-registration, genuine external status/snapshot/find/action/wait/assert plus CI-session calls, the complete requested journey through final logout, and always-upload video/screenshots/trace/Playwright/log/report evidence all pass.
+
+## 2026-09-07 canonical 71168ad packaged regression — truncated target generation freshness
+
+- Canonical source: `71168adbeea65e998bb650ba3a4636911287636a`.
+- Electron quality run `34058850412`: Windows and Linux packaged journeys passed; formal signed/notarized macOS package failed `e2e/app-agent-surface.spec.ts` with `stale_app_surface_generation` (`expected 76, received 75`; retry `expected 86, received 85`).
+- macOS diagnostics artifact: `9996959351`, digest `sha256:7da5587219e33c4c52d35e6df01f6d4ca50ee5f273936d0f2656eb28752d2515`.
+- The target was intentionally omitted from the capped 500-element snapshot, so there was no prior stable lease from which product rebase could safely recover. The fail-closed product behavior is correct.
+- Atomic repair: preserve the truncated snapshot/target-absence assertions; immediately before the off-snapshot context-menu mutation, exact `find(agentId)` obtains the live generation. If and only if the subsequent mutation races to a newer generation, a bounded Playwright poll repeats `find -> action`; every non-stale error still fails immediately.
+- Product `callSurfaceWithStableTargetRebase`, DOM exact-generation validation, permissions, and security behavior remain unchanged.
+- The same exact macOS run passed `miniapp-bot-parity.spec.ts`, so Global Dharma Marketplace/Bot/WebMCP/Web UI/account/CNY1080 semantics are not changed by this repair.
+- [ ] Atomic PR required checks green.
+- [ ] Protected merge through merge queue.
+- [ ] New canonical-main Electron macOS packaged E2E passes with retained diagnostics.
+- [ ] New exact-main post-main closure and current-SHA packaged visual evidence.
