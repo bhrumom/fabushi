@@ -19,3 +19,9 @@
 
 - Recorded canonical `43ce998fd5fbcae032c179a8814de9ec08d03f4c` Native mobile run `34055531700`: Android passed while iOS failed because XCTest attempted `AXScrollToVisible` on the already-visible `remote-computer-close` Button and received `kAXErrorCannotComplete`.
 - Added a test-only fallback that retains a screenshot and taps the center coordinate of the exact discovered element frame when the normal semantic element is present but not hittable; product behavior and the post-close disappearance assertion are unchanged.
+
+## 2026-09-07 — iOS shell-overlay Marketplace recovery
+
+- Recorded canonical `dca0fea5…` Native iOS failure from run `34056507262` / artifact `9996206512`.
+- Replaced unsafe non-hittable close center-coordinate fallback with a fail-closed hittability path plus a remote-computer-only explicit shell-back fallback.
+- Added legacy workbench recovery before Marketplace navigation while retaining the remote surface disappearance assertion.

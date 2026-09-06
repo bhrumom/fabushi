@@ -106,55 +106,76 @@ final class FabushiUITests: XCTestCase {
     @MainActor
     private func tapSurfaceClose(identifier: String, in app: XCUIApplication) {
         let byIdentifier = app.buttons[identifier]
-        if byIdentifier.waitForExistence(timeout: 5), tapElementOrVisibleCoordinate(byIdentifier, named: identifier) {
+        if byIdentifier.waitForExistence(timeout: 5), byIdentifier.isHittable {
+            byIdentifier.tap()
             return
         }
 
         // SwiftUI can omit a Button's identifier from the simulator accessibility
-        // projection while preserving its visible label and tap action.
+        // projection while preserving its visible label and tap action. Only tap the
+        // labelled control when XCTest confirms it is actually hittable.
         let byLabel = app.buttons["返回"]
-        XCTAssertTrue(
-            byLabel.waitForExistence(timeout: 5),
-            "Expected close button \(identifier) or the SwiftUI 返回 label"
-        )
-        XCTAssertTrue(
-            tapElementOrVisibleCoordinate(byLabel, named: "\(identifier)-label-fallback"),
-            "Expected close control \(identifier) to expose a valid visible frame"
-        )
-    }
-
-    @MainActor
-    private func tapElementOrVisibleCoordinate(_ element: XCUIElement, named evidenceName: String) -> Bool {
-        if element.isHittable {
-            element.tap()
-            return true
-        }
-
-        let frame = element.frame
-        guard element.exists, !frame.isEmpty, frame.width > 0, frame.height > 0 else {
-            return false
+        if byLabel.waitForExistence(timeout: 2), byLabel.isHittable {
+            byLabel.tap()
+            return
         }
 
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        attachment.name = "\(evidenceName)-not-hittable"
+        attachment.name = "\(identifier)-not-hittable"
         attachment.lifetime = .keepAlways
         add(attachment)
 
-        // XCUITest's normal tap path may first issue AXScrollToVisible even when a SwiftUI
-        // Button already has a valid visible frame. Tap the center of that exact element frame
-        // instead; no hard-coded screen coordinate or weakened post-close assertion is used.
-        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        return true
+        // GrokMobileShell overlays its own legacy-workbench back button above the
+        // ContentView stack. On affected simulator layouts that overlay owns the hit
+        // region above RemoteComputerSurface's visible close label. Never tap the
+        // non-hittable child element by coordinate because that can tunnel through to
+        // the overlay. Exit through the explicit shell control, then immediately
+        // restore the legacy workbench before the helper returns.
+        guard identifier == "remote-computer-close" else {
+            XCTFail("Expected close control \(identifier) to become hittable")
+            return
+        }
+        let shellBack = app.buttons["grok-mobile-back"]
+        XCTAssertTrue(
+            shellBack.waitForExistence(timeout: 5),
+            "Expected the legacy shell back control when remote-computer-close is obscured"
+        )
+        XCTAssertTrue(shellBack.isHittable, "Expected grok-mobile-back to be interactable")
+        shellBack.tap()
+        ensureLegacyWorkbench(in: app)
     }
 
     @MainActor
     private func openMarketplace(in app: XCUIApplication) {
+        ensureLegacyWorkbench(in: app)
         let profile = app.buttons["profile-avatar"]
         XCTAssertTrue(profile.waitForExistence(timeout: 10))
         profile.tap()
         let marketplace = app.buttons["marketplace-entry"]
         XCTAssertTrue(marketplace.waitForExistence(timeout: 5))
         marketplace.tap()
+    }
+
+    @MainActor
+    private func ensureLegacyWorkbench(in app: XCUIApplication) {
+        let appShell = app.descendants(matching: .any)["app-shell"]
+        if appShell.waitForExistence(timeout: 2) {
+            return
+        }
+
+        let grokHome = app.descendants(matching: .any)["grok-mobile-home"]
+        XCTAssertTrue(
+            grokHome.waitForExistence(timeout: 10),
+            "Expected either the legacy app-shell or authenticated Grok mobile home before Marketplace"
+        )
+        let legacy = app.buttons["grok-mobile-legacy"]
+        XCTAssertTrue(legacy.waitForExistence(timeout: 5))
+        XCTAssertTrue(legacy.isHittable, "Expected grok-mobile-legacy to be interactable")
+        legacy.tap()
+        XCTAssertTrue(
+            appShell.waitForExistence(timeout: 10),
+            "Expected legacy app-shell after recovering from Grok mobile home"
+        )
     }
 
     @MainActor
