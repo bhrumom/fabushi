@@ -52,3 +52,6 @@ Run `34051316405` completed `failure` and always-upload produced artifact `99948
 - native recording segments under `video/segment-*.mp4` plus `video/concat.txt`.
 
 Authenticated artifact archive endpoint: `https://api.github.com/repos/bhrumom/fabushi/actions/artifacts/9994884584/zip`. A single post-fix acceptance video is still PENDING and must come from the strictly newer exact-main rerun after the service repair.
+## Required-check baseline formatter unblock
+
+PR-head Mahayana fast run `34052430015`, job `101538308863`, failed only at `cargo fmt --all -- --check` on five misindented lines already present in canonical `main@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab` under `mahayana-product/src/lib.rs`. The service repair did not modify that file. A second PR commit applies only the rustfmt-equivalent indentation so the protected required check can evaluate the actual route repair; no product semantics change.
