@@ -1,5 +1,5 @@
 import { _electron as electron, expect, test, type Page, type TestInfo } from '@playwright/test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -74,15 +74,23 @@ async function writeCloudProbe(page: Page, value: string) {
 async function readCloudProbe(page: Page) { return frame(page).locator('body').evaluate(async () => (window as any).FabushiMiniApp?.CloudStorage.getItem('m2_sync_packaged_probe')); }
 
 test('Global Dharma packaged journey keeps Bot WebMCP, UI revision, account and CNY 1080 entitlement in one host boundary', async ({}, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(150_000);
   const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-global-dharma-journey-'));
   const probeValue = `packaged-sync-${Date.now()}`;
   const statusText = 'please show status now';
   const prayerText = '启动转经轮';
   const firstApp = await launchDesktopApp(appDataDir);
   let restartedApp: Awaited<ReturnType<typeof launchDesktopApp>> | null = null;
+  let videoPage: Page | null = null;
+  let videoPath: string | null = null;
+  let screencastStarted = false;
+  let screencastAttached = false;
   try {
     const page = await firstApp.firstWindow();
+    videoPage = page;
+    videoPath = testInfo.outputPath('global-dharma-user-journey.webm');
+    await page.screencast.start({ path: videoPath, size: { width: 1280, height: 800 } });
+    screencastStarted = true;
     page.on('dialog', (dialog) => void dialog.accept());
     await completeBrowserLogin(page);
     await shot(page, testInfo, '01-authenticated-messenger.png');
@@ -173,6 +181,13 @@ test('Global Dharma packaged journey keeps Bot WebMCP, UI revision, account and 
     await expect(frame(page).getByTestId('fabushi-miniapp-host-state')).toHaveAttribute('data-revision', String(prayerState.revision));
     await shot(page, testInfo, '10-open-app-follows-bot-prayer-wheel-revision.png');
 
+    await page.screencast.stop();
+    screencastStarted = false;
+    if (!videoPath) throw new Error('Global Dharma user-journey video path was not initialized.');
+    await access(videoPath);
+    await testInfo.attach('global-dharma-user-journey-video', { path: videoPath, contentType: 'video/webm' });
+    screencastAttached = true;
+
     await firstApp.close();
     restartedApp = await launchDesktopApp(appDataDir);
     const restartedPage = await restartedApp.firstWindow();
@@ -189,7 +204,35 @@ test('Global Dharma packaged journey keeps Bot WebMCP, UI revision, account and 
     await expect.poll(() => readCloudProbe(restartedPage), { timeout: 15_000 }).toBe(probeValue);
     expect((await entitlement(restartedPage)).access.allowed).toBe(true);
     await shot(restartedPage, testInfo, '11-restart-recovers-history-state-entitlement-cloud.png');
+
+    await restartedPage.getByTestId('miniapp-close').click();
+    await restartedPage.getByTestId('profile-navigation-trigger').click();
+    await restartedPage.getByTitle('设置', { exact: true }).click();
+    await restartedPage.getByTestId('settings-category-account').click();
+    await restartedPage.getByTestId('settings-logout').click();
+    await expect(restartedPage.getByTestId('login-gate')).toBeVisible({ timeout: 10_000 });
+    await expect.poll(() => restartedPage.evaluate(async (key) => {
+      const session = await (window as any).fabushiNative?.invoke?.('getMiniAppSessionProjection', { pluginId: 'global-dharma' });
+      const durable = await (window as any).fabushiNative?.invoke?.('readClientPersistence', { key });
+      return {
+        session,
+        localExecution: localStorage.getItem(key),
+        durableExecution: durable ?? null,
+      };
+    }, executionKey), { timeout: 10_000 }).toMatchObject({
+      session: { protocol: 'fabushi.miniapp.session.v1', pluginId: 'global-dharma', loggedIn: false, tokenExposed: false },
+      localExecution: null,
+      durableExecution: null,
+    });
+    await shot(restartedPage, testInfo, '12-logout-clears-miniapp-session-and-execution.png');
   } finally {
+    if (videoPage && screencastStarted) await videoPage.screencast.stop().catch(() => {});
+    if (!screencastAttached && videoPath) {
+      try {
+        await access(videoPath);
+        await testInfo.attach('global-dharma-user-journey-video-partial', { path: videoPath, contentType: 'video/webm' });
+      } catch {}
+    }
     await restartedApp?.close().catch(() => {});
     await firstApp.close().catch(() => {});
     await rm(appDataDir, { recursive: true, force: true });
