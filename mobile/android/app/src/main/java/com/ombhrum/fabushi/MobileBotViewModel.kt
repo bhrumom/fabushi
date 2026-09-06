@@ -18,6 +18,8 @@ data class MobileBotSummaryAndroid(
     val id: String,
     val name: String,
     val description: String = "",
+    val miniAppId: String? = null,
+    val menuButtonText: String? = null,
 )
 
 data class MobileBotUiState(
@@ -41,38 +43,95 @@ class MobileBotViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val requestId = "android-mobile-bot-list-${UUID.randomUUID()}"
-                    host.request(
-                        "feature.execute",
-                        JSONObject().put(
-                            "command",
-                            JSONObject().put("type", "bot.list").put("requestId", requestId),
-                        ),
-                    )
-                    repeat(48) {
-                        val event = host.request("feature.receive", JSONObject().put("timeoutMs", 120))
-                        if (event.optString("type") == "bot.listed") {
-                            val rows = event.optJSONArray("bots")
-                            val bots = buildList {
-                                if (rows != null) for (index in 0 until rows.length()) {
-                                    val row = rows.optJSONObject(index) ?: continue
-                                    val id = row.optString("id")
-                                    if (id.isBlank() || id == "mahayana-assistant") continue
-                                    add(
-                                        MobileBotSummaryAndroid(
-                                            id = id,
-                                            name = row.optString("name").ifBlank { row.optString("displayName").ifBlank { id } },
-                                            description = row.optString("description"),
-                                        ),
-                                    )
-                                }
-                            }
-                            return@withContext bots
-                        }
-                    }
-                    emptyList()
+                    val surfaceBots = loadSurfaceBots()
+                    val installedMiniAppBots = loadInstalledMiniAppBots()
+                    (surfaceBots + installedMiniAppBots)
+                        .distinctBy { it.id }
+                        .sortedWith(compareByDescending<MobileBotSummaryAndroid> { it.miniAppId != null }.thenBy { it.name.lowercase() })
                 }
             }.onSuccess { bots -> mutableState.value = mutableState.value.copy(bots = bots, error = null) }
+                .onFailure { error -> mutableState.value = mutableState.value.copy(error = error.message ?: "Bot list failed") }
+        }
+    }
+
+    private fun loadSurfaceBots(): List<MobileBotSummaryAndroid> {
+        val requestId = "android-mobile-bot-list-${UUID.randomUUID()}"
+        host.request(
+            "feature.execute",
+            JSONObject().put(
+                "command",
+                JSONObject().put("type", "bot.list").put("requestId", requestId),
+            ),
+        )
+        repeat(48) {
+            val event = host.request("feature.receive", JSONObject().put("timeoutMs", 120))
+            if (event.optString("type") == "bot.listed") {
+                val rows = event.optJSONArray("bots")
+                return buildList {
+                    if (rows != null) for (index in 0 until rows.length()) {
+                        val row = rows.optJSONObject(index) ?: continue
+                        val id = row.optString("id")
+                        if (id.isBlank() || id == "mahayana-assistant") continue
+                        add(
+                            MobileBotSummaryAndroid(
+                                id = id,
+                                name = row.optString("name").ifBlank { row.optString("displayName").ifBlank { id } },
+                                description = row.optString("description"),
+                                miniAppId = row.optString("miniAppId").takeIf(String::isNotBlank),
+                                menuButtonText = row.optString("menuButtonText").takeIf(String::isNotBlank),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+        return emptyList()
+    }
+
+    /**
+     * Canonical Mini App Bot projection: installed plugin ids are joined with Marketplace manifest
+     * summaries. No Android-private Bot storage is created and menu metadata stays manifest-owned.
+     */
+    private fun loadInstalledMiniAppBots(): List<MobileBotSummaryAndroid> {
+        val installed = runCatching { host.request("feature.plugin.listInstalled") }.getOrNull()
+            ?.optJSONArray("plugins") ?: return emptyList()
+        val installedIds = buildSet {
+            for (index in 0 until installed.length()) {
+                val id = installed.optJSONObject(index)?.optString("pluginId").orEmpty().trim()
+                if (id.isNotBlank()) add(id)
+            }
+        }
+        if (installedIds.isEmpty()) return emptyList()
+
+        val catalog = host.request(
+            "feature.marketplace.browse",
+            JSONObject().put("platform", "android"),
+        ).optJSONArray("plugins") ?: return emptyList()
+        return buildList {
+            for (index in 0 until catalog.length()) {
+                val item = catalog.optJSONObject(index) ?: continue
+                val pluginId = item.optString("pluginId")
+                if (pluginId !in installedIds) continue
+                val bot = item.optJSONObject("source")?.optJSONObject("bot")
+                    ?: item.optJSONObject("releaseManifest")?.optJSONObject("bot")
+                    ?: continue
+                val botId = bot.optString("id")
+                if (botId.isBlank()) continue
+                val menu = bot.optJSONObject("menuButton")
+                val miniAppId = menu?.takeIf { it.optString("action") == "open-miniapp" }
+                    ?.optString("miniAppId")
+                    ?.takeIf(String::isNotBlank)
+                    ?: pluginId
+                add(
+                    MobileBotSummaryAndroid(
+                        id = botId,
+                        name = bot.optString("displayName").ifBlank { item.optString("displayName").ifBlank { botId } },
+                        description = bot.optString("description").ifBlank { item.optString("description") },
+                        miniAppId = miniAppId,
+                        menuButtonText = menu?.optString("text")?.takeIf(String::isNotBlank) ?: "打开应用",
+                    ),
+                )
+            }
         }
     }
 
