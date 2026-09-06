@@ -78,7 +78,7 @@ test('truthful pass requires READY note, ci_session_finish, and the exact settin
   assert.match(source, /ready_note.*finish_requested.*logout_complete/su);
   assert.match(source, /ci_session_note ci_session_finish; do/u);
   assert.match(source, /finish-requested\.json/u);
-  assert.match(source, /agentId == \"settings-logout\"/u);
+  assert.match(source, /agentId == "settings-logout"/u);
 });
 
 test('whole-session recording is ordered before release resolution and installation', async () => {
