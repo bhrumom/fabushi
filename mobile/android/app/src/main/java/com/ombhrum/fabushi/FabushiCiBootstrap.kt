@@ -16,7 +16,7 @@ internal object FabushiCiBootstrap {
     private const val SessionFileName = "fabushi-ci-session.json"
     private const val MaxSessionBytes = 64 * 1024L
     private const val MaxLifetimeSeconds = 5 * 60 * 60L
-    private val DeviceIdPattern = Regex("^gha-([0-9]+)-([0-9]+)-android-app$")
+    private val DeviceIdPattern = Regex("^gha-([0-9]+)-([0-9]+)-interactive$")
     private val SessionIdPattern = Regex("^ci-runner:([0-9]+):([0-9]+)$")
 
     const val ExtraRepository = "fabushi.ci.repository"
