@@ -188,8 +188,14 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
         installed[0]["artifactSha256"],
         install.result["receipt"]["artifactSha256"]
     );
-    assert_eq!(installed[0]["version"], install.result["receipt"]["version"]);
-    assert_eq!(installed[0]["runtime"], install.result["receipt"]["runtime"]);
+    assert_eq!(
+        installed[0]["version"],
+        install.result["receipt"]["version"]
+    );
+    assert_eq!(
+        installed[0]["runtime"],
+        install.result["receipt"]["runtime"]
+    );
 
     let logs = session.execute(request(
         "logs-1",
@@ -264,8 +270,14 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
         restart_plugins[0]["artifactSha256"],
         install.result["receipt"]["artifactSha256"]
     );
-    assert_eq!(restart_plugins[0]["version"], install.result["receipt"]["version"]);
-    assert_eq!(restart_plugins[0]["runtime"], install.result["receipt"]["runtime"]);
+    assert_eq!(
+        restart_plugins[0]["version"],
+        install.result["receipt"]["version"]
+    );
+    assert_eq!(
+        restart_plugins[0]["runtime"],
+        install.result["receipt"]["runtime"]
+    );
 
     unsafe {
         std::env::remove_var("MAHAYANA_TEST_DRIVER_ROOT");
