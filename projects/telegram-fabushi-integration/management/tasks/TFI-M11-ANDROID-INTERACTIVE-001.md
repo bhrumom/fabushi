@@ -55,3 +55,7 @@ After protected merge of PR #2406, canonical main is `b6dc0d009d71c66f1581cba941
 ## 2026-09-06 Android 1.2.39 interactive checksum failure
 
 Release `android-v1.2.39-262490741` on `6ea18f731759081a5e64d26ccb10d31d1f720ea6` successfully self-started interactive run `34020127055`, proving the release-to-interactive handoff added by #2406. The run failed before APK install because the interactive script downloaded the APK and `SHA256SUMS.txt` but not the `fabushi-android-update.json` file that the checksum manifest also covers. Artifact `9985225969` preserves the failure evidence. The atomic follow-up `fix/tfi-android-interactive-release-metadata-checksum-20260906` only downloads that immutable metadata asset before checksum verification and locks the order with a contract test. Status remains `IN_PROGRESS`; no Android App-owned device was registered by the failed run, and no old device may be substituted.
+
+## 2026-09-06 Android 1.2.41 retest candidate
+
+After protected merge of checksum correction PR #2410, canonical main is `0d1492d421ca1b7ad5fe5244ddf9057b2d0585ff` at global version `1.2.40`. The next Android retest candidate is `1.2.41` on `release/tfi-android-1-2-41-20260906`. Status stays `IN_PROGRESS` until protected version merge, exact-main release, self-started interactive run, fresh App-owned Android registration, complete external six-tool functional matrix, real logout, and full evidence verification succeed.
