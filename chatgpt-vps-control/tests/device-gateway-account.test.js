@@ -145,3 +145,33 @@ test("device reconnect rejects calls that were bound to the previous socket gene
   await pendingRejection;
   assert.equal(listRegisteredDevices("account:a")[0].name, "Second generation");
 });
+
+test("device gateway keeps the registered socket alive when async audit rejects", async (t) => {
+  resetDeviceGatewayStateForTests();
+  const server = createServer((_req, res) => res.writeHead(404).end());
+  const gateway = attachDeviceGateway(server, {
+    resolveAccount: async (token) => token === "token-account-a" ? { userId: "account:a" } : null,
+    audit: async () => { throw new Error("simulated ENOSPC"); },
+    defaultLeaseSeconds: 60,
+  });
+  const port = await listen(server);
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/agent`, { headers: { Authorization: "Bearer token-account-a" } });
+  t.after(async () => {
+    ws.terminate();
+    await closeServer(server, gateway);
+    resetDeviceGatewayStateForTests();
+  });
+  await opened(ws);
+  ws.send(JSON.stringify({
+    type: "register",
+    deviceId: "audit-rejection-device",
+    name: "Audit rejection device",
+    platform: "android",
+    capabilities: ["fabushi.app.status"],
+  }));
+  const registered = await nextJson(ws);
+  assert.equal(registered.type, "registered");
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(ws.readyState, WebSocket.OPEN);
+  assert.equal(listRegisteredDevices("account:a")[0].status, "online");
+});
