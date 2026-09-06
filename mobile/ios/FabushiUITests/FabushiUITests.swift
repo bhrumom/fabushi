@@ -98,8 +98,7 @@ final class FabushiUITests: XCTestCase {
     @MainActor
     private func tapSurfaceClose(identifier: String, in app: XCUIApplication) {
         let byIdentifier = app.descendants(matching: .any)[identifier]
-        if byIdentifier.waitForExistence(timeout: 5) && byIdentifier.isHittable {
-            byIdentifier.tap()
+        if byIdentifier.waitForExistence(timeout: 5), tapElementOrVisibleCoordinate(byIdentifier, named: identifier) {
             return
         }
 
@@ -110,7 +109,34 @@ final class FabushiUITests: XCTestCase {
             byLabel.waitForExistence(timeout: 5),
             "Expected close button \(identifier) or the SwiftUI 返回 label"
         )
-        byLabel.tap()
+        XCTAssertTrue(
+            tapElementOrVisibleCoordinate(byLabel, named: "\(identifier)-label-fallback"),
+            "Expected close control \(identifier) to expose a valid visible frame"
+        )
+    }
+
+    @MainActor
+    private func tapElementOrVisibleCoordinate(_ element: XCUIElement, named evidenceName: String) -> Bool {
+        if element.isHittable {
+            element.tap()
+            return true
+        }
+
+        let frame = element.frame
+        guard element.exists, !frame.isEmpty, frame.width > 0, frame.height > 0 else {
+            return false
+        }
+
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "\(evidenceName)-not-hittable"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        // XCUITest's normal tap path may first issue AXScrollToVisible even when a SwiftUI
+        // Button already has a valid visible frame. Tap the center of that exact element frame
+        // instead; no hard-coded screen coordinate or weakened post-close assertion is used.
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        return true
     }
 
     @MainActor
