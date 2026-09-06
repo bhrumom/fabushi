@@ -213,18 +213,18 @@ jobs:
             if ($installerProcess.ExitCode -ne 0) { throw "Installer exited with $($installerProcess.ExitCode)." }
             Save-StepScreenshot (Join-Path $env:EVIDENCE_DIR 'steps/001-installed.png')
 
-            $known = @(
+            $known = @(@(
               (Join-Path $env:LOCALAPPDATA 'Programs\@fabushidesktop\fabushi.exe'),
               (Join-Path $env:LOCALAPPDATA 'Programs\fabushi\fabushi.exe'),
               (Join-Path $env:LOCALAPPDATA 'Programs\Fabushi\fabushi.exe'),
               (Join-Path $env:ProgramFiles 'Fabushi\fabushi.exe')
-            ) | Where-Object { $_ -and (Test-Path $_) }
+            ) | Where-Object { $_ -and (Test-Path $_) })
             $roots = @($env:LOCALAPPDATA,$env:ProgramFiles,${env:ProgramFiles(x86)}) | Where-Object { $_ -and (Test-Path $_) }
             $found = @()
             foreach ($root in $roots) {
               $found += @(Get-ChildItem -Path $root -Filter fabushi.exe -File -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
             }
-            $paths = @($known + $found | Select-Object -Unique)
+            $paths = @((@($known) + @($found)) | Select-Object -Unique)
             $expected = ''
             if ($env:RELEASE_TAG -match '^desktop-([0-9]+\.[0-9]+\.[0-9]+)') { $expected = $Matches[1] }
             $metadata = @($paths | ForEach-Object {
