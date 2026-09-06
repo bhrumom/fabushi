@@ -175,3 +175,9 @@ Apple explicitly states Advanced Commerce purchases cannot use StoreKit Testing 
 - Native mobile `34050415248`, job `101532904942`, failed its PR whitespace fast gate only at `projects/telegram-fabushi-integration/management/wbs/M9.md:149` due to one extra blank line at EOF; no mobile build/test step executed after that fail-closed gate.
 - Follow-up removes only the obsolete Marketplace source-field assertion and normalizes the M9 EOF to one newline. Canonical source provenance continues to be checked by non-empty `sourceRef`/`repository` plus release-manifest/artifact integrity. No runtime/auth/commerce behavior is changed.
 - No local Rust/Swift/Android build or test is used. New current-head GitHub Actions are authoritative. Protected merge, accepted-main SHA, installable iOS package, App-owned Simulator journey, complete video, step screenshots, `.xcresult`, trace/report/logs remain `PENDING` until actually produced.
+
+## 2026-09-07 — canonical drift to 8adfa009
+
+- While exact-head CI for `e980cf93dd16ae0a31d04e01afd626fd6717161e` was running, protected main advanced through #2455 to `8adfa009f2fdf349e9f0c659fcfa4176ff7d7c2c` (`test(TFI): record Global Dharma restart and logout journey`).
+- #2446 immediately re-aligned with a no-conflict merge; #2455 contributes only `desktop/e2e/miniapp-bot-parity.spec.ts` changes to this branch and does not alter the iOS runtime/commerce implementation.
+- Previous e980 CI is retained as historical evidence only. Authoritative merge eligibility moves to the new head/base pair; exact-main iOS package/video remains `PENDING`.
