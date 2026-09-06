@@ -168,17 +168,23 @@ test("every full Electron packager installs and stages Computer Use before seali
   assert.doesNotMatch(hotPackage, /prepare-fabushi-bundle/);
 
   const ci = source(".github/workflows/ci.yml");
-  assert.match(ci, /\^chatgpt-vps-control/);
-  assert.ok(ci.includes("/chatgpt-vps-control/**"));
-  assert.ok(ci.includes("/third_party/mahayana/mahayana-rs/mahayana-agent-codex/src/**"));
-  for (const sparseInput of [
-    "/.github/scripts/verify-packaged-computer-control.mjs",
-    "/.github/workflows/computer-control-security.yml",
-    "/.github/workflows/platform-control-plane.yml",
-    "/mobile/android/app/src/main/java/com/ombhrum/fabushi/RemoteComputerSurface.kt",
-    "/mobile/ios/Fabushi/RemoteComputerSurface.swift",
-    "/third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0014_remote_computer_client_tokens.sql",
-  ]) assert.ok(ci.includes(sparseInput), `Electron Feature Host sparse checkout is missing ${sparseInput}`);
+  for (const marker of [
+    "name: CI",
+    "pull_request:",
+    "merge_group:",
+    "name: CI result",
+    "Release-control integrity",
+    'test "$(jq -r .version app-version.json)" = "$(jq -r .version desktop/package.json)"',
+    "release=.github/workflows/native-electron-release.yml",
+    "RELEASE_TARGET=macos",
+    "RELEASE_TIER=test",
+    "bash .github/scripts/require-release-source-gates.sh",
+    "already exists; refusing to mutate an existing release",
+    "node desktop/scripts/check-app-agent-stable-rebase-contract.mjs",
+    "node --test desktop/electron/remote-device-agent-supervisor-packaged-helper.test.cjs",
+    "node --test chatgpt-vps-control/tests/ios-interactive-app-e2e-contract.test.js",
+  ]) assert.ok(ci.includes(marker), `canonical CI result is missing ${marker}`);
+  assert.match(ci, /test "\$\(jq -r \.version app-version\.json\)" = "1\.2\.\d+"/);
 
   const electron = source(".github/workflows/electron-desktop.yml");
   for (const trigger of [
