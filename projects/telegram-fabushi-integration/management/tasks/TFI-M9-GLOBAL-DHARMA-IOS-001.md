@@ -5,7 +5,7 @@
 - Parent: `M9-GLOBAL-DHARMA-003`
 - Baseline canonical main: `8f7e83902a616ecdb62fdaded65ea79227e745f3`
 - Branch: `feat/tfi-ios-global-dharma-commerce-20260906`
-- State: `IMPLEMENTING / PR_PENDING`
+- State: `IMPLEMENTING / PR_ACTIVE`
 - Owner: iOS / Mini App Host / payments
 - Open-source decision: `../../source/2026-09-06-ios-global-dharma-storekit-webmcp-open-source-first.md`
 
@@ -29,6 +29,7 @@ Close the real iOS user journey for the official `global-dharma` Mini App withou
 - [x] Keep local package install in `feature.plugin.install`.
 - [x] Add canonical Host action `feature.marketplace.add`, backed by `mahayana-product` authenticated `POST /v1/marketplace/plugins/:plugin_id/add`.
 - [x] iOS install requires `accountSynchronized=true` and a non-empty Bot id after local install; local-only install is not reported as journey success.
+- [x] Keep native device platform `ios` for release artifact selection/receipts while normalizing only Marketplace product API browse/list calls to server platform `mobile`.
 - [ ] PR CI proves Rust + iOS build/tests.
 - [ ] Packaged exact-main journey proves `全球法布施` search → install → permission approval → return → `global-dharma-bot` visible.
 
@@ -88,6 +89,7 @@ Implementation:
   - Advanced Commerce `signatureInfo.token` envelope exact;
   - empty JWS rejected.
 - Existing Rust/JS account sync tests remain authoritative for `miniapp.installed → bot.added`, message history, cloud/content state and account isolation.
+- Test-driver contract keeps request/device `platform=ios` but maps Marketplace API browse/list to server `mobile`; install receipt/artifact selection remains `ios`.
 - No local `xcodebuild`. All iOS compilation/tests occur in GitHub Actions.
 
 ## Post-main packaged acceptance
@@ -137,8 +139,13 @@ Apple explicitly states Advanced Commerce purchases cannot use StoreKit Testing 
 ## Evidence
 
 - Baseline main: `8f7e83902a616ecdb62fdaded65ea79227e745f3`
-- Branch created from baseline: `feat/tfi-ios-global-dharma-commerce-20260906`
-- Design record commit on branch: `2aca32d7dc5cdac2764cba5d35502d739117e40e`
-- Commerce model commit on branch: `de86a41b766f764bcd1632bbb42dc52e49ff659a`
-- StoreKit restore commit on branch: `9467566f8e325b70f464e41f9c1991315560da25`
-- PR/run/main/post-main evidence: pending; must be filled with real GitHub identifiers only.
+- Governed branch: `feat/tfi-ios-global-dharma-commerce-20260906`
+- Pull request: `#2446` — `feat(iOS): close Global Dharma Mini App commerce journey`
+- Design record commit: `2aca32d7dc5cdac2764cba5d35502d739117e40e`
+- Commerce model commit: `de86a41b766f764bcd1632bbb42dc52e49ff659a`
+- StoreKit restore commit: `9467566f8e325b70f464e41f9c1991315560da25`
+- First fast-gate failure: Mahayana fast checks run `34038687786`; `cargo fmt --all -- --check` reported formatting only; fixed in branch commit `6b53d35efdacb0ab2f564bc00e2db9111eeb6cd3`.
+- Full Host/Product/WebMCP/FFI PR validation at head `34ac2618e7e5f268485573c94085a9ddfbc13b4e`: Mahayana fast `34039127343` success; Vendor Isolation `34039127324` success; Native mobile fast gate `34039127357` success; CI `34039127390` success; Project portfolio governance `34039127412` success; GBF security `34039127371` success; Electron desktop quality `34039127425` success; Computer control security `34039127321` success.
+- Marketplace Contract run `34039127475` exposed a real live iOS discovery defect in `Test Mahayana marketplace packages`: request/device `platform=ios` was passed directly to the Product API, which accepts only `cli|desktop|mobile|web`, producing HTTP 400 `invalid_marketplace_platform`. Diagnostic artifact `mahayana-marketplace-validation-diagnostics` id `9991275111`, digest `sha256:f86763ee928dea7b74a0bc0c15429cea78e088ed836df1c885c154c1f7ddfd05`.
+- Fix commit `dd8520a49b00fcbdd8c468bce25577085ac99f8b`: normalize only Marketplace API browse/list native platforms (`ios|android → mobile`), preserving `ios` for device semantics, release artifact selection and install receipt; mapper unit test added.
+- Final-head PR CI / merge-queue / accepted-main SHA / post-main iOS build / packaged journey / video / screenshots / `.xcresult` / trace/logs/report: pending; only real GitHub identifiers may satisfy them.
