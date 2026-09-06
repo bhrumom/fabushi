@@ -32,3 +32,9 @@ Run `34019929170` intentionally ended with `TFI_MACOS_FULL_JOURNEY FAIL ...` plu
 - MDN `Element: contextmenu event`: confirms the semantic event fired for user context-menu intent and its bubbling/cancelable event model.
 - Playwright `dispatchEvent`: confirms browser event dispatch uses native event initialization and bubbling/cancelable semantics; this is used only as design/test precedent, not as a runtime dependency.
 - Decision: adapt the platform-native event model behind Fabushi's existing opt-in semantic marker; no third-party dependency and no new MCP action enum.
+
+## PR validation round 1
+
+- PR #2413 head `4f8c9361ba272f9e826da8a07d08aac816c5aaed` passed CI and project governance.
+- Electron quality run `34021419099` reached the real Linux Rust Host journey: 26/27 E2E passed; the new App Agent test opened the semantic message context menu, but selected an asynchronous Agent reply and then incorrectly required the self-only `edit` action.
+- This is a test-targeting defect, not a product relaxation. The follow-up selects the exact sent probe message by text, reads its stable `data-agent-id`, and keeps the strict `edit` assertion.
