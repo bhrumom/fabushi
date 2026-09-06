@@ -1,4 +1,4 @@
-# AAC-004 — iOS Mini App commerce account boundary
+# AAC-005 — iOS Mini App commerce account boundary
 
 - Project: `FAB-P0008 / AAC`
 - Cross-project execution: `FAB-P0001 / TFI` task `TFI-M9-GLOBAL-DHARMA-IOS-001`
