@@ -19,7 +19,7 @@ jobs:
       EXPECTED_DEVICE_ID: gha-34063456432-1-macos-app
       FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
       FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
-      OUTPUT_JSON: ${{ runner.temp }}/public-mcp-app-inspect.json
+      OUTPUT_JSON: public-mcp-app-inspect.json
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Fail closed unless canonical main is still intended SHA
@@ -54,6 +54,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: tfi-current-main-macos-public-mcp-inspect-${{ github.run_id }}
-          path: ${{ runner.temp }}/public-mcp-app-inspect.json
+          path: public-mcp-app-inspect.json
           if-no-files-found: warn
           retention-days: 90
