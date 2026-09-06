@@ -62,3 +62,12 @@ test("Android App owns the remote gateway while CI account import stays GitHub-r
   assert.match(gradle, /CI_ACCOUNT_SESSION_IMPORT_ENABLED', 'false'/u);
   assert.match(gradle, /githubRelease[\s\S]*CI_ACCOUNT_SESSION_IMPORT_ENABLED', 'true'/u);
 });
+
+test("Native Android GitHub release is explicitly a test-tier release gate", async () => {
+  const release = await read(".github/workflows/native-android-release.yml");
+  assert.match(release, /RELEASE_TARGET: android/u);
+  assert.match(release, /RELEASE_TIER: test/u);
+  assert.match(release, /bash \.github\/scripts\/require-release-source-gates\.sh/u);
+  assert.match(release, /Required gates: CI result \(Android GitHub test tier\)/u);
+  assert.doesNotMatch(release, /Required gates: CI result \+ Native mobile result/u);
+});

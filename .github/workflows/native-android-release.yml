@@ -65,6 +65,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
           RELEASE_TARGET: android
+          RELEASE_TIER: test
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
@@ -103,7 +104,7 @@ jobs:
             echo "- Source: ${{ steps.source.outputs.short_sha }}"
             echo "- Version: $version_name ($version_code)"
             echo "- Tag: $release_tag"
-            echo '- Required gates: CI result + Native mobile result'
+            echo '- Required gates: CI result (Android GitHub test tier)'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Refuse to replace an existing immutable release
@@ -265,5 +266,5 @@ jobs:
           gh release create "$tag" "${assets[@]}" \
             --target '${{ steps.source.outputs.sha }}' \
             --title 'Fabushi Android ${{ steps.release.outputs.version_name }} (${{ steps.release.outputs.version_code }})' \
-            --notes 'GitHub Android release from main after CI result and Native mobile result passed for the exact source SHA. The APK includes the GitHub self-update channel.' \
+            --notes 'GitHub Android test release from protected main after the exact-source CI result passed. The APK includes the GitHub self-update channel.' \
             --latest=false
