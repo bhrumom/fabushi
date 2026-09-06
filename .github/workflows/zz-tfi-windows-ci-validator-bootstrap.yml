@@ -1,0 +1,87 @@
+name: TFI Windows CI validator patch bootstrap
+
+on:
+  push:
+    branches:
+      - fix/tfi-windows-ci-session-validator-20260907
+    paths:
+      - '.github/workflows/zz-tfi-windows-ci-validator-bootstrap.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tfi-windows-ci-validator-bootstrap-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    if: github.repository == 'bhrumom/fabushi' && github.ref_name == 'fix/tfi-windows-ci-session-validator-20260907'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v5
+        with:
+          ref: fix/tfi-windows-ci-session-validator-20260907
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Apply exact validator and unit-test patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs')
+          text = path.read_text()
+
+          old_predicate = '''        && (device_id.ends_with("-interactive") || device_id.ends_with("-macos-app"))'''
+          new_predicate = '''        && (device_id.ends_with("-interactive")
+            || device_id.ends_with("-macos-app")
+            || device_id.ends_with("-windows-app"))'''
+          if text.count(old_predicate) != 1:
+              raise SystemExit(f'expected one CI device predicate, found {text.count(old_predicate)}')
+          text = text.replace(old_predicate, new_predicate, 1)
+
+          old_test = '''        let mut macos_app = session.clone();
+        macos_app["deviceId"] = Value::String("gha-12345-1-macos-app".into());
+        assert_eq!(
+            validate_ci_account_session(macos_app.clone(), now),
+            Ok(macos_app)
+        );
+        let mut with_refresh = session.clone();'''
+          new_test = '''        let mut macos_app = session.clone();
+        macos_app["deviceId"] = Value::String("gha-12345-1-macos-app".into());
+        assert_eq!(
+            validate_ci_account_session(macos_app.clone(), now),
+            Ok(macos_app)
+        );
+        let mut windows_app = session.clone();
+        windows_app["deviceId"] = Value::String("gha-12345-1-windows-app".into());
+        assert_eq!(
+            validate_ci_account_session(windows_app.clone(), now),
+            Ok(windows_app)
+        );
+        let mut with_refresh = session.clone();'''
+          if text.count(old_test) != 1:
+              raise SystemExit(f'expected one CI session unit-test anchor, found {text.count(old_test)}')
+          text = text.replace(old_test, new_test, 1)
+          path.write_text(text)
+          PY
+
+          grep -F 'device_id.ends_with("-windows-app")' third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs
+          grep -F 'gha-12345-1-windows-app' third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs
+          git diff --check
+
+      - name: Commit exact patch and remove bootstrap workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/zz-tfi-windows-ci-validator-bootstrap.yml
+          git add third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(TFI): accept Windows App-owned CI sessions'
+          git push origin HEAD:fix/tfi-windows-ci-session-validator-20260907
