@@ -90,3 +90,15 @@ Acceptance for this atomic repair:
 - [ ] Fresh App-owned Android interactive run/device self-registers from the released APK.
 - [ ] Six semantic tools drive the complete Global Dharma packaged journey.
 - [ ] Full video, meaningful screenshots, trace/report/logcat/release identity are always uploaded and linked here.
+
+### H — Canonical platform account-install route repair (2026-09-07)
+
+- 1.2.52 exact release: `main@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`, tag `android-v1.2.52-262491811`, release run/job `34050780156` / `101533889951`, artifact `9994614114`.
+- Fresh packaged E2E: run/job `34051316405` / `101535343430`, App-owned device `gha-34051316405-1-interactive`.
+- Real UI reached Marketplace search and `global-dharma`, then captured `GET /v1/marketplace/added -> 404` and install `POST /v1/marketplace/plugins/global-dharma/add -> 404`.
+- Root cause: canonical Rust platform Worker/D1 lacked the account Marketplace install ledger and both account routes; the legacy Node implementation is not production `/v1` authority.
+- [ ] Canonical PLATFORM_DB migration and Rust routes protected-merged.
+- [ ] Exact-main Platform Control Plane deploy applies migration, deploys Worker, and proves direct/public unauthenticated routes return 401 rather than 404.
+- [ ] Strictly newer Android package reruns the full journey on a new App-owned device after the service fix.
+- [x] Current failing run retains always-upload evidence: artifact `9994884584` (`android-interactive-app-e2e-34051316405-1`) contains step screenshots, device trace, report, logcat and recording segments.
+- [ ] Final strictly newer exact-main retest retains one complete continuous video plus step screenshots/trace/report/logcat.
