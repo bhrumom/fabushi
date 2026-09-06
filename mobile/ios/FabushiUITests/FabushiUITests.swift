@@ -43,6 +43,14 @@ final class FabushiUITests: XCTestCase {
         XCTAssertTrue(remoteComputer.waitForExistence(timeout: 10))
         tapSurfaceClose(identifier: "remote-computer-close", in: app)
         XCTAssertTrue(remoteComputer.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["app-shell"].waitForExistence(timeout: 10),
+            "Expected Home app shell after closing the remote-computer surface"
+        )
+        XCTAssertTrue(
+            app.buttons["profile-avatar"].waitForExistence(timeout: 10),
+            "Expected Home profile control after closing the remote-computer surface"
+        )
 
         openMarketplace(in: app)
         XCTAssertTrue(app.descendants(matching: .any)["runtime-badge"].waitForExistence(timeout: 5))
@@ -97,7 +105,7 @@ final class FabushiUITests: XCTestCase {
 
     @MainActor
     private func tapSurfaceClose(identifier: String, in app: XCUIApplication) {
-        let byIdentifier = app.descendants(matching: .any)[identifier]
+        let byIdentifier = app.buttons[identifier]
         if byIdentifier.waitForExistence(timeout: 5), tapElementOrVisibleCoordinate(byIdentifier, named: identifier) {
             return
         }
