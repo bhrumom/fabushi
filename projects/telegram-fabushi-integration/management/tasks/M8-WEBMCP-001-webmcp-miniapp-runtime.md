@@ -2,9 +2,9 @@
 
 - **Project**: FAB-P0001 / TFI
 - **Stage**: M8 Mini Apps
-- **Status**: TESTING / IN_PROGRESS
+- **Status**: MERGED / POST_MAIN_EVIDENCE_PENDING
 - **Branch**: `feat/tfi-webmcp-miniapp-runtime`
-- **PR**: #2169
+- **PR**: #2169 — merged as `fefb35fc8a4e5c8dabecc9c11803764ec950b6e9` on 2026-08-27
 - **Target version**: 1.0.4
 - **Source**: `source/2026-08-27-webmcp-miniapp-runtime.md`
 - **ADR**: `decisions/ADR-0010-webmcp-foreground-rust-background.md`
@@ -73,7 +73,7 @@
 ## 当前进行中
 
 - 最终项目治理同步已完成到 WBS/acceptance/status/changelog/PROJECT/task/evidence；以最新 PR head 为准重新执行 required checks。
-- final head 全绿后把 PR #2169 从 Draft 转 Ready，并通过 protected `main` / merge queue，不绕过保护。
+- PR #2169 已通过 protected `main` 合并；不再把 pre-merge 状态作为当前阻塞。
 - merge 后从 canonical `main` 回读代码、版本和项目记录。
 - 对 accepted exact-main SHA 执行 packaged Electron/Android/iOS simulated-user E2E；保留截图、全程视频、trace/report/xcresult/log 等规定证据。
 - 所有 required exact-main delivery gates 全绿后创建严格递增的 1.0.4 tag/Release，并验证桌面 updater metadata 与移动端产物来自同一 accepted main lineage。
@@ -83,7 +83,7 @@
 只有以下全部成立才把本任务从 `TESTING / IN_PROGRESS` 改为 `COMPLETED / RELEASED`：
 
 1. latest final-governance head required checks 全绿；
-2. PR #2169 合入 protected `main`；
+2. [x] PR #2169 已合入 protected `main`（`fefb35fc8a4e5c8dabecc9c11803764ec950b6e9`）；
 3. 从 canonical `main` 回读实现、版本和项目记录；
 4. exact-main Electron/Android/iOS required packaged E2E 与证据 bundle 全绿；
 5. GitHub Release 1.0.4 指向验收后的 main SHA，包含 updater-compatible desktop assets 与移动端构建资产；

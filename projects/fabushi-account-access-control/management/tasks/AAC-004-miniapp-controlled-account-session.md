@@ -33,4 +33,4 @@ Allow an already-authenticated Fabushi user to open/install/use an official Mini
 ## Evidence
 
 - Intake/audit source: `projects/telegram-fabushi-integration/source/2026-09-06-global-dharma-web-service-sync-commerce.md` at commit `2eb4b0cf524942f003bc6ec973ba8119745b2030`.
-- Implementation/CI/PR evidence: pending.
+- Implementation commit: `f9a2df5850e81bd5f1fbe3450adf4ec4e3b0f906`; protected PR/CI and packaged Host credential-bootstrap evidence remain pending.
