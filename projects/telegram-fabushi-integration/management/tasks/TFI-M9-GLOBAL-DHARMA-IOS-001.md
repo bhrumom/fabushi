@@ -1,0 +1,144 @@
+# TFI-M9-GLOBAL-DHARMA-IOS-001 — iOS Global Dharma Mini App / Bot / StoreKit closure
+
+- Project: `FAB-P0001 / TFI`
+- Cross-project boundary: `FAB-P0008 / AAC`
+- Parent: `M9-GLOBAL-DHARMA-003`
+- Baseline canonical main: `8f7e83902a616ecdb62fdaded65ea79227e745f3`
+- Branch: `feat/tfi-ios-global-dharma-commerce-20260906`
+- State: `IMPLEMENTING / PR_PENDING`
+- Owner: iOS / Mini App Host / payments
+- Open-source decision: `../../source/2026-09-06-ios-global-dharma-storekit-webmcp-open-source-first.md`
+
+## Goal
+
+Close the real iOS user journey for the official `global-dharma` Mini App without introducing a second Bot, login, WebMCP runtime, payment ledger, or entitlement state machine:
+
+1. Marketplace search for `全球法布施` and install the real release;
+2. bind local install to canonical Fabushi account sync so the real `global-dharma-bot` appears in Messages;
+3. send natural-language Bot turns through the existing `chat.send(agentId:, mode: agent)` path and unified WebMCP/Mini App Host;
+4. expose a Telegram-style `打开应用` action that opens the installed Mini App from the same Host/runtime;
+5. reuse the existing Fabushi login session without exposing bearer/refresh credentials to Mini App JavaScript;
+6. offer server-authoritative CNY 1080 lifetime purchase of `local.prayer-wheel.start` through Apple Advanced Commerce / StoreKit 2;
+7. restore purchases explicitly and trust only canonical server entitlement `access.allowed`;
+8. validate on a packaged/installable exact-main iOS build through GitHub Actions and the App-owned semantic device.
+
+## Atomic implementation
+
+### A — Marketplace → account install → Bot
+
+- [x] Keep local package install in `feature.plugin.install`.
+- [x] Add canonical Host action `feature.marketplace.add`, backed by `mahayana-product` authenticated `POST /v1/marketplace/plugins/:plugin_id/add`.
+- [x] iOS install requires `accountSynchronized=true` and a non-empty Bot id after local install; local-only install is not reported as journey success.
+- [ ] PR CI proves Rust + iOS build/tests.
+- [ ] Packaged exact-main journey proves `全球法布施` search → install → permission approval → return → `global-dharma-bot` visible.
+
+### B — Bot → unified WebMCP → Telegram-like Mini App
+
+- [x] Reuse real `bot.list` discovery and `chat.send(... mode: agent)` stream; no iOS Bot implementation fork.
+- [x] Convert the existing Bot desktop icon into semantic `mobile-bot-open-app` / `打开应用` for Global Dharma only.
+- [x] `打开应用` first verifies `feature.plugin.active(global-dharma)` and opens `MiniAppWebMcpSurface` backed by the same `MarketplaceModel` / `MahayanaHost`.
+- [x] Preserve local Mini App `runtime.call` WebMCP bridge and native approval policy.
+- [x] Expose existing Grok-shell back navigation to the six semantic tools so the same user journey can return from Marketplace to Messages.
+- [ ] Packaged exact-main journey proves natural-language Bot execution and same-runtime Mini App state at meaningful checkpoints.
+
+### C — Fabushi account boundary (AAC cross-acceptance)
+
+- [x] Reuse current signed-in account through trusted `feature.auth.deviceAgentSession` only in the native app.
+- [x] Never inject account bearer/refresh credentials into WKWebView or Mini App JavaScript.
+- [x] Account-level Marketplace install is authenticated through canonical `mahayana-product`, not a Swift-only duplicate API client.
+- [x] Payment/restore never writes entitlement locally; TFI Fabushi Pay remains the only payment/entitlement authority.
+- [ ] Packaged exact-main journey proves no second login is requested after the Fabushi test account session is established.
+
+### D — CNY 1080 lifetime Advanced Commerce
+
+Canonical identifiers are not interchangeable:
+
+- product id: `prod.global-dharma.local-prayer-wheel.lifetime`
+- payment SKU: `local-prayer-wheel.lifetime`
+- capability: `local.prayer-wheel.start`
+- product kind: `digital_durable`
+- currency/amount: `CNY / 108000` minor units = `¥1080`
+
+Implementation:
+
+- [x] Read canonical entitlement + `purchaseOptions` and fail closed on SKU/product/currency/amount/product-kind mismatch.
+- [x] Enable Apple purchase only when server advertises active rail `apple_in_app_purchase`.
+- [x] Create canonical Payment Intent with a fresh idempotency key and server-owned price.
+- [x] Require checkout `appleInAppPurchase`, canonical verify path, and Advanced Commerce signing path.
+- [x] Read current StoreKit storefront immediately before signing; send the three-letter country code to the server.
+- [x] Consume server JWS as StoreKit `advancedCommerceData`; the signed request already carries `paymentId` as `requestInfo.appAccountToken`.
+- [x] Verify the resulting StoreKit transaction locally, require its `appAccountToken == paymentId`, re-verify with Fabushi Pay, and call `finish()` only after server success.
+- [x] Refresh canonical entitlement and expose the prayer-wheel access as allowed only when `access.allowed == true`.
+- [ ] Sandbox completes a real Advanced Commerce charge and entitlement grant.
+
+### E — Restore
+
+- [x] Restore is explicit/user-initiated and calls `AppStore.sync()`.
+- [x] Iterate only verified current entitlements; recover original Fabushi `paymentId` from `appAccountToken`.
+- [x] Re-verify candidate transactions with Fabushi Pay under the current Fabushi account and require the exact lifetime SKU.
+- [x] Refresh canonical entitlement and refuse to unlock on StoreKit state alone.
+- [ ] Sandbox proves purchase on one install/device context and restore into the same Fabushi account on a clean/reinstalled context.
+
+## Automated verification before merge
+
+- `GlobalDharmaCommerceTests`:
+  - exact canonical CNY 1080 durable offer accepted;
+  - tampered price/SKU rejected;
+  - pending Apple provider keeps purchase disabled;
+  - Advanced Commerce `signatureInfo.token` envelope exact;
+  - empty JWS rejected.
+- Existing Rust/JS account sync tests remain authoritative for `miniapp.installed → bot.added`, message history, cloud/content state and account isolation.
+- No local `xcodebuild`. All iOS compilation/tests occur in GitHub Actions.
+
+## Post-main packaged acceptance
+
+Only canonical main may satisfy this section. Required evidence from `ios-interactive-app-e2e.yml` or a narrower equivalent that preserves the same gates:
+
+- packaged/installable `.app` built for exact accepted main SHA;
+- recording begins before install;
+- app logs in with protected CI test credential, then the App itself registers a new App-owned iOS device;
+- all six `fabushi.app.status/snapshot/find/action/wait/assert` tools used;
+- one screenshot after each meaningful checkpoint;
+- complete uncut operation video;
+- `.xcresult`, semantic trace, app/runner logs and report uploaded with `if: always()`;
+- evidence must identify exact run/job/SHA and remain downloadable.
+
+Journey checkpoints:
+
+1. logged-in Messages home / no second login;
+2. enter Marketplace;
+3. search `全球法布施`;
+4. result `global-dharma` visible;
+5. install + approve declared permissions;
+6. account sync confirmed and return to Messages;
+7. `global-dharma-bot` visible;
+8. open Bot and send natural language status/start request;
+9. observe Bot stream / WebMCP agent step;
+10. invoke `打开应用`;
+11. same Global Dharma Mini App/runtime visible and state consistent with Bot operation;
+12. entitlement status visible;
+13. if Apple rail is active: Advanced Commerce sandbox buy `¥1080` → canonical entitlement allowed → prayer-wheel action allowed;
+14. restore purchase and re-check canonical entitlement;
+15. close Mini App and finish semantic session cleanly.
+
+## Exact external blockers — fail closed
+
+The repository cannot fabricate any of the following. If absent at post-main time, payment acceptance remains `BLOCKED`, not `PASS`:
+
+1. Apple has approved Advanced Commerce API access for the Fabushi app / applicable Mini Apps Partner Program use case.
+2. App Store Connect contains the appropriate one-time generic product id for the Mini Apps Partner Program and it has been submitted to Apple per Advanced Commerce setup.
+3. Canonical `payment_provider_bindings` for this product has provider `apple_advanced_commerce`, a real generic provider product reference, and `sync_state='active'`.
+4. The Global Dharma catalog has an explicitly approved Apple `tax_code`; the original seed leaves it `NULL`, and repository code must not guess tax classification.
+5. Deployed Commerce/Pay environments have `APPLE_ADVANCED_COMMERCE_ENABLED` and real `APPLE_IAP_ISSUER_ID`, `APPLE_IAP_KEY_ID`, `APPLE_IAP_PRIVATE_KEY_PEM`, `APPLE_BUNDLE_ID`, plus App Store Server verification credentials.
+6. A signed eligible iOS build plus Sandbox Apple Account/device is available.
+
+Apple explicitly states Advanced Commerce purchases cannot use StoreKit Testing in Xcode. Therefore local `.storekit` simulation is not accepted as evidence for checkpoint 13/14; real sandbox is mandatory.
+
+## Evidence
+
+- Baseline main: `8f7e83902a616ecdb62fdaded65ea79227e745f3`
+- Branch created from baseline: `feat/tfi-ios-global-dharma-commerce-20260906`
+- Design record commit on branch: `2aca32d7dc5cdac2764cba5d35502d739117e40e`
+- Commerce model commit on branch: `de86a41b766f764bcd1632bbb42dc52e49ff659a`
+- StoreKit restore commit on branch: `9467566f8e325b70f464e41f9c1991315560da25`
+- PR/run/main/post-main evidence: pending; must be filled with real GitHub identifiers only.

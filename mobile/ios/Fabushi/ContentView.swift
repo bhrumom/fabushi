@@ -71,6 +71,7 @@ struct ContentView: View {
     @Bindable var model: MarketplaceModel
     @Bindable var messaging: MessagingModel
     let appAgentSurface: FabushiAppAgentSurface
+    let onShellBack: (() -> Void)? = nil
     @State private var openedMiniApp: MarketplacePlugin?
     @State private var destination: MobileDestination = .home
     @State private var agentChatPresented = false
@@ -225,6 +226,11 @@ let fingerprintChunk3: [String] = [
     model.installingPluginId ?? "",
     model.permissionRequest?.pluginId ?? "",
     openedMiniApp?.pluginId ?? "",
+    String(model.globalDharmaCommerce.accessAllowed),
+    model.globalDharmaCommerce.accessReason,
+    model.globalDharmaCommerce.message,
+    String(model.globalDharmaCommerce.busy),
+    model.globalDharmaCommerce.lastPaymentId ?? "",
     pluginRevision,
     conversationRevision,
     contactRevision,
@@ -299,9 +305,41 @@ return fingerprintParts.joined(separator: "|")
             messaging.conversations.first(where: { $0.id == fallback.id }) ?? fallback
         }
 
+        if let onShellBack {
+            add(
+                "grok-mobile-back",
+                role: "button",
+                name: "返回消息首页",
+                action: .init(allowed: ["invoke"]) { _ in onShellBack() }
+            )
+        }
+
         if let openedMiniApp {
             add("miniapp-\(openedMiniApp.pluginId)", role: "application", name: openedMiniApp.displayName)
             add("miniapp-close", role: "button", name: "关闭 MiniApp", action: .init(allowed: ["invoke"]) { _ in self.openedMiniApp = nil })
+            if openedMiniApp.pluginId == GlobalDharmaCommerceModel.miniAppId {
+                let commerce = model.globalDharmaCommerce
+                add("global-dharma-entitlement-status", role: "status", name: commerce.message)
+                add(
+                    "global-dharma-local-prayer-wheel-access",
+                    role: "status",
+                    name: commerce.accessAllowed ? "local.prayer-wheel.start allowed" : "local.prayer-wheel.start denied"
+                )
+                add(
+                    "global-dharma-buy-lifetime",
+                    role: "button",
+                    name: "\(commerce.lifetimePriceLabel) 买断本地转经轮",
+                    enabled: commerce.canBuyLifetime,
+                    action: .init(allowed: ["invoke"]) { _ in Task { await commerce.purchaseLifetime() } }
+                )
+                add(
+                    "global-dharma-restore-purchase",
+                    role: "button",
+                    name: "恢复购买",
+                    enabled: !commerce.busy,
+                    action: .init(allowed: ["invoke"]) { _ in Task { await commerce.restoreLifetime() } }
+                )
+            }
             publish("miniapp")
             return
         }

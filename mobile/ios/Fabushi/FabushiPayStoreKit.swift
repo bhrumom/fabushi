@@ -13,6 +13,7 @@ struct FabushiPayReceipt: Decodable, Sendable {
 enum FabushiPayStoreKitError: LocalizedError, Sendable {
     case invalidPaymentIdentifier
     case productUnavailable
+    case advancedCommerceUnavailable
     case unverifiedTransaction
     case transactionAccountMismatch
     case pending
@@ -25,6 +26,7 @@ enum FabushiPayStoreKitError: LocalizedError, Sendable {
         switch self {
         case .invalidPaymentIdentifier: return "支付订单标识无效"
         case .productUnavailable: return "App Store 商品暂不可用"
+        case .advancedCommerceUnavailable: return "当前 iOS / App Store 环境不支持 Advanced Commerce"
         case .unverifiedTransaction: return "App Store 交易验证失败"
         case .transactionAccountMismatch: return "App Store 交易不属于当前支付订单"
         case .pending: return "支付正在等待 App Store 确认"
@@ -98,6 +100,51 @@ actor FabushiPayStoreKit {
         }
     }
 
+    func purchaseAdvancedCommerce(
+        paymentId: String,
+        genericProductId: String,
+        compactJWS: String,
+        verifyPath: String
+    ) async throws -> FabushiPayReceipt {
+        guard #available(iOS 18.4, *) else {
+            throw FabushiPayStoreKitError.advancedCommerceUnavailable
+        }
+        guard UUID(uuidString: paymentId) != nil, !compactJWS.isEmpty else {
+            throw FabushiPayStoreKitError.invalidPaymentIdentifier
+        }
+        guard let product = try await Product.products(for: [genericProductId]).first else {
+            throw FabushiPayStoreKitError.productUnavailable
+        }
+        let advancedCommerceRequestData = try Self.advancedCommerceRequestData(compactJWS: compactJWS)
+        let result = try await product.purchase(options: [
+            .custom(key: "advancedCommerceData", value: advancedCommerceRequestData)
+        ])
+        switch result {
+        case .success(let verification):
+            guard case .verified(let transaction) = verification else {
+                throw FabushiPayStoreKitError.unverifiedTransaction
+            }
+            guard transaction.appAccountToken?.uuidString.lowercased() == paymentId.lowercased() else {
+                throw FabushiPayStoreKitError.transactionAccountMismatch
+            }
+            let receipt = try await verifyWithFabushiPay(
+                path: verifyPath,
+                transactionId: String(transaction.id)
+            )
+            guard receipt.paymentId.lowercased() == paymentId.lowercased(), receipt.status == "succeeded" else {
+                throw FabushiPayStoreKitError.invalidServerResponse
+            }
+            await transaction.finish()
+            return receipt
+        case .pending:
+            throw FabushiPayStoreKitError.pending
+        case .userCancelled:
+            throw FabushiPayStoreKitError.userCancelled
+        @unknown default:
+            throw FabushiPayStoreKitError.invalidServerResponse
+        }
+    }
+
     /// User-initiated StoreKit restore. The original Fabushi Pay `paymentId`
     /// comes back as `appAccountToken`; each candidate is re-verified against
     /// the current Fabushi account before a durable entitlement is trusted.
@@ -131,6 +178,13 @@ actor FabushiPayStoreKit {
         }
         if let deferredError { throw deferredError }
         throw FabushiPayStoreKitError.noRestorablePurchase
+    }
+
+    nonisolated static func advancedCommerceRequestData(compactJWS: String) throws -> Data {
+        guard !compactJWS.isEmpty else { throw FabushiPayStoreKitError.invalidServerResponse }
+        return try JSONSerialization.data(withJSONObject: [
+            "signatureInfo": ["token": compactJWS]
+        ], options: [.sortedKeys])
     }
 
     private func verifyWithFabushiPay(
