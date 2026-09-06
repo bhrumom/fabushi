@@ -25,6 +25,10 @@ test('Windows interactive workflow is App-owned, exact-release-bound, and eviden
   const text = workflow();
   const required = [
     'name: Windows interactive app device E2E',
+    'release:',
+    'types: [published]',
+    "startsWith(github.event.release.tag_name, 'desktop-')",
+    'workflow_dispatch:',
     'runs-on: windows-latest',
     'DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-windows-app',
     'Start whole-session Windows recording before install',
@@ -58,6 +62,7 @@ test('Windows interactive workflow is App-owned, exact-release-bound, and eviden
     assert.ok(text.includes(marker), `workflow is missing contract marker: ${marker}`);
   }
 
+  assert.equal(text.includes('  push:'), false, 'interactive validation must self-start from the published desktop Release instead of path-filtered main pushes');
   assert.equal(text.includes('Resolve newest published Windows test release'), false, 'workflow must not select the globally newest release');
   assert.equal(text.includes('$release = $candidates[-1]'), false, 'workflow must not fall back to the newest candidate regardless of source SHA');
   assert.ok(text.includes('fabushi-') && text.includes('-setup\\.exe'), 'workflow must resolve a published versioned Windows installer');

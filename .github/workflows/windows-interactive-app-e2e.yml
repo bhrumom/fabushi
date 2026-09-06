@@ -1,20 +1,8 @@
 name: Windows interactive app device E2E
 
 on:
-  push:
-    branches:
-      - main
-      - fix/tfi-windows-interactive-release-e2e-20260906
-    paths:
-      - '.github/workflows/windows-interactive-app-e2e.yml'
-      - 'chatgpt-vps-control/tests/windows-interactive-app-e2e-contract.test.js'
-      - 'desktop/electron/main.cjs'
-      - 'desktop/electron/remote-device-agent-supervisor.cjs'
-      - 'desktop/electron/app-agent-surface-server.cjs'
-      - 'desktop/e2e/app-agent-surface.spec.ts'
-      - 'chatgpt-vps-control/lib/**'
-      - 'chatgpt-vps-control/bin/**'
-      - 'chatgpt-vps-control/scripts/**'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -27,6 +15,7 @@ concurrency:
 
 jobs:
   windows-interactive:
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'desktop-') }}
     name: Install exact-main release, login, register, and expose Windows App
     runs-on: windows-latest
     timeout-minutes: 55
