@@ -157,6 +157,9 @@ test('Mini App runtime facade scopes renderer calls to installed Tool Contract a
   );
   const mahayanaEdge = await fs.readFile(path.join(__dirname, 'mahayana-edge.cjs'), 'utf8');
   assert.doesNotMatch(mahayanaEdge, /['"]runtime\.call['"]/);
+  const miniAppHost = await fs.readFile(path.join(__dirname, '../src/miniapp-webmcp-host.ts'), 'utf8');
+  assert.match(miniAppHost, /const lifetimePurchaseKeys = new Map/);
+  assert.doesNotMatch(miniAppHost, /sessionStorage\.(?:getItem|setItem)\('fabushi-global-dharma-lifetime-key'/);
 });
 
 test('Global Dharma desktop facade projects session and enforces canonical CNY 1080 lifetime purchase', async () => {
