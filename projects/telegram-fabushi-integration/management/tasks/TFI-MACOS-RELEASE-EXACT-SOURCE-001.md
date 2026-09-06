@@ -27,3 +27,7 @@ Run `34023374833` was therefore cancelled before package/sign/notarize/publish w
 - Because `1.2.44` has never been published, the merge may keep the same strictly-newer candidate version `1.2.44` relative to the last published macOS `v1.2.40`.
 - The workflow change itself triggers a new macOS test-release run whose `head_sha` equals its checkout/build `HEAD_SHA`; release `v1.2.44` must target that exact SHA.
 - Full latest-release App-owned macOS interactive retest remains mandatory afterward.
+
+## 2026-09-06 contract follow-up
+
+Windows governed version PR #2426 exposed one stale dependency-free contract in `fabushi-embedded-runtime-source.test.js`: the product workflow correctly moved to exact run source (`ref: ${{ github.sha }}` and `HEAD == $GITHUB_SHA`) in #2424, but the embedded-runtime test still asserted the retired mutable-main equality. The follow-up changes only that test expectation to the new exact-source invariant and explicitly rejects `ref: main`; release behavior is unchanged.
