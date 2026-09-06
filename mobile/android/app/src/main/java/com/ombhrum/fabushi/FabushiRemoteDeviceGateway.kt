@@ -54,6 +54,7 @@ internal class FabushiRemoteDeviceGateway(
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(25, TimeUnit.SECONDS)
         .build()
     private val stateLock = Any()
     private var desiredLoggedIn = false
@@ -145,16 +146,20 @@ internal class FabushiRemoteDeviceGateway(
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 synchronized(stateLock) {
-                    if (socket === webSocket) socket = null
-                    registered = false
+                    if (socket === webSocket) {
+                        socket = null
+                        registered = false
+                    }
                 }
                 appendTrace("socket-closed", mapOf("code" to code, "reason" to reason.take(80)))
             }
 
             override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
                 synchronized(stateLock) {
-                    if (socket === webSocket) socket = null
-                    registered = false
+                    if (socket === webSocket) {
+                        socket = null
+                        registered = false
+                    }
                 }
                 appendTrace("receive-failed", mapOf("error" to safeErrorCode(error)))
             }
@@ -341,7 +346,7 @@ internal class FabushiRemoteDeviceGateway(
                 .put("description", description)
                 .put("inputSchema", input)
                 .put("annotations", JSONObject().put("readOnlyHint", readOnly))
-        val stateProperties = arrayOf(
+        val stateProperties = arrayOf<Pair<String, Any>>((
             "route" to stringSchema(), "screen" to stringSchema(), "agentId" to stringSchema(),
             "role" to stringSchema(), "name" to stringSchema(), "text" to stringSchema(),
             "state" to stringSchema("present", "absent", "enabled", "disabled", "visible", "hidden"),
@@ -351,7 +356,7 @@ internal class FabushiRemoteDeviceGateway(
             .put(descriptor(FabushiAppAgentSurface.SnapshotTool, "Read the Fabushi semantic UI", "Return a structured redacted semantic snapshot of the active Fabushi Android UI.", schema("maxElements" to integerSchema(), "includeText" to booleanSchema()), true))
             .put(descriptor(FabushiAppAgentSurface.FindTool, "Find Fabushi UI elements", "Find semantic elements by stable id, generation-bound ref, role, accessible name, or visible text.", schema("agentId" to stringSchema(), "ref" to stringSchema(), "role" to stringSchema(), "name" to stringSchema(), "text" to stringSchema(), "limit" to integerSchema()), true))
             .put(descriptor(FabushiAppAgentSurface.ActionTool, "Operate the Fabushi semantic UI", "Perform one allowlisted action against the exact current semantic generation.", schema("generation" to integerSchema(), "ref" to stringSchema(), "agentId" to stringSchema(), "action" to stringSchema("invoke", "focus", "setValue", "pressKey", "scroll", "selectOption", "toggle"), "value" to stringSchema(), required = listOf("generation", "action")), false))
-            .put(descriptor(FabushiAppAgentSurface.WaitTool, "Wait for Fabushi UI state", "Wait for a bounded semantic UI condition.", schema(*stateProperties, "timeoutMs" to integerSchema()), true))
+            .put(descriptor(FabushiAppAgentSurface.WaitTool, "Wait for Fabushi UI state", "Wait for a bounded semantic UI condition.", schema(*(stateProperties + ("timeoutMs" to integerSchema()))), true))
             .put(descriptor(FabushiAppAgentSurface.AssertTool, "Assert Fabushi UI state", "Evaluate a deterministic semantic UI assertion for CI evidence.", schema(*stateProperties), true))
     }
 
@@ -395,7 +400,7 @@ internal class FabushiRemoteDeviceGateway(
     private fun safeErrorCode(error: Throwable): String = when (val message = error.message.orEmpty()) {
         "unknown_fabushi_app_tool", "invalid_device_agent_session", "invalid_device_gateway_call",
         "invalid_app_surface_generation", "app_surface_action_target_missing", "invalid_app_surface_ref",
-        "stale_app_surface_generation", "stale_app_surface_generation", "app_surface_element_not_found",
+        "stale_app_surface_generation", "app_surface_element_not_found",
         "app_surface_target_hidden", "app_surface_target_disabled", "sensitive_app_surface_input_requires_secure_input",
         "app_surface_value_too_large", "app_surface_action_unavailable", "unsupported_app_surface_action" -> message
         else -> "transport_error:${error::class.java.simpleName.take(80)}"
