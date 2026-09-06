@@ -79,3 +79,14 @@ Acceptance for this atomic repair:
 ## Completion gate
 
 只有受保护 PR 合并、canonical main SHA 回读、post-main delivery gate、exact released packaged Android 旅程、六工具 App-owned 控制、entitlement fail-closed/购买/恢复证据和完整 artifacts/video 都通过，才允许 `DONE`。任一外部支付沙箱/设备/签名/权限事实缺失则保持 `BLOCKED` 并记录精确 live evidence。
+
+### G — Protected packaged retest release 1.2.52 (2026-09-07)
+
+- Repair PR #2451 protected-merged as `8103b2d495f4223a4736be65ce4c0cfc0a1fbabc` after required checks.
+- PR contract evidence: run `34050104893`, job `101532053914`, artifact `9994301970`.
+- Canonical version before this round: `1.2.51`; next governed Android test version: `1.2.52`.
+- [ ] Protected version PR merged to canonical main.
+- [ ] Exact-main Native Android GitHub release succeeds with immutable tag/assets/checksum.
+- [ ] Fresh App-owned Android interactive run/device self-registers from the released APK.
+- [ ] Six semantic tools drive the complete Global Dharma packaged journey.
+- [ ] Full video, meaningful screenshots, trace/report/logcat/release identity are always uploaded and linked here.
