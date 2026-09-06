@@ -238,12 +238,15 @@ test('account sync native capabilities reconcile remote Mini Apps and expose Bot
     const sync = await handlers.getAccountSync({ cursor: 'as1:1', limit: 20 });
     assert.equal(sync.path, '/v1/account/sync');
     assert.equal(sync.query.cursor, 'as1:1');
+    assert.equal(sync.query.limit, '20');
     const reconciliation = await handlers.reconcileAccountMiniApps({});
     assert.deepEqual(reconciliation.desired, ['global-dharma']);
     assert.equal(reconciliation.installed[0].pluginId, 'global-dharma');
     assert.deepEqual(getState().accountManagedMiniApps, ['global-dharma']);
     const history = await handlers.getMiniAppBotMessages({ pluginId: 'global-dharma', after: '2026-01-01', limit: 50 });
     assert.equal(history.path, '/api/miniapps/global-dharma/messages');
+    assert.equal(history.query.after, '2026-01-01');
+    assert.equal(history.query.limit, '50');
     const appended = await handlers.appendMiniAppBotMessages({ pluginId: 'global-dharma', messages: [{ messageId: 'm1', role: 'user', text: 'hello' }] });
     assert.equal(appended.path, '/api/miniapps/global-dharma/messages');
     const cloud = await handlers.setMiniAppCloudStorage({ pluginId: 'global-dharma', values: { mode: 'local' } });

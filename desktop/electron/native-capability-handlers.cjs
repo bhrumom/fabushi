@@ -1751,7 +1751,7 @@ function createNativeCapabilityHandlers(deps) {
       const cursor = cleanString(params.cursor, 160);
       const limit = Math.max(1, Math.min(1000, Number(params.limit) || 200));
       return platformRequest('GET', '/v1/account/sync', {
-        query: { ...(cursor ? { cursor } : {}), limit },
+        query: { ...(cursor ? { cursor } : {}), limit: String(limit) },
       });
     },
 
@@ -1782,7 +1782,7 @@ function createNativeCapabilityHandlers(deps) {
       const after = cleanString(params.after, 160);
       const limit = Math.max(1, Math.min(1000, Number(params.limit) || 500));
       return platformRequest('GET', `/api/miniapps/${encodeURIComponent(pluginId)}/messages`, {
-        query: { ...(after ? { after } : {}), limit },
+        query: { ...(after ? { after } : {}), limit: String(limit) },
       });
     },
 
