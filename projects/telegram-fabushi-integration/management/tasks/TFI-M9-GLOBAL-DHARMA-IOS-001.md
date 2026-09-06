@@ -181,3 +181,9 @@ Apple explicitly states Advanced Commerce purchases cannot use StoreKit Testing 
 - While exact-head CI for `e980cf93dd16ae0a31d04e01afd626fd6717161e` was running, protected main advanced through #2455 to `8adfa009f2fdf349e9f0c659fcfa4176ff7d7c2c` (`test(TFI): record Global Dharma restart and logout journey`).
 - #2446 immediately re-aligned with a no-conflict merge; #2455 contributes only `desktop/e2e/miniapp-bot-parity.spec.ts` changes to this branch and does not alter the iOS runtime/commerce implementation.
 - Previous e980 CI is retained as historical evidence only. Authoritative merge eligibility moves to the new head/base pair; exact-main iOS package/video remains `PENDING`.
+
+## 2026-09-07 — current Marketplace source projection correction
+
+- Exact-head Marketplace Contract `34053892448`, cloud job `101542174216`, passed rustfmt, platform Worker, all focused unit tests, the iOS native→`mobile` fallback, canonical receipt fields and release-manifest identity, then failed only at `test_driver_backend.rs:141` because the live test still expected obsolete `marketplaceSource.sourceRef`; current value is `Null`.
+- Canonical Worker serialization returns `source_json` verbatim. The official `global-dharma@1.0.0` source contract is `provider: fabushi-official`, GitHub `repository` URL and a 40-hex `commit`; it does not define `sourceRef`. Diagnostic artifact `9995497157`, digest `sha256:3e7ea09afb9c521764f21f8f39695e47d087bbb62515eff7af5a63935f938348`.
+- Follow-up replaces only the stale `sourceRef` assertion with exact official-provider validation, GitHub repository URL validation and 40-hex source commit validation. External release protocol/plugin/version plus selected artifact id/runtime/SHA/platform integrity checks remain unchanged. No runtime/auth/commerce behavior changes; no local build/test is used. New GitHub Actions are authoritative; protected merge and packaged iOS evidence remain `PENDING`.
