@@ -48,10 +48,10 @@ enum GlobalDharmaCommerceError: LocalizedError {
 @MainActor
 @Observable
 final class GlobalDharmaCommerceModel {
-    static let miniAppId = "global-dharma"
-    static let capability = "local.prayer-wheel.start"
-    static let lifetimeProductId = "prod.global-dharma.local-prayer-wheel.lifetime"
-    static let lifetimeSku = "local-prayer-wheel.lifetime"
+    nonisolated static let miniAppId = "global-dharma"
+    nonisolated static let capability = "local.prayer-wheel.start"
+    nonisolated static let lifetimeProductId = "prod.global-dharma.local-prayer-wheel.lifetime"
+    nonisolated static let lifetimeSku = "local-prayer-wheel.lifetime"
 
     var accessAllowed = false
     var accessReason = "not_loaded"
@@ -253,7 +253,7 @@ final class GlobalDharmaCommerceModel {
         }
     }
 
-    static func parseLifetimeOffer(_ object: [String: Any]) -> GlobalDharmaLifetimeOffer? {
+    nonisolated static func parseLifetimeOffer(_ object: [String: Any]) -> GlobalDharmaLifetimeOffer? {
         guard let productId = object["productId"] as? String,
               let sku = object["sku"] as? String,
               let productKind = object["productKind"] as? String,
