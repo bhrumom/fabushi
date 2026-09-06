@@ -19,6 +19,7 @@ import pino from 'pino';
 import { z } from 'zod';
 
 import { resolveAccountEntitlements } from './account_entitlements.js';
+import { resolveDelegatedPluginIdentity } from './delegated_plugin_identity.js';
 import { AccountSyncStore } from './account_sync_store.js';
 import { readGlobalDharmaEntitlement } from './global_dharma_entitlement.js';
 import { GlobalDharmaRuntimeStore } from './global_dharma_runtime_store.js';
@@ -1064,6 +1065,29 @@ async function resolveRemoteAccount(token) {
 async function resolveUser(req, body = {}) {
   const token = bearerToken(req);
   const usernameHint = safeUserText(body.username || req.query.username);
+
+  const pluginId = safeUserText(req.params?.pluginId);
+  if (token && pluginId && req.path.startsWith('/api/mcp/apps/')) {
+    const delegatedIdentity = await resolveDelegatedPluginIdentity({
+      token,
+      pluginId,
+      apiBaseUrl: fabushiApiBaseUrl,
+    });
+    if (delegatedIdentity) {
+      return {
+        userId: `user:${delegatedIdentity.userId}`,
+        username: '',
+        tokenHash: sha256(token).slice(0, 24),
+        isAuthenticated: true,
+        isMember: false,
+        isTestAccount: false,
+        role: 'user',
+        isAdmin: false,
+        unlimitedUsage: false,
+        membership: null,
+      };
+    }
+  }
 
   const internalMcpAccount = resolveCodexAdapterToken(token);
   if (

@@ -60,3 +60,7 @@ Until those provider-side facts exist, the corresponding rail must remain unavai
   - `src/capability_access.rs`
   - `src/worker_api/commerce.rs`
   - `fabushi/web/tests/global-dharma-paid-capability.test.js`
+
+## 2026-09-07 Web/service credential dependency
+
+The Host-controlled Mini App credential now has an explicit server-consumer contract: five-minute, session-bound, exact-plugin scope; canonical entitlement may consume it only for the matching plugin/capability read. Purchase/restore remain Host-authenticated Platform Router operations. This closes the Web/service side of the AAC-004 bootstrap/revoke gap without creating a second payment or identity authority. Packaged proof remains pending until the protected PR lands and desktop/mobile exact-main journeys run.
