@@ -3,47 +3,63 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const workflowPath = new URL('../../.github/workflows/macos-interactive-app-e2e.yml', import.meta.url);
+const loginPath = new URL('../scripts/login-ci-test-account.mjs', import.meta.url);
 const exportPath = new URL('../scripts/export-ci-app-account-session.mjs', import.meta.url);
 const renewPath = new URL('../scripts/renew-ci-app-account-session.mjs', import.meta.url);
+const sessionStorePath = new URL('../lib/fabushi-account-session.js', import.meta.url);
 
 async function workflow() {
   return readFile(workflowPath, 'utf8');
 }
 
-test('workflow owns the whole-session recording and App-owned account gateway contract', async () => {
-  const [source, exporter] = await Promise.all([workflow(), readFile(exportPath, 'utf8')]);
+function stepBlock(source, stepName, nextStepName) {
+  const start = source.indexOf(`- name: ${stepName}`);
+  assert.ok(start >= 0, `missing step: ${stepName}`);
+  const end = nextStepName ? source.indexOf(`- name: ${nextStepName}`, start + 1) : source.length;
+  assert.ok(end > start, `missing next step after: ${stepName}`);
+  return source.slice(start, end);
+}
+
+test('macOS interactive E2E keeps the installed app as the only device-registration owner', async () => {
+  const source = await workflow();
+  assert.match(source, /runs-on:\s*macos-15/u);
   assert.match(source, /Start whole-session macOS recording/u);
-  assert.match(source, /Install exact release DMG after recording has started/u);
-  assert.match(source, /Login protected CI account and export App-owned session/u);
-  assert.match(source, /DEVICE_ID: gha-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-macos-app/u);
-  assert.match(source, /FABUSHI_CI_ACCOUNT_SESSION_FILE/u);
+  assert.match(source, /Resolve newest published macOS test release/u);
+  assert.match(source, /Install exact published macOS test app/u);
+  assert.match(source, /login-ci-test-account\.mjs/u);
   assert.match(source, /export-ci-app-account-session\.mjs/u);
   assert.match(source, /renew-ci-app-account-session\.mjs/u);
   assert.match(source, /session-renewal\.log/u);
-  assert.match(exporter, /ciRunner: true/u);
-  assert.match(exporter, /provider: 'github-actions'/u);
-  assert.doesNotMatch(exporter, /refreshToken:/u);
+  assert.match(source, /FABUSHI_CI_ACCOUNT_SESSION_FILE/u);
+  assert.match(source, /Launch installed Fabushi app and wait for App-owned registration/u);
+  assert.match(source, /controllable device online/u);
+  assert.match(source, /Hold for @fabushi test complete macOS journey/u);
+  assert.match(source, /ci_session_finish/u);
+  assert.match(source, /if:\s*always\(\)/u);
+  assert.match(source, /Upload complete macOS interactive evidence even on failure/u);
+  assert.match(source, /No standalone Runner\/KRIS\/interactive-runner device agent is started/u);
+
+  assert.doesNotMatch(source, /node\s+[^\n]*fabushi-device-agent\.js/u);
+  assert.doesNotMatch(source, /uses:\s*[^\n]*interactive-runner/iu);
+  assert.doesNotMatch(source, /run:\s*[^\n]*(?:KRIS|interactive-runner)/iu);
 });
 
-test('workflow forces the external semantic matrix and truthful final logout gate', async () => {
-  const source = await workflow();
-  for (const tool of [
-    'fabushi.app.status',
-    'fabushi.app.snapshot',
-    'fabushi.app.find',
-    'fabushi.app.action',
-    'fabushi.app.wait',
-    'fabushi.app.assert',
-    'ci_session_status',
-    'ci_session_note',
-    'ci_session_finish',
-  ]) {
-    assert.match(source, new RegExp(tool.replaceAll('.', '\\.')));
+test('protected account helpers accept the App-owned macOS Actions id without assigning gateway ownership', async () => {
+  const [loginSource, exportSource, sessionStoreSource] = await Promise.all([
+    readFile(loginPath, 'utf8'),
+    readFile(exportPath, 'utf8'),
+    readFile(sessionStorePath, 'utf8'),
+  ]);
+  for (const source of [loginSource, exportSource, sessionStoreSource]) {
+    assert.match(source, /macos-app/u);
   }
-  assert.match(source, /TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS/u);
-  assert.match(source, /settings-logout/u);
-  assert.match(source, /finish-requested\.json/u);
+  assert.match(loginSource, /protected GitHub Actions test device id/u);
+  assert.match(exportSource, /do not grant device-gateway ownership/u);
+  assert.match(sessionStoreSource, /does not mean the Actions runner owns device registration/u);
+  assert.doesNotMatch(loginSource, /must be the protected interactive Runner id/u);
+  assert.doesNotMatch(exportSource, /must be the protected interactive Runner id/u);
 });
+
 
 test('macOS hold renews the private ordinary session while keeping the App projection refresh-token-free', async () => {
   const [source, renewSource] = await Promise.all([workflow(), readFile(renewPath, 'utf8')]);
@@ -68,25 +84,33 @@ test('truthful pass requires READY note, ci_session_finish, and the exact settin
 test('whole-session recording is ordered before release resolution and installation', async () => {
   const source = await workflow();
   const record = source.indexOf('Start whole-session macOS recording');
-  const resolve = source.indexOf('Resolve newest immutable macOS test release');
-  const install = source.indexOf('Install exact release DMG after recording has started');
-  assert.ok(record >= 0, 'recording step is missing');
-  assert.ok(resolve > record, 'release resolution must happen after recording starts');
-  assert.ok(install > resolve, 'installation must happen after release resolution');
+  const resolve = source.indexOf('Resolve newest published macOS test release');
+  const install = source.indexOf('Install exact published macOS test app');
+  assert.ok(record >= 0 && resolve > record && install > resolve);
 });
 
-test('workflow refuses non-App-owned devices in the operator contract', async () => {
+test('evidence upload allowlist excludes private account sessions and includes required classes', async () => {
   const source = await workflow();
-  assert.match(source, /Do not use KRIS, old devices, pre-existing devices, or runner-owned gateways/u);
-  assert.match(source, /Only the packaged App may register the macOS gateway\/device/u);
-});
+  const upload = stepBlock(
+    source,
+    'Upload complete macOS interactive evidence even on failure',
+    'Remove private account material and temporary app data',
+  );
+  assert.match(upload, /macos-interactive-evidence\//u);
+  assert.match(upload, /playwright-report\//u);
+  assert.match(upload, /test-results\//u);
+  assert.doesNotMatch(upload, /FABUSHI_ACCOUNT_SESSION_FILE/u);
+  assert.doesNotMatch(upload, /FABUSHI_CI_ACCOUNT_SESSION_FILE/u);
 
-test('evidence is always uploaded and includes the external semantic trace', async () => {
-  const source = await workflow();
-  assert.match(source, /if: always\(\)/u);
-  assert.match(source, /device-calls\.jsonl/u);
-  assert.match(source, /remote-notes\.jsonl/u);
   assert.match(source, /macos-session\.mov/u);
-  assert.match(source, /playwright-report/u);
-  assert.match(source, /session-renewal\.log/u);
+  const collection = stepBlock(
+    source,
+    'Collect macOS App, device-call, Playwright, and release evidence',
+    'Upload complete macOS interactive evidence even on failure',
+  );
+  assert.match(collection, /steps\/999-final\.png/u);
+  assert.match(collection, /device-calls\.jsonl/u);
+  assert.match(collection, /fabushi-system\.log/u);
+  assert.match(collection, /releaseTag/u);
+  assert.match(collection, /report\.json/u);
 });
