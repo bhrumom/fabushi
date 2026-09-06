@@ -32,7 +32,8 @@ internal class MiniAppPlatformBridge(
     companion object {
         const val GLOBAL_DHARMA_ID = "global-dharma"
         const val PRAYER_WHEEL_CAPABILITY = "local.prayer-wheel.start"
-        const val PRAYER_WHEEL_LIFETIME_SKU = "prod.global-dharma.local-prayer-wheel.lifetime"
+        const val PRAYER_WHEEL_LIFETIME_SKU = "local-prayer-wheel.lifetime"
+        const val PRAYER_WHEEL_LIFETIME_PRODUCT_ID = "prod.global-dharma.local-prayer-wheel.lifetime"
         const val PRAYER_WHEEL_LIFETIME_CNY_MINOR = 108_000L
         private const val API_BASE = "https://api.ombhrum.com"
         private const val MCP_PROTOCOL = "2025-06-18"
