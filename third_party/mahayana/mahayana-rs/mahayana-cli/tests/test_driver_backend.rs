@@ -116,15 +116,15 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
         install.result["releaseVersion"],
         install.result["receipt"]["version"]
     );
-    let sha = install.result["receipt"]["sha256"]
+    let sha = install.result["receipt"]["artifactSha256"]
         .as_str()
-        .expect("receipt sha256");
+        .expect("receipt artifactSha256");
     assert_eq!(sha.len(), 64);
     assert!(sha.chars().all(|character| character.is_ascii_hexdigit()));
     assert!(
-        install.result["receipt"]["sourceUrl"]
+        install.result["receipt"]["artifactId"]
             .as_str()
-            .is_some_and(|url| url.starts_with("https://"))
+            .is_some_and(|artifact_id| !artifact_id.is_empty())
     );
     assert_eq!(
         install.result["releaseManifest"]["protocol"],
@@ -156,8 +156,9 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
         .as_array()
         .and_then(|artifacts| {
             artifacts.iter().find(|artifact| {
-                artifact["runtime"] == install.result["receipt"]["runtime"]
-                    && artifact["sha256"] == install.result["receipt"]["sha256"]
+                artifact["id"] == install.result["receipt"]["artifactId"]
+                    && artifact["runtime"] == install.result["receipt"]["runtime"]
+                    && artifact["sha256"] == install.result["receipt"]["artifactSha256"]
             })
         })
         .expect("installed receipt must match a release-manifest artifact");
@@ -179,11 +180,16 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
         .expect("installed plugins array");
     assert_eq!(installed.len(), 1);
     assert_eq!(installed[0]["pluginId"], "global-dharma");
-    assert_eq!(installed[0]["sha256"], install.result["receipt"]["sha256"]);
     assert_eq!(
-        installed[0]["sourceUrl"],
-        install.result["receipt"]["sourceUrl"]
+        installed[0]["artifactId"],
+        install.result["receipt"]["artifactId"]
     );
+    assert_eq!(
+        installed[0]["artifactSha256"],
+        install.result["receipt"]["artifactSha256"]
+    );
+    assert_eq!(installed[0]["version"], install.result["receipt"]["version"]);
+    assert_eq!(installed[0]["runtime"], install.result["receipt"]["runtime"]);
 
     let logs = session.execute(request(
         "logs-1",
@@ -251,13 +257,15 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
     assert_eq!(restart_plugins.len(), 1);
     assert_eq!(restart_plugins[0]["pluginId"], "global-dharma");
     assert_eq!(
-        restart_plugins[0]["sha256"],
-        install.result["receipt"]["sha256"]
+        restart_plugins[0]["artifactId"],
+        install.result["receipt"]["artifactId"]
     );
     assert_eq!(
-        restart_plugins[0]["sourceUrl"],
-        install.result["receipt"]["sourceUrl"]
+        restart_plugins[0]["artifactSha256"],
+        install.result["receipt"]["artifactSha256"]
     );
+    assert_eq!(restart_plugins[0]["version"], install.result["receipt"]["version"]);
+    assert_eq!(restart_plugins[0]["runtime"], install.result["receipt"]["runtime"]);
 
     unsafe {
         std::env::remove_var("MAHAYANA_TEST_DRIVER_ROOT");
