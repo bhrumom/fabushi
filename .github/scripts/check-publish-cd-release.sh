@@ -62,6 +62,16 @@ for required in (
     if required not in publish_release_workflow:
         missing.append(f'publish release workflow missing: {required}')
 
+for required in (
+    'ref: ${{ github.sha }}',
+    'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
+):
+    if required not in publish_release_workflow:
+        missing.append(f'publish release workflow missing exact-source binding: {required}')
+
+if 'ref: main' in publish_release_workflow:
+    missing.append('publish release workflow must not re-resolve mutable main after dispatch')
+
 for forbidden in (
     'flutter build',
     'flutter pub get',
