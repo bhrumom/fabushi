@@ -10,7 +10,7 @@
 
 1. `M8-WEBMCP-001` already supplies the unified Mini App Host/WebMCP bridge. iOS `MiniAppWebMcpSurface` loads the installed plugin UI locally and routes declared tools through `runtime.call`; write/destructive operations retain native approval.
 2. iOS `GrokMobileShell` already discovers real Bots via `bot.list`, and `MobileBotChat` sends natural-language turns with `chat.send(agentId:, mode: agent)` and renders `agent.step` / streamed output.
-3. `M9-GLOBAL-DHARMA-003` already defines canonical paid capability truth: `global-dharma`, capability `local.prayer-wheel.start`, lifetime SKU `prod.global-dharma.local-prayer-wheel.lifetime`, CNY minor amount `108000`, durable entitlement.
+3. `M9-GLOBAL-DHARMA-003` already defines canonical paid capability truth: `global-dharma`, capability `local.prayer-wheel.start`, lifetime product id `prod.global-dharma.local-prayer-wheel.lifetime`, payment SKU `local-prayer-wheel.lifetime`, CNY minor amount `108000`, durable entitlement.
 4. Canonical entitlement read remains `GET /v1/plugins/:plugin_id/entitlements/:capability`. `access.allowed` is the authorization truth and `purchaseOptions` is server-authoritative for price and active rails.
 5. Canonical Fabushi Pay already exposes intent -> checkout -> Apple verification, and iOS `FabushiPayStoreKit` already uses the server `paymentId` as StoreKit `appAccountToken`, verifies the StoreKit transaction locally, requires server verification, and only then finishes the transaction.
 6. The provider-binding seed intentionally keeps `apple_advanced_commerce` and `google_play` at `pending_configuration`; therefore a production/sandbox App Store purchase must fail closed until an external Apple product/binding is activated. The Web provider is not a substitute for the iOS StoreKit acceptance gate.
@@ -40,7 +40,7 @@ Implement the minimum iOS adapter around existing canonical systems:
 1. Add an account-scoped `GlobalDharmaCommerceModel` that reads the canonical entitlement and server purchase options.
 2. Allow the lifetime StoreKit action only when the canonical lifetime purchase option advertises `apple_in_app_purchase` as active.
 3. Create a canonical payment intent with a fresh idempotency key, obtain checkout action, then delegate the StoreKit transaction to `FabushiPayStoreKit`.
-4. Add explicit user-triggered restore. It calls `AppStore.sync()`, enumerates only verified `Transaction.currentEntitlements`, and re-verifies matching transaction/payment identity with Fabushi Pay before refreshing canonical entitlement.
+4. Add explicit user-triggered restore. It calls `AppStore.sync()`, enumerates only verified `Transaction.currentEntitlements`, and re-verifies matching transaction/payment identity with Fabushi Pay before refreshing canonical entitlement. Apple Advanced Commerce itself cannot be validated with Xcode StoreKit Testing; purchase/restore acceptance therefore requires real App Store sandbox.
 5. Never unlock from local StoreKit state alone. `local.prayer-wheel.start` is usable only when canonical entitlement says `access.allowed == true`.
 6. The Mini App and Bot remain on the same Host/runtime state. Add a Bot-level `打开应用` action that opens the installed Global Dharma Mini App surface from the same `MarketplaceModel`, preserving WebMCP/runtime state instead of creating a second WebView-local state machine.
 7. Add semantic elements for purchase/restore/access state so the App-owned iOS device can be verified through all six `fabushi.app.*` tools.
@@ -59,10 +59,11 @@ Implement the minimum iOS adapter around existing canonical systems:
 
 Live StoreKit sandbox/production acceptance is BLOCKED until all of the following are real and active:
 
-- App Store Connect non-consumable product for the canonical lifetime SKU has an external product identifier;
-- Fabushi `payment_provider_bindings` row for provider `apple_advanced_commerce` is `active` for the lifetime product;
+- App Store Connect / Advanced Commerce has the required one-time generic product id for the Mini Apps Partner Program and Fabushi has the required Apple approval;
+- Fabushi `payment_provider_bindings` row for provider `apple_advanced_commerce` is `active` for the lifetime product and carries the real generic provider product reference;
+- the lifetime catalog has an explicitly approved Apple `tax_code` (the original seed is `NULL` and code must not guess it);
 - the active binding/provider reference returned by canonical purchase options resolves through StoreKit in the target signed build;
-- required App Store Server API credentials are configured in the deployed Fabushi Pay environment;
+- required Advanced Commerce signing + App Store Server API credentials are configured in the deployed Fabushi Commerce/Pay environments;
 - an eligible StoreKit sandbox/TestFlight account/device can complete and restore the purchase.
 
 No code path may convert these missing external facts into a synthetic pass.

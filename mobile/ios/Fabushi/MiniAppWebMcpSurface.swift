@@ -29,6 +29,44 @@ struct MiniAppWebMcpSurface: View {
             }
             .padding(12)
 
+            if plugin.pluginId == GlobalDharmaCommerceModel.miniAppId {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: model.globalDharmaCommerce.accessAllowed ? "checkmark.seal.fill" : "lock.fill")
+                            .foregroundStyle(model.globalDharmaCommerce.accessAllowed ? .green : .secondary)
+                        Text(model.globalDharmaCommerce.message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .accessibilityIdentifier("global-dharma-entitlement-status")
+
+                    HStack(spacing: 10) {
+                        if model.globalDharmaCommerce.accessAllowed {
+                            Label("本地转经轮已买断", systemImage: "infinity")
+                                .font(.subheadline.weight(.semibold))
+                                .accessibilityIdentifier("global-dharma-entitlement-allowed")
+                        } else {
+                            Button("\(model.globalDharmaCommerce.lifetimePriceLabel) 买断本地转经轮") {
+                                Task { await model.globalDharmaCommerce.purchaseLifetime() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!model.globalDharmaCommerce.canBuyLifetime)
+                            .accessibilityIdentifier("global-dharma-buy-lifetime")
+                        }
+
+                        Button("恢复购买") {
+                            Task { await model.globalDharmaCommerce.restoreLifetime() }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.globalDharmaCommerce.busy)
+                        .accessibilityIdentifier("global-dharma-restore-purchase")
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+            }
+
             MiniAppWebView(
                 plugin: plugin,
                 model: model,
@@ -39,6 +77,9 @@ struct MiniAppWebMcpSurface: View {
         }
         .accessibilityIdentifier("miniapp-webmcp-surface")
         .task(id: plugin.pluginId) {
+            if plugin.pluginId == GlobalDharmaCommerceModel.miniAppId {
+                await model.globalDharmaCommerce.refresh()
+            }
             localHtml = await model.loadLocalMiniAppHtml(pluginId: plugin.pluginId)
             sourceResolved = true
             status = localHtml == nil ? "正在加载 Hosted WebMCP…" : "正在加载本地 WebMCP…"

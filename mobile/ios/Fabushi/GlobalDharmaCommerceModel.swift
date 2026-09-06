@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import StoreKit
 
 struct GlobalDharmaLifetimeOffer: Equatable, Sendable {
     let productId: String
@@ -146,13 +147,34 @@ final class GlobalDharmaCommerceModel {
             )
             guard let action = checkout["checkoutAction"] as? [String: Any],
                   action["kind"] as? String == "appleInAppPurchase",
-                  let productId = action["productId"] as? String,
-                  !productId.isEmpty,
+                  let genericProductId = action["productId"] as? String,
+                  !genericProductId.isEmpty,
                   let verifyPath = action["verifyPath"] as? String,
-                  verifyPath == "/v1/pay/intents/\(paymentId)/apple/verify"
+                  verifyPath == "/v1/pay/intents/\(paymentId)/apple/verify",
+                  let advancedCommercePath = action["advancedCommercePath"] as? String,
+                  advancedCommercePath == "/v1/pay/intents/\(paymentId)/apple/advanced-commerce"
             else { throw GlobalDharmaCommerceError.invalidResponse }
 
-            message = "正在打开 App Store 测试/购买流程…"
+            guard let storefront = await Storefront.current?.countryCode,
+                  storefront.count == 3
+            else { throw GlobalDharmaCommerceError.appleStoreNotConfigured }
+            message = "正在签名 Apple Advanced Commerce 请求…"
+            let advanced = try await requestJSON(
+                baseURL: paymentBaseURL,
+                path: advancedCommercePath,
+                method: "POST",
+                body: ["storefront": storefront.uppercased()]
+            )
+            guard advanced["genericProductId"] as? String == genericProductId,
+                  let advancedData = advanced["advancedCommerceData"] as? [String: Any],
+                  let signatureInfo = advancedData["signatureInfo"] as? [String: Any],
+                  let compactJWS = signatureInfo["token"] as? String,
+                  !compactJWS.isEmpty,
+                  let requestReferenceId = advanced["requestReferenceId"] as? String,
+                  UUID(uuidString: requestReferenceId) != nil
+            else { throw GlobalDharmaCommerceError.invalidResponse }
+
+            message = "正在打开 App Store Advanced Commerce 购买流程…"
             let storeKit = FabushiPayStoreKit(
                 serviceBaseURL: paymentBaseURL,
                 session: session,
@@ -160,9 +182,10 @@ final class GlobalDharmaCommerceModel {
                     try await Self.currentAccessToken(from: host)
                 }
             )
-            let receipt = try await storeKit.purchase(
+            let receipt = try await storeKit.purchaseAdvancedCommerce(
                 paymentId: paymentId,
-                productId: productId,
+                genericProductId: genericProductId,
+                compactJWS: compactJWS,
                 verifyPath: verifyPath
             )
             guard receipt.paymentId == paymentId,
