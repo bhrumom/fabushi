@@ -401,7 +401,9 @@ test("the exact-main platform deployment is recoverable and smokes remote-contro
     '--target "$HEAD_SHA"',
     "SHA256SUMS.txt",
   ]) assert.ok(release.includes(marker), `macOS test release is missing ${marker}`);
-  assert.match(release, /test "\$\(git rev-parse HEAD\)" = "\$\(git rev-parse refs\/remotes\/origin\/main\)"/);
+  assert.match(release, /ref: \{\{ github\.sha \}\}/);
+  assert.match(release, /test "\$\(git rev-parse HEAD\)" = "\$GITHUB_SHA"/);
+  assert.doesNotMatch(release, /ref: main/);
   for (const marker of [
     "compare/main...$SOURCE_SHA",
     "ahead_by",
