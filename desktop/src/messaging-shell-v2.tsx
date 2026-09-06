@@ -1745,7 +1745,10 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           ? miniAppBotProjections.find((candidate) => candidate.miniAppId === miniAppSource.sourceId)
           : miniAppByBotId.get(entry.bot.id);
         return {
-          key: `account:bot:${entry.bot.id}`,
+          // A Mini App-backed account Bot must keep the same peer identity before and
+          // after the asynchronous account-membership projection arrives. Otherwise
+          // activePeerKey points at the retired synthetic peer and the composer vanishes.
+          key: miniAppSource ? `miniapp:bot:${miniAppSource.sourceId}` : `account:bot:${entry.bot.id}`,
           id: entry.bot.id,
           source: 'legacy',
           kind: 'bot',
@@ -1754,8 +1757,8 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           actorId: entry.bot.id,
           conversationId: entry.bot.conversationId,
           unread: 0,
-          pinned: pinnedPeerKeys.has(`account:bot:${entry.bot.id}`),
-          archived: archivedPeerKeys.has(`account:bot:${entry.bot.id}`),
+          pinned: pinnedPeerKeys.has(miniAppSource ? `miniapp:bot:${miniAppSource.sourceId}` : `account:bot:${entry.bot.id}`),
+          archived: archivedPeerKeys.has(miniAppSource ? `miniapp:bot:${miniAppSource.sourceId}` : `account:bot:${entry.bot.id}`),
           updatedAtMs: entry.updatedAtMs ?? 0,
           miniAppId: miniAppSource?.sourceId,
           miniAppCommands: projection?.commands,
