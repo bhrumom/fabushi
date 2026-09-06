@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/android-app-owned-contract.yml'
       - '.github/workflows/android-interactive-app-e2e.yml'
+      - '.github/workflows/native-android-release.yml'
       - 'chatgpt-vps-control/scripts/run-android-interactive-app-e2e.sh'
       - 'chatgpt-vps-control/tests/android-interactive-app-e2e-contract.test.js'
       - 'mobile/android/app/build.gradle'
