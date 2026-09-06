@@ -90,3 +90,32 @@ Windows 仅作为 `electron-desktop.yml` 的 build/package matrix 成员；没�
 - 因安装/启动未发生，本 run 同样不产生可选 Windows device。
 
 待后续成功 Actions/PR/Release 产生后继续写回真实 run、artifact、device、PR、merge SHA 与 Release 链接。
+
+
+## 原子问题 002 — protected account helper 未允许 Windows App-owned device id
+
+### Root cause
+
+Diagnostic run `34015769297` 在安装 Desktop `1.2.21` 后进入受保护账号 helper，但 `login-ci-test-account.mjs`、`export-ci-app-account-session.mjs` 与底层 `fabushi-account-session.js` 的受保护 GitHub Actions device-id allowlist 仅允许 `interactive|ios-app|macos-app`。Windows workflow 按合同生成 `gha-<run>-<attempt>-windows-app`，因此 helper fail-closed，bounded App session 未生成，installed App 未启动，自然也没有新 App-owned Windows device。
+
+### Fix boundary
+
+- 只把精确后缀 `windows-app` 加入上述三个现有 protected GitHub Actions device-id 正则；不接受任意 device id，不放宽 `gha-<numeric run>-<numeric attempt>-<exact suffix>` 结构。
+- 在 Windows workflow contract 中增加 helper 三点回归断言，防止 workflow 与账号 helper 的 device-id 合同再次漂移。
+- 不修改账号凭据、token 生命周期、gateway ownership、App 注册方式或任何其它平台语义。
+
+### Diagnostic run 4 — `34015769297`
+
+- Workflow source: `cd96890365298768488d2489267416edf48a376d`; release under test: `desktop-1.2.21-4bc3e832fffe` -> `4bc3e832fffe4eaff21aa6fbf617a33133302c62`; installed version `1.2.21.0`.
+- Exact device id rejected: `gha-34015769297-1-windows-app`.
+- Exact errors: both protected account helpers threw `DEVICE_ID must be a protected GitHub Actions test device id.`; `FABUSHI_CI_ACCOUNT_SESSION_FILE` therefore did not exist.
+- No App-owned Windows device was registered; zero semantic device calls completed.
+- Failure evidence artifact: `9983870969`, `fabushi-windows-interactive-evidence-34015769297-1`, 117,772,660 bytes, uploaded on failure.
+- PR `#2396` subsequently passed required merge-queue CI run `34019687072` and merged to canonical main as `820ae7ecea1cca8f6d399fbb4089867bc7614cfd`; later Android version PR advanced canonical main to `6ea18f731759081a5e64d26ccb10d31d1f720ea6` before this atomic allowlist branch was cut.
+
+### Acceptance for atomic problem 002
+
+- [ ] narrow CI proves the three protected-account helper sources accept exact `gha-<run>-<attempt>-windows-app` while retaining numeric run/attempt and exact suffix constraints.
+- [ ] fix PR merges through the protected merge queue.
+- [ ] canonical main is then bumped to a strictly newer desktop/Windows test version and a new Windows installer Release is published.
+- [ ] the new Release run logs in, exports a bounded session, launches the installed App, and the App itself registers the new Windows device.
