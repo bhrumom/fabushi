@@ -1,0 +1,121 @@
+name: Global Dharma Web Service Contract
+
+on:
+  pull_request:
+    paths:
+      - 'ai-backend/**'
+      - 'fabushi/web/tests/global-dharma-*.test.js'
+      - 'frontend/apps/web/src/app/miniapps/[id]/**'
+      - 'projects/telegram-fabushi-integration/**'
+      - 'projects/fabushi-account-access-control/**'
+      - '.github/workflows/global-dharma-web-service-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: global-dharma-web-service-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-contract:
+    name: Backend MCP/runtime/account contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ai-backend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: ai-backend
+        run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Validate backend syntax
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p evidence/global-dharma-web-service
+          (cd ai-backend && npm run check) 2>&1 | tee evidence/global-dharma-web-service/backend-check.log
+      - name: Run Global Dharma contract and integration tests
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test \
+            ai-backend/test/delegated_plugin_identity.test.js \
+            ai-backend/test/global_dharma_shared_runtime.test.js \
+            ai-backend/test/global_dharma_http_integration.test.js \
+            ai-backend/test/official_mcp_apps.test.js \
+            ai-backend/test/miniapp_marketplace_http.test.js \
+            ai-backend/test/multidevice_account_sync_integration.test.js \
+            2>&1 | tee evidence/global-dharma-web-service/backend-contract.tap
+      - name: Upload backend evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: global-dharma-backend-contract-${{ github.run_id }}
+          path: evidence/global-dharma-web-service/
+          if-no-files-found: error
+
+  web-build:
+    name: Web Mini App production build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 10
+      - name: Install Web workspace
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Build Web Mini App without deployment
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p evidence/global-dharma-web-service
+          (cd frontend && pnpm --filter @fabushi/web build) 2>&1 | tee evidence/global-dharma-web-service/web-build.log
+      - name: Upload Web build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: global-dharma-web-build-${{ github.run_id }}
+          path: evidence/global-dharma-web-service/
+          if-no-files-found: error
+
+  commerce-contract:
+    name: CNY 1080 order/webhook/refund/restore contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run canonical Fabushi Pay and Web sync contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p evidence/global-dharma-web-service
+          node --test \
+            fabushi/web/tests/global-dharma-paid-capability.test.js \
+            fabushi/web/tests/global-dharma-web-sync-contract.test.js \
+            2>&1 | tee evidence/global-dharma-web-service/commerce-web-contract.tap
+      - name: Upload commerce evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: global-dharma-commerce-contract-${{ github.run_id }}
+          path: evidence/global-dharma-web-service/
+          if-no-files-found: error
