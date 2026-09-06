@@ -134,8 +134,9 @@ test('packaged Fabushi publishes a generation-safe semantic App MCP over the pri
 
     await page.getByTestId('messenger-input').fill('semantic message action probe');
     await page.getByTestId('messenger-send').click();
-    const semanticMessage = page.locator('[data-agent-id^="message-actions:"][data-agent-invoke="contextmenu"]').filter({ hasText: 'semantic message action probe' }).last();
+    const semanticMessage = page.locator('[data-agent-id^="message-actions:"][data-agent-invoke="contextmenu"][data-agent-message-role="me"]').filter({ hasText: 'semantic message action probe' }).last();
     await expect(semanticMessage).toBeVisible();
+    await expect(semanticMessage).toHaveAttribute('data-agent-message-role', 'me');
     const semanticMessageAgentId = await semanticMessage.getAttribute('data-agent-id');
     expect(semanticMessageAgentId).toBeTruthy();
 
@@ -174,7 +175,8 @@ test('packaged Fabushi publishes a generation-safe semantic App MCP over the pri
         count: number;
         matches: Array<{ agentId?: string }>;
       };
-      expect(found.count).toBe(1);
+      await expect(page.getByTestId(`message-action-${actionName}`), `DOM menu action ${actionName} must be rendered for the authored message`).toBeVisible();
+      expect(found.count, `semantic find must resolve message action ${actionName}`).toBe(1);
       expect(found.matches[0]?.agentId).toBe(`test:message-action-${actionName}`);
       if (actionName === 'reply') replyGeneration = found.generation;
     }
