@@ -8,7 +8,7 @@ const deviceId = String(process.env.DEVICE_ID || "").trim();
 const sessionPath = String(process.env.FABUSHI_ACCOUNT_SESSION_FILE || "").trim();
 
 function isProtectedActionsTestDeviceId(value) {
-  return /^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app)$/u.test(value);
+  return /^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app|windows-app)$/u.test(value);
 }
 
 if (!username || !password) {

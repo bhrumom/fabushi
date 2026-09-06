@@ -10,7 +10,7 @@ function validCredential(value) {
 }
 
 function validActionsTestDeviceId(value) {
-  return /^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app)$/u.test(value);
+  return /^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app|windows-app)$/u.test(value);
 }
 
 function cleanSession(payload) {
