@@ -29,4 +29,4 @@ jobs:
             --ref main \
             -f "origin_run_id=$ORIGIN_RUN_ID" \
             -f "package_source_sha=$PACKAGE_SOURCE_SHA"
-          echo "Dispatched exact package reuse: origin_run=$ORIGIN_RUN_ID package_source_sha=$PACKAGE_SOURCE_SHA"
+          echo "Dispatched exact package reuse after relocatable-checksum fix: origin_run=$ORIGIN_RUN_ID package_source_sha=$PACKAGE_SOURCE_SHA"
