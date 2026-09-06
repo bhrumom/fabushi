@@ -57,6 +57,70 @@
 - [ ] always upload：完整视频、meaningful checkpoint 截图、instrumentation report、logcat、trace、release identity/checksum、report/logs（失败也上传）。
 - [ ] evidence index 写回本任务及 `projects/telegram-fabushi-integration/evidence/TFI-M11-ANDROID-GLOBAL-DHARMA-001/README.md`，所有 URL 必须真实可下载/可读回。
 
+
+### F — Packaged Bot canonical installed projection repair (2026-09-07)
+
+- Triggering exact-main run: `34048304925` on `8595a50196309c8ebb91c3f8077125d7dc9e3ffa`.
+- Triggering App-owned device: `gha-34048304925-1-interactive`; device is now offline and must not be reused.
+- Existing evidence artifact: `9994017895` (`android-interactive-app-e2e-34048304925-1`).
+- Implementation baseline: live canonical `main@c82b29cd6404c2f19b93d8479b2e2cae45469249`; the intervening main commit changes Web/service/AAC surfaces, not Android app files.
+- Verified boundary: `refreshBots()` coupled canonical projection read to repeated `POST /v1/marketplace/plugins/{id}/add` writes and treated any HTTP/manifest/projection failure as an all-or-nothing Bot refresh. The packaged artifact retained only the generic UI failure plus later stale semantic generations, so the exact prior HTTP status/body is not recoverable from that artifact.
+- Repair branch: `fix/tfi-android-bot-installed-projection-20260907`.
+
+Acceptance for this atomic repair:
+
+- [ ] Marketplace install is not called successful until account-authoritative `/v1/marketplace/added` contains the installed plugin.
+- [ ] Messenger installed-Mini-App refresh is read-only and never calls `/add` or `feature.plugin.listInstalled` to mutate/reconcile account state.
+- [ ] A failed canonical refresh retains the last validated in-process canonical Mini App projection; no Android-private persistent Bot/install database is introduced.
+- [ ] Exact projection/HTTP diagnostic remains visible in UI and through `grok-bot-error` semantic status without hiding retained Bots.
+- [ ] PR contract Action compiles Kotlin, validates the projection/packaged-E2E semantic contract, and uploads a contract evidence artifact.
+- [ ] After protected merge/release, a fresh App-owned Android device reruns Marketplace→全球法布施 install→Messenger Bot→WebMCP→Open App/revision sync→auth→test-mode CNY1080 purchase/restore→entitlement→local prayer wheel. Until generated, new video/screenshots/trace/report remain `PENDING`.
+
 ## Completion gate
 
 只有受保护 PR 合并、canonical main SHA 回读、post-main delivery gate、exact released packaged Android 旅程、六工具 App-owned 控制、entitlement fail-closed/购买/恢复证据和完整 artifacts/video 都通过，才允许 `DONE`。任一外部支付沙箱/设备/签名/权限事实缺失则保持 `BLOCKED` 并记录精确 live evidence。
+
+### G — Protected packaged retest release 1.2.52 (2026-09-07)
+
+- Repair PR #2451 protected-merged as `8103b2d495f4223a4736be65ce4c0cfc0a1fbabc` after required checks.
+- PR contract evidence: run `34050104893`, job `101532053914`, artifact `9994301970`.
+- Canonical version before this round: `1.2.51`; next governed Android test version: `1.2.52`.
+- [x] Protected version PR merged to canonical main (`380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`).
+- [x] Exact-main Native Android GitHub release succeeds: `android-v1.2.52-262491811`, run `34050780156`, artifact `9994614114`.
+- [x] Fresh App-owned device `gha-34051316405-1-interactive` self-registers from the released APK in run `34051316405`.
+- [ ] Six semantic tools drive the complete Global Dharma packaged journey.
+- [ ] Full video, meaningful screenshots, trace/report/logcat/release identity are always uploaded and linked here.
+
+### H — 1.2.52 packaged retest result
+
+- Interactive run `34051316405` / job `101535343430`: **FAILURE** at final evidence gate; artifact `9994884584` is retained.
+- `report.json`: `status=failed-timeout`, release `android-v1.2.52-262491811`, release/workflow SHA `380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`, fresh device `gha-34051316405-1-interactive`.
+- Trace contains successful `fabushi.app.status`, `snapshot`, `find`, `action`, `wait`, `assert` calls; two action calls fail `stale_app_surface_generation`.
+- Terminal connection failure: `connection-refresh-failed` with `transport_error:IllegalStateException`, followed by `disconnected reason=refresh-failed`; no `disconnected reason=logged-out` appears.
+- Evidence includes 21 step screenshots, trace, logcat and six screenrecord segments. `android-session.mp4` was not produced, so a single complete video link is PENDING.
+- The packaged UI also exposed canonical Marketplace account-route HTTP 404s; the service-side repair is tracked separately below. Session/generation lifecycle remains a follow-up if it reproduces after the control-plane repair.
+
+### I — Canonical platform account-install route repair (2026-09-07)
+
+- 1.2.52 exact release: `main@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`, tag `android-v1.2.52-262491811`, release run/job `34050780156` / `101533889951`, artifact `9994614114`.
+- Fresh packaged E2E: run/job `34051316405` / `101535343430`, App-owned device `gha-34051316405-1-interactive`.
+- Real UI reached Marketplace search and `global-dharma`, then captured `GET /v1/marketplace/added -> 404` and install `POST /v1/marketplace/plugins/global-dharma/add -> 404`.
+- Root cause: canonical Rust platform Worker/D1 lacked the account Marketplace install ledger and both account routes; the legacy Node implementation is not production `/v1` authority.
+- [ ] Canonical PLATFORM_DB migration and Rust routes protected-merged.
+- [ ] Exact-main Platform Control Plane deploy applies migration, deploys Worker, and proves direct/public unauthenticated routes return 401 rather than 404.
+- [ ] Strictly newer Android package reruns the full journey on a new App-owned device after the service fix.
+- [x] Current failing run retains always-upload evidence: artifact `9994884584` (`android-interactive-app-e2e-34051316405-1`) contains step screenshots, device trace, report, logcat and recording segments.
+- [ ] Final strictly newer exact-main retest retains one complete continuous video plus step screenshots/trace/report/logcat.
+
+### J — Post-control-plane packaged retest 1.2.53 (2026-09-07)
+
+- PR #2453 protected-merged as canonical `main@c7999c0bf44b4c0057a8636153fcaf5a1b4c39b1`; merge-group CI run/job `34052911926` / `101539591465` SUCCESS.
+- Exact-main Platform Control Plane run `34052940580`: architecture `101539671773` SUCCESS; production deploy `101539905417` SUCCESS.
+- Production artifact `9995190772`; recovery artifact `9995186759`; migration `0018_marketplace_account_installs.sql` applied successfully.
+- Direct/public unauthenticated probes now return 401 for both `/v1/marketplace/added` and `/v1/marketplace/plugins/global-dharma/add`, replacing the packaged 1.2.52 HTTP 404 blocker.
+- Canonical version before this round: `1.2.52`; next governed Android test version: `1.2.53`.
+- [ ] Protected 1.2.53 version PR merged to canonical main.
+- [ ] Exact-main Native Android GitHub release succeeds and signed APK/versionCode/release manifest are immutable.
+- [ ] Fresh App-owned Android interactive run/device self-registers from that released APK.
+- [ ] Six semantic tools complete the full Global Dharma packaged journey.
+- [ ] One complete continuous video, meaningful step screenshots, trace/report/logcat/release identity are uploaded and linked.

@@ -43,3 +43,8 @@
 ## 状态
 
 in-progress
+
+
+## 2026-09-06 — Global Dharma Mini App controlled-session projection
+
+Cross-project consumer: `FAB-P0001 / M9-GLOBAL-DHARMA-003`. The desktop Mini App bridge now receives only a bounded authenticated account projection (`loggedIn`, provider, public account identity fields, `tokenExposed:false`) from the existing Host session. Raw access/refresh tokens are not copied into the Mini App contract. The durable Mini App execution revision is account-scoped and is deleted from localStorage, native persistence and renderer cache on `MAHAYANA_ACCOUNT_SESSION_RESET_EVENT`. Acceptance remains pending protected CI and exact-main packaged Electron evidence; this entry does not close AAC-003.
