@@ -24,7 +24,7 @@ test('macOS interactive E2E keeps the installed app as the only device-registrat
   const source = await workflow();
   assert.match(source, /runs-on:\s*macos-15/u);
   assert.match(source, /Start whole-session macOS recording/u);
-  assert.match(source, /Resolve newest published macOS test release/u);
+  assert.match(source, /Wait for exact-main published macOS test release/u);
   assert.match(source, /Install exact published macOS test app/u);
   assert.match(source, /login-ci-test-account\.mjs/u);
   assert.match(source, /export-ci-app-account-session\.mjs/u);
@@ -44,6 +44,18 @@ test('macOS interactive E2E keeps the installed app as the only device-registrat
   assert.doesNotMatch(source, /run:\s*[^\n]*(?:KRIS|interactive-runner)/iu);
 });
 
+test('macOS release resolver waits for and accepts only the exact workflow source SHA', async () => {
+  const source = await workflow();
+  assert.match(source, /deadline=\$\(\(SECONDS \+ 1200\)\)/u);
+  assert.match(source, /resolved_target.*GITHUB_SHA/su);
+  assert.match(source, /test "\$resolved_target" = "\$GITHUB_SHA"/u);
+  assert.match(source, /Waiting for published macOS release bound to \$GITHUB_SHA/u);
+  assert.match(source, /No published macOS release bound to exact workflow source \$GITHUB_SHA appeared within 20 minutes/u);
+  assert.match(source, /sleep 15/u);
+  assert.doesNotMatch(source, /Resolve newest published macOS test release/u);
+  assert.doesNotMatch(source, /sort_by\(\.published_at \/\/ \.created_at\) \| last/u);
+});
+
 test('protected account helpers accept the App-owned macOS Actions id without assigning gateway ownership', async () => {
   const [loginSource, exportSource, sessionStoreSource] = await Promise.all([
     readFile(loginPath, 'utf8'),
@@ -59,7 +71,6 @@ test('protected account helpers accept the App-owned macOS Actions id without as
   assert.doesNotMatch(loginSource, /must be the protected interactive Runner id/u);
   assert.doesNotMatch(exportSource, /must be the protected interactive Runner id/u);
 });
-
 
 test('macOS hold renews the private ordinary session while keeping the App projection refresh-token-free', async () => {
   const [source, renewSource] = await Promise.all([workflow(), readFile(renewPath, 'utf8')]);
@@ -81,10 +92,10 @@ test('truthful pass requires READY note, ci_session_finish, and the exact settin
   assert.match(source, /agentId == "settings-logout"/u);
 });
 
-test('whole-session recording is ordered before release resolution and installation', async () => {
+test('whole-session recording is ordered before exact-main release resolution and installation', async () => {
   const source = await workflow();
   const record = source.indexOf('Start whole-session macOS recording');
-  const resolve = source.indexOf('Resolve newest published macOS test release');
+  const resolve = source.indexOf('Wait for exact-main published macOS test release');
   const install = source.indexOf('Install exact published macOS test app');
   assert.ok(record >= 0 && resolve > record && install > resolve);
 });

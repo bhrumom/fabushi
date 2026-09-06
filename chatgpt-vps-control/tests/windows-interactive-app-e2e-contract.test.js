@@ -21,14 +21,19 @@ test('Windows workflow contract itself remains native ESM', () => {
   assert.equal(/\brequire\s*\(/.test(source), false, 'contract must not regress to CommonJS require inside the type=module package');
 });
 
-test('Windows interactive workflow is App-owned, release-based, and evidence-complete', () => {
+test('Windows interactive workflow is App-owned, exact-release-bound, and evidence-complete', () => {
   const text = workflow();
   const required = [
     'name: Windows interactive app device E2E',
     'runs-on: windows-latest',
     'DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-windows-app',
     'Start whole-session Windows recording before install',
-    'Resolve newest published Windows test release',
+    'Wait for exact-main published Windows test release',
+    '$deadline = (Get-Date).AddMinutes(20)',
+    '$resolvedTarget -ne $env:GITHUB_SHA',
+    '$targetSha -ne $env:GITHUB_SHA',
+    'No published Windows installer release bound to exact workflow source',
+    'Start-Sleep -Seconds 15',
     'Install exact published Windows test app',
     'Login protected Fabushi test account and export bounded app session',
     'Launch installed Fabushi app and wait for App-owned registration',
@@ -53,6 +58,8 @@ test('Windows interactive workflow is App-owned, release-based, and evidence-com
     assert.ok(text.includes(marker), `workflow is missing contract marker: ${marker}`);
   }
 
+  assert.equal(text.includes('Resolve newest published Windows test release'), false, 'workflow must not select the globally newest release');
+  assert.equal(text.includes('$release = $candidates[-1]'), false, 'workflow must not fall back to the newest candidate regardless of source SHA');
   assert.ok(text.includes('fabushi-') && text.includes('-setup\\.exe'), 'workflow must resolve a published versioned Windows installer');
   assert.ok(text.includes('FABUSHI_CI_TEST_USERNAME'), 'workflow must use the protected CI test account');
   assert.ok(text.includes('FABUSHI_CI_TEST_PASSWORD'), 'workflow must use the protected CI test account password secret');
