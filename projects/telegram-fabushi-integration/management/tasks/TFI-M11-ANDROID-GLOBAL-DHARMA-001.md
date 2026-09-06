@@ -111,3 +111,16 @@ Acceptance for this atomic repair:
 - [ ] Strictly newer Android package reruns the full journey on a new App-owned device after the service fix.
 - [x] Current failing run retains always-upload evidence: artifact `9994884584` (`android-interactive-app-e2e-34051316405-1`) contains step screenshots, device trace, report, logcat and recording segments.
 - [ ] Final strictly newer exact-main retest retains one complete continuous video plus step screenshots/trace/report/logcat.
+
+### J — Post-control-plane packaged retest 1.2.53 (2026-09-07)
+
+- PR #2453 protected-merged as canonical `main@c7999c0bf44b4c0057a8636153fcaf5a1b4c39b1`; merge-group CI run/job `34052911926` / `101539591465` SUCCESS.
+- Exact-main Platform Control Plane run `34052940580`: architecture `101539671773` SUCCESS; production deploy `101539905417` SUCCESS.
+- Production artifact `9995190772`; recovery artifact `9995186759`; migration `0018_marketplace_account_installs.sql` applied successfully.
+- Direct/public unauthenticated probes now return 401 for both `/v1/marketplace/added` and `/v1/marketplace/plugins/global-dharma/add`, replacing the packaged 1.2.52 HTTP 404 blocker.
+- Canonical version before this round: `1.2.52`; next governed Android test version: `1.2.53`.
+- [ ] Protected 1.2.53 version PR merged to canonical main.
+- [ ] Exact-main Native Android GitHub release succeeds and signed APK/versionCode/release manifest are immutable.
+- [ ] Fresh App-owned Android interactive run/device self-registers from that released APK.
+- [ ] Six semantic tools complete the full Global Dharma packaged journey.
+- [ ] One complete continuous video, meaningful step screenshots, trace/report/logcat/release identity are uploaded and linked.
