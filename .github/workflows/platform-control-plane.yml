@@ -141,6 +141,11 @@ jobs:
             status="$(curl --silent --show-error --retry 8 --retry-all-errors --retry-delay 3               --request POST --header 'Content-Type: application/json' --data '{"platform":"smoke"}'               --output "$RUNNER_TEMP/${name}.json" --write-out '%{http_code}' "$endpoint")"
             [ "$status" = 401 ] || { echo "Unauthenticated marketplace install route failed closed: $endpoint -> $status" >&2; cat "$RUNNER_TEMP/${name}.json" >&2; exit 1; }
           done
+          for endpoint in             "$direct/v1/marketplace/plugins/global-dharma/route"             "$public/v1/marketplace/plugins/global-dharma/route"; do
+            name="$(printf '%s' "$endpoint" | tr -cs 'A-Za-z0-9' '_')"
+            status="$(curl --silent --show-error --retry 8 --retry-all-errors --retry-delay 3               --request POST --header 'Content-Type: application/json' --data '{"input":"please show status now"}'               --output "$RUNNER_TEMP/${name}.json" --write-out '%{http_code}' "$endpoint")"
+            [ "$status" = 401 ] || { echo "Unauthenticated marketplace route failed closed: $endpoint -> $status" >&2; cat "$RUNNER_TEMP/${name}.json" >&2; exit 1; }
+          done
           for endpoint in             "$direct/v1/ci/runner-session"             "$public/v1/ci/runner-session"; do
             name="$(printf '%s' "$endpoint" | tr -cs 'A-Za-z0-9' '_')"
             status="$(curl --silent --show-error --retry 8 --retry-all-errors --retry-delay 3               --request POST --header 'Content-Type: application/json'               --data '{"deviceId":"gha-smoke-1-interactive","sourceSha":"0000000000000000000000000000000000000000"}'               --output "$RUNNER_TEMP/${name}.json" --write-out '%{http_code}' "$endpoint")"
@@ -153,6 +158,7 @@ jobs:
             echo "health=ok"
             echo "unauthenticated_remote_routes=401"
             echo "unauthenticated_marketplace_account_routes=401"
+            echo "unauthenticated_marketplace_route=401"
           } > "$RUNNER_TEMP/platform-deployment-evidence.txt"
       - name: Upload production deployment evidence
         uses: actions/upload-artifact@v4
