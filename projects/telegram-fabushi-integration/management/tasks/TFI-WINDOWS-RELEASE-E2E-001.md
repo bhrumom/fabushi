@@ -6,6 +6,7 @@
 - Started: 2026-09-06
 - Canonical starting main: `3f633e07cae0b022cce1ff3e6aeb8bfa92aa463d`
 - Branch: `fix/tfi-windows-interactive-release-e2e-20260906`
+- Product PR: `#2396`
 
 ## 用户目标
 
@@ -49,13 +50,13 @@ Windows 仅作为 `electron-desktop.yml` 的 build/package matrix 成员；没�
 ## Acceptance
 
 - [ ] Windows-only workflow 在 GitHub-hosted Windows runner 执行。
-- [ ] 录屏在 installer 执行前已启动。
+- [x] 录屏在 installer 执行前已启动（run `34014756838` step 6 success；该 run 在安装前由合同错误 fail-closed）。
 - [ ] 使用最新实际发布 Windows installer，而非本地或 source build。
 - [ ] 受保护测试账号登录成功，App 自注册新的 Windows App-owned device。
 - [ ] `list_devices` 可读到该新 device，metadata 绑定本轮 repo/workflow/run/SHA。
 - [ ] 六个 `fabushi.app.*` semantic tools 均有真实 successful trace。
 - [ ] 完整 Windows 功能矩阵按真实 UI/状态执行，最终 logout。
-- [ ] 视频/截图/trace/log/report 在 pass/fail 两种情况下都上传 Actions artifact。
+- [x] 失败路径已证明视频/截图/trace/log/report artifact 在 `always()` 上传。
 - [ ] 发现的每个产品缺陷独立写回项目并通过 PR + protected main 修复。
 - [ ] 修复后 bump 到严格更高版本，发布新的 Windows 测试 Release，再对新 Release 重跑同一闭环。
 - [ ] 最终 canonical main / PR / merge SHA / Release / run / device / evidence links 全部可读回。
@@ -69,4 +70,23 @@ Windows 仅作为 `electron-desktop.yml` 的 build/package matrix 成员；没�
 
 ## Evidence ledger
 
-待本轮 Actions/PR/Release 产生后写回真实 run、artifact、device、PR、merge SHA 与 Release 链接。
+### Diagnostic run 1 — `34014658237`
+
+- Source: early Windows workflow branch revision。
+- Result: fail-closed before release/install/App launch；合同将“`No standalone Runner/KRIS...`”负向说明中的 `KRIS` 错当成执行标记。
+- Fix: 收窄 forbidden contract 到真实 standalone runner execution markers；保留 App-owned 与六工具断言，不删除安全门禁。
+- Failure evidence artifact: `9983548899`, `fabushi-windows-interactive-evidence-34014658237-1`, SHA256 `38b743c4d5ae15d4c789aaf9e5e697f0d422700af681d925ac286839445ba514`, 90-day retention。
+- 因安装/启动未发生，本 run 不产生可选 Windows device。
+
+### Diagnostic run 3 — `34014756838`
+
+- Exact source: `9a6b9f8d85d82040873a47e1c7dce42b7291c79d`。
+- Runner: GitHub-hosted Windows Server 2025；FFmpeg `9.0.1` 由 Chocolatey 仅在 CI 安装。
+- Whole-session recorder step success，且明确早于 release/install；使用移除 `RUNNER_TRACKING_ID` 的后台进程生命周期以跨 step 保留录像。
+- Exact failure: `chatgpt-vps-control/package.json` 为 `type: module`，但新增合同文件使用 CommonJS `require`，Node `24.19.0` 报 `ReferenceError: require is not defined in ES module scope`；因此 release/install/login/App launch/remote hold 均被正确跳过。
+- Cascading issue: 因 installer 未产生 executable，二级 Playwright 在空 `FABUSHI_ELECTRON_EXECUTABLE` 下回退下载 Electron，并在 browser-login waiting phase 超时；这不是 installed Windows product 结论。
+- Fix: 合同文件改为原生 ESM imports；后续 secondary packaged Playwright 只应在 install success 后执行，避免无意义级联和额外耗时；evidence collection/upload 继续 `always()`。
+- Failure evidence artifact: `9983578958`, `fabushi-windows-interactive-evidence-34014756838-1`, SHA256 `96ce98d8224dc8127dfda87a73fbafda4c7d84468b0526d4d897ed322258622d`, 45 files, 1,035,739 bytes, 90-day retention。
+- 因安装/启动未发生，本 run 同样不产生可选 Windows device。
+
+待后续成功 Actions/PR/Release 产生后继续写回真实 run、artifact、device、PR、merge SHA 与 Release 链接。
