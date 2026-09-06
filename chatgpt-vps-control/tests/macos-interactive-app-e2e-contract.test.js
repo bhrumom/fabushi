@@ -52,6 +52,10 @@ test('macOS release resolver waits for and accepts only the exact workflow sourc
   assert.match(source, /Waiting for published macOS release bound to \$GITHUB_SHA/u);
   assert.match(source, /No published macOS release bound to exact workflow source \$GITHUB_SHA appeared within 20 minutes/u);
   assert.match(source, /sleep 15/u);
+  assert.match(source, /select\(\.draft == false\)/u);
+  assert.doesNotMatch(source, /\.prerelease == true/u);
+  assert.match(source, /RELEASE_TAG.*\^desktop-/su);
+  assert.match(source, /BASH_REMATCH\[1\]/u);
   assert.doesNotMatch(source, /Resolve newest published macOS test release/u);
   assert.doesNotMatch(source, /sort_by\(\.published_at \/\/ \.created_at\) \| last/u);
 });
