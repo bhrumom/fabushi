@@ -177,7 +177,7 @@ internal class MiniAppPlatformBridge(
             "Prayer-wheel capability is not marked protected by the canonical entitlement service"
         }
         check(access.optBoolean("allowed", false)) {
-            "本地转经轮尚未获得有效权益：${access.optString("reason", "not_entitled")}" 
+            "本地转经轮尚未获得有效权益：${access.optString("reason", "not_entitled")}"
         }
     }
 
