@@ -346,7 +346,7 @@ internal class FabushiRemoteDeviceGateway(
                 .put("description", description)
                 .put("inputSchema", input)
                 .put("annotations", JSONObject().put("readOnlyHint", readOnly))
-        val stateProperties = arrayOf<Pair<String, Any>>((
+        val stateProperties = arrayOf<Pair<String, Any>>(
             "route" to stringSchema(), "screen" to stringSchema(), "agentId" to stringSchema(),
             "role" to stringSchema(), "name" to stringSchema(), "text" to stringSchema(),
             "state" to stringSchema("present", "absent", "enabled", "disabled", "visible", "hidden"),
