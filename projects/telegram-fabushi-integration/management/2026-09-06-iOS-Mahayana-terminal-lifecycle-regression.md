@@ -53,3 +53,13 @@ Branch: `fix/tfi-ios-mahayana-terminal-lifecycle-20260906`
 6. Invoke all six semantic tools and re-run the complete reachable iOS matrix.
 7. For Mahayana, send a long-running request, observe `mahayana-stop`, invoke Stop, then observe terminal settlement and Send becoming available again.
 8. Preserve video, step screenshots, device trace, xcresult, app/Simulator logs, report, and exact test-build digest as GitHub Actions artifacts.
+
+## 2026-09-06 protected post-merge retest candidate
+
+- Fix PR: `#2399`, protected merge SHA `50b3a4a3a7ec3d97b9f561e154f1b8b9bda6766f`.
+- Latest canonical base before this candidate: `main@9a82893c75340188c549786cbbf987b57a2e6480`.
+- Canonical version at that base: `1.2.40`.
+- Governed iOS retest candidate: `1.2.41`, strictly greater than the latest canonical version.
+- Release branch: `release/tfi-ios-1-2-41-terminal-lifecycle-20260906`.
+- Scope is version mirrors/release assertions plus durable iOS retest evidence only; there is no new product behavior change after #2399.
+- Status is `IN_PROGRESS` until the version PR merges through the protected path, the accepted main lineage publishes the iOS test build, a fresh run-bound App-owned iOS device self-registers after install and protected-account login, all six semantic tools and the complete reachable iOS matrix pass, Mahayana Stop is invoked against a live operation and terminal settlement is observed, and video/screenshots/trace/xcresult/log/report/test-build digest evidence is verified.
