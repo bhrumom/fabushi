@@ -105,3 +105,37 @@ test("authenticated Android Grok shell owns the App semantic surface", async () 
     'setOf("invoke")',
   ]) assert.ok(grok.includes(required), `missing authenticated Android Grok semantic invariant: ${required}`);
 });
+
+
+test("Android Mini App Bot refresh is read-only and preserves validated canonical projection", async () => {
+  const bridge = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/MiniAppPlatformBridge.kt");
+  const bots = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/MobileBotViewModel.kt");
+  const marketplace = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/MarketplaceViewModel.kt");
+  const grok = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/GrokMobileShellAndroid.kt");
+
+  assert.match(bridge, /fun readInstalledMiniApps\(\)[\s\S]*platform\("GET", "\/v1\/marketplace\/added"\)/u);
+  assert.match(bridge, /fun confirmInstalledMiniApp\(pluginId: String\)[\s\S]*\/v1\/marketplace\/plugins\/\$pluginId\/add[\s\S]*readInstalledMiniApps\(\)/u);
+  assert.match(bridge, /CanonicalInstalledProjectionCache/u);
+  assert.doesNotMatch(bots, /syncInstalledMiniApps/u);
+  assert.doesNotMatch(bots, /feature\.plugin\.listInstalled/u);
+  assert.match(bots, /lastInstalledMiniApps\(\)/u);
+  assert.match(bots, /canonical installed projection:/u);
+  assert.match(marketplace, /feature\.plugin\.install[\s\S]*confirmInstalledMiniApp\(installedPluginId\)/u);
+  assert.match(grok, /grok-bot-error[\s\S]*Bot 刷新异常：\$diagnostic/u);
+});
+
+test("packaged Android Global Dharma journey exposes stable semantic checkpoints", async () => {
+  const screen = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiScreen.kt");
+  const grok = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/GrokMobileShellAndroid.kt");
+  const activity = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/MainActivity.kt");
+  const bridge = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/MiniAppPlatformBridge.kt");
+  for (const checkpoint of ["marketplace-search", "marketplace-search-submit", "install-$id", "plugin-$id"]) {
+    assert.ok(screen.includes(checkpoint), `missing Marketplace packaged checkpoint: ${checkpoint}`);
+  }
+  assert.match(grok, /"grok-bot-\$\{bot\.id\}"/u);
+  assert.match(activity, /"mobile-bot-open-miniapp"/u);
+  assert.match(bridge, /"method", "tools\/call"/u);
+  assert.match(bridge, /PRAYER_WHEEL_LIFETIME_CNY_MINOR = 108_000L/u);
+  assert.match(bridge, /fun restorePurchases\(\)/u);
+  assert.match(bridge, /fun entitlement\(pluginId: String, capability: String\)/u);
+});
