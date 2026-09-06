@@ -124,3 +124,19 @@ Acceptance for this atomic repair:
 - [ ] Fresh App-owned Android interactive run/device self-registers from that released APK.
 - [ ] Six semantic tools complete the full Global Dharma packaged journey.
 - [ ] One complete continuous video, meaningful step screenshots, trace/report/logcat/release identity are uploaded and linked.
+
+
+### K — Exact `8adfa009…` packaged natural-language route repair (2026-09-07)
+
+- Android acceptance source is frozen to `8adfa009f2fdf349e9f0c659fcfa4176ff7d7c2c`; do not substitute `e926…` or older packages.
+- Exact-source release: run/job `34054334142` / `101543327724`, artifact `9995600366`, tag `android-v1.2.53-262491916`.
+- Fresh App-owned E2E: run/job `34054727622` / `101544432775`, device `gha-34054727622-1-interactive`.
+- [x] Account-authoritative Bot projection appeared before local reinstall.
+- [x] Marketplace search/install reached `global-dharma 已安装 · local-web`; semantic assert passed.
+- [x] All six external Fabushi semantic tools have successful calls in the run trace.
+- [x] Global Dharma Bot and enabled `mobile-bot-open-miniapp` were present.
+- [ ] Natural-language WebMCP succeeds. Current real failure: direct/public `POST /v1/marketplace/plugins/global-dharma/route` are HTTP 404 and Bot returned an `:error` log.
+- [ ] Protected Rust/D1 `/route` repair merges and exact-main Platform Control Plane deploy proves direct/public 401 smoke.
+- [ ] Same immutable Android release tag/source (`android-v1.2.53-262491916` / `8adfa009…`) is rerun on a new App-owned device after backend deploy.
+- [ ] `tools/list` and `tools/call`, Open App same-revision/state sync, controlled auto-login, test-mode CNY 1080 lifetime purchase/restore, server entitlement, local prayer wheel, and logout are proven.
+- [ ] One continuous video + meaningful screenshots + trace/report/logcat are uploaded; current run artifact is PENDING until runner always-upload completes.
