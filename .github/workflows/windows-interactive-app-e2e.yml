@@ -105,7 +105,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $video = Join-Path $env:EVIDENCE_DIR 'windows-session.mp4'
           $log = Join-Path $env:EVIDENCE_DIR 'ffmpeg-recording.log'
-          $args = @('-y','-f','gdigrab','-framerate','12','-i','desktop','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p',$video)
+          $args = @('-y','-f','gdigrab','-framerate','12','-i','desktop','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-movflags','+frag_keyframe+empty_moov',$video)
+          Remove-Item Env:RUNNER_TRACKING_ID -ErrorAction SilentlyContinue
           $process = Start-Process -FilePath $env:FFMPEG_EXE -ArgumentList $args -RedirectStandardError $log -RedirectStandardOutput (Join-Path $env:EVIDENCE_DIR 'ffmpeg-recording.stdout.log') -PassThru
           $process.Id | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'ffmpeg.pid')
           Start-Sleep -Seconds 3
@@ -222,6 +223,7 @@ jobs:
           [ordered]@{phase='app-launching';message='Launching the installed Windows Fabushi App; only the App may register the account-scoped device.';appReady=$false;appExecutable=$env:APP_EXECUTABLE;deviceId=$env:DEVICE_ID;runUrl="$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID";updatedAt=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Compress | Set-Content -Path (Join-Path $env:FABUSHI_CI_SESSION_DIR 'status.json') -Encoding utf8NoBOM
           $stdout = Join-Path $env:EVIDENCE_DIR 'fabushi-app.stdout.log'
           $stderr = Join-Path $env:EVIDENCE_DIR 'fabushi-app.stderr.log'
+          Remove-Item Env:RUNNER_TRACKING_ID -ErrorAction SilentlyContinue
           $process = Start-Process -FilePath $env:APP_EXECUTABLE -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
           $process.Id | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'fabushi-app.pid')
           $registered = $false
@@ -255,31 +257,54 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          function Save-StepScreenshot([string]$Path) {
+            try {
+              $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+              $bitmap = New-Object System.Drawing.Bitmap $bounds.Width,$bounds.Height
+              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+              $graphics.CopyFromScreen($bounds.Location,[System.Drawing.Point]::Empty,$bounds.Size)
+              $bitmap.Save($Path,[System.Drawing.Imaging.ImageFormat]::Png)
+              $graphics.Dispose(); $bitmap.Dispose()
+            } catch { Write-Warning "Screenshot failed: $($_.Exception.Message)" }
+          }
           $finishFile = Join-Path $env:FABUSHI_CI_SESSION_DIR 'finish-requested.json'
           $notesFile = Join-Path $env:FABUSHI_CI_SESSION_DIR 'remote-notes.jsonl'
           $pidFile = Join-Path $env:EVIDENCE_DIR 'fabushi-app.pid'
           $appPid = [int](Get-Content $pidFile -Raw)
           $deadline = (Get-Date).AddMinutes(25)
+          $lastCaptured = 0
           'waiting-for-fabushi-test' | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt')
           while ((Get-Date) -lt $deadline) {
             if (-not (Get-Process -Id $appPid -ErrorAction SilentlyContinue)) { 'app-exited' | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt'); throw 'Fabushi App exited during remote control.' }
-            $completedTools = @()
+            $completedRows = @()
             if (Test-Path $env:FABUSHI_DEVICE_CALL_TRACE_FILE) {
-              Get-Content $env:FABUSHI_DEVICE_CALL_TRACE_FILE | ForEach-Object {
-                try { $row = $_ | ConvertFrom-Json; if ($row.phase -eq 'completed' -and $row.ok -eq $true) { $completedTools += $row.toolName } } catch {}
+              foreach ($traceLine in (Get-Content $env:FABUSHI_DEVICE_CALL_TRACE_FILE -ErrorAction SilentlyContinue)) {
+                try { $row = $traceLine | ConvertFrom-Json; if ($row.phase -eq 'completed' -and $row.ok -eq $true) { $completedRows += $row } } catch {}
               }
             }
+            while ($lastCaptured -lt $completedRows.Count) {
+              $lastCaptured++
+              $tool = [string]$completedRows[$lastCaptured - 1].toolName
+              if (-not $tool) { $tool = 'device-call' }
+              $safeTool = ($tool -replace '[^A-Za-z0-9._-]','-')
+              Save-StepScreenshot (Join-Path $env:EVIDENCE_DIR ("steps/{0:D3}-{1}.png" -f ($lastCaptured + 4),$safeTool))
+            }
+            $completedTools = @($completedRows | ForEach-Object { $_.toolName })
             $required = @('fabushi.app.status','fabushi.app.snapshot','fabushi.app.find','fabushi.app.action','fabushi.app.wait','fabushi.app.assert')
             $haveAll = @($required | Where-Object { $_ -in $completedTools }).Count -eq $required.Count
             $readyNote = $false
             if (Test-Path $notesFile) { $readyNote = (Get-Content $notesFile -Raw) -match 'TFI_WINDOWS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=' }
             $logoutComplete = $false
-            if (Test-Path $env:FABUSHI_DEVICE_CALL_TRACE_FILE) {
-              Get-Content $env:FABUSHI_DEVICE_CALL_TRACE_FILE | ForEach-Object {
-                try { $row = $_ | ConvertFrom-Json; if ($row.phase -eq 'completed' -and $row.ok -eq $true -and $row.toolName -eq 'fabushi.app.action' -and $row.arguments.agentId -eq 'settings-logout' -and $row.arguments.action -eq 'invoke') { $script:logoutComplete = $true } } catch {}
-              }
+            foreach ($row in $completedRows) {
+              if ($row.toolName -eq 'fabushi.app.action' -and $row.arguments.agentId -eq 'settings-logout' -and $row.arguments.action -eq 'invoke') { $logoutComplete = $true }
             }
-            if ($haveAll -and $readyNote -and $logoutComplete) { 'passed' | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt'); exit 0 }
+            if ($haveAll -and $readyNote -and $logoutComplete) {
+              Save-StepScreenshot (Join-Path $env:EVIDENCE_DIR 'steps/998-full-journey-logout.png')
+              'passed' | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt')
+              exit 0
+            }
             if (Test-Path $finishFile) { 'failed' | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt'); throw 'Remote finish arrived before six tools plus READY_FOR_LOGOUT PASS plus settings-logout.' }
             Start-Sleep -Seconds 1
           }
@@ -333,6 +358,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Continue'
+          try {
+            Add-Type -AssemblyName System.Windows.Forms
+            Add-Type -AssemblyName System.Drawing
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap = New-Object System.Drawing.Bitmap $bounds.Width,$bounds.Height
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.CopyFromScreen($bounds.Location,[System.Drawing.Point]::Empty,$bounds.Size)
+            $bitmap.Save((Join-Path $env:EVIDENCE_DIR 'steps/999-final.png'),[System.Drawing.Imaging.ImageFormat]::Png)
+            $graphics.Dispose(); $bitmap.Dispose()
+          } catch { Write-Warning "Final screenshot failed: $($_.Exception.Message)" }
           if (Test-Path (Join-Path $env:EVIDENCE_DIR 'ffmpeg.pid')) {
             $recordPid = [int](Get-Content (Join-Path $env:EVIDENCE_DIR 'ffmpeg.pid') -Raw)
             Stop-Process -Id $recordPid -ErrorAction SilentlyContinue
