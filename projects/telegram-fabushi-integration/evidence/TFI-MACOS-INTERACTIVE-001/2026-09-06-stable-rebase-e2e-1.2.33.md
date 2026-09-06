@@ -1,4 +1,4 @@
-# TFI-MACOS-INTERACTIVE-001 — stable App-target rebase E2E parity / 1.2.32
+# TFI-MACOS-INTERACTIVE-001 — stable App-target rebase E2E parity / 1.2.33
 
 - Base protected main: `46050cdb3cf91c7cdc59548d8153e255c72782ed`
 - Discovery PR/run: `#2384`, Electron desktop run `34000293854`, Linux job `101397827616`
@@ -17,4 +17,4 @@ The packaged E2E now requires the stale leased stable profile trigger to complet
 
 No App Agent Surface implementation, safety boundary, generation rule, route/screen rule, fingerprint rule, branch protection, gateway ownership, or product behavior changes. The existing source-level stable-rebase contract remains required.
 
-This independent-failure slice stages strictly newer comparable macOS test version `1.2.32`; Android version code and iOS build number remain `29`. PR #2384 remains separate for its release/source-contract drift; after this repair protected-merges, #2384 must absorb latest main, advance again, and rerun the restored gates.
+This independent-failure slice stages strictly newer comparable macOS test version `1.2.33`; Android version code and iOS build number remain `29`. PR #2384 remains separate for its release/source-contract drift; after this repair protected-merges, #2384 must absorb latest main, advance again, and rerun the restored gates.
