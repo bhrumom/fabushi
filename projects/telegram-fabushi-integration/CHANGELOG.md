@@ -14,3 +14,8 @@
 - 明确 Telegram 式全平台 UI/功能一致性：Web 是完整 Fabushi Host，不是独立 Marketplace 产品。
 - Marketplace、SEO、内容搜索与 WebMCP 保留为主 Host 的扩展与公开分发能力。
 - Web 与桌面继续共享 HostClient，Host Marketplace 改用统一 Mini App catalog。
+
+## 2026-09-07 — Native iOS close-control AX fallback
+
+- Recorded canonical `43ce998fd5fbcae032c179a8814de9ec08d03f4c` Native mobile run `34055531700`: Android passed while iOS failed because XCTest attempted `AXScrollToVisible` on the already-visible `remote-computer-close` Button and received `kAXErrorCannotComplete`.
+- Added a test-only fallback that retains a screenshot and taps the center coordinate of the exact discovered element frame when the normal semantic element is present but not hittable; product behavior and the post-close disappearance assertion are unchanged.
