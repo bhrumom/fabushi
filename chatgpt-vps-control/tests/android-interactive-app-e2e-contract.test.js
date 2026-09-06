@@ -71,3 +71,12 @@ test("Native Android GitHub release is explicitly a test-tier release gate", asy
   assert.match(release, /Required gates: CI result \(Android GitHub test tier\)/u);
   assert.doesNotMatch(release, /Required gates: CI result \+ Native mobile result/u);
 });
+
+test("Native Android release self-starts the exact published App-owned interactive lane", async () => {
+  const release = await read(".github/workflows/native-android-release.yml");
+  assert.ok(release.includes("actions: write"));
+  assert.ok(release.includes("gh workflow run android-interactive-app-e2e.yml"));
+  assert.ok(release.includes("--ref main"));
+  assert.ok(release.includes("-f release_tag='${{ steps.release.outputs.release_tag }}'"));
+  assert.ok(release.includes("-f release_sha='${{ steps.source.outputs.sha }}'"));
+});
