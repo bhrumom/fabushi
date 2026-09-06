@@ -794,11 +794,7 @@ impl MahayanaProductClient {
         )
     }
 
-    pub fn marketplace_add(
-        &self,
-        plugin_id: &str,
-        platform: &str,
-    ) -> Result<Value, ProductError> {
+    pub fn marketplace_add(&self, plugin_id: &str, platform: &str) -> Result<Value, ProductError> {
         let plugin_id = safe_path_identifier(plugin_id, "pluginId")?;
         let platform = safe_marketplace_platform(platform)?;
         let token = self.authorization_token(&Value::Null)?;
@@ -3526,11 +3522,11 @@ mod tests {
             Ok(session.clone())
         );
         let mut macos_app = session.clone();
-macos_app["deviceId"] = Value::String("gha-12345-1-macos-app".into());
-assert_eq!(
-    validate_ci_account_session(macos_app.clone(), now),
-    Ok(macos_app)
-);
+        macos_app["deviceId"] = Value::String("gha-12345-1-macos-app".into());
+        assert_eq!(
+            validate_ci_account_session(macos_app.clone(), now),
+            Ok(macos_app)
+        );
         let mut with_refresh = session.clone();
         with_refresh["refreshToken"] = Value::String("forbidden".into());
         assert!(validate_ci_account_session(with_refresh, now).is_err());
