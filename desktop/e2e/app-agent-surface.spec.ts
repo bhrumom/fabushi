@@ -168,7 +168,6 @@ test('packaged Fabushi publishes a generation-safe semantic App MCP over the pri
     });
     await expect(page.getByTestId('message-context-menu')).toBeVisible();
 
-    let replyGeneration = 0;
     for (const actionName of ['reply', 'copy', 'react', 'edit', 'pin', 'forward', 'delete']) {
       const found = await client.call('find', { agentId: `test:message-action-${actionName}`, limit: 2 }) as {
         generation: number;
@@ -178,11 +177,14 @@ test('packaged Fabushi publishes a generation-safe semantic App MCP over the pri
       await expect(page.getByTestId(`message-action-${actionName}`), `DOM menu action ${actionName} must be rendered for the authored message`).toBeVisible();
       expect(found.count, `semantic find must resolve message action ${actionName}`).toBe(1);
       expect(found.matches[0]?.agentId).toBe(`test:message-action-${actionName}`);
-      if (actionName === 'reply') replyGeneration = found.generation;
     }
-    expect(replyGeneration).toBeGreaterThan(0);
+    const freshReply = await client.call('find', { agentId: 'test:message-action-reply', limit: 1 }) as {
+      generation: number;
+      count: number;
+    };
+    expect(freshReply.count).toBe(1);
     await client.call('action', {
-      generation: replyGeneration,
+      generation: freshReply.generation,
       agentId: 'test:message-action-reply',
       action: 'invoke',
     });
