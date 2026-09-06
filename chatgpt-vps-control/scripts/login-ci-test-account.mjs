@@ -1,14 +1,28 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
+import { resolve, sep } from "node:path";
 import { createFabushiAccountSessionStore } from "../lib/fabushi-account-session.js";
 
 const username = String(process.env.FABUSHI_CI_TEST_USERNAME || "").trim();
 const password = String(process.env.FABUSHI_CI_TEST_PASSWORD || "");
 const deviceId = String(process.env.DEVICE_ID || "").trim();
-const sessionPath = String(process.env.FABUSHI_ACCOUNT_SESSION_FILE || "").trim();
 
 function isProtectedActionsTestDeviceId(value) {
   return /^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app|windows-app)$/u.test(value);
+}
+
+function privateActionsSessionPath(value, runnerTemp) {
+  const rawPath = String(value || "").trim();
+  const rawRoot = String(runnerTemp || "").trim();
+  if (!rawPath || !rawRoot) {
+    throw new Error("Fabushi account session must live under RUNNER_TEMP.");
+  }
+  const path = resolve(rawPath);
+  const root = resolve(rawRoot);
+  if (!path.startsWith(`${root}${sep}`)) {
+    throw new Error("Fabushi account session must live under RUNNER_TEMP.");
+  }
+  return path;
 }
 
 if (!username || !password) {
@@ -17,9 +31,7 @@ if (!username || !password) {
 if (!isProtectedActionsTestDeviceId(deviceId)) {
   throw new Error("DEVICE_ID must be a protected GitHub Actions test device id.");
 }
-if (!sessionPath || !process.env.RUNNER_TEMP || !sessionPath.startsWith(`${process.env.RUNNER_TEMP}/`)) {
-  throw new Error("Fabushi account session must live under RUNNER_TEMP.");
-}
+const sessionPath = privateActionsSessionPath(process.env.FABUSHI_ACCOUNT_SESSION_FILE, process.env.RUNNER_TEMP);
 
 const store = createFabushiAccountSessionStore({
   sessionPath,

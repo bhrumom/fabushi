@@ -68,6 +68,15 @@ test('protected account helpers accept the App-owned Windows Actions id without 
   }
 });
 
+test('protected login session path validation stays platform-aware for Windows RUNNER_TEMP', () => {
+  const source = fs.readFileSync(loginPath, 'utf8');
+  assert.ok(source.includes('import { resolve, sep } from "node:path";'));
+  assert.ok(source.includes('const path = resolve(rawPath);'));
+  assert.ok(source.includes('const root = resolve(rawRoot);'));
+  assert.ok(source.includes('path.startsWith(`${root}${sep}`)'));
+  assert.equal(source.includes('process.env.RUNNER_TEMP}/'), false, 'login helper must not hard-code a POSIX separator for RUNNER_TEMP');
+});
+
 test('Windows interactive workflow does not start a standalone runner-owned Fabushi gateway', () => {
   const text = workflow();
   const forbiddenExecutionMarkers = [
