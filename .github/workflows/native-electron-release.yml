@@ -23,18 +23,18 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 120
     steps:
-      - name: Checkout exact protected main
+      - name: Checkout exact protected run source
         uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
           submodules: recursive
-      - name: Bind exact main SHA and version
+      - name: Bind exact protected run SHA and version
         shell: bash
         run: |
           set -euo pipefail
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
-          test "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/main)"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           version="$(jq -r .version app-version.json)"
           test "$version" = "$(jq -r .version desktop/package.json)"
           test "$version" = '1.2.44'
