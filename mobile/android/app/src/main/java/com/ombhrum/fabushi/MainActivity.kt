@@ -62,8 +62,18 @@ class MainActivity : ComponentActivity() {
                 }
                 LaunchedEffect(state.loggedIn) {
                     remoteDeviceGateway.setLoggedIn(state.loggedIn)
-                    if (state.loggedIn) messagingModel.refresh()
+                    if (state.loggedIn) {
+                        messagingModel.refresh()
+                        model.refresh()
+                        botModel.refreshBots()
+                    }
                     if (!state.loggedIn) showLegacyShell = false
+                }
+                LaunchedEffect(showLegacyShell, state.loggedIn) {
+                    if (!showLegacyShell && state.loggedIn) {
+                        model.refresh()
+                        botModel.refreshBots()
+                    }
                 }
                 LaunchedEffect(state.browserLaunchNonce, state.browserLoginUrl) {
                     val loginUrl = state.browserLoginUrl
