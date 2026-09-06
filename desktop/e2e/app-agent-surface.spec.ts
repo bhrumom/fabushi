@@ -99,11 +99,10 @@ test('packaged Fabushi publishes a generation-safe semantic App MCP over the pri
     expect(trigger).toBeTruthy();
     expect(snapshot.elements.some((element) => element.sensitive && element.value !== undefined)).toBe(false);
 
-    await client.call('action', {
-      generation: snapshot.generation,
-      agentId: 'test:profile-navigation-trigger',
-      action: 'invoke',
-    });
+    // Opening the menu is setup for the rebase assertion below, not itself a
+    // stale-generation assertion. Drive the visible control directly so a late
+    // hydration generation cannot race this precondition on slower macOS CI.
+    await page.getByTestId('profile-navigation-trigger').click();
     await expect(page.getByTestId('profile-navigation-menu')).toBeVisible();
 
     await expect.poll(async () => {
@@ -114,6 +113,8 @@ test('packaged Fabushi publishes a generation-safe semantic App MCP over the pri
       return assertion.passed;
     }).toBe(true);
 
+    // The menu-open mutation makes snapshot.generation stale. A remembered stable
+    // agentId must still rebase safely when route/screen/fingerprint are unchanged.
     const rebasedAction = await client.call('action', {
       generation: snapshot.generation,
       agentId: 'test:profile-navigation-trigger',
