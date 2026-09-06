@@ -25,7 +25,7 @@ function validCredential(value) {
 }
 
 function isProtectedActionsTestDeviceId(value) {
-  return /^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app)$/u.test(value);
+  return /^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app|android-app)$/u.test(value);
 }
 
 if (process.env.GITHUB_ACTIONS !== "true") {
