@@ -112,7 +112,7 @@ test('durable runtime is account scoped, monotonic, idempotent, and recoverable 
 
     const recovered = stores.runtimeStore.difference('user:108', 'as1:999999');
     assert.equal(recovered.mode, 'snapshot');
-    assert.equal(recovered.reason, 'cursor_ahead');
+    assert.equal(recovered.reason, 'cursor-ahead');
     assert.equal(recovered.runtime.state.running, true);
   } finally {
     stores.close();
