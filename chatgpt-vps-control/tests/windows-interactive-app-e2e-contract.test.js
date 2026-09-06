@@ -4,13 +4,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+const contractPath = fileURLToPath(import.meta.url);
+const here = path.dirname(contractPath);
 const root = path.resolve(here, '..', '..');
 const workflowPath = path.join(root, '.github', 'workflows', 'windows-interactive-app-e2e.yml');
 
 function workflow() {
   return fs.readFileSync(workflowPath, 'utf8');
 }
+
+test('Windows workflow contract itself remains native ESM', () => {
+  const source = fs.readFileSync(contractPath, 'utf8');
+  assert.equal(/\brequire\s*\(/.test(source), false, 'contract must not regress to CommonJS require inside the type=module package');
+});
 
 test('Windows interactive workflow is App-owned, release-based, and evidence-complete', () => {
   const text = workflow();
