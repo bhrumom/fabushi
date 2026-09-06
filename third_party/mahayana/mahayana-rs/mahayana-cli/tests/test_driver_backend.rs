@@ -138,16 +138,20 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
         install.result["releaseManifest"]["version"],
         install.result["receipt"]["version"]
     );
-    assert!(
-        install.result["marketplaceSource"]["sourceRef"]
-            .as_str()
-            .is_some_and(|value| !value.is_empty())
+    assert_eq!(
+        install.result["marketplaceSource"]["provider"],
+        "fabushi-official"
     );
     assert!(
         install.result["marketplaceSource"]["repository"]
             .as_str()
-            .is_some_and(|value| !value.is_empty())
+            .is_some_and(|value| value.starts_with("https://github.com/"))
     );
+    let source_commit = install.result["marketplaceSource"]["commit"]
+        .as_str()
+        .expect("marketplace source commit");
+    assert_eq!(source_commit.len(), 40);
+    assert!(source_commit.chars().all(|character| character.is_ascii_hexdigit()));
     let selected_artifact = install.result["releaseManifest"]["artifacts"]
         .as_array()
         .and_then(|artifacts| {
