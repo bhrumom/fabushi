@@ -1,0 +1,111 @@
+name: Bootstrap atomic iOS Grok search patch
+
+on:
+  push:
+    branches:
+      - fix/tfi-ios-grok-search-toggle-20260906
+    paths:
+      - '.github/workflows/ios-grok-search-patch-bootstrap.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/tfi-ios-grok-search-toggle-20260906
+          fetch-depth: 0
+
+      - name: Apply exact latest-UI search fix and narrow contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('mobile/ios/Fabushi/GrokMobileShell.swift')
+          source = source_path.read_text()
+
+          replacements = [
+              (
+                  '    @State private var query = ""\n    @State private var composeOpen = false',
+                  '    @State private var query = ""\n    @State private var searchOpen = false\n    @State private var composeOpen = false',
+              ),
+              (
+                  '            query,\n            String(composeOpen),',
+                  '            query,\n            String(searchOpen),\n            String(composeOpen),',
+              ),
+              (
+                  '        add("grok-mobile-legacy", role: "button", name: "打开完整消息工作台", action: .init(allowed: ["invoke"]) { _ in legacyOpen = true })\n        add("grok-mobile-search-field", role: "textbox", name: "搜索", action: .init(allowed: ["setValue"]) { value in query = value ?? "" })',
+                  '        add("grok-mobile-legacy", role: "button", name: "打开完整消息工作台", action: .init(allowed: ["invoke"]) { _ in legacyOpen = true })\n        add("grok-mobile-search", role: "button", name: searchOpen ? "关闭搜索" : "打开搜索", action: .init(allowed: ["invoke"]) { _ in\n            searchOpen.toggle()\n            if !searchOpen { query = "" }\n        })\n        add("grok-mobile-search-field", role: "textbox", name: "搜索", action: .init(allowed: ["setValue"]) { value in\n            searchOpen = true\n            query = value ?? ""\n        })',
+              ),
+              (
+                  '                        Button { } label: { Image(systemName: "magnifyingglass") }\n                            .accessibilityIdentifier("grok-mobile-search")',
+                  '                        Button {\n                            searchOpen.toggle()\n                            if !searchOpen { query = "" }\n                        } label: { Image(systemName: "magnifyingglass") }\n                            .accessibilityIdentifier("grok-mobile-search")',
+              ),
+              (
+                  '                    if !query.isEmpty {\n                        TextField("Search", text: $query)\n                            .textFieldStyle(.plain).padding(12).background(.white, in: RoundedRectangle(cornerRadius: 14))\n                            .padding(.horizontal, 16).padding(.bottom, 14)',
+                  '                    if searchOpen {\n                        TextField("Search", text: $query)\n                            .textFieldStyle(.plain).padding(12).background(.white, in: RoundedRectangle(cornerRadius: 14))\n                            .padding(.horizontal, 16).padding(.bottom, 14)\n                            .accessibilityIdentifier("grok-mobile-search-field")',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one source match, got {count}: {old[:80]!r}')
+              source = source.replace(old, new, 1)
+
+          source_path.write_text(source)
+
+          test_path = Path('chatgpt-vps-control/tests/ios-grok-mobile-search-contract.test.js')
+          test_path.write_text(r'''import assert from "node:assert/strict";
+          import { readFile } from "node:fs/promises";
+          import test from "node:test";
+
+          const root = new URL("../../", import.meta.url);
+          const read = (path) => readFile(new URL(path, root), "utf8");
+
+          test("latest iOS Grok search button owns one visible and semantic search state", async () => {
+            const source = await read("mobile/ios/Fabushi/GrokMobileShell.swift");
+
+            for (const required of [
+              '@State private var searchOpen = false',
+              'String(searchOpen)',
+              'add("grok-mobile-search", role: "button"',
+              'name: searchOpen ? "关闭搜索" : "打开搜索"',
+              'searchOpen.toggle()',
+              'if !searchOpen { query = "" }',
+              'searchOpen = true',
+              'if searchOpen {',
+              '.accessibilityIdentifier("grok-mobile-search")',
+              '.accessibilityIdentifier("grok-mobile-search-field")',
+            ]) {
+              assert.ok(source.includes(required), `missing Grok search invariant: ${required}`);
+            }
+
+            assert.doesNotMatch(
+              source,
+              /Button \{ \} label: \{ Image\(systemName: "magnifyingglass"\) \}/u,
+              "the visible latest-UI search control must not remain an empty action",
+            );
+          });
+          ''')
+          PY
+
+          rm .github/workflows/ios-grok-search-patch-bootstrap.yml
+          git diff --check
+          git status --short
+
+      - name: Commit the atomic product patch back to the governed branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile/ios/Fabushi/GrokMobileShell.swift chatgpt-vps-control/tests/ios-grok-mobile-search-contract.test.js .github/workflows/ios-grok-search-patch-bootstrap.yml
+          git commit -m 'fix(iOS): make latest Grok search control functional'
+          git push origin HEAD:fix/tfi-ios-grok-search-toggle-20260906
