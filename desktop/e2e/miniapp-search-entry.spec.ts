@@ -20,12 +20,21 @@ async function launchDesktopApp(appDataDir: string) {
 }
 
 async function completeBrowserLogin(page: Page): Promise<void> {
-  const readPhase = async () => page.evaluate(() => {
-    if (document.querySelector('[data-testid="onboarding-gate"]')) return 'onboarding';
-    if (document.querySelector('[data-testid="login-gate"]')) return 'login';
-    const messenger = document.querySelector('[data-testid="messenger-workspace"]');
-    return messenger?.getAttribute('data-initial-host-hydrated') === 'true' ? 'ready' : 'waiting';
-  }).catch(() => 'waiting');
+  const loginGate = page.getByTestId('login-gate');
+  const workspace = page.getByTestId('messenger-workspace');
+  type LoginPhase = 'onboarding' | 'login' | 'ready' | 'waiting';
+  const readPhase = async (): Promise<LoginPhase> => {
+    try {
+      return await page.evaluate(() => {
+        if (document.querySelector('[data-testid="onboarding-gate"]')) return 'onboarding';
+        if (document.querySelector('[data-testid="login-gate"]')) return 'login';
+        const messenger = document.querySelector('[data-testid="messenger-workspace"]');
+        return messenger?.getAttribute('data-initial-host-hydrated') === 'true' ? 'ready' : 'waiting';
+      }) as LoginPhase;
+    } catch {
+      return 'waiting';
+    }
+  };
 
   for (let attempt = 0; attempt < 12; attempt += 1) {
     await expect.poll(readPhase, { timeout: 15_000 }).not.toBe('waiting');
@@ -35,12 +44,15 @@ async function completeBrowserLogin(page: Page): Promise<void> {
       continue;
     }
     if (phase === 'login') {
-      await page.getByTestId('browser-login-start').click();
+      const start = page.getByTestId('browser-login-start');
+      await expect(start).toBeEnabled({ timeout: 15_000 });
+      await start.click();
+      await expect(loginGate).toBeHidden({ timeout: 15_000 });
       continue;
     }
-    if (phase === 'ready') return;
+    if (phase === 'ready') break;
   }
-  throw new Error('Fabushi desktop did not reach the authenticated Messenger workspace.');
+  await expect(workspace).toHaveAttribute('data-initial-host-hydrated', 'true', { timeout: 15_000 });
 }
 
 async function shot(page: Page, testInfo: TestInfo, name: string) {
