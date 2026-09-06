@@ -60,7 +60,7 @@ Close the Web/server authority boundary for the official `global-dharma` Mini Ap
 ## Evidence
 
 - Intake source commit: `2eb4b0cf524942f003bc6ec973ba8119745b2030`.
-- Implementation PR / CI / packaged evidence: pending this task.
+- Implementation commit: `f9a2df5850e81bd5f1fbe3450adf4ec4e3b0f906`; protected PR/CI/packaged evidence remains pending.
 
 ## Blockers
 
