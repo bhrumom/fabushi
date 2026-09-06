@@ -25,3 +25,9 @@
 - Recorded canonical `dca0fea5…` Native iOS failure from run `34056507262` / artifact `9996206512`.
 - Replaced unsafe non-hittable close center-coordinate fallback with a fail-closed hittability path plus a remote-computer-only explicit shell-back fallback.
 - Added legacy workbench recovery before Marketplace navigation while retaining the remote surface disappearance assertion.
+
+## 2026-09-07 — returning-user seed projection persistence synchronization
+
+- Recorded the exact `71168ad…` macOS packaged setup failure from Electron run `34058850412` / job `101555620505` / diagnostics `9996959351`.
+- The startup-performance E2E now waits for the clicked self-hosted seed peer to persist as `activePeerKey=selfhosted:*` before history seeding.
+- No performance threshold, product startup behavior, Host/auth semantics, Global Dharma Mini App behavior, or entitlement behavior was changed.
