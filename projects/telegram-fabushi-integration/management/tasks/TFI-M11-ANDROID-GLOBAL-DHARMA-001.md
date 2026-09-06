@@ -85,8 +85,17 @@ Acceptance for this atomic repair:
 - Repair PR #2451 protected-merged as `8103b2d495f4223a4736be65ce4c0cfc0a1fbabc` after required checks.
 - PR contract evidence: run `34050104893`, job `101532053914`, artifact `9994301970`.
 - Canonical version before this round: `1.2.51`; next governed Android test version: `1.2.52`.
-- [ ] Protected version PR merged to canonical main.
-- [ ] Exact-main Native Android GitHub release succeeds with immutable tag/assets/checksum.
-- [ ] Fresh App-owned Android interactive run/device self-registers from the released APK.
+- [x] Protected version PR merged to canonical main (`380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`).
+- [x] Exact-main Native Android GitHub release succeeds: `android-v1.2.52-262491811`, run `34050780156`, artifact `9994614114`.
+- [x] Fresh App-owned device `gha-34051316405-1-interactive` self-registers from the released APK in run `34051316405`.
 - [ ] Six semantic tools drive the complete Global Dharma packaged journey.
 - [ ] Full video, meaningful screenshots, trace/report/logcat/release identity are always uploaded and linked here.
+
+### H — 1.2.52 packaged retest result
+
+- Interactive run `34051316405` / job `101535343430`: **FAILURE** at final evidence gate; artifact `9994884584` is retained.
+- `report.json`: `status=failed-timeout`, release `android-v1.2.52-262491811`, release/workflow SHA `380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`, fresh device `gha-34051316405-1-interactive`.
+- Trace contains successful `fabushi.app.status`, `snapshot`, `find`, `action`, `wait`, `assert` calls; two action calls fail `stale_app_surface_generation`.
+- Terminal connection failure: `connection-refresh-failed` with `transport_error:IllegalStateException`, followed by `disconnected reason=refresh-failed`; no `disconnected reason=logged-out` appears.
+- Evidence includes 21 step screenshots, trace, logcat and six screenrecord segments. `android-session.mp4` was not produced, so a single complete video link is PENDING.
+- Next atomic repair must address the App-owned refresh/session lifecycle and generation-safe action continuation, then publish a strictly newer Android test release and rerun from a fresh App-owned device.
