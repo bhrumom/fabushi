@@ -36,12 +36,13 @@ test('Windows interactive workflow is App-owned, release-based, and evidence-com
     'remote-notes.jsonl',
     'windows-session.mp4',
     'report.json',
+    'No standalone Runner/KRIS/interactive-runner device agent is started.',
   ];
   for (const marker of required) {
     assert.ok(text.includes(marker), `workflow is missing contract marker: ${marker}`);
   }
 
-  assert.ok(text.includes("select((.name // '') | test('^fabushi-[0-9]+\\\\.[0-9]+\\\\.[0-9]+-setup\\\\.exe$'))") || text.includes('fabushi-'), 'workflow must resolve a published Windows installer');
+  assert.ok(text.includes('fabushi-') && text.includes('-setup\\.exe'), 'workflow must resolve a published versioned Windows installer');
   assert.ok(text.includes('FABUSHI_CI_TEST_USERNAME'), 'workflow must use the protected CI test account');
   assert.ok(text.includes('FABUSHI_CI_TEST_PASSWORD'), 'workflow must use the protected CI test account password secret');
   assert.ok(text.includes('controllable device online'), 'workflow must prove App-owned registration from the installed App log');
@@ -50,12 +51,12 @@ test('Windows interactive workflow is App-owned, release-based, and evidence-com
 
 test('Windows interactive workflow does not start a standalone runner-owned Fabushi gateway', () => {
   const text = workflow();
-  const forbidden = [
+  const forbiddenExecutionMarkers = [
     'start-interactive-runner',
     'interactive-runner-account-binding',
-    'KRIS',
+    'run-interactive-device-agent',
   ];
-  for (const marker of forbidden) {
-    assert.equal(text.includes(marker), false, `workflow must not contain standalone/legacy device marker: ${marker}`);
+  for (const marker of forbiddenExecutionMarkers) {
+    assert.equal(text.includes(marker), false, `workflow must not contain standalone runner execution marker: ${marker}`);
   }
 });
