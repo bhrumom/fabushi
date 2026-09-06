@@ -1,0 +1,72 @@
+name: TFI Windows validator formatting bootstrap
+
+on:
+  push:
+    branches:
+      - fix/tfi-windows-ci-session-validator-20260907
+
+permissions:
+  contents: write
+
+jobs:
+  format-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/tfi-windows-ci-session-validator-20260907
+          persist-credentials: true
+
+      - name: Normalize only inserted Rust lines
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs')
+          text = path.read_text()
+          old_predicate = '\n'.join([
+              '        && (device_id.ends_with("-interactive")',
+              '    || device_id.ends_with("-macos-app")',
+              '    || device_id.ends_with("-windows-app"))',
+          ])
+          new_predicate = '\n'.join([
+              '        && (device_id.ends_with("-interactive")',
+              '            || device_id.ends_with("-macos-app")',
+              '            || device_id.ends_with("-windows-app"))',
+          ])
+          assert text.count(old_predicate) == 1, text.count(old_predicate)
+          text = text.replace(old_predicate, new_predicate, 1)
+          old_test = '\n'.join([
+              '        let mut windows_app = session.clone();',
+              'windows_app["deviceId"] = Value::String("gha-12345-1-windows-app".into());',
+              'assert_eq!(',
+              '    validate_ci_account_session(windows_app.clone(), now),',
+              '    Ok(windows_app)',
+              ');',
+              'let mut with_refresh = session.clone();',
+          ])
+          new_test = '\n'.join([
+              '        let mut windows_app = session.clone();',
+              '        windows_app["deviceId"] = Value::String("gha-12345-1-windows-app".into());',
+              '        assert_eq!(',
+              '            validate_ci_account_session(windows_app.clone(), now),',
+              '            Ok(windows_app)',
+              '        );',
+              '        let mut with_refresh = session.clone();',
+          ])
+          assert text.count(old_test) == 1, text.count(old_test)
+          path.write_text(text.replace(old_test, new_test, 1))
+          PY
+          git diff --check
+
+      - name: Commit formatting correction and remove bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/zz-tfi-windows-ci-validator-format-bootstrap.yml
+          git add third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs
+          git config user.name github-actions-bot
+          git config user.email github-actions-bot@users.noreply.github.com
+          git commit -m 'style(TFI): normalize Windows validator patch'
+          git push origin HEAD:fix/tfi-windows-ci-session-validator-20260907
