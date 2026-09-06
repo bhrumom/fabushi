@@ -455,11 +455,24 @@ final class MarketplaceModel {
             await pumpChatEvents(operationId: operationId)
         } catch is CancellationError {
             // View-driven cancellation is a normal lifecycle path.
+            if activeOperationId == nil {
+                chatBusy = false
+                activeOperationId = nil
+            }
+            return
         } catch {
             message = "发送失败：\(error.localizedDescription)"
+            if activeOperationId == nil {
+                chatBusy = false
+                activeOperationId = nil
+            }
+            return
         }
-        chatBusy = false
-        activeOperationId = nil
+        if let operationId = activeOperationId,
+           !chatMessages.contains(where: { $0.kind == .thinking && $0.operationId == operationId }) {
+            chatBusy = false
+            activeOperationId = nil
+        }
     }
 
     func stopChat() async {
