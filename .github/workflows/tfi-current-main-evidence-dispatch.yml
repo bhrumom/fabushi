@@ -1,0 +1,37 @@
+name: TFI current-main evidence dispatch
+
+on:
+  push:
+    branches:
+      - ops/tfi-current-main-evidence-dispatch-20260907
+    paths:
+      - '.github/workflows/tfi-current-main-evidence-dispatch.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_MAIN_SHA: 89922b7907d80d0840da5f394444a4affcbe45f4
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Fail closed unless canonical main is still the intended SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)"
+          echo "canonical_main=$current"
+          test "$current" = "$EXPECTED_MAIN_SHA"
+
+      - name: Dispatch exact-main packaged and Web/service evidence workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run windows-interactive-app-e2e.yml --repo "$GITHUB_REPOSITORY" --ref main
+          gh workflow run macos-interactive-app-e2e.yml --repo "$GITHUB_REPOSITORY" --ref main
+          gh workflow run global-dharma-web-service-contract.yml --repo "$GITHUB_REPOSITORY" --ref main
+          echo 'Dispatched Windows interactive, macOS interactive, and Global Dharma Web Service Contract at canonical main.'
