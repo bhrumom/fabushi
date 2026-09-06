@@ -121,7 +121,8 @@ impl ProductBackend {
                         "operation": operation.as_str(),
                         "platform": platform,
                         "apiPlatform": api_platform,
-                    }))
+                    }),
+                )
             })?;
         let plugin = listing
             .get("plugins")

@@ -52,6 +52,26 @@ final class GlobalDharmaCommerceTests: XCTestCase {
         XCTAssertFalse(offer.appleStoreAvailable)
     }
 
+    func testCanonicalLedgerTestModeRequiresBoundedGitHubSimulatorEnvironment() {
+        XCTAssertTrue(GlobalDharmaCommerceModel.detectCanonicalLedgerTestMode(environment: [
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_REPOSITORY": "bhrumom/fabushi",
+            "GITHUB_SHA": "8595a50196309c8ebb91c3f8077125d7dc9e3ffa",
+            "FABUSHI_CI_ACCOUNT_SESSION_FILE": "/app/Documents/fabushi-ci-session.json",
+        ]))
+        XCTAssertFalse(GlobalDharmaCommerceModel.detectCanonicalLedgerTestMode(environment: [
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_REPOSITORY": "bhrumom/fabushi",
+            "GITHUB_SHA": "8595a50196309c8ebb91c3f8077125d7dc9e3ffa",
+        ]))
+        XCTAssertFalse(GlobalDharmaCommerceModel.detectCanonicalLedgerTestMode(environment: [
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_REPOSITORY": "other/repo",
+            "GITHUB_SHA": "8595a50196309c8ebb91c3f8077125d7dc9e3ffa",
+            "FABUSHI_CI_ACCOUNT_SESSION_FILE": "/app/Documents/fabushi-ci-session.json",
+        ]))
+    }
+
     func testAdvancedCommerceRequestDataUsesAppleSignatureInfoEnvelope() throws {
         let data = try FabushiPayStoreKit.advancedCommerceRequestData(compactJWS: "header.payload.signature")
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])

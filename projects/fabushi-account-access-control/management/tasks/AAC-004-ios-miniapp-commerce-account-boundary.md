@@ -2,7 +2,7 @@
 
 - Project: `FAB-P0008 / AAC`
 - Cross-project execution: `FAB-P0001 / TFI` task `TFI-M9-GLOBAL-DHARMA-IOS-001`
-- Baseline main: `8f7e83902a616ecdb62fdaded65ea79227e745f3`
+- Baseline main: `8595a50196309c8ebb91c3f8077125d7dc9e3ffa` (aligned from original `8f7e83902a616ecdb62fdaded65ea79227e745f3`)
 - State: `IN_PROGRESS`
 
 ## Goal
@@ -19,8 +19,9 @@ Prove that an already signed-in Fabushi iOS account can install Global Dharma at
 - [x] StoreKit restore must re-verify the transaction under the current Fabushi account before TFI entitlement can be trusted.
 - [ ] Protected PR CI green.
 - [ ] Exact-main packaged journey proves automatic login/account-scoped install/Bot visibility.
-- [ ] Real Apple Advanced Commerce sandbox evidence proves purchase/restore under the same Fabushi account, or records the precise external Apple blocker.
+- [ ] GitHub Actions iOS Simulator test-mode proves CNY 1080 canonical-ledger purchase + restore under the same Fabushi account with no StoreKit invocation and no real charge; unlock remains server-entitlement-only.
+- [ ] Production Apple Advanced Commerce sandbox evidence proves purchase/restore under the same Fabushi account, or records the precise external Apple blocker.
 
 ## Evidence
 
-See `projects/telegram-fabushi-integration/management/tasks/TFI-M9-GLOBAL-DHARMA-IOS-001.md` for the single executable evidence chain. AAC must not duplicate payment artifacts or entitlement state.
+See `projects/telegram-fabushi-integration/management/tasks/TFI-M9-GLOBAL-DHARMA-IOS-001.md` for the single executable evidence chain. AAC must not duplicate payment artifacts or entitlement state. Alignment merge `9d51e3e3d514cfcc2b6337e1baaecdc51c8453d3` brings the task onto canonical `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa`; PR CI, merge and exact-main evidence remain pending.
