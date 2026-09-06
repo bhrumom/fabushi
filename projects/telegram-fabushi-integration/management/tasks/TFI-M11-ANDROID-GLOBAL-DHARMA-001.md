@@ -57,6 +57,25 @@
 - [ ] always upload：完整视频、meaningful checkpoint 截图、instrumentation report、logcat、trace、release identity/checksum、report/logs（失败也上传）。
 - [ ] evidence index 写回本任务及 `projects/telegram-fabushi-integration/evidence/TFI-M11-ANDROID-GLOBAL-DHARMA-001/README.md`，所有 URL 必须真实可下载/可读回。
 
+
+### F — Packaged Bot canonical installed projection repair (2026-09-07)
+
+- Triggering exact-main run: `34048304925` on `8595a50196309c8ebb91c3f8077125d7dc9e3ffa`.
+- Triggering App-owned device: `gha-34048304925-1-interactive`; device is now offline and must not be reused.
+- Existing evidence artifact: `9994017895` (`android-interactive-app-e2e-34048304925-1`).
+- Implementation baseline: live canonical `main@c82b29cd6404c2f19b93d8479b2e2cae45469249`; the intervening main commit changes Web/service/AAC surfaces, not Android app files.
+- Verified boundary: `refreshBots()` coupled canonical projection read to repeated `POST /v1/marketplace/plugins/{id}/add` writes and treated any HTTP/manifest/projection failure as an all-or-nothing Bot refresh. The packaged artifact retained only the generic UI failure plus later stale semantic generations, so the exact prior HTTP status/body is not recoverable from that artifact.
+- Repair branch: `fix/tfi-android-bot-installed-projection-20260907`.
+
+Acceptance for this atomic repair:
+
+- [ ] Marketplace install is not called successful until account-authoritative `/v1/marketplace/added` contains the installed plugin.
+- [ ] Messenger installed-Mini-App refresh is read-only and never calls `/add` or `feature.plugin.listInstalled` to mutate/reconcile account state.
+- [ ] A failed canonical refresh retains the last validated in-process canonical Mini App projection; no Android-private persistent Bot/install database is introduced.
+- [ ] Exact projection/HTTP diagnostic remains visible in UI and through `grok-bot-error` semantic status without hiding retained Bots.
+- [ ] PR contract Action compiles Kotlin, validates the projection/packaged-E2E semantic contract, and uploads a contract evidence artifact.
+- [ ] After protected merge/release, a fresh App-owned Android device reruns Marketplace→全球法布施 install→Messenger Bot→WebMCP→Open App/revision sync→auth→test-mode CNY1080 purchase/restore→entitlement→local prayer wheel. Until generated, new video/screenshots/trace/report remain `PENDING`.
+
 ## Completion gate
 
 只有受保护 PR 合并、canonical main SHA 回读、post-main delivery gate、exact released packaged Android 旅程、六工具 App-owned 控制、entitlement fail-closed/购买/恢复证据和完整 artifacts/video 都通过，才允许 `DONE`。任一外部支付沙箱/设备/签名/权限事实缺失则保持 `BLOCKED` 并记录精确 live evidence。
