@@ -108,7 +108,9 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
     assert!(install.ok, "live external install failed: {install:?}");
     assert_eq!(install.result["source"], "online-external-marketplace");
     assert_eq!(install.result["receipt"]["pluginId"], "global-dharma");
-    assert_eq!(install.result["receipt"]["platform"], "ios");
+    // Native request/device semantics remain iOS at the test-driver boundary.
+    // The persistent InstalledPluginPointer intentionally has no platform field.
+    assert_eq!(install.result["platform"], "ios");
     assert_eq!(install.result["receipt"]["runtime"], "local-web");
     assert_eq!(
         install.result["releaseVersion"],
@@ -162,7 +164,7 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
     assert!(
         selected_artifact["platforms"]
             .as_array()
-            .is_some_and(|platforms| platforms.iter().any(|platform| platform == "ios"))
+            .is_some_and(|platforms| platforms.iter().any(|platform| platform == "mobile"))
     );
 
     let post_list = session.execute(request(
