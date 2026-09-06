@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packagedExecutable = process.env.FABUSHI_ELECTRON_EXECUTABLE?.trim() || null;
-const syncProbeKey = 'm2_sync_packaged_probe';
 const executionKey = 'fabushi.desktop.miniapp-execution.v1:global-dharma';
 
 async function launchDesktopApp(appDataDir: string) {
@@ -63,8 +62,6 @@ async function tools(page: Page) { return frame(page).locator('body').evaluate((
 async function execution(page: Page) { return frame(page).locator('body').evaluate(async () => (window as any).__fabushiMiniAppHost.execution()); }
 async function session(page: Page) { return frame(page).locator('body').evaluate(async () => (window as any).__fabushiMiniAppHost.session()); }
 async function entitlement(page: Page) { return frame(page).locator('body').evaluate(async () => (window as any).__fabushiMiniAppHost.entitlement()); }
-async function purchase(page: Page, key: string) { return frame(page).locator('body').evaluate(async (_body, idempotencyKey) => (window as any).__fabushiMiniAppHost.purchaseLifetime(idempotencyKey), key); }
-async function restore(page: Page) { return frame(page).locator('body').evaluate(async () => (window as any).__fabushiMiniAppHost.restorePurchases()); }
 async function parentExecution(page: Page) { return page.evaluate((key) => JSON.parse(localStorage.getItem(key) || 'null'), executionKey); }
 async function writeCloudProbe(page: Page, value: string) {
   const stored = await frame(page).locator('body').evaluate(async (_body, probe) => {
@@ -136,20 +133,27 @@ test('Global Dharma packaged journey keeps Bot WebMCP, UI revision, account and 
     expect(lifetime).toMatchObject({ productId: 'prod.global-dharma.local-prayer-wheel.lifetime', productKind: 'digital_durable', currency: 'CNY', amount: 108000 });
     await shot(page, testInfo, '06-open-app-same-revision-account-and-paywall.png');
 
-    const paid = await purchase(page, 'global-dharma-e2e-lifetime-001');
+    const purchaseButton = frame(page).getByTestId('fabushi-miniapp-purchase-lifetime');
+    await expect(purchaseButton).toBeVisible();
+    await expect(purchaseButton).toContainText('¥1080');
+    await purchaseButton.click();
+    await expect.poll(() => execution(page), { timeout: 15_000 }).toMatchObject({ phase: 'completed', source: 'web-ui', tool: 'purchaseLifetime', entitlementAllowed: true });
+    const paidState = await execution(page);
+    const paid = paidState.result;
     expect(paid).toMatchObject({ status: 'entitled', paymentId: expect.any(String) });
     expect(paid.product).toMatchObject({ sku: 'local-prayer-wheel.lifetime', currency: 'CNY', amount: 108000 });
     expect(paid.checkout.callback).toMatchObject({ duplicate: false });
     expect(paid.entitlement.access.allowed).toBe(true);
-    const paidState = await execution(page);
-    expect(paidState).toMatchObject({ phase: 'completed', source: 'web-ui', tool: 'purchaseLifetime', entitlementAllowed: true });
     await shot(page, testInfo, '07-cny1080-lifetime-entitlement-purchased.png');
 
-    const restored = await restore(page);
+    const restoreButton = frame(page).getByTestId('fabushi-miniapp-restore-purchases');
+    await expect(restoreButton).toBeVisible();
+    await restoreButton.click();
+    await expect.poll(() => execution(page), { timeout: 15_000 }).toMatchObject({ phase: 'completed', source: 'web-ui', tool: 'restorePurchases', entitlementAllowed: true });
+    const restoreState = await execution(page);
+    const restored = restoreState.result;
     expect(restored.restored.restored).toBe(true);
     expect(restored.entitlement.access.allowed).toBe(true);
-    const restoreState = await execution(page);
-    expect(restoreState).toMatchObject({ phase: 'completed', source: 'web-ui', tool: 'restorePurchases', entitlementAllowed: true });
     await writeCloudProbe(page, probeValue);
     await shot(page, testInfo, '08-entitlement-restored.png');
 
