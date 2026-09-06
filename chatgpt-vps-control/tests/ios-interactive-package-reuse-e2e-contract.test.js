@@ -25,7 +25,11 @@ test("iOS package-reuse workflow reinstalls one exact compatible artifact withou
     "github-token: ${{ github.token }}",
     "run-id: ${{ inputs.origin_run_id }}",
     "digest-mismatch: error",
-    'shasum -a 256 -c SHA256SUMS.txt',
+    "checksum_line_count=",
+    "expected_archive_digest=",
+    "listed_archive_path=",
+    "actual_archive_digest=",
+    'basename "$listed_archive_path"',
     "CFBundleIdentifier",
     "com.ombhrum.fabushi",
     "Install reused Simulator package before protected account login",
@@ -64,6 +68,8 @@ test("iOS package-reuse workflow reinstalls one exact compatible artifact withou
   assert.match(workflow, /deadline=\$\(\(SECONDS \+ 600\)\)/u,
     "the App-owned iOS device must stay live for a bounded ten-minute simulated-user control window");
 
+  assert.doesNotMatch(workflow, /shasum\s+-a\s+256\s+-c\s+SHA256SUMS\.txt/u,
+    "reuse mode must not trust origin-run absolute paths embedded in the checksum manifest");
   assert.doesNotMatch(workflow, /\bcargo\s+build\b/u,
     "reuse mode must not rebuild the Rust host");
   assert.doesNotMatch(workflow, /\bxcodebuild\b/u,
