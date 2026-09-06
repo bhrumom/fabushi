@@ -38,3 +38,11 @@ Run `34019929170` intentionally ended with `TFI_MACOS_FULL_JOURNEY FAIL ...` plu
 - PR #2413 head `4f8c9361ba272f9e826da8a07d08aac816c5aaed` passed CI and project governance.
 - Electron quality run `34021419099` reached the real Linux Rust Host journey: 26/27 E2E passed; the new App Agent test opened the semantic message context menu, but selected an asynchronous Agent reply and then incorrectly required the self-only `edit` action.
 - This is a test-targeting defect, not a product relaxation. The follow-up selects the exact sent probe message by text, reads its stable `data-agent-id`, and keeps the strict `edit` assertion.
+
+## PR validation round 2 — stable targets beyond snapshot cap
+
+Release candidate PR #2417 (`f3b6985fc1234e6b7827d70846ff5c18e892f986`) was closed unmerged after Electron quality run `34022105890` failed the semantic message-action regression on both the initial attempt and retry. The version-only diff compiled and 26/27 E2E tests passed; the same App Agent Surface case failed while enumerating stable menu action IDs.
+
+Root cause is in the semantic surface contract rather than release versioning: `snapshot` intentionally caps output at `MAX_ELEMENTS=500`, but `find(agentId=...)` and `action(agentId=...)` also resolved targets by first rebuilding that same capped snapshot/ref map. Consequently an explicit unique stable `agentId` at semantic element 501+ could exist in the DOM yet be reported as not found. The failure is data-size dependent, explaining one earlier green run and the deterministic later failures.
+
+The stabilization keeps the public snapshot payload cap unchanged. Exact stable `agentId` lookups now scan only stable-ID-bearing DOM nodes, require exactly one matching target, build the same redacted element state, and bypass only the 500-item response truncation. Volatile refs remain snapshot-generation bound and capped. The regression deliberately prepends 520 hidden unique semantic decoys, asserts the normal snapshot is truncated and excludes the target, then requires exact `action(agentId=...)` to open the message menu and exact `find(agentId=...)` to resolve every required menu action before invoking Reply.
