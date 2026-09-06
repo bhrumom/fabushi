@@ -96,6 +96,7 @@ esac
 
 gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,name,targetCommitish,publishedAt,url > "$EVIDENCE_DIR/release/release.json"
 gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$EVIDENCE_DIR/release" --pattern 'fabushi-android-*.apk'
+gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$EVIDENCE_DIR/release" --pattern 'fabushi-android-update.json'
 gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$EVIDENCE_DIR/release" --pattern 'SHA256SUMS.txt'
 apk="$(find "$EVIDENCE_DIR/release" -maxdepth 1 -type f -name 'fabushi-android-*.apk' | head -n 1)"
 test -n "$apk" && test -f "$apk"

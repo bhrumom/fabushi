@@ -35,6 +35,9 @@ test("Android interactive runner records before install, then authenticates and 
   assert.match(script, /git\/ref\/tags\/\$RELEASE_TAG/u);
   assert.match(script, /test "\$ref_sha" = "\$RELEASE_SHA"/u);
   assert.match(script, /sha256sum -c SHA256SUMS\.txt/u);
+  const updateMetadataAt = script.indexOf("--pattern 'fabushi-android-update.json'");
+  const checksumAt = script.indexOf("sha256sum -c SHA256SUMS.txt");
+  assert.ok(updateMetadataAt >= 0 && updateMetadataAt < checksumAt, "release metadata covered by SHA256SUMS must be downloaded before verification");
   assert.match(script, /fabushi\.ci\.device-name/u);
   assert.match(script, /phase == "registered"/u);
   assert.match(script, /phase == "call-completed" and \.ok == true/u);
