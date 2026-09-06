@@ -1,0 +1,72 @@
+name: TFI desktop Host trigger bootstrap
+
+on:
+  push:
+    branches:
+      - fix/tfi-desktop-interactive-host-trigger-20260907
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/tfi-desktop-interactive-host-trigger-20260907
+          persist-credentials: true
+
+      - name: Patch both desktop interactive trigger contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_paths = [
+              Path('.github/workflows/windows-interactive-app-e2e.yml'),
+              Path('.github/workflows/macos-interactive-app-e2e.yml'),
+          ]
+          trigger_anchor = "      - 'desktop/e2e/app-agent-surface.spec.ts'\n"
+          trigger_insert = trigger_anchor + "      - 'third_party/mahayana/mahayana-rs/mahayana-product/**'\n      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'\n"
+          for path in workflow_paths:
+              text = path.read_text()
+              if text.count(trigger_anchor) != 1:
+                  raise SystemExit(f'{path}: expected one trigger anchor, found {text.count(trigger_anchor)}')
+              if 'mahayana-product/**' in text or 'mahayana-app-host/**' in text:
+                  raise SystemExit(f'{path}: embedded Host trigger already present')
+              path.write_text(text.replace(trigger_anchor, trigger_insert, 1))
+
+          windows = Path('chatgpt-vps-control/tests/windows-interactive-app-e2e-contract.test.js')
+          text = windows.read_text()
+          anchor = "    'runs-on: windows-latest',\n"
+          insert = anchor + "    \"third_party/mahayana/mahayana-rs/mahayana-product/**\",\n    \"third_party/mahayana/mahayana-rs/mahayana-app-host/**\",\n"
+          if text.count(anchor) != 1:
+              raise SystemExit(f'windows contract anchor count={text.count(anchor)}')
+          text = text.replace(anchor, insert, 1)
+          windows.write_text(text)
+
+          macos = Path('chatgpt-vps-control/tests/macos-interactive-app-e2e-contract.test.js')
+          text = macos.read_text()
+          anchor = "  assert.match(source, /runs-on:\\s*macos-15/u);\n"
+          insert = anchor + "  assert.match(source, /third_party\\/mahayana\\/mahayana-rs\\/mahayana-product\\/\\*\\*/u);\n  assert.match(source, /third_party\\/mahayana\\/mahayana-rs\\/mahayana-app-host\\/\\*\\*/u);\n"
+          if text.count(anchor) != 1:
+              raise SystemExit(f'macOS contract anchor count={text.count(anchor)}')
+          text = text.replace(anchor, insert, 1)
+          macos.write_text(text)
+          PY
+          git diff --check
+          grep -F "third_party/mahayana/mahayana-rs/mahayana-product/**" .github/workflows/windows-interactive-app-e2e.yml .github/workflows/macos-interactive-app-e2e.yml
+          grep -F "third_party/mahayana/mahayana-rs/mahayana-app-host/**" .github/workflows/windows-interactive-app-e2e.yml .github/workflows/macos-interactive-app-e2e.yml
+
+      - name: Commit exact patch and remove bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/zz-tfi-desktop-host-trigger-bootstrap.yml
+          git add .github/workflows/windows-interactive-app-e2e.yml .github/workflows/macos-interactive-app-e2e.yml chatgpt-vps-control/tests/windows-interactive-app-e2e-contract.test.js chatgpt-vps-control/tests/macos-interactive-app-e2e-contract.test.js
+          git config user.name github-actions-bot
+          git config user.email github-actions-bot@users.noreply.github.com
+          git commit -m 'fix(TFI): trigger desktop interactive on embedded Host changes'
+          git push origin HEAD:fix/tfi-desktop-interactive-host-trigger-20260907
