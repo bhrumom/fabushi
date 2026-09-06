@@ -9,6 +9,7 @@ const pendingToolCalls = new Set<string>();
 const validBridgeNonces = new Map<string, string>();
 const bridgeSources = new Map<string, WindowProxy>();
 const executionCache = new Map<string, MiniAppExecutionState>();
+const lifetimePurchaseKeys = new Map<string, string>();
 const credentialToolName = 'fabushi_credential_request';
 const prayerWheelCapability = 'local.prayer-wheel.start';
 
@@ -57,6 +58,14 @@ function safePluginId(value: unknown): string {
 
 function executionKey(pluginId: string): string {
   return `fabushi.desktop.miniapp-execution.v1:${pluginId}`;
+}
+
+function lifetimePurchaseKey(pluginId: string): string {
+  const existing = lifetimePurchaseKeys.get(pluginId);
+  if (existing) return existing;
+  const key = `miniapp-${pluginId}-${crypto.randomUUID()}`;
+  lifetimePurchaseKeys.set(pluginId, key);
+  return key;
 }
 
 function defaultExecution(pluginId: string): MiniAppExecutionState {
@@ -340,11 +349,11 @@ function webMcpBootstrap(pluginId: string, nonce: string): string {
     const pending=new Map(),localTools=new Map(),controllers=[];let sequence=0,currentExecution=null;
     function request(action,payload){return new Promise((resolve,reject)=>{const requestId='webmcp-'+Date.now()+'-'+(++sequence);pending.set(requestId,{resolve,reject});parent.postMessage({protocol,pluginId,nonce,requestId,action,...(payload||{})},'*');});}
     function publicTool(tool){const copy={...tool};delete copy.execute;return copy;}
-    function ensureStateBar(){let bar=document.getElementById('fabushi-host-state');if(bar)return bar;bar=document.createElement('div');bar.id='fabushi-host-state';bar.setAttribute('data-testid','fabushi-miniapp-host-state');bar.style.cssText='position:fixed;left:8px;right:8px;bottom:8px;z-index:2147483647;padding:8px 10px;border-radius:10px;background:rgba(10,18,30,.92);color:#eef6ff;font:12px/1.35 system-ui;box-shadow:0 4px 24px rgba(0,0,0,.3);pointer-events:auto';const summary=document.createElement('div');summary.setAttribute('data-testid','fabushi-miniapp-host-summary');bar.appendChild(summary);if(pluginId==='global-dharma'){const actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;margin-top:8px;flex-wrap:wrap';const purchase=document.createElement('button');purchase.type='button';purchase.setAttribute('data-testid','fabushi-miniapp-purchase-lifetime');purchase.textContent='购买 ¥1080 永久权限';purchase.style.cssText='border:0;border-radius:8px;padding:6px 10px;cursor:pointer';purchase.onclick=async()=>{purchase.disabled=true;try{let key=sessionStorage.getItem('fabushi-global-dharma-lifetime-key');if(!key){key='global-dharma-ui-'+Date.now();sessionStorage.setItem('fabushi-global-dharma-lifetime-key',key);}await request('purchaseLifetime',{capability:${JSON.stringify(prayerWheelCapability)},idempotencyKey:key});render(await request('state'));}finally{purchase.disabled=false;}};const restore=document.createElement('button');restore.type='button';restore.setAttribute('data-testid','fabushi-miniapp-restore-purchases');restore.textContent='恢复购买';restore.style.cssText='border:0;border-radius:8px;padding:6px 10px;cursor:pointer';restore.onclick=async()=>{restore.disabled=true;try{await request('restorePurchases',{capability:${JSON.stringify(prayerWheelCapability)}});render(await request('state'));}finally{restore.disabled=false;}};actions.appendChild(purchase);actions.appendChild(restore);bar.appendChild(actions);}document.body.appendChild(bar);return bar;}
+    function ensureStateBar(){let bar=document.getElementById('fabushi-host-state');if(bar)return bar;bar=document.createElement('div');bar.id='fabushi-host-state';bar.setAttribute('data-testid','fabushi-miniapp-host-state');bar.style.cssText='position:fixed;left:8px;right:8px;bottom:8px;z-index:2147483647;padding:8px 10px;border-radius:10px;background:rgba(10,18,30,.92);color:#eef6ff;font:12px/1.35 system-ui;box-shadow:0 4px 24px rgba(0,0,0,.3);pointer-events:auto';const summary=document.createElement('div');summary.setAttribute('data-testid','fabushi-miniapp-host-summary');bar.appendChild(summary);if(pluginId==='global-dharma'){const actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;margin-top:8px;flex-wrap:wrap';const purchase=document.createElement('button');purchase.type='button';purchase.setAttribute('data-testid','fabushi-miniapp-purchase-lifetime');purchase.textContent='购买 ¥1080 永久权限';purchase.style.cssText='border:0;border-radius:8px;padding:6px 10px;cursor:pointer';purchase.onclick=async()=>{purchase.disabled=true;try{await request('purchaseLifetime',{capability:${JSON.stringify(prayerWheelCapability)}});render(await request('state'));}finally{purchase.disabled=false;}};const restore=document.createElement('button');restore.type='button';restore.setAttribute('data-testid','fabushi-miniapp-restore-purchases');restore.textContent='恢复购买';restore.style.cssText='border:0;border-radius:8px;padding:6px 10px;cursor:pointer';restore.onclick=async()=>{restore.disabled=true;try{await request('restorePurchases',{capability:${JSON.stringify(prayerWheelCapability)}});render(await request('state'));}finally{restore.disabled=false;}};actions.appendChild(purchase);actions.appendChild(restore);bar.appendChild(actions);}document.body.appendChild(bar);return bar;}
     function render(state){if(!state||!document.body)return;currentExecution=state;const bar=ensureStateBar();bar.dataset.revision=String(state.revision??0);bar.dataset.phase=String(state.phase||'idle');bar.dataset.tool=String(state.tool||'');bar.dataset.surface=String(state.surface||'home');bar.dataset.entitlementAllowed=String(state.entitlementAllowed);const summary=bar.querySelector('[data-testid=\"fabushi-miniapp-host-summary\"]');if(summary)summary.textContent='Fabushi · r'+bar.dataset.revision+' · '+bar.dataset.phase+' · '+bar.dataset.surface+(bar.dataset.tool?' · '+bar.dataset.tool:'')+(state.progress?' · '+state.progress:'');const purchase=bar.querySelector('[data-testid=\"fabushi-miniapp-purchase-lifetime\"]');if(purchase)purchase.hidden=state.entitlementAllowed===true;window.dispatchEvent(new CustomEvent('fabushi:execution-state',{detail:state}));}
     function register(item){const tool={name:item.name,description:item.description||item.name,inputSchema:item.inputSchema||{type:'object',properties:{}},annotations:{readOnlyHint:item.annotations?.readOnlyHint===true},execute:(input)=>request('call',{tool:item.name,input:input||{}})};localTools.set(tool.name,tool);if(document.modelContext&&typeof document.modelContext.registerTool==='function'){const controller=new AbortController();controllers.push(controller);Promise.resolve(document.modelContext.registerTool(tool,{signal:controller.signal})).catch(()=>{});}}
     Object.defineProperty(window,'__fabushiWebMcp',{configurable:true,value:{version:1,list:()=>Array.from(localTools.values()).map(publicTool),call:async(name,input={})=>{const tool=localTools.get(name);if(!tool)throw new Error('Unknown WebMCP tool: '+name);return tool.execute(input);}}});
-    Object.defineProperty(window,'__fabushiMiniAppHost',{configurable:true,value:{version:1,session:()=>request('session'),execution:()=>request('state'),snapshot:()=>currentExecution,entitlement:()=>request('entitlement',{capability:${JSON.stringify(prayerWheelCapability)}}),purchaseLifetime:(idempotencyKey)=>request('purchaseLifetime',{capability:${JSON.stringify(prayerWheelCapability)},idempotencyKey}),restorePurchases:()=>request('restorePurchases',{capability:${JSON.stringify(prayerWheelCapability)}})}});
+    Object.defineProperty(window,'__fabushiMiniAppHost',{configurable:true,value:{version:1,session:()=>request('session'),execution:()=>request('state'),snapshot:()=>currentExecution,entitlement:()=>request('entitlement',{capability:${JSON.stringify(prayerWheelCapability)}}),purchaseLifetime:()=>request('purchaseLifetime',{capability:${JSON.stringify(prayerWheelCapability)}}),restorePurchases:()=>request('restorePurchases',{capability:${JSON.stringify(prayerWheelCapability)}})}});
     addEventListener('message',(event)=>{const data=event.data||{};if(data.protocol!==protocol||data.pluginId!==pluginId||data.nonce!==nonce)return;if(data.event==='execution'){render(data.data);return;}if(!data.requestId||!pending.has(data.requestId))return;const task=pending.get(data.requestId);pending.delete(data.requestId);if(data.ok)task.resolve(data.data);else task.reject(new Error(data.error||'WebMCP host request failed'));});
     async function boot(){const [tools,state,session]=await Promise.all([request('list'),request('state'),request('session')]);for(const item of (tools||[]))register(item);render(state);window.dispatchEvent(new CustomEvent('fabushi:webmcp-ready',{detail:{pluginId,tools:(tools||[]).map(t=>t.name),session}}));}
     function dispose(){for(const controller of controllers)controller.abort();controllers.length=0;parent.postMessage({protocol,pluginId,nonce,requestId:'dispose-'+Date.now(),action:'dispose'},'*');}
@@ -374,6 +383,7 @@ export function installDesktopMiniAppWebMcpHost(): void {
 
   window.addEventListener(MAHAYANA_ACCOUNT_SESSION_RESET_EVENT, () => {
     executionCache.clear();
+    lifetimePurchaseKeys.clear();
     validBridgeNonces.clear();
     bridgeSources.clear();
     const prefix = 'fabushi.desktop.miniapp-execution.v1:';
@@ -416,12 +426,13 @@ export function installDesktopMiniAppWebMcpHost(): void {
         if (data.action === 'session') { respond(true, await invokeNativeDesktop('getMiniAppSessionProjection', { pluginId })); return; }
         if (data.action === 'entitlement') { respond(true, await readEntitlement(pluginId)); return; }
         if (data.action === 'purchaseLifetime') {
-          const idempotencyKey = String(data.idempotencyKey ?? '').trim();
+          const idempotencyKey = lifetimePurchaseKey(pluginId);
           await publishExecution(pluginId, { phase: 'commerce', source: 'web-ui', tool: 'purchaseLifetime', surface: 'local-prayer-wheel', progress: '正在创建 CNY 1080 永久权限订单', entitlementAllowed: false });
           const result = await invokeNativeDesktop<Record<string, unknown>>('purchaseMiniAppLifetime', { pluginId, capability: prayerWheelCapability, idempotencyKey });
           const entitlement = recordValue(result.entitlement);
           const allowed = recordValue(entitlement?.access)?.allowed === true;
           await publishExecution(pluginId, { phase: allowed ? 'completed' : 'commerce', source: 'web-ui', tool: 'purchaseLifetime', surface: 'local-prayer-wheel', progress: allowed ? 'CNY 1080 永久权限已生效' : '等待支付完成后恢复权限', entitlementAllowed: allowed, result });
+          if (allowed) lifetimePurchaseKeys.delete(pluginId);
           respond(true, result); return;
         }
         if (data.action === 'restorePurchases') {
