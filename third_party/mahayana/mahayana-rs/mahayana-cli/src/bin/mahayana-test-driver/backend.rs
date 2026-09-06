@@ -214,6 +214,13 @@ impl ProductBackend {
         }
         let receipt = installer
             .install(&release, platform, PREFERRED_PLUGIN_RUNTIMES)
+            .or_else(|error| {
+                if let Some(fallback_platform) = marketplace_artifact_fallback(platform) {
+                    installer.install(&release, fallback_platform, PREFERRED_PLUGIN_RUNTIMES)
+                } else {
+                    Err(error)
+                }
+            })
             .map_err(|error| {
                 TestDriverError::new(
                     "plugin_install_failed",
@@ -454,6 +461,13 @@ fn marketplace_api_platform(platform: &str) -> &str {
     }
 }
 
+fn marketplace_artifact_fallback(platform: &str) -> Option<&'static str> {
+    match platform {
+        "ios" | "android" => Some("mobile"),
+        _ => None,
+    }
+}
+
 fn required_trimmed<'a>(
     params: &'a Value,
     key: &str,
@@ -487,6 +501,14 @@ mod tests {
         assert_eq!(marketplace_api_platform("desktop"), "desktop");
         assert_eq!(marketplace_api_platform("web"), "web");
         assert_eq!(marketplace_api_platform("cli"), "cli");
+    }
+
+    #[test]
+    fn native_marketplace_install_mirrors_app_host_mobile_artifact_fallback() {
+        assert_eq!(marketplace_artifact_fallback("ios"), Some("mobile"));
+        assert_eq!(marketplace_artifact_fallback("android"), Some("mobile"));
+        assert_eq!(marketplace_artifact_fallback("mobile"), None);
+        assert_eq!(marketplace_artifact_fallback("desktop"), None);
     }
 
     #[test]

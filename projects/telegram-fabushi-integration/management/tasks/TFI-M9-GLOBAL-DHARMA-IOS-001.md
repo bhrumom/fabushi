@@ -29,7 +29,7 @@ Close the real iOS user journey for the official `global-dharma` Mini App withou
 - [x] Keep local package install in `feature.plugin.install`.
 - [x] Add canonical Host action `feature.marketplace.add`, backed by `mahayana-product` authenticated `POST /v1/marketplace/plugins/:plugin_id/add`.
 - [x] iOS install requires `accountSynchronized=true` and a non-empty Bot id after local install; local-only install is not reported as journey success.
-- [x] Keep native device platform `ios` for release artifact selection/receipts while normalizing only Marketplace product API browse/list calls to server platform `mobile`.
+- [x] Keep native request/device/account platform `ios`; normalize Product API browse/list to `mobile`; for external Mini App package installation mirror the real App Host by trying native artifact first and falling back to `mobile` artifact without changing device identity.
 - [ ] PR CI proves Rust + iOS build/tests.
 - [ ] Packaged exact-main journey proves `全球法布施` search → install → permission approval → return → `global-dharma-bot` visible.
 
@@ -89,7 +89,7 @@ Implementation:
   - Advanced Commerce `signatureInfo.token` envelope exact;
   - empty JWS rejected.
 - Existing Rust/JS account sync tests remain authoritative for `miniapp.installed → bot.added`, message history, cloud/content state and account isolation.
-- Test-driver contract keeps request/device `platform=ios` but maps Marketplace API browse/list to server `mobile`; install receipt/artifact selection remains `ios`.
+- Test-driver contract keeps request/device/account `platform=ios`, maps Marketplace API browse/list to server `mobile`, and mirrors the production App Host native→`mobile` artifact fallback. `InstalledPluginPointer` records plugin/version/artifact/runtime/path and has no platform identity field.
 - No local `xcodebuild`. All iOS compilation/tests occur in GitHub Actions.
 
 ## Post-main packaged acceptance
@@ -147,9 +147,13 @@ Apple explicitly states Advanced Commerce purchases cannot use StoreKit Testing 
 - First fast-gate failure: Mahayana fast checks run `34038687786`; `cargo fmt --all -- --check` reported formatting only; fixed in branch commit `6b53d35efdacb0ab2f564bc00e2db9111eeb6cd3`.
 - Full Host/Product/WebMCP/FFI PR validation at head `34ac2618e7e5f268485573c94085a9ddfbc13b4e`: Mahayana fast `34039127343` success; Vendor Isolation `34039127324` success; Native mobile fast gate `34039127357` success; CI `34039127390` success; Project portfolio governance `34039127412` success; GBF security `34039127371` success; Electron desktop quality `34039127425` success; Computer control security `34039127321` success.
 - Marketplace Contract run `34039127475` exposed a real live iOS discovery defect in `Test Mahayana marketplace packages`: request/device `platform=ios` was passed directly to the Product API, which accepts only `cli|desktop|mobile|web`, producing HTTP 400 `invalid_marketplace_platform`. Diagnostic artifact `mahayana-marketplace-validation-diagnostics` id `9991275111`, digest `sha256:f86763ee928dea7b74a0bc0c15429cea78e088ed836df1c885c154c1f7ddfd05`.
-- Fix commit `dd8520a49b00fcbdd8c468bce25577085ac99f8b`: normalize only Marketplace API browse/list native platforms (`ios|android → mobile`), preserving `ios` for device semantics, release artifact selection and install receipt; mapper unit test added.
+- Fix commit `dd8520a49b00fcbdd8c468bce25577085ac99f8b`: normalize Marketplace API browse/list native platforms (`ios|android → mobile`) while preserving native request/device semantics; mapper unit test added. Subsequent live validation proved the test-driver also had to mirror the already-existing App Host native→`mobile` artifact fallback for universal Mini App packages.
 - Alignment merge commit: `9d51e3e3d514cfcc2b6337e1baaecdc51c8453d3` merges canonical `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa` into the governed iOS branch without conflicts.
 - Final pre-alignment head `c0c050b6120e744849a71d1df3fe05ec372413b6` had four failing checks — Mahayana iOS test-driver contract `34039955034`, Global Dharma Rust `34039955089`, Plugin Marketplace Contract `34039955156`, Mahayana fast checks `34039955007` — all blocked at the same `backend.rs` rustfmt delta before substantive test execution.
 - GitHub Actions supplied the exact rustfmt correction for `backend.rs`; this round applies only that emitted formatting delta and delegates authoritative `cargo fmt --check` to Actions because the local Mac has no Rust toolchain.
 - CI/Simulator payment acceptance is now explicitly canonical-ledger-only/no-charge; production Apple Advanced Commerce remains separately fail-closed on real Apple eligibility/configuration.
 - Final-head PR CI / merge-queue / accepted-main SHA / post-main iOS build / packaged journey / video / screenshots / `.xcresult` / trace/logs/report: pending; only real GitHub identifiers may satisfy them.
+
+- Current-head Marketplace Contract run `34048201512` reached the live package test after rustfmt/Worker checks passed, then failed `live_official_global_dharma_is_external_verified_and_persistent` because the test-driver called `PluginInstaller.install(..., "ios")` directly and returned `no compatible artifact for platform ios`. Diagnostic artifact `9993892782`, digest `sha256:457de7cee04532c9fc561244f70989f5fc9245da45401f69e69842650802d52b`.
+- Live official `global-dharma@1.0.0` metadata advertises one verified `local-web` artifact `global-dharma-universal-ui` for `desktop|mobile|web|cli`. The real App Host already retries `mobile` when native `ios|android` installation fails, so this is a test-driver parity defect rather than an iOS product-install defect.
+- Follow-up keeps `platform=ios` for request/device/account semantics and adds the same native→`mobile` artifact fallback to the test-driver; authoritative proof must come from the next GitHub Actions Marketplace Contract run.
