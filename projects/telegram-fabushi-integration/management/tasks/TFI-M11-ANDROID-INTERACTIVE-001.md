@@ -1,0 +1,45 @@
+# TFI-M11-ANDROID-INTERACTIVE-001 — Android released-APK interactive release-test loop
+
+- Project: `FAB-P0001 / TFI`
+- Status: `IN_PROGRESS`
+- Platform: Android Emulator + signed Native Android GitHub Release APK
+- Updated: 2026-09-06
+- Canonical baseline: `main@3f633e07cae0b022cce1ff3e6aeb8bfa92aa463d`
+
+## Problem boundary
+
+Android already owns `FabushiAppAgentSurface` and the six semantic tools, but canonical main has no installed-App remote-device transport or Android interactive Actions gate. The latest Android published package is also behind canonical version state. Existing Runner gateways and stale devices are not valid substitutes.
+
+## Requirement
+
+After a signed Android GitHub Release APK is published from protected canonical main, GitHub Actions must start evidence recording, install that exact APK, authenticate the protected CI test account, stage only a bounded refresh-token-free session, and let the installed Android App itself register an account-scoped device with `platform=android` and `metadata.kind=github-actions-android-app`.
+
+The interactive device must expose only:
+
+- `fabushi.app.status`
+- `fabushi.app.snapshot`
+- `fabushi.app.find`
+- `fabushi.app.action`
+- `fabushi.app.wait`
+- `fabushi.app.assert`
+
+No Runner-owned gateway, arbitrary shell execution, JavaScript execution, reflection, fake note evidence, or assertion deletion is allowed.
+
+## Acceptance
+
+1. PR fast gate runs shell/contract validation plus Android Kotlin compilation only; no local/native build or emulator work.
+2. The manual Android interactive workflow accepts an exact release tag and release SHA, verifies the tag points at that SHA, downloads the published APK and `SHA256SUMS.txt`, and installs the verified APK without rebuilding it.
+3. Recording/logcat starts before installation. Authentication occurs only after installation.
+4. The App imports only the validated protected short-lived session in the GitHub-release variant, sets up the shared host before any authenticated host request, and registers its own official WebSocket gateway.
+5. `@fabushi test` discovers only the fresh Android device whose metadata binds it to the exact Actions run.
+6. All six semantic tools must complete successfully. The larger feature matrix is driven through those tools and ends with a real logout that disconnects the App-owned gateway.
+7. The workflow uploads complete video, per-call screenshots, gateway trace, logcat, release/checksum identity, report and diagnostic logs on both success and failure.
+8. Any product defect discovered by semantic control receives its own fix PR and project record, followed by a new version/release and rerun.
+
+## Current implementation PR scope
+
+- Android App-owned WebSocket gateway transport.
+- GitHub-release-only bounded CI session bootstrap.
+- Exact released-APK Android interactive Actions workflow and evidence runner.
+- Minimal PR compilation/contract gate.
+- No UI semantic-surface behavior change in this task; logged-in surface completeness is intentionally left to evidence-driven follow-up after first live Android device registration.
