@@ -22,8 +22,8 @@ Make the official Global Dharma local prayer-wheel capability a canonical Fabush
 - [x] Extend canonical entitlement endpoint with `access` and server-authoritative `purchaseOptions` while preserving `entitlement` compatibility.
 - [x] Hide Apple/Google from active rails until provider bindings are active.
 - [x] Add static contract coverage for SKU/price/capability/provider invariants.
-- [ ] Compile/test through protected PR CI.
-- [ ] Merge through protected `main`, then re-read canonical main SHA.
+- [x] Compile/test through protected PR CI.
+- [x] Merge through protected `main`; PR #2135 merged as `db287caa1b8495c94bf9ecafe7f064bca2ee57a0` on 2026-08-25.
 
 ### Round B — Host enforcement and checkout
 
@@ -54,7 +54,7 @@ Until those provider-side facts exist, the corresponding rail must remain unavai
 
 - #2132 merged canonical Monetization convergence into main.
 - #2133 merged dynamic fiat commerce and Global Dharma product seed into main.
-- Round A PR: #2135 from `feat/m9-global-dharma-paid-capability-v2`.
+- Round A PR: #2135 from `feat/m9-global-dharma-paid-capability-v2`, merged as `db287caa1b8495c94bf9ecafe7f064bca2ee57a0`.
 - Core Round A files:
   - `migrations/0013_global_dharma_paid_capability_gate.sql`
   - `src/capability_access.rs`
@@ -84,3 +84,6 @@ Implementation slice:
 - [ ] Canonical-main packaged Electron Linux/macOS/Windows journey green with screenshots/video/trace/report and real downloadable links.
 
 Evidence: `../../evidence/M9-GLOBAL-DHARMA-003/README.md`.
+## 2026-09-07 Web/service credential dependency
+
+The Host-controlled Mini App credential now has an explicit server-consumer contract: five-minute, session-bound, exact-plugin scope; canonical entitlement may consume it only for the matching plugin/capability read. Purchase/restore remain Host-authenticated Platform Router operations. This closes the Web/service side of the AAC-004 bootstrap/revoke gap without creating a second payment or identity authority. Packaged proof remains pending until the protected PR lands and desktop/mobile exact-main journeys run.
