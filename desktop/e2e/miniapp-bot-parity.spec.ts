@@ -106,7 +106,7 @@ test('Global Dharma packaged journey keeps Bot WebMCP, UI revision, account and 
     await expect(appResult).toBeVisible();
     await shot(page, testInfo, '02-marketplace-search-global-dharma.png');
     const install = appResult.getByRole('button', { name: '安装' });
-    if (await install.isVisible().catch(() => false)) await install.click();
+    if (await install.count()) await install.click();
     await expect(appResult.getByRole('button', { name: '打开' })).toBeVisible();
     await shot(page, testInfo, '03-marketplace-installed.png');
 
