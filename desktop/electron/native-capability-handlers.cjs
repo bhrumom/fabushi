@@ -1632,6 +1632,35 @@ function createNativeCapabilityHandlers(deps) {
       });
     },
 
+    async callMiniAppRuntimeTool(params) {
+      const pluginId = normalizedMiniAppId(params.pluginId ?? params.id);
+      const name = cleanString(params.name ?? params.tool, 128);
+      if (!/^[A-Za-z0-9_.-]{1,128}$/.test(name)) throw new Error('Invalid Mini App runtime tool name.');
+      const argumentsValue = params.arguments ?? params.input ?? {};
+      const argumentsObject = recordValue(argumentsValue);
+      if (!argumentsObject) throw new Error('Mini App runtime tool arguments must be an object.');
+
+      const account = await platformRequest('GET', '/v1/marketplace/added');
+      const apps = Array.isArray(account?.apps) ? account.apps : [];
+      const app = apps.find((candidate) => cleanString(candidate?.id ?? candidate?.pluginId, 200).toLowerCase() === pluginId);
+      if (!app) throw new Error(`Mini App ${pluginId} is not installed for this account.`);
+      const commands = Array.isArray(app.commands) ? app.commands : [];
+      const allowed = commands.some((candidate) => {
+        const command = recordValue(candidate);
+        return command && cleanString(command.tool ?? command.name, 128) === name;
+      });
+      if (!allowed) throw new Error(`Mini App runtime tool ${name} is outside ${pluginId}'s installed Tool Contract.`);
+
+      if (pluginId === GLOBAL_DHARMA_ID && name === 'start') {
+        const entitlement = await platformRequest('GET', miniAppEntitlementPath(pluginId, LOCAL_PRAYER_WHEEL_CAPABILITY));
+        if (entitlement?.access?.allowed !== true) {
+          throw new Error(`Mini App runtime tool ${name} requires an active ${LOCAL_PRAYER_WHEEL_CAPABILITY} entitlement.`);
+        }
+      }
+
+      return host.request('runtime.call', { pluginId, name, arguments: argumentsObject });
+    },
+
     async getMiniAppSessionProjection(params) {
       const pluginId = normalizedMiniAppId(params.pluginId ?? params.id);
       const auth = await host.request('feature.auth.status', {});

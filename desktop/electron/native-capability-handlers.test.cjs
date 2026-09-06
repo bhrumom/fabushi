@@ -108,6 +108,57 @@ test('Mini App bot lifecycle uses authenticated marketplace platform routes', as
   assert.ok(calls.every(([method]) => method === 'platform.request'));
 });
 
+test('Mini App runtime facade scopes renderer calls to installed Tool Contract and canonical entitlement', async () => {
+  const calls = [];
+  let entitled = false;
+  const host = {
+    async request(method, params = {}) {
+      calls.push([method, params]);
+      if (method === 'platform.request' && params.method === 'GET' && params.path === '/v1/marketplace/added') {
+        return { ok: true, data: { apps: [{
+          id: 'global-dharma',
+          commands: [
+            { name: 'status', tool: 'status' },
+            { name: 'start', tool: 'start' },
+          ],
+        }] } };
+      }
+      if (method === 'platform.request' && params.method === 'GET' && params.path.includes('/entitlements/')) {
+        return { ok: true, data: { access: { protected: true, allowed: entitled } } };
+      }
+      if (method === 'runtime.call') {
+        return { content: [{ type: 'text', text: `${params.name} completed` }], structuredContent: { tool: params.name } };
+      }
+      throw new Error(`unexpected Host method ${method}`);
+    },
+  };
+  await harness(async ({ handlers }) => {
+    const status = await handlers.callMiniAppRuntimeTool({ pluginId: 'global-dharma', name: 'status', arguments: {} });
+    assert.equal(status.structuredContent.tool, 'status');
+    await assert.rejects(
+      handlers.callMiniAppRuntimeTool({ pluginId: 'global-dharma', name: 'deploy_latest', arguments: {} }),
+      /outside global-dharma's installed Tool Contract/,
+    );
+    await assert.rejects(
+      handlers.callMiniAppRuntimeTool({ pluginId: 'global-dharma', name: 'start', arguments: {} }),
+      /requires an active local\.prayer-wheel\.start entitlement/,
+    );
+    entitled = true;
+    const started = await handlers.callMiniAppRuntimeTool({ pluginId: 'global-dharma', name: 'start', arguments: {} });
+    assert.equal(started.structuredContent.tool, 'start');
+    await assert.rejects(
+      handlers.callMiniAppRuntimeTool({ pluginId: 'not-installed', name: 'status', arguments: {} }),
+      /not installed for this account/,
+    );
+  }, { host });
+  assert.deepEqual(
+    calls.filter(([method]) => method === 'runtime.call').map(([, params]) => [params.pluginId, params.name]),
+    [['global-dharma', 'status'], ['global-dharma', 'start']],
+  );
+  const mahayanaEdge = await fs.readFile(path.join(__dirname, 'mahayana-edge.cjs'), 'utf8');
+  assert.doesNotMatch(mahayanaEdge, /['"]runtime\.call['"]/);
+});
+
 test('Global Dharma desktop facade projects session and enforces canonical CNY 1080 lifetime purchase', async () => {
   const calls = [];
   let entitled = false;

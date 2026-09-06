@@ -254,8 +254,6 @@ async function callCredentialTool(pluginId: string, args: Record<string, unknown
 
 async function callLocalRuntimeTool(pluginId: string, tool: ToolDescriptor, args: Record<string, unknown>): Promise<unknown> {
   if (tool.name === credentialToolName) return callCredentialTool(pluginId, args);
-  const bridge = window.mahayana;
-  if (!bridge?.invoke) throw new Error('Mahayana Host bridge is unavailable');
   const key = `${pluginId}:${tool.name}`;
   if (pendingToolCalls.has(key)) throw new Error(`Tool ${tool.name} already has a pending call`);
   pendingToolCalls.add(key);
@@ -265,7 +263,7 @@ async function callLocalRuntimeTool(pluginId: string, tool: ToolDescriptor, args
       const warning = approval === 'destructive' ? '该操作可能产生破坏性修改。' : '该操作会修改小程序或后台状态。';
       if (!window.confirm(`允许 ${pluginId} 调用 ${tool.name}？\n\n${warning}`)) throw new Error('用户取消了 WebMCP Tool 调用');
     }
-    return bridge.invoke('runtime.call', { pluginId, name: tool.name, arguments: args });
+    return invokeNativeDesktop('callMiniAppRuntimeTool', { pluginId, name: tool.name, arguments: args });
   } finally { pendingToolCalls.delete(key); }
 }
 
