@@ -88,3 +88,10 @@ The repository's `deploy-miniapps-cloudflare.yml` deploys on any branch push tou
 - An unrelated `Douyin Batch Downloader MiniApp / validate` check remains failing on this PR head; it is not caused by a Web/service changed path and no unrelated Rust fix is folded into this task.
 - Related desktop facade PR #2448 is OPEN at `840ddb9c23ac5aab6a9e3d10ef6c4df1c15f0d18`. Electron run `34047238103` fails the Global Dharma journey because the Bot status reply `已读取全球法布施状态` never appears; 26 other E2E cases passed, but package/upload steps were skipped after the failure. Therefore this is **not** packaged acceptance evidence.
 - Full packaged-user video remains **PENDING**. There is no accepted-main video/download link for this Web/service head, and none is invented here.
+
+## 2026-09-07 final Web/service merge readback
+
+- #2445 head `7ec44b0b000e25ceb8799843cf98f85f3c6aa9b6` protected-merged as `c82b29cd6404c2f19b93d8479b2e2cae45469249` via merge-group run `34049934041`.
+- Exact-head target run `34049805438` SUCCESS; backend artifact `9994199494`, commerce `9994192661`, Web build `9994207785`.
+- Desktop Host consumer run `34051925481` on `1655ea8070e07ad7dd8ab8e9347fbcb43f6ddf8f` SUCCESS; evidence artifact `9994834346` includes 12 Global Dharma checkpoints, trace and WebM user journey video. This is pre-package evidence; post-main installable package remains required.
+- Latest Android exact package is `android-v1.2.52-262491811@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`. Interactive run `34051316405` failed timeout after App-owned registration and partial six-tool control; artifact `9994884584` retained. Do not mark mobile journey or terminal logout complete.
