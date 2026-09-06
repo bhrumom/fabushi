@@ -2,7 +2,7 @@
 
 - Project: `FAB-P0008 / AAC`
 - Cross-project execution: `FAB-P0001 / TFI` task `TFI-M9-GLOBAL-DHARMA-IOS-001`
-- Baseline main: `8595a50196309c8ebb91c3f8077125d7dc9e3ffa` (aligned from original `8f7e83902a616ecdb62fdaded65ea79227e745f3`)
+- Baseline main: `c82b29cd6404c2f19b93d8479b2e2cae45469249` (re-aligned after canonical AAC-004/#2445; previous `8595a50196309c8ebb91c3f8077125d7dc9e3ffa`)
 - State: `IN_PROGRESS`
 
 ## Goal

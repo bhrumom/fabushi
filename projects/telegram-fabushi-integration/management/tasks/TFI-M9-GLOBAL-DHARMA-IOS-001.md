@@ -3,7 +3,7 @@
 - Project: `FAB-P0001 / TFI`
 - Cross-project boundary: `FAB-P0008 / AAC`
 - Parent: `M9-GLOBAL-DHARMA-003`
-- Baseline canonical main: `8595a50196309c8ebb91c3f8077125d7dc9e3ffa` (aligned from original implementation baseline `8f7e83902a616ecdb62fdaded65ea79227e745f3`)
+- Baseline canonical main: `c82b29cd6404c2f19b93d8479b2e2cae45469249` (re-aligned after #2445; previous alignment `8595a50196309c8ebb91c3f8077125d7dc9e3ffa`, original implementation baseline `8f7e83902a616ecdb62fdaded65ea79227e745f3`)
 - Branch: `feat/tfi-ios-global-dharma-commerce-20260906`
 - State: `IMPLEMENTING / PR_ACTIVE`
 - Owner: iOS / Mini App Host / payments
@@ -138,7 +138,7 @@ Apple explicitly states Advanced Commerce purchases cannot use StoreKit Testing 
 
 ## Evidence
 
-- Baseline main: `8595a50196309c8ebb91c3f8077125d7dc9e3ffa` (aligned from original `8f7e83902a616ecdb62fdaded65ea79227e745f3`)
+- Baseline main: `c82b29cd6404c2f19b93d8479b2e2cae45469249` (re-aligned after #2445; previous `8595a50196309c8ebb91c3f8077125d7dc9e3ffa`, original `8f7e83902a616ecdb62fdaded65ea79227e745f3`)
 - Governed branch: `feat/tfi-ios-global-dharma-commerce-20260906`
 - Pull request: `#2446` — `feat(iOS): close Global Dharma Mini App commerce journey`
 - Design record commit: `2aca32d7dc5cdac2764cba5d35502d739117e40e`
@@ -163,3 +163,5 @@ Apple explicitly states Advanced Commerce purchases cannot use StoreKit Testing 
 
 - Marketplace Contract run `34049664397` on head `084b7d794bffed34cbc300b6d6465ebd3cd573c9` proved both prior fixes: native→`mobile` fallback unit test passed, and the live test advanced past native-platform/universal-artifact assertions. It then failed only at stale receipt field access `receipt["sha256"]`; canonical `InstalledPluginPointer` serializes `artifactId` + `artifactSha256` and intentionally does not persist `sourceUrl`. Diagnostic artifact `9994229393`, digest `sha256:24ef6fb9b2fb76c6c1f739e12d07cda92ec02994adecec61b8ff58ebcf28a6d8`.
 - Follow-up aligns the entire live persistence contract in one pass: installation, post-install list and restart list compare canonical `artifactId`, `artifactSha256`, `version` and `runtime`; release-manifest artifact matching uses `id/runtime/sha256`; external provenance remains verified through `marketplaceSource`, release manifest and the selected artifact instead of inventing a persisted `sourceUrl`.
+
+- Canonical main advanced during PR validation to `c82b29cd6404c2f19b93d8479b2e2cae45469249` via #2445 (`feat(TFI): unify Global Dharma WebMCP runtime and commerce authority`). #2446 was re-aligned rather than validating against stale `8595a501…`; the merge introduces the canonical shared Bot/Web runtime, delegated session-bound Mini App identity, and server commerce authority required by this iOS journey. Canonical AAC task `AAC-004` is owned by that controlled account-session work; the iOS commerce boundary is therefore allocated as `AAC-005` / `AAC-R015`.
