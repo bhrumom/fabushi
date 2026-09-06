@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   macos-interactive:
-    name: Install latest release, login, register, and expose macOS App
+    name: Install exact-main release, login, register, and expose macOS App
     runs-on: macos-15
     timeout-minutes: 55
     env:
@@ -117,30 +117,52 @@ jobs:
         run: node --test chatgpt-vps-control/tests/macos-interactive-app-e2e-contract.test.js
 
       - id: release
-        name: Resolve newest published macOS test release
+        name: Wait for exact-main published macOS test release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$EVIDENCE_DIR/release/releases.json"
-          jq '[
-            .[]
-            | select(.draft == false and .prerelease == true)
-            | select(any(.assets[]?; (.name // "") | test("^fabushi-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$")))
-          ] | sort_by(.published_at // .created_at) | last' \
-            "$EVIDENCE_DIR/release/releases.json" > "$EVIDENCE_DIR/release/release.json"
-          jq -e 'type == "object" and (.tag_name | type == "string")' "$EVIDENCE_DIR/release/release.json" >/dev/null
+          deadline=$((SECONDS + 1200))
+          found=false
+          resolved_target=''
+          poll=0
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            poll=$((poll + 1))
+            gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$EVIDENCE_DIR/release/releases.json"
+            jq '[
+              .[]
+              | select(.draft == false and .prerelease == true)
+              | select(any(.assets[]?; (.name // "") | test("^fabushi-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$")))
+            ] | sort_by(.published_at // .created_at) | reverse' \
+              "$EVIDENCE_DIR/release/releases.json" > "$EVIDENCE_DIR/release/candidates.json"
+            candidate_count="$(jq 'length' "$EVIDENCE_DIR/release/candidates.json")"
+            for ((index=0; index<candidate_count; index++)); do
+              target="$(jq -r ".[$index].target_commitish // empty" "$EVIDENCE_DIR/release/candidates.json")"
+              [ -n "$target" ] || continue
+              resolved_target="$(gh api "repos/$GITHUB_REPOSITORY/commits/$target" --jq .sha 2>/dev/null || true)"
+              [ "$resolved_target" = "$GITHUB_SHA" ] || continue
+              jq ".[$index]" "$EVIDENCE_DIR/release/candidates.json" > "$EVIDENCE_DIR/release/release.json"
+              found=true
+              break
+            done
+            [ "$found" = true ] && break
+            echo "Waiting for published macOS release bound to $GITHUB_SHA (poll $poll)."
+            sleep 15
+          done
+          if [ "$found" != true ]; then
+            echo "No published macOS release bound to exact workflow source $GITHUB_SHA appeared within 20 minutes." >&2
+            exit 1
+          fi
+          test "$resolved_target" = "$GITHUB_SHA"
           jq '[.assets[] | select((.name // "") | test("^fabushi-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$"))] | first' \
             "$EVIDENCE_DIR/release/release.json" > "$EVIDENCE_DIR/release/asset.json"
           jq -e 'type == "object" and (.browser_download_url | type == "string")' "$EVIDENCE_DIR/release/asset.json" >/dev/null
           tag="$(jq -r .tag_name "$EVIDENCE_DIR/release/release.json")"
-          target="$(jq -r .target_commitish "$EVIDENCE_DIR/release/release.json")"
           asset_name="$(jq -r .name "$EVIDENCE_DIR/release/asset.json")"
           release_id="$(jq -r .id "$EVIDENCE_DIR/release/release.json")"
           asset_id="$(jq -r .id "$EVIDENCE_DIR/release/asset.json")"
           published_at="$(jq -r .published_at "$EVIDENCE_DIR/release/release.json")"
-          resolved_target="$(gh api "repos/$GITHUB_REPOSITORY/commits/$target" --jq .sha)"
           printf '%s\n' "$resolved_target" > "$EVIDENCE_DIR/release/target-sha.txt"
           {
             echo "tag=$tag"
