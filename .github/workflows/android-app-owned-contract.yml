@@ -1,0 +1,84 @@
+name: Android App-owned gateway contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-app-owned-contract.yml'
+      - '.github/workflows/android-interactive-app-e2e.yml'
+      - 'chatgpt-vps-control/scripts/run-android-interactive-app-e2e.sh'
+      - 'chatgpt-vps-control/tests/android-interactive-app-e2e-contract.test.js'
+      - 'mobile/android/app/build.gradle'
+      - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiCiBootstrap.kt'
+      - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiRemoteDeviceGateway.kt'
+      - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/MainActivity.kt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-app-owned-contract-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Android App-owned contract and Kotlin compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate workflow runner shell and ownership contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n chatgpt-vps-control/scripts/run-android-interactive-app-e2e.sh
+          node --test chatgpt-vps-control/tests/android-interactive-app-e2e-contract.test.js
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '14742923'
+          packages: 'platform-tools'
+
+      - name: Install compile SDK without emulator or NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          available_packages="$(sdkmanager --list --channel=3)"
+          platform_package="$(printf '%s\n' "$available_packages" | awk -F'|' '
+            /platforms;android-(37([.]0)?|CinnamonBun)/ && !found {
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found = 1
+            }
+          ')"
+          build_tools_package="$(printf '%s\n' "$available_packages" | awk -F'|' '
+            /build-tools;37[.]/ && !found {
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found = 1
+            }
+          ')"
+          test -n "$platform_package"
+          test -n "$build_tools_package"
+          sdkmanager --channel=3 "$platform_package" "$build_tools_package"
+          stable_api_path="$ANDROID_HOME/platforms/android-37"
+          if [ ! -e "$stable_api_path" ]; then
+            installed_platform="$(find "$ANDROID_HOME/platforms" -maxdepth 1 -type d \( -name 'android-37*' -o -name 'android-CinnamonBun*' \) | head -n 1)"
+            test -n "$installed_platform"
+            ln -s "$installed_platform" "$stable_api_path"
+          fi
+
+      - name: Restore Gradle dependency and build cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compile Android Kotlin only
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon --build-cache :app:compileDebugKotlin
