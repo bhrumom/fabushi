@@ -90,13 +90,15 @@ impl ProductBackend {
 
     fn marketplace_search(&self, params: &Value) -> Result<Value, TestDriverError> {
         let (query, platform) = marketplace_search_args(params)?;
+        let api_platform = marketplace_api_platform(platform);
         self.product
-            .marketplace_browse(Some(query), Some(platform))
+            .marketplace_browse(Some(query), Some(api_platform))
             .map_err(|error| {
                 TestDriverError::new("product_backend_error", error.to_string()).with_details(
                     json!({
                         "operation": TestDriverMethod::MarketplaceSearch.as_str(),
                         "platform": platform,
+                        "apiPlatform": api_platform,
                     }),
                 )
             })
@@ -109,12 +111,17 @@ impl ProductBackend {
         operation: TestDriverMethod,
     ) -> Result<Value, TestDriverError> {
         let (plugin_id, requested_version, platform) = plugin_release_args(params)?;
+        let api_platform = marketplace_api_platform(platform);
         let listing = self
             .product
-            .marketplace_browse(Some(plugin_id), Some(platform))
+            .marketplace_browse(Some(plugin_id), Some(api_platform))
             .map_err(|error| {
-                TestDriverError::new("product_backend_error", error.to_string())
-                    .with_details(json!({"operation": operation.as_str(), "platform": platform}))
+                TestDriverError::new("product_backend_error", error.to_string()).with_details(
+                    json!({
+                        "operation": operation.as_str(),
+                        "platform": platform,
+                        "apiPlatform": api_platform,
+                    }))
             })?;
         let plugin = listing
             .get("plugins")
@@ -195,7 +202,7 @@ impl ProductBackend {
         let previous = installer.active(plugin_id).map_err(|error| {
             TestDriverError::new(
                 "plugin_state_read_failed",
-                format!("failed to read active plugin receipt: {error}"),
+                format!("failed to read active plugin receipt for {plugin_id}: {error}"),
             )
         })?;
         if require_existing && previous.is_none() {
@@ -439,6 +446,13 @@ fn marketplace_search_args(params: &Value) -> Result<(&str, &str), TestDriverErr
     Ok((query, platform))
 }
 
+fn marketplace_api_platform(platform: &str) -> &str {
+    match platform {
+        "ios" | "android" => "mobile",
+        other => other,
+    }
+}
+
 fn required_trimmed<'a>(
     params: &'a Value,
     key: &str,
@@ -463,6 +477,15 @@ mod tests {
         let (query, platform) = marketplace_search_args(&params).unwrap();
         assert_eq!(query, "全球法布施");
         assert_eq!(platform, "ios");
+    }
+
+    #[test]
+    fn marketplace_api_platform_maps_native_clients_without_changing_device_semantics() {
+        assert_eq!(marketplace_api_platform("ios"), "mobile");
+        assert_eq!(marketplace_api_platform("android"), "mobile");
+        assert_eq!(marketplace_api_platform("desktop"), "desktop");
+        assert_eq!(marketplace_api_platform("web"), "web");
+        assert_eq!(marketplace_api_platform("cli"), "cli");
     }
 
     #[test]
