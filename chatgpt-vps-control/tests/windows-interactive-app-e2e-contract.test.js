@@ -8,6 +8,9 @@ const contractPath = fileURLToPath(import.meta.url);
 const here = path.dirname(contractPath);
 const root = path.resolve(here, '..', '..');
 const workflowPath = path.join(root, '.github', 'workflows', 'windows-interactive-app-e2e.yml');
+const loginPath = path.join(root, 'chatgpt-vps-control', 'scripts', 'login-ci-test-account.mjs');
+const exportPath = path.join(root, 'chatgpt-vps-control', 'scripts', 'export-ci-app-account-session.mjs');
+const sessionStorePath = path.join(root, 'chatgpt-vps-control', 'lib', 'fabushi-account-session.js');
 
 function workflow() {
   return fs.readFileSync(workflowPath, 'utf8');
@@ -55,6 +58,14 @@ test('Windows interactive workflow is App-owned, release-based, and evidence-com
   assert.ok(text.includes('FABUSHI_CI_TEST_PASSWORD'), 'workflow must use the protected CI test account password secret');
   assert.ok(text.includes('controllable device online'), 'workflow must prove App-owned registration from the installed App log');
   assert.ok(text.includes('if: always()'), 'evidence upload/collection must survive failures');
+});
+
+test('protected account helpers accept the App-owned Windows Actions id without widening to arbitrary devices', () => {
+  for (const helperPath of [loginPath, exportPath, sessionStorePath]) {
+    const source = fs.readFileSync(helperPath, 'utf8');
+    assert.match(source, /windows-app/u);
+    assert.ok(source.includes('^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app|windows-app)$'));
+  }
 });
 
 test('Windows interactive workflow does not start a standalone runner-owned Fabushi gateway', () => {
