@@ -1,14 +1,19 @@
 # M8-WEBMCP-002 evidence — Global Dharma Web/service shared runtime
 
-Status: **IMPLEMENTED / PR_CI_PENDING / PACKAGED_PROVIDER_E2E_BLOCKED**
+Status: **IMPLEMENTED / CURRENT_HEAD_CONTRACT_GREEN / MERGE_PENDING / PACKAGED_PROVIDER_E2E_BLOCKED**
 
 ## Exact lineage
 
 - Canonical intake base: `main@8f7e83902a616ecdb62fdaded65ea79227e745f3`.
+- Current canonical main readback after Android #2447: `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa`.
+- Current-main synchronization merge/current code head: `a53b576ab99f0c3fbeed65e4e3937424d9abd3c6`.
 - Governed branch: `feat/tfi-global-dharma-web-service-sync-pay-20260906`.
 - Persisted source: `projects/telegram-fabushi-integration/source/2026-09-06-global-dharma-web-service-sync-commerce.md` (`2eb4b0cf524942f003bc6ec973ba8119745b2030`).
 - Implementation commit: `f9a2df5850e81bd5f1fbe3450adf4ec4e3b0f906`.
-- Protected PR / current-head CI: pending at this record revision; exact IDs must be reported from live GitHub, not guessed.
+- Governed PR #2445: `https://github.com/bhrumom/fabushi/pull/2445`, OPEN / MERGEABLE at this readback; protected merge is still pending.
+- Current-head targeted workflow: `34047757146` (`Global Dharma Web Service Contract`) on exact head `a53b576ab99f0c3fbeed65e4e3937424d9abd3c6`, conclusion SUCCESS.
+- Jobs: backend MCP/runtime/account `101525766224` SUCCESS; Web Mini App production build `101525766209` SUCCESS; CNY1080 order/webhook/refund/restore `101525766045` SUCCESS.
+- Artifacts: backend `9993622901` (`sha256:0f737d7413cec0d81965b6ce64648b9a0586a7b403ae46615260f162fe2e3142`); Web build `9993636543` (`sha256:1ad41f494a36daeae1e86d3731b1b2e73c3382318bc08ee4418863142a7c7ceb`); commerce `9993616364` (`sha256:c1051e680fe94392134d441cca8adbec224c623fad1dd7889944554172ed7c46`); all were unexpired at readback.
 
 ## Reproducible contract/integration evidence added
 
@@ -75,3 +80,11 @@ The repository's `deploy-miniapps-cloudflare.yml` deploys on any branch push tou
 - **Provider sandbox is not available/proved in this round.** `developer-fiat-commerce.yml` is currently intentionally paused; real PSP/KYC/provider credentials cannot be fabricated.
 - **No packaged-user video exists yet for this branch.** No link is recorded until a real installable accepted-main package/device lane performs search -> install -> Bot -> natural language -> tools/list/tools/call -> open app -> sync -> pay/restore -> entitlement -> feature and uploads video/screenshots/trace/logs.
 - These blockers keep this evidence `IN_PROGRESS`; contract green alone is not packaged/provider completion.
+
+## 2026-09-07 live catch-up / dependency evidence
+
+- `main` advanced from the intake base only through Android Global Dharma PR #2447 to `8595a50196309c8ebb91c3f8077125d7dc9e3ffa`; path comparison found zero overlap with the Web/service change. The governed branch merged that canonical main normally (no force/rebase/bypass) as `a53b576ab99f0c3fbeed65e4e3937424d9abd3c6`.
+- #2445 exact-head `CI result` is SUCCESS. The targeted Web/service workflow `34047757146` is independently SUCCESS with all three contract/build jobs and the three artifact digests above.
+- An unrelated `Douyin Batch Downloader MiniApp / validate` check remains failing on this PR head; it is not caused by a Web/service changed path and no unrelated Rust fix is folded into this task.
+- Related desktop facade PR #2448 is OPEN at `840ddb9c23ac5aab6a9e3d10ef6c4df1c15f0d18`. Electron run `34047238103` fails the Global Dharma journey because the Bot status reply `已读取全球法布施状态` never appears; 26 other E2E cases passed, but package/upload steps were skipped after the failure. Therefore this is **not** packaged acceptance evidence.
+- Full packaged-user video remains **PENDING**. There is no accepted-main video/download link for this Web/service head, and none is invented here.

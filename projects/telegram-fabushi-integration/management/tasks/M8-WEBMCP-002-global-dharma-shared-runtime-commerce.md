@@ -4,7 +4,9 @@
 - Stage: `M8 WebMCP + M9 payment integration`
 - Status: `IN_PROGRESS`
 - Started: `2026-09-06`
-- Canonical base: `main@8f7e83902a616ecdb62fdaded65ea79227e745f3`
+- Canonical intake base: `main@8f7e83902a616ecdb62fdaded65ea79227e745f3`
+- Current canonical main readback: `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa`
+- Current synchronized head: `a53b576ab99f0c3fbeed65e4e3937424d9abd3c6`
 - Branch: `feat/tfi-global-dharma-web-service-sync-pay-20260906`
 - Source: `../../source/2026-09-06-global-dharma-web-service-sync-commerce.md`
 - Cross-project dependency: `FAB-P0008/AAC-004`
@@ -60,9 +62,13 @@ Close the Web/server authority boundary for the official `global-dharma` Mini Ap
 ## Evidence
 
 - Intake source commit: `2eb4b0cf524942f003bc6ec973ba8119745b2030`.
-- Implementation commit: `f9a2df5850e81bd5f1fbe3450adf4ec4e3b0f906`; protected PR/CI/packaged evidence remains pending.
+- Implementation commit: `f9a2df5850e81bd5f1fbe3450adf4ec4e3b0f906`.
+- Current-main synchronization merge: `a53b576ab99f0c3fbeed65e4e3937424d9abd3c6` (merged `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa`; zero overlapping paths with #2447).
+- Governed PR: #2445, OPEN / MERGEABLE at this evidence readback.
+- Current-head targeted Actions: run `34047757146` SUCCESS; jobs `101525766224` backend, `101525766209` Web build, `101525766045` CNY1080 commerce; artifacts `9993622901`, `9993636543`, `9993616364`.
+- Protected merge and accepted-main packaged evidence remain pending.
 
 ## Blockers
 
 - Real production/sandbox payment provider credentials and KYC/provider activation are external; tests must fail closed if absent.
-- Packaged-user video depends on an installable release/Actions device lane and is not considered complete until a real artifact exists.
+- Packaged-user video depends on an installable accepted-main release/Actions device lane and is not considered complete until a real artifact exists. Related desktop facade PR #2448 is OPEN and its Electron run `34047238103` currently fails the Global Dharma journey before packaging, so it cannot satisfy this gate.

@@ -3,7 +3,9 @@
 - Project: `FAB-P0008 / AAC`
 - Status: `IN_PROGRESS`
 - Started: `2026-09-06`
-- Canonical base: `main@8f7e83902a616ecdb62fdaded65ea79227e745f3`
+- Canonical intake base: `main@8f7e83902a616ecdb62fdaded65ea79227e745f3`
+- Current canonical main readback: `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa`
+- Current synchronized Web/service head: `a53b576ab99f0c3fbeed65e4e3937424d9abd3c6`
 - Branch: `feat/tfi-global-dharma-web-service-sync-pay-20260906`
 - Parent product task: `FAB-P0001/TFI M8-WEBMCP-002`
 - Source: `../../../telegram-fabushi-integration/source/2026-09-06-global-dharma-web-service-sync-commerce.md`
