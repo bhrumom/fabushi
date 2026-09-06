@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,7 +26,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ombhrum.fabushi.core.MahayanaHost
 import kotlinx.coroutines.flow.MutableSharedFlow
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     private val deepLinks = MutableSharedFlow<Uri>(replay = 1, extraBufferCapacity = 31)
@@ -87,11 +90,30 @@ class MainActivity : ComponentActivity() {
 
                 val active = openedMiniApp
                 if (active != null) {
+                    val miniAppTransportHost = remember(active.pluginId) { MahayanaHost(applicationContext) }
+                    val miniAppPlatformBridge = remember(active.pluginId, miniAppTransportHost) {
+                        MiniAppPlatformBridge(miniAppTransportHost)
+                    }
+                    DisposableEffect(miniAppTransportHost) {
+                        onDispose { miniAppTransportHost.close() }
+                    }
                     Box {
                         MiniAppWebMcpSurface(
                             plugin = active,
-                            loadLocalHtml = model::loadLocalMiniAppHtml,
-                            callRuntimeToolJson = model::callRuntimeToolJson,
+                            loadLocalHtml = { pluginId ->
+                                model.loadLocalMiniAppHtml(pluginId) ?: globalDharmaHostShell(active)
+                            },
+                            callRuntimeToolJson = { pluginId, name, argumentsJson ->
+                                if (pluginId == MiniAppPlatformBridge.GLOBAL_DHARMA_ID) {
+                                    miniAppPlatformBridge.callOfficialMcpTool(
+                                        pluginId = pluginId,
+                                        name = name,
+                                        arguments = JSONObject(argumentsJson.ifBlank { "{}" }),
+                                    ).toString()
+                                } else {
+                                    model.callRuntimeToolJson(pluginId, name, argumentsJson)
+                                }
+                            },
                             onClose = { openedMiniApp = null },
                         )
                         if (active.pluginId == MiniAppPlatformBridge.GLOBAL_DHARMA_ID) {
