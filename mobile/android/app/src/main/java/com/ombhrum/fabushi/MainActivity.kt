@@ -87,12 +87,21 @@ class MainActivity : ComponentActivity() {
 
                 val active = openedMiniApp
                 if (active != null) {
-                    MiniAppWebMcpSurface(
-                        plugin = active,
-                        loadLocalHtml = model::loadLocalMiniAppHtml,
-                        callRuntimeToolJson = model::callRuntimeToolJson,
-                        onClose = { openedMiniApp = null },
-                    )
+                    Box {
+                        MiniAppWebMcpSurface(
+                            plugin = active,
+                            loadLocalHtml = model::loadLocalMiniAppHtml,
+                            callRuntimeToolJson = model::callRuntimeToolJson,
+                            onClose = { openedMiniApp = null },
+                        )
+                        if (active.pluginId == MiniAppPlatformBridge.GLOBAL_DHARMA_ID) {
+                            GlobalDharmaCommercePanel(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .testTag("global-dharma-commerce-panel"),
+                            )
+                        }
+                    }
                 } else if (state.onboardingStep >= 3 && state.authResolved && state.loggedIn && !showLegacyShell) {
                     val miniAppBot = botState.activeBot?.takeIf { !it.miniAppId.isNullOrBlank() }
                     val miniAppPlugin = miniAppBot?.miniAppId?.let { id -> state.plugins.firstOrNull { it.pluginId == id } }
