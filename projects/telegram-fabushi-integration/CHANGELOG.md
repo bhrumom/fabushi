@@ -25,3 +25,9 @@
 - Recorded canonical `dca0fea5…` Native iOS failure from run `34056507262` / artifact `9996206512`.
 - Replaced unsafe non-hittable close center-coordinate fallback with a fail-closed hittability path plus a remote-computer-only explicit shell-back fallback.
 - Added legacy workbench recovery before Marketplace navigation while retaining the remote surface disappearance assertion.
+
+## 2026-09-07 — macOS truncated App MCP target generation refresh
+
+- Recorded exact canonical `71168adbeea65e998bb650ba3a4636911287636a` Electron macOS failure from run `34058850412`, job `101555620505`, diagnostics artifact `9996959351`.
+- Preserved the 500-element truncated snapshot and stale-generation fail-closed product contract; the test now refreshes the exact off-snapshot stable target generation with `find` immediately before mutation and retries only a genuine stale-generation race within a bounded poll.
+- The same exact package passed Global Dharma Bot/WebMCP/UI/account/CNY1080 parity, so no Mini App product semantics were changed by this repair.
