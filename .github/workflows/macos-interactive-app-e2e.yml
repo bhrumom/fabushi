@@ -15,8 +15,6 @@ on:
       - 'chatgpt-vps-control/bin/**'
       - 'chatgpt-vps-control/scripts/**'
       - 'chatgpt-vps-control/tests/macos-interactive-app-e2e-contract.test.js'
-  release:
-    types: [prereleased]
   workflow_dispatch:
 
 permissions:
