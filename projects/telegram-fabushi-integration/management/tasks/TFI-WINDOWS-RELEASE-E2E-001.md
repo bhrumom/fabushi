@@ -156,3 +156,11 @@ Branch: `fix/tfi-windows-runner-temp-path-20260906`。重型验证继续只走 G
 ## 2026-09-06 Windows 1.2.45 post-RUNNER_TEMP retest candidate
 
 PR `#2423` repaired the Windows-only protected login path validation and merged as `main@43d8a1530868c2a8958778ae10e4ac9e8314aba8`. Before the governed version branch was cut, canonical main advanced again to `bea626269afd26f84e0b92b32bbf357beb481802` while remaining at semantic version `1.2.44`. The next eligible Windows package is therefore `1.2.45`, cut from that exact base. It is not accepted until the protected merge, exact-main Electron package/E2E, immutable tested desktop Release, newly self-registered `gha-<run>-<attempt>-windows-app` device, all six semantic tools, complete journey with final logout, and whole-session evidence all pass.
+
+## 2026-09-06 Windows 1.2.48 live takeover
+
+- Exact-main Electron run `34024602084` completed `success` for accepted SHA `a14ce9298a287953e6f9d457074367eeda4761b0`; Windows job `101463220859` built/tested version `1.2.45` from that same SHA.
+- Post-main run `34025569116` bound `SOURCE_SHA=a14ce9298a287953e6f9d457074367eeda4761b0` and `ELECTRON_RUN_ID=34024602084`; it failed later on `Native mobile result` for the same SHA. This is not Windows SHA-binding drift, and release publication was skipped.
+- Canonical `main@3ade251d5d73764255bac324d06fd788ec07edb2` already carries global version `1.2.47`, so the next governed Windows candidate is strictly newer `1.2.48` on `release/windows-1.2.48-20260906`.
+- This continuation does not reopen completed `#2409/#2419/#2422` work.
+- Status remains `IN_PROGRESS` until protected merge, exact-main/post-main delivery success, immutable Windows installer publication, a brand-new App-owned `gha-<run>-<attempt>-windows-app` self-registration, real six-tool + CI-session control, the complete Windows journey through final logout, and always-uploaded video/screenshots/trace/log/report evidence are all verified.
