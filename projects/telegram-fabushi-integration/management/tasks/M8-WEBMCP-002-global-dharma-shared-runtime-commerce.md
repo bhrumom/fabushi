@@ -5,8 +5,8 @@
 - Status: `IN_PROGRESS`
 - Started: `2026-09-06`
 - Canonical intake base: `main@8f7e83902a616ecdb62fdaded65ea79227e745f3`
-- Current canonical main readback: `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa`
-- Current synchronized head: `a53b576ab99f0c3fbeed65e4e3937424d9abd3c6`
+- Current canonical main readback: `main@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`
+- Web/service protected merge: #2445 `7ec44b0b000e25ceb8799843cf98f85f3c6aa9b6` -> `c82b29cd6404c2f19b93d8479b2e2cae45469249`
 - Branch: `feat/tfi-global-dharma-web-service-sync-pay-20260906`
 - Source: `../../source/2026-09-06-global-dharma-web-service-sync-commerce.md`
 - Cross-project dependency: `FAB-P0008/AAC-004`
@@ -72,3 +72,10 @@ Close the Web/server authority boundary for the official `global-dharma` Mini Ap
 
 - Real production/sandbox payment provider credentials and KYC/provider activation are external; tests must fail closed if absent.
 - Packaged-user video depends on an installable accepted-main release/Actions device lane and is not considered complete until a real artifact exists. Related desktop facade PR #2448 is OPEN and its Electron run `34047238103` currently fails the Global Dharma journey before packaging, so it cannot satisfy this gate.
+
+## 2026-09-07 merged Web/service + consumer evidence
+
+- #2445 is MERGED. Exact-head run `34049805438` is SUCCESS with backend/runtime/account job `101531239556`, CNY1080 order/webhook/refund/restore job `101531239450`, and Web production build job `101531239575`; artifacts `9994199494` / `9994192661` / `9994207785`.
+- Merge queue run `34049934041` / job `101531586697` accepted `c82b29cd6404c2f19b93d8479b2e2cae45469249`. Later Android #2451/#2452 advanced canonical main to `380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab` without overlapping Web/service logic.
+- Desktop consumer PR #2448 has green real-Rust-Host pre-package evidence at `1655ea8070e07ad7dd8ab8e9347fbcb43f6ddf8f`: run `34051925481`, artifact `9994834346`, 12 screenshots, trace and Global Dharma user-journey video. It covers search/install -> Bot natural language -> shared revision -> CNY1080 test purchase -> restore -> entitled local prayer wheel -> restart -> logout cleanup.
+- This does not yet substitute for post-merge installable Electron package evidence. Android 1.2.52 interactive `34051316405` is a real failed timeout with artifact `9994884584`; mobile terminal proof remains blocked.
