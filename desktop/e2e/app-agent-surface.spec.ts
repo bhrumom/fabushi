@@ -161,11 +161,30 @@ test('packaged Fabushi publishes a generation-safe semantic App MCP over the pri
     };
     expect(messageSnapshot.truncated).toBe(true);
     expect(messageSnapshot.elements.some((element) => element.agentId === semanticMessageAgentId)).toBe(false);
-    await client.call('action', {
-      generation: messageSnapshot.generation,
-      agentId: semanticMessageAgentId,
-      action: 'invoke',
-    });
+
+    // The authored-message target is intentionally beyond the bounded snapshot, so it
+    // cannot have a stable lease for messageSnapshot.generation. Resolve the exact
+    // stable agentId immediately before mutation and retry only a genuine generation
+    // race. All other failures remain fail-closed.
+    await expect.poll(async () => {
+      const freshMessage = await client.call('find', { agentId: semanticMessageAgentId, limit: 1 }) as {
+        generation: number;
+        count: number;
+      };
+      expect(freshMessage.count).toBe(1);
+      try {
+        await client.call('action', {
+          generation: freshMessage.generation,
+          agentId: semanticMessageAgentId,
+          action: 'invoke',
+        });
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/stale_app_surface_generation/u.test(message)) throw error;
+        return false;
+      }
+    }, { timeout: 5_000 }).toBe(true);
     await expect(page.getByTestId('message-context-menu')).toBeVisible();
 
     for (const actionName of ['reply', 'copy', 'react', 'edit', 'pin', 'forward', 'delete']) {
