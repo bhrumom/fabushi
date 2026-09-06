@@ -13,6 +13,10 @@ on:
       - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiCiBootstrap.kt'
       - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiRemoteDeviceGateway.kt'
       - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/MainActivity.kt'
+      - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/MarketplaceViewModel.kt'
+      - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/MiniAppPlatformBridge.kt'
+      - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/MobileBotViewModel.kt'
+      - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/GrokMobileShellAndroid.kt'
 
 permissions:
   contents: read
@@ -83,3 +87,26 @@ jobs:
       - name: Compile Android Kotlin only
         working-directory: mobile/android
         run: ./gradlew --no-daemon --build-cache :app:compileDebugKotlin
+
+
+      - name: Record Android Bot projection contract evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android-bot-projection-contract-evidence
+          git rev-parse HEAD > android-bot-projection-contract-evidence/head-sha.txt
+          node --test chatgpt-vps-control/tests/android-interactive-app-e2e-contract.test.js \
+            > android-bot-projection-contract-evidence/contract-test.txt 2>&1
+          grep -n -E 'readInstalledMiniApps|confirmInstalledMiniApp|canonical installed projection|Bot 刷新异常' \
+            mobile/android/app/src/main/java/com/ombhrum/fabushi/{MiniAppPlatformBridge.kt,MobileBotViewModel.kt,GrokMobileShellAndroid.kt} \
+            > android-bot-projection-contract-evidence/projection-contract.txt
+
+      - name: Upload Android Bot projection contract evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-bot-projection-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          path: android-bot-projection-contract-evidence/
+          if-no-files-found: error
+          retention-days: 14
