@@ -152,3 +152,7 @@ Windows `1.2.40` exact-main Electron run `34020086944` 已证明 Windows package
 4. 不修改账号凭据、token 生命周期、device-id allowlist、App-owned gateway ownership、发布选择或其它平台语义。
 
 Branch: `fix/tfi-windows-runner-temp-path-20260906`。重型验证继续只走 GitHub Actions；修复合并后必须从最新 canonical main 严格升版并发布新的 Windows installer，再只用该 release/run 新注册的 App-owned Windows device 完成六工具与全 journey 验收。
+
+## 2026-09-06 Windows 1.2.45 post-RUNNER_TEMP retest candidate
+
+PR `#2423` repaired the Windows-only protected login path validation and merged as `main@43d8a1530868c2a8958778ae10e4ac9e8314aba8`. Before the governed version branch was cut, canonical main advanced again to `bea626269afd26f84e0b92b32bbf357beb481802` while remaining at semantic version `1.2.44`. The next eligible Windows package is therefore `1.2.45`, cut from that exact base. It is not accepted until the protected merge, exact-main Electron package/E2E, immutable tested desktop Release, newly self-registered `gha-<run>-<attempt>-windows-app` device, all six semantic tools, complete journey with final logout, and whole-session evidence all pass.
