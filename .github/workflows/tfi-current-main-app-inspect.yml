@@ -1,0 +1,59 @@
+name: TFI current-main App-owned inspection
+
+on:
+  push:
+    branches:
+      - ops/tfi-current-main-evidence-dispatch-20260907
+    paths:
+      - '.github/workflows/tfi-current-main-app-inspect.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-macos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      EXPECTED_MAIN_SHA: 89922b7907d80d0840da5f394444a4affcbe45f4
+      EXPECTED_DEVICE_ID: gha-34063456432-1-macos-app
+      FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+      FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+      OUTPUT_JSON: ${{ runner.temp }}/public-mcp-app-inspect.json
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Fail closed unless canonical main is still intended SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)" = "$EXPECTED_MAIN_SHA"
+
+      - name: Checkout operational controller
+        uses: actions/checkout@v5
+        with:
+          ref: ops/tfi-current-main-evidence-dispatch-20260907
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+
+      - name: Install existing public MCP client dependencies
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+
+      - name: Inspect live App-owned macOS device through production public MCP
+        run: node chatgpt-vps-control/scripts/public-mcp-app-inspect.mjs
+
+      - name: Upload controller inspection evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tfi-current-main-macos-public-mcp-inspect-${{ github.run_id }}
+          path: ${{ runner.temp }}/public-mcp-app-inspect.json
+          if-no-files-found: warn
+          retention-days: 90
