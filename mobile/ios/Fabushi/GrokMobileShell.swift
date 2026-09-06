@@ -442,13 +442,22 @@ internal struct GrokMobileShell: View {
         } else if let selectedBot {
             MobileBotChat(bot: selectedBot, host: host, appAgentSurface: appAgentSurface) { self.selectedBot = nil }
         } else if legacyOpen {
-            ZStack(alignment: .topLeading) {
-                ContentView(model: model, messaging: messaging, appAgentSurface: appAgentSurface)
-                Button { legacyOpen = false } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 15, weight: .bold)).frame(width: 36, height: 36).background(.ultraThinMaterial, in: Circle())
+            VStack(spacing: 0) {
+                HStack {
+                    Button { legacyOpen = false } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 15, weight: .bold))
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .accessibilityIdentifier("grok-mobile-back")
+                    Spacer()
                 }
-                .padding(.leading, 10).padding(.top, 8)
-                .accessibilityIdentifier("grok-mobile-back")
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial)
+
+                ContentView(model: model, messaging: messaging, appAgentSurface: appAgentSurface)
             }
         } else {
             home
