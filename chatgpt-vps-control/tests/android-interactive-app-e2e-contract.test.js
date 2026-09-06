@@ -83,3 +83,25 @@ test("Native Android release self-starts the exact published App-owned interacti
   assert.ok(release.includes("-f release_tag='${{ steps.release.outputs.release_tag }}'"));
   assert.ok(release.includes("-f release_sha='${{ steps.source.outputs.sha }}'"));
 });
+
+test("authenticated Android Grok shell owns the App semantic surface", async () => {
+  const activity = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/MainActivity.kt");
+  const grok = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/GrokMobileShellAndroid.kt");
+  assert.match(activity, /GrokMobileShellAndroid[\s\S]*appAgentSurface = appAgentSurface/u);
+  for (const required of [
+    "appAgentSurface: FabushiAppAgentSurface",
+    "appAgentSurface.publish(screen = screen",
+    'appAgentSurface.publish(screen = "bot-chat"',
+    '"grok-home"',
+    '"grok-compose"',
+    '"grok-create-bot"',
+    '"grok-mobile-legacy"',
+    '"grok-mobile-search-field"',
+    '"grok-mobile-add"',
+    '"grok-bot-mahayana-assistant"',
+    '"mobile-bot-draft"',
+    '"mobile-bot-send"',
+    'setOf("setValue")',
+    'setOf("invoke")',
+  ]) assert.ok(grok.includes(required), `missing authenticated Android Grok semantic invariant: ${required}`);
+});
