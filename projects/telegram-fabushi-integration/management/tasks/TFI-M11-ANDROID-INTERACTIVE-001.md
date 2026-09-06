@@ -43,3 +43,7 @@ No Runner-owned gateway, arbitrary shell execution, JavaScript execution, reflec
 - Exact released-APK Android interactive Actions workflow and evidence runner.
 - Minimal PR compilation/contract gate.
 - No UI semantic-surface behavior change in this task; logged-in surface completeness is intentionally left to evidence-driven follow-up after first live Android device registration.
+
+## 2026-09-06 release-to-interactive self-start follow-up
+
+Live recovery re-read found the Android interactive workflow active but with zero historical runs. The current Android release workflow publishes the signed immutable test APK but does not dispatch the required interactive acceptance lane. The atomic follow-up on `fix/tfi-android-interactive-self-start-20260906` preserves the existing App-owned gateway and six-tool truth contract, adds only the `actions: write` permission needed by the release job, and dispatches the existing Android interactive workflow after successful release publication with the exact release tag and canonical source SHA. Task status remains `IN_PROGRESS` until protected merge, a strictly newer Android release, fresh App-owned Android device discovery, complete six-tool feature-matrix execution, real logout, and complete evidence upload all pass.
