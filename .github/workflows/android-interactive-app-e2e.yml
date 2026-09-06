@@ -1,0 +1,126 @@
+name: Android interactive app device E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Exact published Native Android GitHub release tag
+        required: true
+        type: string
+      release_sha:
+        description: Exact canonical-main commit targeted by the release tag
+        required: true
+        type: string
+
+concurrency:
+  group: android-interactive-app-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  android-interactive:
+    name: Install released APK, login, self-register, and expose Android App
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-interactive
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact workflow source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize runner-owned evidence and session paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          {
+            echo "FABUSHI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/fabushi-account/session.json"
+            echo "FABUSHI_CI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/fabushi-ci-app/session.json"
+            echo "EVIDENCE_DIR=$GITHUB_WORKSPACE/android-interactive-evidence"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$GITHUB_WORKSPACE/android-interactive-evidence/steps" "$GITHUB_WORKSPACE/android-interactive-evidence/video"
+
+      - name: Record immutable workflow request identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RELEASE_SHA" != "$GITHUB_SHA" || true
+          printf '%s\n' \
+            "workflow_source_sha=$GITHUB_SHA" \
+            "requested_release_tag=$RELEASE_TAG" \
+            "requested_release_sha=$RELEASE_SHA" \
+            "device_id=$DEVICE_ID" \
+            > "$EVIDENCE_DIR/request.env"
+
+      - name: Set up Node.js for protected account helpers
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+
+      - name: Install protected account helper dependencies
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts --prefer-offline
+
+      - name: Enable KVM acceleration for Android Emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - id: interactive
+        name: Run released Android App interactive matrix window
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_7
+          force-avd-creation: false
+          disable-linux-hw-accel: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash chatgpt-vps-control/scripts/run-android-interactive-app-e2e.sh
+
+      - name: Upload Android interactive evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-interactive-app-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: android-interactive-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce released-App interactive evidence gate
+        if: always()
+        shell: bash
+        env:
+          INTERACTIVE_OUTCOME: ${{ steps.interactive.outcome }}
+        run: |
+          set -euo pipefail
+          test "$INTERACTIVE_OUTCOME" = success
+          test -f "$EVIDENCE_DIR/report.json"
+          test "$(jq -r .status "$EVIDENCE_DIR/report.json")" = passed-logged-out
+          test -s "$EVIDENCE_DIR/device-gateway-trace.jsonl"
+          test -s "$EVIDENCE_DIR/logcat-final.txt"
+          test -s "$EVIDENCE_DIR/android-session.mp4"
+          required=(fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert)
+          for tool in "${required[@]}"; do
+            jq -e --arg tool "$tool" 'select(.phase == "call-completed" and .ok == true and .toolName == $tool)' "$EVIDENCE_DIR/device-gateway-trace.jsonl" >/dev/null
+          done
