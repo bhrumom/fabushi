@@ -17,6 +17,7 @@ enum FabushiPayStoreKitError: LocalizedError, Sendable {
     case transactionAccountMismatch
     case pending
     case userCancelled
+    case noRestorablePurchase
     case invalidServerResponse
     case serverRejected(Int, String)
 
@@ -28,6 +29,7 @@ enum FabushiPayStoreKitError: LocalizedError, Sendable {
         case .transactionAccountMismatch: return "App Store 交易不属于当前支付订单"
         case .pending: return "支付正在等待 App Store 确认"
         case .userCancelled: return "用户取消了支付"
+        case .noRestorablePurchase: return "当前 App Store 账号没有可恢复的买断交易"
         case .invalidServerResponse: return "支付服务器返回了无效响应"
         case .serverRejected(let status, let message): return "支付服务器拒绝交易（\(status)）：\(message)"
         }
@@ -41,7 +43,7 @@ enum FabushiPayStoreKitError: LocalizedError, Sendable {
 /// in the transaction and the backend can bind a transaction to exactly one
 /// Payment Intent before granting an entitlement.
 actor FabushiPayStoreKit {
-    typealias AccessTokenProvider = @Sendable () async throws -> String
+    typealias AccessTokenProvider = @MainActor @Sendable () async throws -> String
 
     private let serviceBaseURL: URL
     private let accessTokenProvider: AccessTokenProvider
@@ -96,6 +98,41 @@ actor FabushiPayStoreKit {
         }
     }
 
+    /// User-initiated StoreKit restore. The original Fabushi Pay `paymentId`
+    /// comes back as `appAccountToken`; each candidate is re-verified against
+    /// the current Fabushi account before a durable entitlement is trusted.
+    func restore(expectedSku: String) async throws -> FabushiPayReceipt {
+        try await AppStore.sync()
+        var deferredError: Error?
+        for await verification in Transaction.currentEntitlements {
+            guard case .verified(let transaction) = verification,
+                  let appAccountToken = transaction.appAccountToken
+            else { continue }
+            let paymentId = appAccountToken.uuidString.lowercased()
+            do {
+                let receipt = try await verifyWithFabushiPay(
+                    path: "/v1/pay/intents/\(paymentId)/apple/verify",
+                    transactionId: String(transaction.id)
+                )
+                guard receipt.paymentId.lowercased() == paymentId,
+                      receipt.status == "succeeded"
+                else { throw FabushiPayStoreKitError.invalidServerResponse }
+                guard receipt.sku == expectedSku else { continue }
+                await transaction.finish()
+                return receipt
+            } catch let error as FabushiPayStoreKitError {
+                if case .serverRejected(let status, _) = error, status == 403 || status == 404 {
+                    continue
+                }
+                deferredError = error
+            } catch {
+                deferredError = error
+            }
+        }
+        if let deferredError { throw deferredError }
+        throw FabushiPayStoreKitError.noRestorablePurchase
+    }
+
     private func verifyWithFabushiPay(
         path: String,
         transactionId: String
@@ -118,7 +155,7 @@ actor FabushiPayStoreKit {
         }
         guard (200..<300).contains(http.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? "unknown payment error"
-            throw FabushiPayStoreKitError.serverRejected(http.statusCode, message)
+            throw FabushiPayStoreKitError.serverRejected(http.statusCode, String(message.prefix(800)))
         }
         do {
             return try JSONDecoder().decode(FabushiPayReceipt.self, from: data)
