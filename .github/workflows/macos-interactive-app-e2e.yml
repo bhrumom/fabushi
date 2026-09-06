@@ -132,7 +132,7 @@ jobs:
             gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$EVIDENCE_DIR/release/releases.json"
             jq '[
               .[]
-              | select(.draft == false and .prerelease == true)
+              | select(.draft == false)
               | select(any(.assets[]?; (.name // "") | test("^fabushi-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$")))
             ] | sort_by(.published_at // .created_at) | reverse' \
               "$EVIDENCE_DIR/release/releases.json" > "$EVIDENCE_DIR/release/candidates.json"
@@ -215,7 +215,12 @@ jobs:
           bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
           version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
           build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")"
-          expected="${RELEASE_TAG#v}"
+          expected="${ASSET_NAME#fabushi-}"
+          expected="${expected%-macos-arm64.zip}"
+          if ! [[ "$expected" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unable to derive macOS app SemVer from release asset: $ASSET_NAME" >&2
+            exit 1
+          fi
           test "$bundle_id" = 'com.ombhrum.fabushi'
           test "$version" = "$expected"
           jq -n \
