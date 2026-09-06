@@ -425,6 +425,7 @@ internal struct GrokMobileShell: View {
     let appAgentSurface: FabushiAppAgentSurface
 
     @State private var query = ""
+    @State private var searchOpen = false
     @State private var composeOpen = false
     @State private var createBotOpen = false
     @State private var botName = ""
@@ -460,6 +461,7 @@ internal struct GrokMobileShell: View {
     private var appAgentSurfaceFingerprint: String {
         [
             query,
+            String(searchOpen),
             String(composeOpen),
             String(createBotOpen),
             botName,
@@ -522,7 +524,14 @@ internal struct GrokMobileShell: View {
 
         add("grok-mobile-home", role: "application", name: "Fabushi")
         add("grok-mobile-legacy", role: "button", name: "打开完整消息工作台", action: .init(allowed: ["invoke"]) { _ in legacyOpen = true })
-        add("grok-mobile-search-field", role: "textbox", name: "搜索", action: .init(allowed: ["setValue"]) { value in query = value ?? "" })
+        add("grok-mobile-search", role: "button", name: searchOpen ? "关闭搜索" : "打开搜索", action: .init(allowed: ["invoke"]) { _ in
+            searchOpen.toggle()
+            if !searchOpen { query = "" }
+        })
+        add("grok-mobile-search-field", role: "textbox", name: "搜索", action: .init(allowed: ["setValue"]) { value in
+            searchOpen = true
+            query = value ?? ""
+        })
         add("grok-mobile-add", role: "button", name: "创建", action: .init(allowed: ["invoke"]) { _ in composeOpen = true })
         add("grok-bot-mahayana-assistant", role: "button", name: "Mahayana", action: .init(allowed: ["invoke"]) { _ in selectedBot = MobileBotSummary(id: "mahayana-assistant", name: "Mahayana", description: "Ready to help") })
         for bot in filteredBots.prefix(100) {
@@ -561,7 +570,10 @@ internal struct GrokMobileShell: View {
                         }
                         .accessibilityIdentifier("grok-mobile-legacy")
                         Spacer()
-                        Button { } label: { Image(systemName: "magnifyingglass") }
+                        Button {
+                            searchOpen.toggle()
+                            if !searchOpen { query = "" }
+                        } label: { Image(systemName: "magnifyingglass") }
                             .accessibilityIdentifier("grok-mobile-search")
                         Button { composeOpen = true } label: { Image(systemName: "plus") }
                             .accessibilityIdentifier("grok-mobile-add")
@@ -581,10 +593,11 @@ internal struct GrokMobileShell: View {
                     }
                     .frame(maxWidth: .infinity).padding(.top, 38).padding(.bottom, 34)
 
-                    if !query.isEmpty {
+                    if searchOpen {
                         TextField("Search", text: $query)
                             .textFieldStyle(.plain).padding(12).background(.white, in: RoundedRectangle(cornerRadius: 14))
                             .padding(.horizontal, 16).padding(.bottom, 14)
+                            .accessibilityIdentifier("grok-mobile-search-field")
                     }
 
                     sectionTitle("Board")
