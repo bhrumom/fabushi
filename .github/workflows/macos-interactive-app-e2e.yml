@@ -284,7 +284,7 @@ jobs:
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo '- The installed App owns device registration. No standalone Runner/KRIS/interactive-runner device agent is started.'
             echo '- Use `@fabushi test` list_devices, call all six `fabushi.app.*` semantic tools, execute the complete current macOS journey, and call `ci_session_status`.'
-            echo '- After every category passes except logout, write `ci_session_note` beginning `TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=startup,login,main,conversations,search,send,receive,reply,edit,delete,forward,draft,pin,mute,unread,contacts,groups,bot,agent,miniapp,webmcp,media,file,notifications,sync,settings,update` and make the final App action invoke `settings-logout`.'
+            echo '- After every category passes except logout, write `ci_session_note` beginning `TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=startup,login,main,conversations,search,send,receive,reply,edit,delete,forward,draft,pin,mute,unread,contacts,groups,bot,agent,miniapp,webmcp,media,file,notifications,sync,settings,update`, call `ci_session_finish`, then use a fresh App snapshot and make the final App action invoke exact `settings-logout`.'
             echo '- On any failure, write a `TFI_MACOS_FULL_JOURNEY FAIL ...` note and call `ci_session_finish`; never delete an assertion to force green.'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -300,12 +300,26 @@ jobs:
           app_pid="${{ steps.launch.outputs.app_pid }}"
           last=0
           deadline=$((SECONDS + 1500))
+          next_session_renewal=$((SECONDS + 240))
+          renewal_log="$EVIDENCE_DIR/session-renewal.log"
+          : > "$renewal_log"
+          chmod 600 "$renewal_log"
           echo waiting-for-fabushi-test > "$EVIDENCE_DIR/remote-control-status.txt"
           while [ "$SECONDS" -lt "$deadline" ]; do
             kill -0 "$app_pid" || {
               echo app-exited > "$EVIDENCE_DIR/remote-control-status.txt"
               exit 1
             }
+            if [ "$SECONDS" -ge "$next_session_renewal" ]; then
+              echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] rotating private CI account session" >> "$renewal_log"
+              if ! node chatgpt-vps-control/scripts/renew-ci-app-account-session.mjs >> "$renewal_log" 2>&1; then
+                echo session-renewal-failed > "$EVIDENCE_DIR/remote-control-status.txt"
+                echo 'Failed to renew the bounded App session while preserving the private refresh token on the Runner.' >&2
+                exit 1
+              fi
+              jq -e '.refreshToken | not' "$FABUSHI_CI_ACCOUNT_SESSION_FILE" >/dev/null
+              next_session_renewal=$((SECONDS + 240))
+            fi
             completed="$(jq -c 'select(.phase == "completed" and .ok == true)' "$FABUSHI_DEVICE_CALL_TRACE_FILE" 2>/dev/null || true)"
             total="$(printf '%s\n' "$completed" | sed '/^$/d' | wc -l | tr -d ' ')"
             while [ "$last" -lt "$total" ]; do
@@ -324,15 +338,24 @@ jobs:
               "$FABUSHI_DEVICE_CALL_TRACE_FILE" >/dev/null 2>&1; then
               logout_complete=true
             fi
-            if [ "$ready_note" = true ] && [ "$logout_complete" = true ]; then
+            finish_requested=false
+            if test -f "$finish_file"; then
+              finish_requested=true
+            fi
+            if [ "$finish_requested" = true ] && [ "$ready_note" != true ]; then
+              echo failed > "$EVIDENCE_DIR/remote-control-status.txt"
+              echo 'Remote finish arrived before the required READY_FOR_LOGOUT PASS note.' >&2
+              exit 1
+            fi
+            if [ "$logout_complete" = true ] && { [ "$ready_note" != true ] || [ "$finish_requested" != true ]; }; then
+              echo failed > "$EVIDENCE_DIR/remote-control-status.txt"
+              echo 'settings-logout completed before the required READY_FOR_LOGOUT PASS note plus ci_session_finish.' >&2
+              exit 1
+            fi
+            if [ "$ready_note" = true ] && [ "$finish_requested" = true ] && [ "$logout_complete" = true ]; then
               echo passed > "$EVIDENCE_DIR/remote-control-status.txt"
               /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/998-full-journey-logout.png" || true
               exit 0
-            fi
-            if test -f "$finish_file"; then
-              echo failed > "$EVIDENCE_DIR/remote-control-status.txt"
-              echo 'Remote finish arrived before the required READY_FOR_LOGOUT PASS note plus completed settings-logout App action.' >&2
-              exit 1
             fi
             sleep 1
           done
@@ -490,10 +513,11 @@ jobs:
           test -s "$EVIDENCE_DIR/macos-session.mov"
           test "$(stat -f %z "$EVIDENCE_DIR/macos-session.mov")" -gt 100000
           test -s "$EVIDENCE_DIR/device-calls.jsonl"
-          for tool in fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert ci_session_status ci_session_note; do
+          for tool in fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert ci_session_status ci_session_note ci_session_finish; do
             jq -e --arg tool "$tool" 'select(.phase == "completed" and .ok == true and .toolName == $tool)' \
               "$EVIDENCE_DIR/device-calls.jsonl" >/dev/null
           done
+          test -s "$EVIDENCE_DIR/finish-requested.json"
           jq -e 'select(.phase == "completed" and .ok == true and .toolName == "fabushi.app.action" and .arguments.agentId == "settings-logout" and .arguments.action == "invoke")' \
             "$EVIDENCE_DIR/device-calls.jsonl" >/dev/null
           test "$(/usr/bin/find "$EVIDENCE_DIR/steps" -type f -name '*.png' -print | wc -l | tr -d ' ')" -ge 10

@@ -5,6 +5,7 @@ import test from 'node:test';
 const workflowPath = new URL('../../.github/workflows/macos-interactive-app-e2e.yml', import.meta.url);
 const loginPath = new URL('../scripts/login-ci-test-account.mjs', import.meta.url);
 const exportPath = new URL('../scripts/export-ci-app-account-session.mjs', import.meta.url);
+const renewPath = new URL('../scripts/renew-ci-app-account-session.mjs', import.meta.url);
 const sessionStorePath = new URL('../lib/fabushi-account-session.js', import.meta.url);
 
 async function workflow() {
@@ -27,6 +28,8 @@ test('macOS interactive E2E keeps the installed app as the only device-registrat
   assert.match(source, /Install exact published macOS test app/u);
   assert.match(source, /login-ci-test-account\.mjs/u);
   assert.match(source, /export-ci-app-account-session\.mjs/u);
+  assert.match(source, /renew-ci-app-account-session\.mjs/u);
+  assert.match(source, /session-renewal\.log/u);
   assert.match(source, /FABUSHI_CI_ACCOUNT_SESSION_FILE/u);
   assert.match(source, /Launch installed Fabushi app and wait for App-owned registration/u);
   assert.match(source, /controllable device online/u);
@@ -55,6 +58,27 @@ test('protected account helpers accept the App-owned macOS Actions id without as
   assert.match(sessionStoreSource, /does not mean the Actions runner owns device registration/u);
   assert.doesNotMatch(loginSource, /must be the protected interactive Runner id/u);
   assert.doesNotMatch(exportSource, /must be the protected interactive Runner id/u);
+});
+
+
+test('macOS hold renews the private ordinary session while keeping the App projection refresh-token-free', async () => {
+  const [source, renewSource] = await Promise.all([workflow(), readFile(renewPath, 'utf8')]);
+  assert.match(source, /next_session_renewal=\$\(\(SECONDS \+ 240\)\)/u);
+  assert.match(source, /renew-ci-app-account-session\.mjs/u);
+  assert.match(source, /jq -e '\.refreshToken \| not'/u);
+  assert.match(renewSource, /createFabushiAccountSessionStore/u);
+  assert.match(renewSource, /store\.refresh\(current\)/u);
+  assert.match(renewSource, /export-ci-app-account-session\.mjs/u);
+  assert.doesNotMatch(renewSource, /FABUSHI_CI_TEST_PASSWORD/u);
+});
+
+test('truthful pass requires READY note, ci_session_finish, and the exact settings logout action', async () => {
+  const source = await workflow();
+  assert.match(source, /finish_requested=true/u);
+  assert.match(source, /ready_note.*finish_requested.*logout_complete/su);
+  assert.match(source, /ci_session_note ci_session_finish; do/u);
+  assert.match(source, /finish-requested\.json/u);
+  assert.match(source, /agentId == \"settings-logout\"/u);
 });
 
 test('whole-session recording is ordered before release resolution and installation', async () => {
