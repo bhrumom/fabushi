@@ -78,5 +78,6 @@ test("packaged app accepts only a private short-lived GitHub Actions session fil
   assert.match(source, /session_id\.starts_with\("ci-runner:"\)/u);
   assert.match(source, /device_id\.ends_with\("-interactive"\)/u);
   assert.match(source, /device_id\.ends_with\("-macos-app"\)/u);
+  assert.match(source, /device_id\.ends_with\("-windows-app"\)/u);
   assert.match(source, /pub fn device_agent_session/u);
 });
