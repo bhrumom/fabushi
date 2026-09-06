@@ -52,8 +52,19 @@ test('macOS release resolver waits for and accepts only the exact workflow sourc
   assert.match(source, /Waiting for published macOS release bound to \$GITHUB_SHA/u);
   assert.match(source, /No published macOS release bound to exact workflow source \$GITHUB_SHA appeared within 20 minutes/u);
   assert.match(source, /sleep 15/u);
+  assert.match(source, /select\(\.draft == false\)/u);
+  assert.doesNotMatch(source, /select\(\.draft == false and \.prerelease == true\)/u);
   assert.doesNotMatch(source, /Resolve newest published macOS test release/u);
   assert.doesNotMatch(source, /sort_by\(\.published_at \/\/ \.created_at\) \| last/u);
+});
+
+test('macOS recovery release validates bundle SemVer from the strict asset name, not the tag', async () => {
+  const source = await workflow();
+  assert.match(source, /ASSET_NAME:\s*\$\{\{ steps\.release\.outputs\.asset_name \}\}/u);
+  assert.match(source, /expected="\$\{ASSET_NAME#fabushi-\}"/u);
+  assert.match(source, /expected="\$\{expected%-macos-arm64\.zip\}"/u);
+  assert.match(source, /\[\[ "\$expected" =~ \^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$ \]\]/u);
+  assert.doesNotMatch(source, /expected="\$\{RELEASE_TAG#v\}"/u);
 });
 
 test('protected account helpers accept the App-owned macOS Actions id without assigning gateway ownership', async () => {
