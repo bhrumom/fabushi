@@ -151,7 +151,11 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
         .as_str()
         .expect("marketplace source commit");
     assert_eq!(source_commit.len(), 40);
-    assert!(source_commit.chars().all(|character| character.is_ascii_hexdigit()));
+    assert!(
+        source_commit
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    );
     let selected_artifact = install.result["releaseManifest"]["artifacts"]
         .as_array()
         .and_then(|artifacts| {
