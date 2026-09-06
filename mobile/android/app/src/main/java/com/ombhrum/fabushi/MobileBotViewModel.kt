@@ -35,6 +35,7 @@ data class MobileBotUiState(
 
 class MobileBotViewModel(application: Application) : AndroidViewModel(application) {
     private val host = MahayanaHost(application)
+    private val miniApps = MiniAppPlatformBridge(host)
     private val mutableState = MutableStateFlow(MobileBotUiState())
     val state: StateFlow<MobileBotUiState> = mutableState.asStateFlow()
 
@@ -45,7 +46,7 @@ class MobileBotViewModel(application: Application) : AndroidViewModel(applicatio
                 withContext(Dispatchers.IO) {
                     val surfaceBots = loadSurfaceBots()
                     val installedMiniAppBots = loadInstalledMiniAppBots()
-                    (surfaceBots + installedMiniAppBots)
+                    (installedMiniAppBots + surfaceBots)
                         .distinctBy { it.id }
                         .sortedWith(compareByDescending<MobileBotSummaryAndroid> { it.miniAppId != null }.thenBy { it.name.lowercase() })
                 }
@@ -89,12 +90,12 @@ class MobileBotViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Canonical Mini App Bot projection: installed plugin ids are joined with Marketplace manifest
-     * summaries. No Android-private Bot storage is created and menu metadata stays manifest-owned.
+     * Canonical Mini App Bot projection. Local installation pointers are reconciled into the
+     * authenticated account install ledger before reading manifests back from `/marketplace/added`.
+     * No Android-private Bot/contact database is created.
      */
     private fun loadInstalledMiniAppBots(): List<MobileBotSummaryAndroid> {
-        val installed = runCatching { host.request("feature.plugin.listInstalled") }.getOrNull()
-            ?.optJSONArray("plugins") ?: return emptyList()
+        val installed = host.request("feature.plugin.listInstalled").optJSONArray("plugins") ?: return emptyList()
         val installedIds = buildSet {
             for (index in 0 until installed.length()) {
                 val id = installed.optJSONObject(index)?.optString("pluginId").orEmpty().trim()
@@ -102,19 +103,13 @@ class MobileBotViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         if (installedIds.isEmpty()) return emptyList()
-
-        val catalog = host.request(
-            "feature.marketplace.browse",
-            JSONObject().put("platform", "android"),
-        ).optJSONArray("plugins") ?: return emptyList()
+        val manifests = miniApps.syncInstalledMiniApps(installedIds)
         return buildList {
-            for (index in 0 until catalog.length()) {
-                val item = catalog.optJSONObject(index) ?: continue
-                val pluginId = item.optString("pluginId")
+            for (index in 0 until manifests.length()) {
+                val manifest = manifests.optJSONObject(index) ?: continue
+                val pluginId = manifest.optString("id").ifBlank { manifest.optString("pluginId") }
                 if (pluginId !in installedIds) continue
-                val bot = item.optJSONObject("source")?.optJSONObject("bot")
-                    ?: item.optJSONObject("releaseManifest")?.optJSONObject("bot")
-                    ?: continue
+                val bot = manifest.optJSONObject("bot") ?: continue
                 val botId = bot.optString("id")
                 if (botId.isBlank()) continue
                 val menu = bot.optJSONObject("menuButton")
@@ -125,8 +120,8 @@ class MobileBotViewModel(application: Application) : AndroidViewModel(applicatio
                 add(
                     MobileBotSummaryAndroid(
                         id = botId,
-                        name = bot.optString("displayName").ifBlank { item.optString("displayName").ifBlank { botId } },
-                        description = bot.optString("description").ifBlank { item.optString("description") },
+                        name = bot.optString("displayName").ifBlank { manifest.optString("title").ifBlank { botId } },
+                        description = bot.optString("description").ifBlank { manifest.optString("description") },
                         miniAppId = miniAppId,
                         menuButtonText = menu?.optString("text")?.takeIf(String::isNotBlank) ?: "打开应用",
                     ),
@@ -188,8 +183,87 @@ class MobileBotViewModel(application: Application) : AndroidViewModel(applicatio
             draft = "",
             busy = true,
             error = null,
+            operationId = requestId,
             messages = snapshot.messages + MobileChatMessage(requestId, MobileChatRole.USER, text),
         )
+        val miniAppId = bot.miniAppId
+        if (!miniAppId.isNullOrBlank()) {
+            sendMiniApp(miniAppId, text, requestId)
+            return
+        }
+        sendAgent(bot, text, requestId)
+    }
+
+    private fun sendMiniApp(pluginId: String, text: String, operationId: String) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val routed = miniApps.routeInput(pluginId, text)
+                    val execution = routed.optJSONObject("execution")
+                    if (execution == null) {
+                        return@withContext routed.optString("message").ifBlank {
+                            "全球法布施没有把这条输入解析成可执行命令。"
+                        }
+                    }
+                    val command = routed.optJSONObject("command")
+                    val slash = command?.optString("slash").orEmpty()
+                    if (routed.optBoolean("requiresApproval", false)) {
+                        return@withContext listOf(
+                            "已通过统一 Mini App 路由解析${if (slash.isBlank()) "" else "为 $slash"}。",
+                            "该 Tool 需要宿主明确批准；Android 当前不会静默执行写入/破坏性调用。",
+                        ).joinToString("\n")
+                    }
+                    val kind = execution.optString("kind")
+                    val tool = execution.optString("tool")
+                    check(kind == "mcp-http") { "Android Mini App Bot does not support execution surface $kind" }
+                    check(tool.isNotBlank()) { "Mini App route did not return an MCP tool" }
+                    val arguments = routed.optJSONObject("arguments") ?: JSONObject()
+                    val result = miniApps.callOfficialMcpTool(pluginId, tool, arguments)
+                    mcpResultText(result)
+                }
+            }.onSuccess { reply ->
+                mutableState.value = mutableState.value.copy(
+                    busy = false,
+                    operationId = null,
+                    messages = mutableState.value.messages + MobileChatMessage(
+                        id = "assistant:$operationId",
+                        role = MobileChatRole.ASSISTANT,
+                        text = reply,
+                        operationId = operationId,
+                    ),
+                )
+            }.onFailure { error ->
+                mutableState.value = mutableState.value.copy(
+                    busy = false,
+                    operationId = null,
+                    error = error.message ?: "Mini App WebMCP call failed",
+                    messages = mutableState.value.messages + MobileChatMessage(
+                        id = "assistant:$operationId:error",
+                        role = MobileChatRole.ASSISTANT,
+                        text = "Mini App 调用失败：${error.message ?: "unknown error"}",
+                        operationId = operationId,
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun mcpResultText(result: JSONObject): String {
+        val content = result.optJSONArray("content")
+        if (content != null) {
+            val text = buildList {
+                for (index in 0 until content.length()) {
+                    val item = content.optJSONObject(index) ?: continue
+                    if (item.optString("type") == "text") item.optString("text").takeIf(String::isNotBlank)?.let(::add)
+                }
+            }.joinToString("\n")
+            if (text.isNotBlank()) return text
+        }
+        val structured = result.optJSONObject("structuredContent")
+        return structured?.toString(2) ?: result.toString(2)
+    }
+
+    private fun sendAgent(bot: MobileBotSummaryAndroid, text: String, requestId: String) {
         viewModelScope.launch {
             runCatching {
                 val operationId = withContext(Dispatchers.IO) {
@@ -228,6 +302,7 @@ class MobileBotViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun stop() {
         val operationId = mutableState.value.operationId ?: return
+        if (mutableState.value.activeBot?.miniAppId != null) return
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) { host.request("feature.interrupt", JSONObject().put("operationId", operationId)) } }
         }
