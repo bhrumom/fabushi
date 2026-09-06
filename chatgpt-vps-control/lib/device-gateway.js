@@ -149,7 +149,7 @@ function rejectUpgrade(socket, status = 401, reason = "Unauthorized") {
 
 function audit(options, record) {
   try {
-    options.audit?.({ at: new Date().toISOString(), ...record });
+    void Promise.resolve(options.audit?.({ at: new Date().toISOString(), ...record })).catch(() => {});
   } catch {
     // Auditing must never break the control channel.
   }
