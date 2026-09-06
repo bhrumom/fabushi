@@ -19,6 +19,9 @@ import pino from 'pino';
 import { z } from 'zod';
 
 import { resolveAccountEntitlements } from './account_entitlements.js';
+import { AccountSyncStore } from './account_sync_store.js';
+import { readGlobalDharmaEntitlement } from './global_dharma_entitlement.js';
+import { GlobalDharmaRuntimeStore } from './global_dharma_runtime_store.js';
 import { registerPlatformApi } from './platform_api.js';
 import {
   codexResponsesMessages,
@@ -86,6 +89,8 @@ app.use(
 );
 
 const db = new Database(dbPath);
+const officialAccountSyncStore = new AccountSyncStore({ db });
+const globalDharmaRuntimeStore = new GlobalDharmaRuntimeStore({ accountSyncStore: officialAccountSyncStore });
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
@@ -3123,7 +3128,19 @@ app.get('/api/plugins/registry', (_req, res) => {
 app.all('/api/mcp/apps/:pluginId', async (req, res) => {
   try {
     const user = await resolveUser(req, req.body || {});
-    await handleOfficialMcpRequest(req.params.pluginId, req, res, user.userId);
+    if (req.params.pluginId === 'global-dharma' && !user.isAuthenticated) {
+      res.status(401).json({ error: 'Fabushi account session required for synchronized Global Dharma runtime' });
+      return;
+    }
+    const token = bearerToken(req);
+    await handleOfficialMcpRequest(req.params.pluginId, req, res, user.userId, {
+      globalDharmaRuntimeStore,
+      entitlementResolver: ({ capability }) => readGlobalDharmaEntitlement({
+        token,
+        capability,
+        apiBaseUrl: fabushiApiBaseUrl,
+      }),
+    });
   } catch (error) {
     logger.error({ error: error.stack || String(error) }, 'official MCP app request failed');
     if (!res.headersSent) {
