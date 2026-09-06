@@ -27,9 +27,9 @@ The existing Electron workflow runs packaged E2E outside PR context and records 
 
 Do not mark COMPLETE until real values replace every PENDING field:
 
-- implementation commit: `PENDING`
-- pull request: `PENDING`
-- PR checks: `PENDING`
+- implementation commit: `8fa7e9dc31f6dc8d75242b28dfbe92eb1b106d59`
+- pull request: `#2448` (`feat(desktop): close Global Dharma WebMCP commerce loop`)
+- PR checks: `PENDING RERUN` — initial head run `34047027979` failed native TS/CJS parity and `34047028119` failed rustfmt; both root causes fixed in `6f094d3f`, then latest `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa` merged into the branch
 - protected merge SHA: `PENDING`
 - canonical-main Electron workflow run: `PENDING`
 - Linux/macOS/Windows packaged jobs: `PENDING`
