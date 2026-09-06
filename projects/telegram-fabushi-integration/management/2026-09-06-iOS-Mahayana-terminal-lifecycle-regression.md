@@ -63,3 +63,11 @@ Branch: `fix/tfi-ios-mahayana-terminal-lifecycle-20260906`
 - Release branch: `release/tfi-ios-1-2-41-terminal-lifecycle-20260906`.
 - Scope is version mirrors/release assertions plus durable iOS retest evidence only; there is no new product behavior change after #2399.
 - Status is `IN_PROGRESS` until the version PR merges through the protected path, the accepted main lineage publishes the iOS test build, a fresh run-bound App-owned iOS device self-registers after install and protected-account login, all six semantic tools and the complete reachable iOS matrix pass, Mahayana Stop is invoked against a live operation and terminal settlement is observed, and video/screenshots/trace/xcresult/log/report/test-build digest evidence is verified.
+
+## 2026-09-06 post-#2416 latest-source retest candidate
+
+- The first published lifecycle candidate was `1.2.41` from `43a2946df2359d4949e510f344dfc7e4e67ee2a3`; Apple delivery and the first interactive evidence run succeeded, but the controller did not finish the Mahayana Stop journey before the bounded hold closed.
+- PR `#2416` subsequently changed iOS product source `mobile/ios/Fabushi/GrokMobileShell.swift` to expose the stable `grok-mobile-legacy` accessibility identifier needed to enter the legacy workbench deterministically, so `1.2.41` is superseded for final acceptance.
+- Latest canonical base at candidate creation: `main@67dfcfc17aa4f66066314ce7a0d41eade202a6a3`, global version `1.2.42`.
+- Governed iOS retest candidate: `1.2.43`, strictly greater than the latest canonical version.
+- Status remains `IN_PROGRESS` until protected merge, Apple iOS delivery, fresh run-bound App-owned iOS registration, complete reachable semantic matrix, Mahayana long-running request -> visible Stop -> Stop invocation -> terminal settlement -> Send available, and always-upload evidence verification all succeed on the new candidate.
