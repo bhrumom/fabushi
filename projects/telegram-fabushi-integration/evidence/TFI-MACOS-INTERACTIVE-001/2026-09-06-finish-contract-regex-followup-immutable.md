@@ -1,3 +1,0 @@
-# TFI-MACOS-INTERACTIVE-001 — exact late syntax failure boundary
-
-This companion record preserves the immutable boundary for the one-line follow-up: PR #2401's renewal runtime did not fail this gate. Run `34016108966`, job `101440042007`, failed because Node 24 could not parse the contract-test `/u` regular expression that escaped quote characters around `settings-logout`. The correction changes only the test pattern syntax; no macOS runtime or workflow behavior changes. GitHub Actions must verify the exact head before any next release.
