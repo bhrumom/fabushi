@@ -471,18 +471,27 @@ internal struct GrokMobileShell: View {
                 onClose: { self.selectedBot = nil }
             )
         } else if legacyOpen {
-            ZStack(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                HStack {
+                    Button { legacyOpen = false } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 15, weight: .bold))
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .accessibilityIdentifier("grok-mobile-back")
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial)
+
                 ContentView(
                     model: model,
                     messaging: messaging,
                     appAgentSurface: appAgentSurface,
                     onShellBack: { legacyOpen = false }
                 )
-                Button { legacyOpen = false } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 15, weight: .bold)).frame(width: 36, height: 36).background(.ultraThinMaterial, in: Circle())
-                }
-                .padding(.leading, 10).padding(.top, 8)
-                .accessibilityIdentifier("grok-mobile-back")
             }
         } else {
             home

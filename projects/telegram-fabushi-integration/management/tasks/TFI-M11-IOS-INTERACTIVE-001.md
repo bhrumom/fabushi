@@ -94,3 +94,31 @@ The newest packaged App-owned device must be exercised through live semantic IDs
 ## Failure policy
 
 Any later independent product or acceptance-harness defect follows the same loop: one new atomic PR, protected merge, a strictly newer comparable packaged test version, then retest only that newest version. A failed, partial, skipped, or smoke-only E2E remains `IN_PROGRESS`/blocked and must not be represented as release acceptance.
+
+## 2026-09-07 atomic blocker — SwiftUI close Button AX scroll-to-visible failure
+
+- Canonical source: `43ce998fd5fbcae032c179a8814de9ec08d03f4c`.
+- Native mobile run `34055531700`: Native Android succeeded; Native iOS first attempt failed in `testHomeMatchesConversationLayoutAndMarketplaceRemainsReachable` while closing `RemoteComputerSurface`.
+- Failure evidence: `ios-native-xcresult` artifact `9995961959`; XCTest found `remote-computer-close` / `返回` at frame `{{12.0,82.3},{34.0,20.3}}` but three normal taps failed at `AXScrollToVisible` with `kAXErrorCannotComplete`.
+- Product `RemoteComputerSurface` already has `.accessibilityElement(children: .contain)` and a dedicated `remote-computer-close` identifier; this atomic repair therefore changes only the XCUITest fallback.
+- Repair contract: normal hittable tap first; if the identified/labelled element exists with a valid frame but is not hittable, attach a keep-always screenshot and tap that element's center coordinate. The subsequent surface-disappearance assertion remains mandatory.
+- [ ] Protected PR merge.
+- [ ] New canonical-main Native mobile proves iOS + Android success.
+- [ ] New `.xcresult` retained; fallback screenshot present if exercised.
+
+## 2026-09-07 second canonical blocker — shell overlay intercepts RemoteComputer close
+
+- Canonical source: `dca0fea5f93567df3928b9a3ee14855ed0da2c67` (PR #2461 merge).
+- Native mobile run `34056507262`: Native Android succeeded; Native iOS failed in `SwiftUI unit and simulated user UI tests`.
+- Exact result bundle: artifact `9996206512` (`ios-native-xcresult`), digest `sha256:a22cad9e330858ed56bec59115385c0b113b2546297b328d5406c6e82fc2fc0b`.
+- XCTest repeated `testHomeMatchesConversationLayoutAndMarketplaceRemainsReachable()` twice; both failures landed in `FabushiUITests.openMarketplace(in:)` after the remote surface disappeared.
+- Activity evidence shows `remote-computer-close` existed but was not hittable; PR #2461 captured `remote-computer-close-not-hittable`, then its center-coordinate fallback dismissed the outer `grok-mobile-back` overlay instead. The resulting hierarchy was authenticated Grok home (`grok-mobile-legacy` visible), not legacy `app-shell`, so `openMarketplace(in:)` could not find `profile-avatar`.
+- Root cause: the XCUITest coordinate fallback could tunnel through a non-hittable SwiftUI child into the overlaying GrokMobileShell back control.
+- Repair contract: never center-tap a non-hittable close element; only tap identified/labelled close controls when XCTest reports hittable. For `remote-computer-close` only, if obscured, capture a keep-always screenshot and use the explicit `grok-mobile-back` shell control. Before Marketplace navigation, `ensureLegacyWorkbench` must accept an existing `app-shell` or re-enter it through `grok-mobile-legacy` and reassert `app-shell` before profile/Marketplace actions.
+- The existing `remote-computer-surface.waitForNonExistence(timeout: 10)` assertion remains mandatory and unchanged.
+- Open-source-first check: reviewed the established XCUITest/Appium WebDriverAgent interaction model at the design level; no new dependency or copied implementation is required because the defect is local test-harness state recovery and hit-testing semantics.
+- [ ] Atomic repair PR required checks pass.
+- [ ] Protected merge produces a new canonical main SHA.
+- [ ] New canonical Native mobile passes both Native iOS and Native Android.
+- [ ] New exact-main post-main delivery passes mobile same-SHA binding.
+- [ ] Latest-SHA iOS/Android packaged user journeys retain complete video, step screenshots, trace/report/native logs and downloadable artifacts.

@@ -1,20 +1,8 @@
 name: Windows interactive app device E2E
 
 on:
-  push:
-    branches:
-      - main
-      - fix/tfi-windows-interactive-release-e2e-20260906
-    paths:
-      - '.github/workflows/windows-interactive-app-e2e.yml'
-      - 'chatgpt-vps-control/tests/windows-interactive-app-e2e-contract.test.js'
-      - 'desktop/electron/main.cjs'
-      - 'desktop/electron/remote-device-agent-supervisor.cjs'
-      - 'desktop/electron/app-agent-surface-server.cjs'
-      - 'desktop/e2e/app-agent-surface.spec.ts'
-      - 'chatgpt-vps-control/lib/**'
-      - 'chatgpt-vps-control/bin/**'
-      - 'chatgpt-vps-control/scripts/**'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -27,7 +15,8 @@ concurrency:
 
 jobs:
   windows-interactive:
-    name: Install latest release, login, register, and expose Windows App
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'desktop-') }}
+    name: Install exact-main release, login, register, and expose Windows App
     runs-on: windows-latest
     timeout-minutes: 55
     env:
@@ -109,24 +98,49 @@ jobs:
         run: node --test chatgpt-vps-control/tests/windows-interactive-app-e2e-contract.test.js
 
       - id: release
-        name: Resolve newest published Windows test release
+        name: Wait for exact-main published Windows test release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           $releaseDir = Join-Path $env:EVIDENCE_DIR 'release'
-          gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | Set-Content -Path (Join-Path $releaseDir 'releases.json') -Encoding utf8NoBOM
-          $releases = Get-Content (Join-Path $releaseDir 'releases.json') -Raw | ConvertFrom-Json
-          $candidates = @($releases | Where-Object {
-            -not $_.draft -and @($_.assets | Where-Object { $_.name -match '^fabushi-[0-9]+\.[0-9]+\.[0-9]+-setup\.exe$' }).Count -gt 0
-          } | Sort-Object { if ($_.published_at) { [DateTime]$_.published_at } else { [DateTime]$_.created_at } })
-          if ($candidates.Count -eq 0) { throw 'No published Windows Fabushi installer release exists.' }
-          $release = $candidates[-1]
-          $asset = @($release.assets | Where-Object { $_.name -match '^fabushi-[0-9]+\.[0-9]+\.[0-9]+-setup\.exe$' })[0]
+          $deadline = (Get-Date).AddMinutes(20)
+          $release = $null
+          $asset = $null
+          $targetSha = ''
+          $poll = 0
+          while ((Get-Date) -lt $deadline) {
+            $poll++
+            gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | Set-Content -Path (Join-Path $releaseDir 'releases.json') -Encoding utf8NoBOM
+            $releases = Get-Content (Join-Path $releaseDir 'releases.json') -Raw | ConvertFrom-Json
+            $candidates = @($releases | Where-Object {
+              -not $_.draft -and @($_.assets | Where-Object { $_.name -match '^fabushi-[0-9]+\.[0-9]+\.[0-9]+-setup\.exe$' }).Count -gt 0
+            } | Sort-Object { if ($_.published_at) { [DateTime]$_.published_at } else { [DateTime]$_.created_at } } -Descending)
+            foreach ($candidate in $candidates) {
+              $resolvedTarget = ''
+              try {
+                $resolvedTarget = (gh api "repos/$env:GITHUB_REPOSITORY/commits/$($candidate.target_commitish)" --jq .sha).Trim()
+              } catch {
+                Write-Warning "Unable to resolve Windows release target $($candidate.target_commitish): $($_.Exception.Message)"
+                continue
+              }
+              if ($resolvedTarget -ne $env:GITHUB_SHA) { continue }
+              $candidateAsset = @($candidate.assets | Where-Object { $_.name -match '^fabushi-[0-9]+\.[0-9]+\.[0-9]+-setup\.exe$' })[0]
+              if (-not $candidateAsset) { continue }
+              $release = $candidate
+              $asset = $candidateAsset
+              $targetSha = $resolvedTarget
+              break
+            }
+            if ($release) { break }
+            Write-Host "Waiting for published Windows installer release bound to $env:GITHUB_SHA (poll $poll)."
+            Start-Sleep -Seconds 15
+          }
+          if (-not $release) { throw "No published Windows installer release bound to exact workflow source $env:GITHUB_SHA appeared within 20 minutes." }
+          if ($targetSha -ne $env:GITHUB_SHA) { throw "Resolved Windows release target $targetSha does not match workflow source $env:GITHUB_SHA." }
           $release | ConvertTo-Json -Depth 20 | Set-Content -Path (Join-Path $releaseDir 'release.json') -Encoding utf8NoBOM
           $asset | ConvertTo-Json -Depth 20 | Set-Content -Path (Join-Path $releaseDir 'asset.json') -Encoding utf8NoBOM
-          $targetSha = (gh api "repos/$env:GITHUB_REPOSITORY/commits/$($release.target_commitish)" --jq .sha).Trim()
           $targetSha | Set-Content -Path (Join-Path $releaseDir 'target-sha.txt') -Encoding utf8NoBOM
           gh release download $release.tag_name --repo $env:GITHUB_REPOSITORY --pattern $asset.name --dir $releaseDir
           $installer = Join-Path $releaseDir $asset.name
