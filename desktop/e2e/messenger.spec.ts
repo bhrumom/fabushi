@@ -360,6 +360,14 @@ test('returning-user local-first conversation list is interactive within the one
     await seededPeer.click();
 
     const identity = await getMessagingIdentity(page);
+    // Selecting the seed peer updates renderer state before the durable projection
+    // is written. Wait only for that setup persistence before extracting the id;
+    // the returning-user performance clock below still starts after app.close().
+    await expect.poll(async () => page.evaluate(() => {
+      const projection = JSON.parse(localStorage.getItem('fabushi.desktop.messenger-projection.v1') || 'null');
+      const activePeerKey = typeof projection?.activePeerKey === 'string' ? projection.activePeerKey : '';
+      return activePeerKey.startsWith('selfhosted:') ? activePeerKey : '';
+    }), { timeout: 5_000 }).not.toBe('');
     const seededConversationId = await page.evaluate(() => {
       const projection = JSON.parse(localStorage.getItem('fabushi.desktop.messenger-projection.v1') || 'null');
       const activePeerKey = typeof projection?.activePeerKey === 'string' ? projection.activePeerKey : '';
