@@ -421,6 +421,7 @@ mod ai_usage;
 mod ci_runner;
 mod commerce;
 mod developer_commerce_proxy;
+mod user_payment_proxy;
 mod listener_relay;
 mod marketplace;
 mod remote_computer;
@@ -431,6 +432,7 @@ use ai_usage::*;
 use ci_runner::*;
 use commerce::*;
 use developer_commerce_proxy::*;
+use user_payment_proxy::*;
 use listener_relay::*;
 use marketplace::*;
 use remote_computer::*;
@@ -568,6 +570,15 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         .post_async(
             "/v1/pay/intents/:payment_id/apple/advanced-commerce",
             developer_commerce_proxy,
+        )
+        .post_async(
+            "/v1/miniapps/:mini_app_id/pay/intents",
+            user_payment_proxy,
+        )
+        .get_async("/v1/pay/intents/:payment_id", user_payment_proxy)
+        .post_async(
+            "/v1/pay/intents/:payment_id/checkout",
+            user_payment_proxy,
         )
         .post_async("/v1/plugins/:plugin_id/commerce/quote", commerce_quote)
         .post_async(
