@@ -1,9 +1,11 @@
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const { test } = require('node:test');
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { test } from 'node:test';
 
-const root = path.resolve(__dirname, '..', '..');
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(here, '..', '..');
 const workflowPath = path.join(root, '.github', 'workflows', 'windows-interactive-app-e2e.yml');
 
 function workflow() {
