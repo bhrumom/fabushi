@@ -1,0 +1,447 @@
+name: Windows interactive app device E2E
+
+on:
+  push:
+    branches:
+      - main
+      - fix/tfi-windows-interactive-release-e2e-20260906
+    paths:
+      - '.github/workflows/windows-interactive-app-e2e.yml'
+      - 'chatgpt-vps-control/tests/windows-interactive-app-e2e-contract.test.js'
+      - 'desktop/electron/main.cjs'
+      - 'desktop/electron/remote-device-agent-supervisor.cjs'
+      - 'desktop/electron/app-agent-surface-server.cjs'
+      - 'desktop/e2e/app-agent-surface.spec.ts'
+      - 'chatgpt-vps-control/lib/**'
+      - 'chatgpt-vps-control/bin/**'
+      - 'chatgpt-vps-control/scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-interactive-app-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-interactive:
+    name: Install latest release, login, register, and expose Windows App
+    runs-on: windows-latest
+    timeout-minutes: 55
+    env:
+      DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-windows-app
+      DEVICE_NAME: Fabushi Test Windows ${{ github.run_id }}/${{ github.run_attempt }}
+      FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+      MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+
+    steps:
+      - name: Checkout exact workflow source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            chatgpt-vps-control/package-lock.json
+            desktop/package-lock.json
+
+      - name: Initialize isolated paths and source identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sessionDir = Join-Path $env:RUNNER_TEMP 'fabushi-windows-interactive'
+          $accountDir = Join-Path $env:RUNNER_TEMP 'fabushi-account'
+          $appSessionDir = Join-Path $env:RUNNER_TEMP 'fabushi-ci-app'
+          $appData = Join-Path $env:RUNNER_TEMP 'fabushi-windows-app-data'
+          $evidence = Join-Path $env:GITHUB_WORKSPACE 'windows-interactive-evidence'
+          New-Item -ItemType Directory -Force -Path $sessionDir,$accountDir,$appSessionDir,$appData,(Join-Path $evidence 'steps'),(Join-Path $evidence 'release') | Out-Null
+          @(
+            "FABUSHI_CI_SESSION_DIR=$sessionDir"
+            "FABUSHI_ACCOUNT_SESSION_FILE=$(Join-Path $accountDir 'session.json')"
+            "FABUSHI_CI_ACCOUNT_SESSION_FILE=$(Join-Path $appSessionDir 'session.json')"
+            "FABUSHI_COMPUTER_POLICY_FILE=$(Join-Path $sessionDir 'computer-policy.json')"
+            "FABUSHI_DEVICE_CALL_TRACE_FILE=$(Join-Path $sessionDir 'device-calls.jsonl')"
+            "FABUSHI_APP_AGENT_DISCOVERY_FILE=$(Join-Path $sessionDir 'app-agent-bridge.json')"
+            "FABUSHI_APP_DATA=$appData"
+            "EVIDENCE_DIR=$evidence"
+          ) | Add-Content -Path $env:GITHUB_ENV
+          '{"localExecution":true,"aiComputerControlEnabled":true,"localToolPermission":"always","remoteControlEnabled":true}' | Set-Content -Path (Join-Path $sessionDir 'computer-policy.json') -Encoding utf8NoBOM
+          @(
+            "workflow_source_sha=$env:GITHUB_SHA"
+            "run_id=$env:GITHUB_RUN_ID"
+            "run_attempt=$env:GITHUB_RUN_ATTEMPT"
+            "job=$env:GITHUB_JOB"
+            "device_id=$env:DEVICE_ID"
+            "started_at=$([DateTime]::UtcNow.ToString('o'))"
+            "runner_os=$env:RUNNER_OS"
+            "runner_arch=$env:RUNNER_ARCH"
+          ) | Set-Content -Path (Join-Path $evidence 'source.env') -Encoding utf8NoBOM
+          [ordered]@{phase='preparing';message='Preparing Windows App-owned interactive release E2E.';appReady=$false;appExecutable='';deviceId=$env:DEVICE_ID;runUrl="$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID";updatedAt=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Compress | Set-Content -Path (Join-Path $sessionDir 'status.json') -Encoding utf8NoBOM
+
+      - name: Install CI recording dependency
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+            $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
+          }
+          $ffmpeg = (Get-Command ffmpeg -ErrorAction Stop).Source
+          $ffprobe = (Get-Command ffprobe -ErrorAction Stop).Source
+          "FFMPEG_EXE=$ffmpeg" | Add-Content -Path $env:GITHUB_ENV
+          "FFPROBE_EXE=$ffprobe" | Add-Content -Path $env:GITHUB_ENV
+          & $ffmpeg -version | Select-Object -First 1 | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'ffmpeg-version.txt')
+
+      - name: Install protected account helper dependencies
+        working-directory: chatgpt-vps-control
+        shell: pwsh
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+
+      - name: Run narrow Windows workflow ownership contract
+        shell: pwsh
+        run: node --test chatgpt-vps-control/tests/windows-interactive-app-e2e-contract.test.js
+
+      - id: release
+        name: Resolve newest published Windows test release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releaseDir = Join-Path $env:EVIDENCE_DIR 'release'
+          gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | Set-Content -Path (Join-Path $releaseDir 'releases.json') -Encoding utf8NoBOM
+          $releases = Get-Content (Join-Path $releaseDir 'releases.json') -Raw | ConvertFrom-Json
+          $candidates = @($releases | Where-Object {
+            -not $_.draft -and @($_.assets | Where-Object { $_.name -match '^fabushi-[0-9]+\.[0-9]+\.[0-9]+-setup\.exe$' }).Count -gt 0
+          } | Sort-Object { if ($_.published_at) { [DateTime]$_.published_at } else { [DateTime]$_.created_at } })
+          if ($candidates.Count -eq 0) { throw 'No published Windows Fabushi installer release exists.' }
+          $release = $candidates[-1]
+          $asset = @($release.assets | Where-Object { $_.name -match '^fabushi-[0-9]+\.[0-9]+\.[0-9]+-setup\.exe$' })[0]
+          $release | ConvertTo-Json -Depth 20 | Set-Content -Path (Join-Path $releaseDir 'release.json') -Encoding utf8NoBOM
+          $asset | ConvertTo-Json -Depth 20 | Set-Content -Path (Join-Path $releaseDir 'asset.json') -Encoding utf8NoBOM
+          $targetSha = (gh api "repos/$env:GITHUB_REPOSITORY/commits/$($release.target_commitish)" --jq .sha).Trim()
+          $targetSha | Set-Content -Path (Join-Path $releaseDir 'target-sha.txt') -Encoding utf8NoBOM
+          gh release download $release.tag_name --repo $env:GITHUB_REPOSITORY --pattern $asset.name --dir $releaseDir
+          $installer = Join-Path $releaseDir $asset.name
+          if (-not (Test-Path $installer)) { throw 'Resolved Windows installer was not downloaded.' }
+          $actual = (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant()
+          if ($asset.digest -and $asset.digest.StartsWith('sha256:')) {
+            $declared = $asset.digest.Substring(7).ToLowerInvariant()
+            if ($actual -ne $declared) { throw 'Windows installer digest mismatch.' }
+          }
+          "$actual  $($asset.name)" | Set-Content -Path (Join-Path $releaseDir 'SHA256SUMS.txt') -Encoding utf8NoBOM
+          @(
+            "tag=$($release.tag_name)"
+            "target_sha=$targetSha"
+            "asset_name=$($asset.name)"
+            "release_id=$($release.id)"
+            "asset_id=$($asset.id)"
+            "published_at=$($release.published_at)"
+            "installer=$installer"
+          ) | Add-Content -Path $env:GITHUB_OUTPUT
+
+      - id: session
+        name: Start whole-session Windows recording before install
+        continue-on-error: true
+        shell: pwsh
+        env:
+          INSTALLER: ${{ steps.release.outputs.installer }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_TARGET_SHA: ${{ steps.release.outputs.target_sha }}
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+
+          function Save-StepScreenshot([string]$Path) {
+            try {
+              $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+              $bitmap = New-Object System.Drawing.Bitmap $bounds.Width,$bounds.Height
+              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+              $graphics.CopyFromScreen($bounds.Location,[System.Drawing.Point]::Empty,$bounds.Size)
+              $bitmap.Save($Path,[System.Drawing.Imaging.ImageFormat]::Png)
+              $graphics.Dispose(); $bitmap.Dispose()
+            } catch { Write-Warning "Screenshot failed: $($_.Exception.Message)" }
+          }
+
+          function Start-Recorder([string]$OutputPath) {
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = $env:FFMPEG_EXE
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardInput = $true
+            foreach ($arg in @('-y','-loglevel','warning','-f','gdigrab','-framerate','12','-i','desktop','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-movflags','+faststart',$OutputPath)) {
+              [void]$psi.ArgumentList.Add($arg)
+            }
+            $p = [System.Diagnostics.Process]::new()
+            $p.StartInfo = $psi
+            if (-not $p.Start()) { throw 'Unable to start Windows recorder.' }
+            Start-Sleep -Seconds 3
+            if ($p.HasExited) { throw "Windows recorder exited before install with $($p.ExitCode)." }
+            return $p
+          }
+
+          function Stop-Recorder($Process) {
+            if (-not $Process) { return }
+            if (-not $Process.HasExited) {
+              try { $Process.StandardInput.WriteLine('q'); $Process.StandardInput.Flush() } catch {}
+              if (-not $Process.WaitForExit(15000)) {
+                $Process.Kill($true)
+                $Process.WaitForExit()
+              }
+            }
+          }
+
+          $recorder = $null
+          $app = $null
+          $video = Join-Path $env:EVIDENCE_DIR 'windows-session.mp4'
+          try {
+            $recorder = Start-Recorder $video
+            Save-StepScreenshot (Join-Path $env:EVIDENCE_DIR 'steps/000-recording-start.png')
+            [ordered]@{phase='recording';message='Whole-session Windows recording started before installer execution.';appReady=$false;appExecutable='';deviceId=$env:DEVICE_ID;runUrl="$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID";updatedAt=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Compress | Set-Content -Path (Join-Path $env:FABUSHI_CI_SESSION_DIR 'status.json') -Encoding utf8NoBOM
+
+            # Install exact published Windows test app.
+            $installerProcess = Start-Process -FilePath $env:INSTALLER -ArgumentList '/S' -Wait -PassThru
+            if ($installerProcess.ExitCode -ne 0) { throw "Installer exited with $($installerProcess.ExitCode)." }
+            Save-StepScreenshot (Join-Path $env:EVIDENCE_DIR 'steps/001-installed.png')
+
+            $known = @(@(
+              (Join-Path $env:LOCALAPPDATA 'Programs\@fabushidesktop\fabushi.exe'),
+              (Join-Path $env:LOCALAPPDATA 'Programs\fabushi\fabushi.exe'),
+              (Join-Path $env:LOCALAPPDATA 'Programs\Fabushi\fabushi.exe'),
+              (Join-Path $env:ProgramFiles 'Fabushi\fabushi.exe')
+            ) | Where-Object { $_ -and (Test-Path $_) })
+            $roots = @($env:LOCALAPPDATA,$env:ProgramFiles,${env:ProgramFiles(x86)}) | Where-Object { $_ -and (Test-Path $_) }
+            $found = @()
+            foreach ($root in $roots) {
+              $found += @(Get-ChildItem -Path $root -Filter fabushi.exe -File -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+            }
+            $paths = @((@($known) + @($found)) | Select-Object -Unique)
+            $expected = ''
+            if ($env:RELEASE_TAG -match '^desktop-([0-9]+\.[0-9]+\.[0-9]+)') { $expected = $Matches[1] }
+            $metadata = @($paths | ForEach-Object {
+              $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($_)
+              [ordered]@{path=$_;productVersion=$info.ProductVersion;fileVersion=$info.FileVersion;productName=$info.ProductName;lastWriteTime=(Get-Item $_).LastWriteTimeUtc.ToString('o')}
+            })
+            $metadata | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'release/fabushi-executable-search.json') -Encoding utf8NoBOM
+            $matching = @($metadata | Where-Object { $expected -and (($_.productVersion -and $_.productVersion.StartsWith($expected)) -or ($_.fileVersion -and $_.fileVersion.StartsWith($expected))) })
+            if ($matching.Count -eq 1) { $exe = [string]$matching[0].path }
+            elseif ($paths.Count -eq 1) { $exe = [string]$paths[0] }
+            else { throw "Expected exactly one installed Fabushi executable for $expected; found $($paths.Count) candidates / $($matching.Count) version matches." }
+            $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
+            $version = if ($versionInfo.ProductVersion) { $versionInfo.ProductVersion } else { $versionInfo.FileVersion }
+            if ($expected -and $version -and -not $version.StartsWith($expected)) { throw "Installed version $version does not match release $expected." }
+            [ordered]@{installPath=$exe;version=$version;expectedVersion=$expected;releaseTag=$env:RELEASE_TAG;releaseTargetSha=$env:RELEASE_TARGET_SHA;installedAt=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'release/installed-app.json') -Encoding utf8NoBOM
+            "executable=$exe" | Add-Content -Path $env:GITHUB_OUTPUT
+            "version=$version" | Add-Content -Path $env:GITHUB_OUTPUT
+
+            # Login protected Fabushi test account and export bounded app session.
+            if (-not $env:FABUSHI_CI_TEST_USERNAME) { throw 'FABUSHI_CI_TEST_USERNAME is required.' }
+            if (-not $env:FABUSHI_CI_TEST_PASSWORD) { throw 'FABUSHI_CI_TEST_PASSWORD is required.' }
+            node chatgpt-vps-control/scripts/login-ci-test-account.mjs
+            node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
+            $accountSession = Get-Content $env:FABUSHI_CI_ACCOUNT_SESSION_FILE -Raw | ConvertFrom-Json
+            if ($accountSession.refreshToken) { throw 'Bounded App session must not contain refreshToken.' }
+            Save-StepScreenshot (Join-Path $env:EVIDENCE_DIR 'steps/002-account-session-ready.png')
+
+            # Launch installed Fabushi app and wait for App-owned registration.
+            New-Item -ItemType File -Force -Path $env:FABUSHI_DEVICE_CALL_TRACE_FILE | Out-Null
+            [ordered]@{phase='app-launching';message='Launching installed Windows Fabushi App; only the App may register the account-scoped device.';appReady=$false;appExecutable=$exe;deviceId=$env:DEVICE_ID;runUrl="$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID";updatedAt=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Compress | Set-Content -Path (Join-Path $env:FABUSHI_CI_SESSION_DIR 'status.json') -Encoding utf8NoBOM
+            $stdout = Join-Path $env:EVIDENCE_DIR 'fabushi-app.stdout.log'
+            $stderr = Join-Path $env:EVIDENCE_DIR 'fabushi-app.stderr.log'
+            $app = Start-Process -FilePath $exe -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+            $app.Id | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'fabushi-app.pid')
+            $registered = $false
+            foreach ($attempt in 1..120) {
+              $combined = ((Get-Content $stdout -Raw -ErrorAction SilentlyContinue) + "`n" + (Get-Content $stderr -Raw -ErrorAction SilentlyContinue))
+              if ($combined -match 'controllable device online') { $registered = $true; break }
+              if ($app.HasExited) { throw "Installed Fabushi App exited before registration with $($app.ExitCode)." }
+              Start-Sleep -Seconds 1
+            }
+            if (-not $registered) { throw 'Installed Windows App did not register its own Fabushi device within 120 seconds.' }
+            if (-not (Test-Path $env:FABUSHI_APP_AGENT_DISCOVERY_FILE)) { throw 'App-owned discovery file is missing.' }
+            Save-StepScreenshot (Join-Path $env:EVIDENCE_DIR 'steps/003-app-owned-ready.png')
+            [ordered]@{phase='app-ready';message='Installed Windows Fabushi App is logged in, registered its own device, and is ready for @fabushi test.';appReady=$true;appExecutable=$exe;deviceId=$env:DEVICE_ID;runUrl="$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID";updatedAt=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Compress | Set-Content -Path (Join-Path $env:FABUSHI_CI_SESSION_DIR 'status.json') -Encoding utf8NoBOM
+            @(
+              '## Windows Fabushi App ready for live plugin control'
+              ''
+              "- Application device ID: ``$env:DEVICE_ID``"
+              "- Release: ``$env:RELEASE_TAG`` -> ``$env:RELEASE_TARGET_SHA``"
+              "- Installed version: ``$version``"
+              "- Run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+              '- The installed App owns device registration. No standalone Runner/KRIS/interactive-runner device agent is started.'
+              '- Use `@fabushi test` and truly call `fabushi.app.status`, `fabushi.app.snapshot`, `fabushi.app.find`, `fabushi.app.action`, `fabushi.app.wait`, and `fabushi.app.assert`.'
+              '- Complete all Windows journey categories before writing the pass note; `settings-logout` must be the final App action.'
+            ) | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+
+            # Hold for @fabushi test complete Windows journey.
+            $finishFile = Join-Path $env:FABUSHI_CI_SESSION_DIR 'finish-requested.json'
+            $notesFile = Join-Path $env:FABUSHI_CI_SESSION_DIR 'remote-notes.jsonl'
+            $deadline = (Get-Date).AddMinutes(25)
+            $lastCaptured = 0
+            'waiting-for-fabushi-test' | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt')
+            while ((Get-Date) -lt $deadline) {
+              $completedRows = @()
+              foreach ($traceLine in (Get-Content $env:FABUSHI_DEVICE_CALL_TRACE_FILE -ErrorAction SilentlyContinue)) {
+                try { $row = $traceLine | ConvertFrom-Json; if ($row.phase -eq 'completed' -and $row.ok -eq $true) { $completedRows += $row } } catch {}
+              }
+              while ($lastCaptured -lt $completedRows.Count) {
+                $lastCaptured++
+                $tool = [string]$completedRows[$lastCaptured - 1].toolName
+                if (-not $tool) { $tool = 'device-call' }
+                $safeTool = ($tool -replace '[^A-Za-z0-9._-]','-')
+                Save-StepScreenshot (Join-Path $env:EVIDENCE_DIR ("steps/{0:D3}-{1}.png" -f ($lastCaptured + 3),$safeTool))
+              }
+              $completedTools = @($completedRows | ForEach-Object { $_.toolName })
+              $required = @('fabushi.app.status','fabushi.app.snapshot','fabushi.app.find','fabushi.app.action','fabushi.app.wait','fabushi.app.assert')
+              $haveAll = @($required | Where-Object { $_ -in $completedTools }).Count -eq $required.Count
+              $readyNote = $false
+              if (Test-Path $notesFile) { $readyNote = (Get-Content $notesFile -Raw) -match 'TFI_WINDOWS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=startup,login,main,conversations,search,send,receive,reply,edit,delete,forward,draft,pin,mute,unread,contacts,groups,bot,agent,miniapp,webmcp,media,file,notifications,sync,settings,update' }
+              $logoutComplete = $false
+              foreach ($row in $completedRows) {
+                if ($row.toolName -eq 'fabushi.app.action' -and $row.arguments.agentId -eq 'settings-logout' -and $row.arguments.action -eq 'invoke') { $logoutComplete = $true }
+              }
+              if ($haveAll -and $readyNote -and $logoutComplete) {
+                Save-StepScreenshot (Join-Path $env:EVIDENCE_DIR 'steps/998-full-journey-logout.png')
+                'passed' | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt')
+                [ordered]@{phase='passed';message='All six semantic tools, the complete Windows journey, and final settings logout passed.';appReady=$false;appExecutable=$exe;deviceId=$env:DEVICE_ID;runUrl="$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID";updatedAt=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Compress | Set-Content -Path (Join-Path $env:FABUSHI_CI_SESSION_DIR 'status.json') -Encoding utf8NoBOM
+                break
+              }
+              if (Test-Path $finishFile) { 'failed' | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt'); throw 'Remote finish arrived before six tools plus complete journey plus settings-logout.' }
+              if ($app.HasExited) { 'app-exited' | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt'); throw 'Fabushi App exited before the full semantic journey completed.' }
+              Start-Sleep -Seconds 1
+            }
+            if ((Get-Content (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt') -Raw).Trim() -ne 'passed') {
+              'timeout' | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt')
+              throw 'Timed out waiting for @fabushi test complete Windows journey.'
+            }
+          }
+          finally {
+            Save-StepScreenshot (Join-Path $env:EVIDENCE_DIR 'steps/999-final.png')
+            Stop-Recorder $recorder
+            if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $video) {
+              & $env:FFPROBE_EXE -v error -show_entries format=duration,size -of json $video | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'video-probe.json') -Encoding utf8NoBOM
+            }
+          }
+
+      - name: Install existing Electron test dependencies
+        if: always() && steps.session.outcome == 'success'
+        working-directory: desktop
+        shell: pwsh
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - id: playwright
+        name: Run packaged App Agent Surface Playwright evidence
+        if: always() && steps.session.outcome == 'success'
+        continue-on-error: true
+        working-directory: desktop
+        shell: pwsh
+        env:
+          FABUSHI_ELECTRON_EXECUTABLE: ${{ steps.session.outputs.executable }}
+          FABUSHI_FEATURE_HOST_MODE: test
+        run: |
+          $env:FABUSHI_CI_ACCOUNT_SESSION_FILE=$null
+          $env:FABUSHI_ACCOUNT_SESSION_FILE=$null
+          $env:FABUSHI_CI_SESSION_DIR=$null
+          $env:FABUSHI_DEVICE_CALL_TRACE_FILE=$null
+          $env:FABUSHI_APP_AGENT_DISCOVERY_FILE=$null
+          $env:FABUSHI_APP_DATA=$null
+          $env:DEVICE_ID=$null
+          $env:DEVICE_NAME=$null
+          $env:GITHUB_ACTIONS=$null
+          npx playwright test e2e/app-agent-surface.spec.ts
+
+      - name: Collect Windows App, device-call, Playwright, and release evidence
+        if: always()
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_TARGET_SHA: ${{ steps.release.outputs.target_sha }}
+          RELEASE_ASSET_ID: ${{ steps.release.outputs.asset_id }}
+          SESSION_OUTCOME: ${{ steps.session.outcome }}
+          INSTALLED_VERSION: ${{ steps.session.outputs.version }}
+          PLAYWRIGHT_OUTCOME: ${{ steps.playwright.outcome }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Copy-Item $env:FABUSHI_DEVICE_CALL_TRACE_FILE (Join-Path $env:EVIDENCE_DIR 'device-calls.jsonl') -ErrorAction SilentlyContinue
+          if (-not (Test-Path (Join-Path $env:EVIDENCE_DIR 'device-calls.jsonl'))) { New-Item -ItemType File -Path (Join-Path $env:EVIDENCE_DIR 'device-calls.jsonl') | Out-Null }
+          Copy-Item (Join-Path $env:FABUSHI_CI_SESSION_DIR 'remote-notes.jsonl') (Join-Path $env:EVIDENCE_DIR 'remote-notes.jsonl') -ErrorAction SilentlyContinue
+          if (-not (Test-Path (Join-Path $env:EVIDENCE_DIR 'remote-notes.jsonl'))) { New-Item -ItemType File -Path (Join-Path $env:EVIDENCE_DIR 'remote-notes.jsonl') | Out-Null }
+          Copy-Item (Join-Path $env:FABUSHI_CI_SESSION_DIR 'finish-requested.json') (Join-Path $env:EVIDENCE_DIR 'finish-requested.json') -ErrorAction SilentlyContinue
+          Copy-Item (Join-Path $env:FABUSHI_CI_SESSION_DIR 'status.json') (Join-Path $env:EVIDENCE_DIR 'final-ci-session-status.json') -ErrorAction SilentlyContinue
+          node chatgpt-vps-control/scripts/compile-ci-device-trace.mjs $env:FABUSHI_DEVICE_CALL_TRACE_FILE (Join-Path $env:EVIDENCE_DIR 'generated-regression.json')
+          gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/jobs?per_page=100" | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'workflow-jobs.json') -Encoding utf8NoBOM
+          $controlStatus = if (Test-Path (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt')) { (Get-Content (Join-Path $env:EVIDENCE_DIR 'remote-control-status.txt') -Raw).Trim() } else { 'not-run' }
+          $completedTools = @()
+          Get-Content (Join-Path $env:EVIDENCE_DIR 'device-calls.jsonl') -ErrorAction SilentlyContinue | ForEach-Object { try { $r=$_ | ConvertFrom-Json; if ($r.phase -eq 'completed' -and $r.ok -eq $true -and $r.toolName) { $completedTools += $r.toolName } } catch {} }
+          $journeyNote = ''
+          Get-Content (Join-Path $env:EVIDENCE_DIR 'remote-notes.jsonl') -ErrorAction SilentlyContinue | ForEach-Object { try { $r=$_ | ConvertFrom-Json; if ($r.note -like '*TFI_WINDOWS_FULL_JOURNEY*') { $journeyNote=$r.note } } catch {} }
+          [ordered]@{schema='fabushi.windows.interactive-evidence.v2';workflowSourceSha=$env:GITHUB_SHA;releaseTag=$env:RELEASE_TAG;releaseTargetSha=$env:RELEASE_TARGET_SHA;releaseAssetId=$env:RELEASE_ASSET_ID;installedVersion=$env:INSTALLED_VERSION;runId=$env:GITHUB_RUN_ID;runAttempt=$env:GITHUB_RUN_ATTEMPT;job=$env:GITHUB_JOB;runUrl="$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID";deviceId=$env:DEVICE_ID;sessionOutcome=$env:SESSION_OUTCOME;controlStatus=$controlStatus;playwrightOutcome=$env:PLAYWRIGHT_OUTCOME;journeyNote=$journeyNote;completedTools=@($completedTools | Sort-Object -Unique);completedAt=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Depth 10 | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'report.json') -Encoding utf8NoBOM
+          @(
+            '# Fabushi Windows interactive evidence'
+            ''
+            "- Workflow source SHA: ``$env:GITHUB_SHA``"
+            "- Release: ``$env:RELEASE_TAG`` -> ``$env:RELEASE_TARGET_SHA``"
+            "- Installed version: ``$env:INSTALLED_VERSION``"
+            "- Run: ``$env:GITHUB_RUN_ID`` attempt ``$env:GITHUB_RUN_ATTEMPT`` / job ``$env:GITHUB_JOB``"
+            "- Device: ``$env:DEVICE_ID``"
+            "- Session outcome: ``$env:SESSION_OUTCOME``"
+            "- @fabushi test journey: ``$controlStatus``"
+            "- Playwright packaged App Surface: ``$env:PLAYWRIGHT_OUTCOME``"
+            "- Journey note: $journeyNote"
+            '- Release upload alone is not treated as pass evidence.'
+            '- Device registration is valid only when owned by the installed Windows App after protected-account login.'
+          ) | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'README.md') -Encoding utf8NoBOM
+          Get-ChildItem -Path $env:EVIDENCE_DIR -File -Recurse | Sort-Object FullName | Select-Object -ExpandProperty FullName | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence-files.txt') -Encoding utf8NoBOM
+
+      - name: Upload complete Windows interactive evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-windows-interactive-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            windows-interactive-evidence/
+            desktop/playwright-report/
+            desktop/test-results/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Remove private account material and temporary app data
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:FABUSHI_ACCOUNT_SESSION_FILE) { Remove-Item $env:FABUSHI_ACCOUNT_SESSION_FILE -Force -ErrorAction SilentlyContinue }
+          if ($env:FABUSHI_CI_ACCOUNT_SESSION_FILE) { Remove-Item $env:FABUSHI_CI_ACCOUNT_SESSION_FILE -Force -ErrorAction SilentlyContinue }
+          if ($env:FABUSHI_APP_DATA) { Remove-Item $env:FABUSHI_APP_DATA -Recurse -Force -ErrorAction SilentlyContinue }
+          Remove-Item (Join-Path $env:FABUSHI_CI_SESSION_DIR 'account-access-token') -Force -ErrorAction SilentlyContinue
+
+      - name: Enforce complete Windows interactive gate
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ('${{ steps.release.outcome }}' -ne 'success') { throw 'Release resolution/download did not succeed.' }
+          if ('${{ steps.session.outcome }}' -ne 'success') { throw 'Recorded Windows install/login/App-owned semantic session did not succeed.' }
+          if ('${{ steps.playwright.outcome }}' -ne 'success') { throw 'Packaged App Agent Surface Playwright evidence failed.' }
+          $video = Join-Path $env:EVIDENCE_DIR 'windows-session.mp4'
+          if (-not (Test-Path $video) -or (Get-Item $video).Length -lt 1024) { throw 'Whole-session Windows video evidence is missing or empty.' }
+          $probeRaw = & $env:FFPROBE_EXE -v error -show_entries format=duration,size -of json $video
+          if ($LASTEXITCODE -ne 0) { throw 'Whole-session Windows video is not parseable by ffprobe.' }
+          $probe = $probeRaw | ConvertFrom-Json
+          if ([double]$probe.format.duration -lt 10) { throw "Whole-session Windows video is too short: $($probe.format.duration)s." }
+          $trace = Get-Content (Join-Path $env:EVIDENCE_DIR 'device-calls.jsonl') -ErrorAction Stop
+          $tools = @()
+          foreach ($line in $trace) { try { $r=$line | ConvertFrom-Json; if ($r.phase -eq 'completed' -and $r.ok -eq $true) { $tools += $r.toolName } } catch {} }
+          foreach ($required in @('fabushi.app.status','fabushi.app.snapshot','fabushi.app.find','fabushi.app.action','fabushi.app.wait','fabushi.app.assert')) { if ($required -notin $tools) { throw "Required semantic tool missing successful trace: $required" } }
+          $report = Get-Content (Join-Path $env:EVIDENCE_DIR 'report.json') -Raw | ConvertFrom-Json
+          if ($report.controlStatus -ne 'passed') { throw "Windows interactive report status is $($report.controlStatus)." }
