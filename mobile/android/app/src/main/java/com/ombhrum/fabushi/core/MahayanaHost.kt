@@ -66,6 +66,30 @@ class MahayanaHost(context: Context, private val featureHostTest: Boolean = fals
     }
 
     /**
+     * Publish an Android Host-adapter event into the same process-owned event truth as native
+     * FeatureHost events. This is used for transports such as official Streamable HTTP MCP whose
+     * work is still Host-owned but does not traverse the native FeatureHost queue itself.
+     */
+    fun publishFeatureEvent(event: JSONObject) {
+        check(!closed) { "Mahayana host is closed" }
+        if (featureHostTest || event.optString("type").isBlank()) return
+        val state = checkNotNull(shared)
+        val listeners: List<(JSONObject) -> Unit>
+        val serialized = event.toString()
+        synchronized(state.lock) {
+            check(state.handle != 0L) { "Mahayana host is closed" }
+            state.eventQueues.values.forEach { target ->
+                if (target.size >= MAX_REPLAY_EVENTS) target.pollFirst()
+                target.addLast(JSONObject(serialized))
+            }
+            listeners = state.listeners.values.toList()
+        }
+        listeners.forEach { listener ->
+            runCatching { listener(JSONObject(serialized)) }
+        }
+    }
+
+    /**
      * Observe the same FeatureHost events consumed by Messenger/Marketplace without starting a
      * second native event pump. Listeners never receive credentials; they see only FeatureHost
      * event envelopes already exposed to app surfaces.
