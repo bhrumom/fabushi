@@ -4,8 +4,8 @@
 - Status: `IN_PROGRESS`
 - Started: `2026-09-06`
 - Canonical intake base: `main@8f7e83902a616ecdb62fdaded65ea79227e745f3`
-- Current canonical main readback: `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa`
-- Credential-closure implementation base: `5f5d9d984345feaca948c0c76636fdf159a45b33`
+- Current canonical main readback: `main@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`
+- Credential closure: #2445 head `7ec44b0b000e25ceb8799843cf98f85f3c6aa9b6` protected-merged as `main@c82b29cd6404c2f19b93d8479b2e2cae45469249`
 - Branch: `feat/tfi-global-dharma-web-service-sync-pay-20260906`
 - Parent product task: `FAB-P0001/TFI M8-WEBMCP-002`
 - Source: `../../../telegram-fabushi-integration/source/2026-09-06-global-dharma-web-service-sync-commerce.md`
@@ -45,3 +45,11 @@ Allow an already-authenticated Fabushi user to open/install/use an official Mini
 - POST /v1/auth/plugin-token/introspect returns only the stable account id needed by Web/service runtime projection. It never returns the delegated token, access token, refresh token or provider credential.
 - The delegated token is accepted only by the matching plugin identity introspection and canonical entitlement read. Wallet, purchase, restore, developer and admin routes continue to require the Host's normal authenticated platform request.
 - Packaged desktop/mobile proof, protected merge, exact-main readback and post-main video evidence remain required before AAC-004 can be marked complete.
+
+## 2026-09-07 protected merge + packaged evidence readback
+
+- Web/service delegated credential closure is no longer pending: PR #2445 protected-merged through merge queue. Exact head `7ec44b0b000e25ceb8799843cf98f85f3c6aa9b6` passed Global Dharma Web Service Contract run `34049805438`; merge-group CI `34049934041` accepted `c82b29cd6404c2f19b93d8479b2e2cae45469249` into canonical main.
+- Exact-head Web/service artifacts: backend `9994199494`, CNY1080 commerce `9994192661`, Web build `9994207785`. The delegated token is session-id bound, exact-plugin scoped and re-checks parent `account_sessions.revoked_at/expires_at` on introspection/entitlement reads.
+- Desktop Host consumer evidence at `1655ea8070e07ad7dd8ab8e9347fbcb43f6ddf8f` is green in Electron run `34051925481` / jobs `101536964263`, `101537324167`. Artifact `9994834346` contains 12 named screenshots, `trace.zip`, and `global-dharma-user-journey.webm`; logout shows `loggedIn=false` and clears both renderer and Host-owned durable execution projection.
+- Android 1.2.52 exact release is real (`android-v1.2.52-262491811@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`), but interactive run `34051316405` ended `failed-timeout`: fresh device `gha-34051316405-1-interactive` registered and all six `fabushi.app.*` tool classes had successful calls, then two stale-generation action failures and `connection-refresh-failed / transport_error:IllegalStateException` prevented terminal logout. Artifact `9994884584` is retained.
+- Therefore AAC-004 remains `IN_PROGRESS`: server revoke semantics and desktop packaged-Host logout projection are evidenced, but accepted-main desktop packaging and Android delegated-token/user-journey terminal proof are not yet both green.
