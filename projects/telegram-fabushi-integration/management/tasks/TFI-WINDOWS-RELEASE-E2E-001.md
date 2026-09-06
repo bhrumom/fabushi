@@ -124,3 +124,8 @@ Diagnostic run `34015769297` 在安装 Desktop `1.2.21` 后进入受保护账号
 ## 2026-09-06 Windows 1.2.40 retest candidate
 
 Protected merge of the allowlist repair PR `#2408` produced canonical `main@f73366aba896a1d6e71a7cbdeb87b044d67f59f3`; canonical version remained `1.2.39`. The next governed candidate is therefore `1.2.40` on `release/tfi-windows-1-2-40-20260906`. This branch changes version mirrors/release assertions plus this task's durable evidence only; no product behavior changes are included. Status remains `IN_PROGRESS` until the version PR merges through the queue, an immutable Windows installer Release is published from exact protected main, a fresh App-owned Windows device appears, all six semantic tools and the full journey with final logout pass, and the required video/screenshots/trace/log/report artifact is verified.
+
+
+## 原子问题 003 — post-main iOS UI test 仍假设认证后直接进入 legacy app-shell
+
+Windows `1.2.40` exact-main Electron run `34020086944` 已证明 Windows package 与 packaged Windows journey 成功，但 governed post-main delivery 被 exact-source Native mobile run `34020086941` 阻塞。Native iOS job `101450938184` 的两个真实 UI case 各两次稳定失败在旧 helper 的 `app-shell` 等待；当前产品认证后先进入 `GrokMobileShell` 的 `grok-mobile-home`，legacy workbench 是显式入口。修复必须只补现有入口的稳定 XCTest identifier 并校正测试导航，不修改产品登录/导航语义。完整证据见 `evidence/TFI-WINDOWS-RELEASE-E2E-001/2026-09-06-postmain-ios-grok-shell-test-contract.md`。

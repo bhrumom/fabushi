@@ -559,6 +559,7 @@ internal struct GrokMobileShell: View {
                             .frame(width: 38, height: 38)
                             .overlay(Circle().stroke(.white, lineWidth: 3)).shadow(color: .black.opacity(0.08), radius: 6)
                         }
+                        .accessibilityIdentifier("grok-mobile-legacy")
                         Spacer()
                         Button { } label: { Image(systemName: "magnifyingglass") }
                             .accessibilityIdentifier("grok-mobile-search")

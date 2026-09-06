@@ -130,10 +130,22 @@ final class FabushiUITests: XCTestCase {
         app.launch()
         let skip = app.buttons["mobile-onboarding-skip"]
         if skip.waitForExistence(timeout: 5) { skip.tap() }
-        let login = app.buttons["mobile-login-browser"]
-        if login.waitForExistence(timeout: 15) {
-            login.tap()
+
+        let grokHome = app.descendants(matching: .any)["grok-mobile-home"]
+        if !grokHome.waitForExistence(timeout: 2) {
+            let login = app.buttons["mobile-login-browser"]
+            if login.waitForExistence(timeout: 15) {
+                login.tap()
+            }
         }
+
+        XCTAssertTrue(
+            grokHome.waitForExistence(timeout: 20),
+            "Expected authenticated Grok mobile home before opening the legacy message workbench"
+        )
+        let legacy = app.buttons["grok-mobile-legacy"]
+        XCTAssertTrue(legacy.waitForExistence(timeout: 5))
+        legacy.tap()
         XCTAssertTrue(app.descendants(matching: .any)["app-shell"].waitForExistence(timeout: 20))
         return app
     }
