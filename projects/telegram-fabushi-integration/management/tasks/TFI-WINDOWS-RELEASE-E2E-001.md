@@ -182,3 +182,31 @@ PR #2434 protected-merged the remote-computer Accessibility containment repair a
 - Minimal repair: add only exact `device_id.ends_with("-windows-app")` to the Rust predicate and extend the existing account-binding contract. Preserve provider/ciRunner/Bearer/no-refresh-token/token safety/session prefix/`gha-` prefix/user identity/30-second-to-5-hour lifetime gates and App-owned gateway ownership.
 - Acceptance: required PR CI green -> normal protected merge -> re-read new main -> exact-main Electron/Native/security/post-main/Release -> fresh Windows interactive App-owned registration -> all six semantic tools, full journey, final logout, and full video/screenshots/trace/Playwright/App logs/Release metadata artifact.
 - No local build/test; GitHub Actions remains the only execution gate.
+
+
+## 原子问题 006 — Electron platform query 数值越过 Rust Host 字符串契约
+
+### Live failure
+
+- Canonical source: `main@89922b7907d80d0840da5f394444a4affcbe45f4`.
+- Windows interactive run `34063455570` / job `101568008330` resolved and installed immutable Release `desktop-1.2.53-89922b7907d8`, authenticated the protected CI account, and exported a bounded refresh-token-free App session.
+- App launch then repeatedly failed `native-desktop.getAccountSync` with `host operation failed: request parameter query is invalid`; the installed App never emitted `controllable device online` within 120 seconds.
+- Semantic control never started: `device-calls.jsonl` and `remote-notes.jsonl` are empty, `controlStatus=not-run`, and packaged secondary Playwright was skipped.
+- Always-upload evidence: artifact `9998397694`, `fabushi-windows-interactive-evidence-34063455570-1`, 119,412,163 bytes, SHA256 `0cc6e5ceaa7d92f1878ca13745f1ccb53b4e98c77203d035cb63dec45944e8ef`, including a 297.166667-second whole-session MP4 plus install/account/final screenshots and App stdout/stderr.
+
+### Root cause
+
+`mahayana-product::platform_request` intentionally accepts only string query values before `url::Url::query_pairs_mut().append_pair`. Electron `getAccountSync` passed numeric `limit`, and `getMiniAppBotMessages` carried the same latent numeric `limit` defect. This is caller/Host contract drift, not an authentication or semantic-agent failure.
+
+### Open-source-first / reuse decision
+
+Reuse the existing strict Rust `url` query-pair contract and current Mahayana validation; do not add a serializer or loosen validation. Adapt only the two bounded numeric limit call sites so invalid structured query values remain fail-closed.
+
+### Minimal fix and acceptance
+
+- Serialize only `getAccountSync.limit` and `getMiniAppBotMessages.limit` with `String(limit)`.
+- Extend the existing native capability-handler contract to assert string query values.
+- No Host validation, token lifetime, gateway ownership, backend API, or user-visible semantics are widened.
+- Required CI + protected merge are mandatory.
+- After merge, re-read canonical main, require exact-main Electron/Native/security + post-main immutable Release, then rerun Windows/macOS/iOS interactive and Global Dharma Marketplace/Bot/WebMCP/CNY1080 purchase-restore with complete video/screenshots/trace/report/log evidence.
+- Status remains `IN_PROGRESS` until those artifacts exist and are verified.
