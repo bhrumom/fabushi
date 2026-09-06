@@ -46,6 +46,7 @@ jobs:
         run: |
           set -o pipefail
           node --test \
+            ai-backend/test/delegated_plugin_identity.test.js \
             ai-backend/test/global_dharma_shared_runtime.test.js \
             ai-backend/test/global_dharma_http_integration.test.js \
             ai-backend/test/official_mcp_apps.test.js \

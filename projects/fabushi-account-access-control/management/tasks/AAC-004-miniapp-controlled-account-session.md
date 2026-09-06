@@ -5,7 +5,7 @@
 - Started: `2026-09-06`
 - Canonical intake base: `main@8f7e83902a616ecdb62fdaded65ea79227e745f3`
 - Current canonical main readback: `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa`
-- Current synchronized Web/service head: `a53b576ab99f0c3fbeed65e4e3937424d9abd3c6`
+- Credential-closure implementation base: `5f5d9d984345feaca948c0c76636fdf159a45b33`
 - Branch: `feat/tfi-global-dharma-web-service-sync-pay-20260906`
 - Parent product task: `FAB-P0001/TFI M8-WEBMCP-002`
 - Source: `../../../telegram-fabushi-integration/source/2026-09-06-global-dharma-web-service-sync-commerce.md`
@@ -36,3 +36,12 @@ Allow an already-authenticated Fabushi user to open/install/use an official Mini
 
 - Intake/audit source: `projects/telegram-fabushi-integration/source/2026-09-06-global-dharma-web-service-sync-commerce.md` at commit `2eb4b0cf524942f003bc6ec973ba8119745b2030`.
 - Implementation commit: `f9a2df5850e81bd5f1fbe3450adf4ec4e3b0f906`; protected PR/CI and packaged Host credential-bootstrap evidence remain pending.
+
+## 2026-09-07 Host-controlled credential closure
+
+- Open-source-first review: reuse Keycloak-style audience/scope downscoping semantics (Keycloak, Apache-2.0) and OAuth 2.0 token revocation semantics from RFC 7009; no new auth framework or dependency is introduced.
+- Canonical Platform Worker remains the only delegated credential issuer. The five-minute RS256 Mini App token is bound to parent Fabushi session sid, target plugin:<id>, exact miniapp:<id> scope and Host device id.
+- Issuance re-checks that the parent Fabushi session is active. Protected plugin validation re-checks account_sessions.revoked_at/expires_at on every introspection/entitlement read, so logout/revoke invalidates an otherwise unexpired delegated token.
+- POST /v1/auth/plugin-token/introspect returns only the stable account id needed by Web/service runtime projection. It never returns the delegated token, access token, refresh token or provider credential.
+- The delegated token is accepted only by the matching plugin identity introspection and canonical entitlement read. Wallet, purchase, restore, developer and admin routes continue to require the Host's normal authenticated platform request.
+- Packaged desktop/mobile proof, protected merge, exact-main readback and post-main video evidence remain required before AAC-004 can be marked complete.
