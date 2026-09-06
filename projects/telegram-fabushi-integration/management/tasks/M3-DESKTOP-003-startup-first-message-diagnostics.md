@@ -117,3 +117,18 @@ No local build, native test, E2E, or package operation was run. GitHub Actions o
 8. only then, a measured bottleneck classification with exact implicated file/function. No timing constant alone may be promoted to root cause.
 
 Detailed execution evidence: `projects/telegram-fabushi-integration/evidence/M3-DESKTOP-003/README.md`.
+
+## 2026-09-07 exact-main packaged setup race — durable active peer must settle before history seeding
+
+- Triggering canonical source: `71168adbeea65e998bb650ba3a4636911287636a`.
+- Electron quality run `34058850412`, macOS job `101555620505`, diagnostics artifact `9996959351`.
+- The signed/notarized package failed the returning-user performance case twice before the measured relaunch/performance phase: immediately after creating and clicking `首屏性能验收`, the test read `fabushi.desktop.messenger-projection.v1.activePeerKey` once and observed an empty string, so `seededConversationId` was empty.
+- This is a test setup/persistence race. The same file already uses a bounded `expect.poll` to require `activePeerKey` plus the created self-hosted conversation before reload in the local-first settings case.
+- Atomic repair: after clicking the seeded peer, wait up to 5 seconds for durable `activePeerKey` to become `selfhosted:*`; only then extract the conversation id and proceed with the existing 32-message real Host history seed.
+- The actual returning-user relaunch path, P0-P9 diagnostics, history count, and `< 1000 ms` interactive target are unchanged.
+- No product startup/auth/Host/protocol/MiniApp/payment behavior changes and no new dependency.
+- Current protected-main validation baseline after #2465: `ee8cd4b3a7b51b18497fd34164781f13e3ebaf31`; final acceptance must use this or a later protected-main descendant.
+- [ ] Atomic PR required checks green.
+- [ ] Protected merge / merge queue.
+- [ ] New canonical-main Electron macOS packaged test reaches and evaluates the actual one-second returning-user metric.
+- [ ] P0-P9, startup JSON, video/screenshots/trace/logs retained from that exact canonical SHA.
