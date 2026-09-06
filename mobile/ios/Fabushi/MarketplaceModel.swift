@@ -14,6 +14,13 @@ enum MobileChatEntryKind: String, Equatable {
     case thinking
 }
 
+enum MahayanaChatPumpOutcome: Equatable {
+    case terminal
+    case nonTerminal
+
+    var shouldSettleLifecycle: Bool { self == .terminal }
+}
+
 struct MobileChatMessage: Identifiable, Equatable {
     let id: String
     let role: MobileChatRole
@@ -452,7 +459,11 @@ final class MarketplaceModel {
                 id: "thinking:\(operationId)", role: .assistant, text: "", kind: .thinking, operationId: operationId,
                 actionTitle: "正在思考", actionStatus: "running"
             ))
-            await pumpChatEvents(operationId: operationId)
+            let outcome = await pumpChatEvents(operationId: operationId)
+            if outcome.shouldSettleLifecycle {
+                chatBusy = false
+                activeOperationId = nil
+            }
         } catch is CancellationError {
             // View-driven cancellation is a normal lifecycle path.
             if activeOperationId == nil {
@@ -468,11 +479,6 @@ final class MarketplaceModel {
             }
             return
         }
-        if let operationId = activeOperationId,
-           !chatMessages.contains(where: { $0.kind == .thinking && $0.operationId == operationId }) {
-            chatBusy = false
-            activeOperationId = nil
-        }
     }
 
     func stopChat() async {
@@ -480,9 +486,9 @@ final class MarketplaceModel {
         _ = try? await host.request(method: "feature.interrupt", params: ["operationId": operationId])
     }
 
-    private func pumpChatEvents(operationId: String) async {
+    private func pumpChatEvents(operationId: String) async -> MahayanaChatPumpOutcome {
         for _ in 0..<1800 {
-            if Task.isCancelled { return }
+            if Task.isCancelled { return .nonTerminal }
             do {
                 let result = try await host.request(method: "feature.receive")
                 guard let event = result.value as? [String: Any], let type = event["type"] as? String else {
@@ -525,23 +531,26 @@ final class MarketplaceModel {
                     guard event["operationId"] as? String == operationId else { continue }
                     removeThinking(operationId: operationId)
                     settleActions(operationId: operationId, status: type == "operation.completed" ? "completed" : "failed")
-                    return
+                    return .terminal
                 case "operation.failed":
                     guard event["operationId"] as? String == operationId else { continue }
                     removeThinking(operationId: operationId)
                     settleActions(operationId: operationId, status: "failed")
                     message = event["message"] as? String ?? "本次任务失败"
-                    return
+                    return .terminal
                 default:
                     break
                 }
             } catch {
                 message = "消息流中断：\(error.localizedDescription)"
-                return
+                if Task.isCancelled { return .nonTerminal }
+                try? await Task.sleep(nanoseconds: 80_000_000)
+                continue
             }
             try? await Task.sleep(nanoseconds: 80_000_000)
         }
         if chatBusy { message = "任务仍在后台运行，稍后会继续同步事件" }
+        return .nonTerminal
     }
 
     private func removeThinking(operationId: String) {
