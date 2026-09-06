@@ -92,6 +92,7 @@ const methods = {
   addMiniAppToAccount: { args: 'object' },
   removeMiniAppFromAccount: { args: 'object' },
   routeMiniAppInput: { args: 'object' },
+  callMiniAppRuntimeTool: { args: 'object' },
   getMiniAppSessionProjection: { args: 'object' },
   getMiniAppEntitlement: { args: 'object' },
   purchaseMiniAppLifetime: { args: 'object' },

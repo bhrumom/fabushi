@@ -212,6 +212,17 @@ jobs:
           MAHAYANA_APP_HOST_BIN: ${{ github.workspace }}/desktop/resources/bin/mahayana-app-host
         run: xvfb-run -a npm run test:e2e
 
+      - name: Upload pre-package Electron E2E evidence
+        if: always() && matrix.target == 'linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: electron-prepackage-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            desktop/test-results/
+            desktop/playwright-report/
+          if-no-files-found: warn
+          retention-days: 90
+
       - name: Build pinned offline ASR engine
         if: github.event_name != 'pull_request'
         working-directory: ${{ github.workspace }}
