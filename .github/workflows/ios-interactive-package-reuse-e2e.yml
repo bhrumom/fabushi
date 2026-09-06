@@ -181,10 +181,14 @@ jobs:
           short_sha="${PACKAGE_SOURCE_SHA:0:12}"
           archive="$PACKAGE_DIR/Fabushi-iOS-Simulator-${short_sha}.zip"
           test -f "$archive"
-          (
-            cd "$PACKAGE_DIR"
-            shasum -a 256 -c SHA256SUMS.txt
-          )
+          checksum_line_count="$(awk 'NF { count += 1 } END { print count + 0 }' "$PACKAGE_DIR/SHA256SUMS.txt")"
+          test "$checksum_line_count" = 1
+          expected_archive_digest="$(awk 'NF { print $1 }' "$PACKAGE_DIR/SHA256SUMS.txt")"
+          listed_archive_path="$(awk 'NF { $1 = ""; sub(/^[[:space:]]+/, ""); print }' "$PACKAGE_DIR/SHA256SUMS.txt")"
+          [[ "$expected_archive_digest" =~ ^[0-9a-f]{64}$ ]]
+          test "$(basename "$listed_archive_path")" = "$(basename "$archive")"
+          actual_archive_digest="$(shasum -a 256 "$archive" | awk '{print $1}')"
+          test "$actual_archive_digest" = "$expected_archive_digest"
           app_root="$RUNNER_TEMP/fabushi-ios-reused-app"
           rm -rf "$app_root"
           mkdir -p "$app_root"
@@ -192,7 +196,7 @@ jobs:
           app="$app_root/Fabushi.app"
           test -d "$app"
           test "$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")" = com.ombhrum.fabushi
-          printf '%s  %s\n' "$(shasum -a 256 "$archive" | awk '{print $1}')" "$(basename "$archive")" > "$EVIDENCE_DIR/reused-package-sha256.txt"
+          printf '%s  %s\n' "$actual_archive_digest" "$(basename "$archive")" > "$EVIDENCE_DIR/reused-package-sha256.txt"
           echo "app_path=$app" >> "$GITHUB_OUTPUT"
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
