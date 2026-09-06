@@ -98,4 +98,16 @@ Acceptance for this atomic repair:
 - Trace contains successful `fabushi.app.status`, `snapshot`, `find`, `action`, `wait`, `assert` calls; two action calls fail `stale_app_surface_generation`.
 - Terminal connection failure: `connection-refresh-failed` with `transport_error:IllegalStateException`, followed by `disconnected reason=refresh-failed`; no `disconnected reason=logged-out` appears.
 - Evidence includes 21 step screenshots, trace, logcat and six screenrecord segments. `android-session.mp4` was not produced, so a single complete video link is PENDING.
-- Next atomic repair must address the App-owned refresh/session lifecycle and generation-safe action continuation, then publish a strictly newer Android test release and rerun from a fresh App-owned device.
+- The packaged UI also exposed canonical Marketplace account-route HTTP 404s; the service-side repair is tracked separately below. Session/generation lifecycle remains a follow-up if it reproduces after the control-plane repair.
+
+### I — Canonical platform account-install route repair (2026-09-07)
+
+- 1.2.52 exact release: `main@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`, tag `android-v1.2.52-262491811`, release run/job `34050780156` / `101533889951`, artifact `9994614114`.
+- Fresh packaged E2E: run/job `34051316405` / `101535343430`, App-owned device `gha-34051316405-1-interactive`.
+- Real UI reached Marketplace search and `global-dharma`, then captured `GET /v1/marketplace/added -> 404` and install `POST /v1/marketplace/plugins/global-dharma/add -> 404`.
+- Root cause: canonical Rust platform Worker/D1 lacked the account Marketplace install ledger and both account routes; the legacy Node implementation is not production `/v1` authority.
+- [ ] Canonical PLATFORM_DB migration and Rust routes protected-merged.
+- [ ] Exact-main Platform Control Plane deploy applies migration, deploys Worker, and proves direct/public unauthenticated routes return 401 rather than 404.
+- [ ] Strictly newer Android package reruns the full journey on a new App-owned device after the service fix.
+- [x] Current failing run retains always-upload evidence: artifact `9994884584` (`android-interactive-app-e2e-34051316405-1`) contains step screenshots, device trace, report, logcat and recording segments.
+- [ ] Final strictly newer exact-main retest retains one complete continuous video plus step screenshots/trace/report/logcat.
