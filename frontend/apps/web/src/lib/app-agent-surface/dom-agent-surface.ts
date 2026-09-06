@@ -514,7 +514,21 @@ class DomAppSurface implements AppSurface {
     }
 
     if (action === "invoke") {
-      element.click();
+      if (element.getAttribute("data-agent-invoke") === "contextmenu") {
+        const rect = element.getBoundingClientRect();
+        element.dispatchEvent(new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          clientX: Math.round(rect.left + (rect.width / 2)),
+          clientY: Math.round(rect.top + (rect.height / 2)),
+          button: 2,
+          buttons: 2,
+        }));
+      } else {
+        element.click();
+      }
     } else if (action === "focus") {
       element.focus({ preventScroll: false });
     } else if (action === "toggle") {
