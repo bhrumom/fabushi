@@ -180,7 +180,7 @@ actor FabushiPayStoreKit {
         throw FabushiPayStoreKitError.noRestorablePurchase
     }
 
-    nonisolated static func advancedCommerceRequestData(compactJWS: String) throws -> Data {
+    static func advancedCommerceRequestData(compactJWS: String) throws -> Data {
         guard !compactJWS.isEmpty else { throw FabushiPayStoreKitError.invalidServerResponse }
         return try JSONSerialization.data(withJSONObject: [
             "signatureInfo": ["token": compactJWS]

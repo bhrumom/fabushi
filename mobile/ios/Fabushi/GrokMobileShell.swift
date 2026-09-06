@@ -497,7 +497,7 @@ internal struct GrokMobileShell: View {
     }
 
     private func isGlobalDharmaBot(_ bot: MobileBotSummary) -> Bool {
-        bot.id == GlobalDharmaCommerceModel.miniAppId || bot.name == "全球法布施"
+        bot.id == "global-dharma-bot" || bot.id == GlobalDharmaCommerceModel.miniAppId || bot.name == "全球法布施"
     }
 
     @MainActor
