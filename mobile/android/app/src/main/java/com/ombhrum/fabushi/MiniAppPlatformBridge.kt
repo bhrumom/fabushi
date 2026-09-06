@@ -233,8 +233,8 @@ internal class MiniAppPlatformBridge(
     }
 
     private fun ensureNoMcpError(body: JSONObject?, phase: String) {
-        val error = body?.optJSONObject("error") ?: return
-        error("Mini App MCP $phase failed: ${error.optString("message", error.toString())}")
+        val mcpError = body?.optJSONObject("error") ?: return
+        error("Mini App MCP $phase failed: ${mcpError.optString("message", mcpError.toString())}")
     }
 
     private fun requirePluginId(pluginId: String) {
