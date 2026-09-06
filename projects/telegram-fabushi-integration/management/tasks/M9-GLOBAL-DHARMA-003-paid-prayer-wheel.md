@@ -87,3 +87,10 @@ Evidence: `../../evidence/M9-GLOBAL-DHARMA-003/README.md`.
 ## 2026-09-07 Web/service credential dependency
 
 The Host-controlled Mini App credential now has an explicit server-consumer contract: five-minute, session-bound, exact-plugin scope; canonical entitlement may consume it only for the matching plugin/capability read. Purchase/restore remain Host-authenticated Platform Router operations. This closes the Web/service side of the AAC-004 bootstrap/revoke gap without creating a second payment or identity authority. Packaged proof remains pending until the protected PR lands and desktop/mobile exact-main journeys run.
+
+## 2026-09-07 desktop evidence and Android blocker readback
+
+- Desktop #2448 functional evidence head `1655ea8070e07ad7dd8ab8e9347fbcb43f6ddf8f` passed Electron run `34051925481`. Artifact `9994834346` contains checkpoints `01`-`12`, including exact CNY `108000` purchase, restore, entitled `local.prayer-wheel.start`, restart recovery and logout cleanup; Global Dharma journey WebM and trace are included.
+- No real provider charge occurred: the desktop evidence uses the existing deterministic `FABUSHI_FEATURE_HOST_MODE=test` provider path while server-authoritative product/entitlement semantics remain unchanged.
+- Android release `android-v1.2.52-262491811@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab` is immutable and checksummed. Interactive run `34051316405` did not reach terminal success; artifact `9994884584` reports `failed-timeout` after stale generation calls and App-owned connection refresh failure. Android purchase/restore/terminal evidence remains PENDING.
+- Final completion still requires #2448 protected merge, accepted-main packaged Electron rerun, and a fresh Android terminal journey.
