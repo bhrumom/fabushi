@@ -3,7 +3,7 @@
 - Project: `FAB-P0001 / TFI`
 - Cross-project boundary: `FAB-P0008 / AAC`
 - Parent: `M9-GLOBAL-DHARMA-003`
-- Baseline canonical main: `8f7e83902a616ecdb62fdaded65ea79227e745f3`
+- Baseline canonical main: `8595a50196309c8ebb91c3f8077125d7dc9e3ffa` (aligned from original implementation baseline `8f7e83902a616ecdb62fdaded65ea79227e745f3`)
 - Branch: `feat/tfi-ios-global-dharma-commerce-20260906`
 - State: `IMPLEMENTING / PR_ACTIVE`
 - Owner: iOS / Mini App Host / payments
@@ -119,11 +119,11 @@ Journey checkpoints:
 10. invoke `打开应用`;
 11. same Global Dharma Mini App/runtime visible and state consistent with Bot operation;
 12. entitlement status visible;
-13. if Apple rail is active: Advanced Commerce sandbox buy `¥1080` → canonical entitlement allowed → prayer-wheel action allowed;
-14. restore purchase and re-check canonical entitlement;
+13. CI/Simulator test-mode: canonical ledger buy `¥1080` with no StoreKit and no real charge → canonical entitlement allowed → prayer-wheel action allowed; production Apple validation remains a separate Advanced Commerce sandbox gate;
+14. CI/Simulator test-mode restore through canonical `/v1/purchases/restore`; production restore remains `AppStore.sync()` + verified transaction + Pay reverify; re-check canonical entitlement in both modes;
 15. close Mini App and finish semantic session cleanly.
 
-## Exact external blockers — fail closed
+## Production Apple external blockers — fail closed
 
 The repository cannot fabricate any of the following. If absent at post-main time, payment acceptance remains `BLOCKED`, not `PASS`:
 
@@ -134,11 +134,11 @@ The repository cannot fabricate any of the following. If absent at post-main tim
 5. Deployed Commerce/Pay environments have `APPLE_ADVANCED_COMMERCE_ENABLED` and real `APPLE_IAP_ISSUER_ID`, `APPLE_IAP_KEY_ID`, `APPLE_IAP_PRIVATE_KEY_PEM`, `APPLE_BUNDLE_ID`, plus App Store Server verification credentials.
 6. A signed eligible iOS build plus Sandbox Apple Account/device is available.
 
-Apple explicitly states Advanced Commerce purchases cannot use StoreKit Testing in Xcode. Therefore local `.storekit` simulation is not accepted as evidence for checkpoint 13/14; real sandbox is mandatory.
+Apple explicitly states Advanced Commerce purchases cannot use StoreKit Testing in Xcode. Therefore local `.storekit` simulation is not accepted as production Apple evidence. The governed GitHub Actions Simulator test-mode is different: it is allowed to exercise the canonical Fabushi purchase ledger only, must never invoke StoreKit or create a real charge, and still must re-read canonical server entitlement before unlocking the capability.
 
 ## Evidence
 
-- Baseline main: `8f7e83902a616ecdb62fdaded65ea79227e745f3`
+- Baseline main: `8595a50196309c8ebb91c3f8077125d7dc9e3ffa` (aligned from original `8f7e83902a616ecdb62fdaded65ea79227e745f3`)
 - Governed branch: `feat/tfi-ios-global-dharma-commerce-20260906`
 - Pull request: `#2446` — `feat(iOS): close Global Dharma Mini App commerce journey`
 - Design record commit: `2aca32d7dc5cdac2764cba5d35502d739117e40e`
@@ -148,4 +148,8 @@ Apple explicitly states Advanced Commerce purchases cannot use StoreKit Testing 
 - Full Host/Product/WebMCP/FFI PR validation at head `34ac2618e7e5f268485573c94085a9ddfbc13b4e`: Mahayana fast `34039127343` success; Vendor Isolation `34039127324` success; Native mobile fast gate `34039127357` success; CI `34039127390` success; Project portfolio governance `34039127412` success; GBF security `34039127371` success; Electron desktop quality `34039127425` success; Computer control security `34039127321` success.
 - Marketplace Contract run `34039127475` exposed a real live iOS discovery defect in `Test Mahayana marketplace packages`: request/device `platform=ios` was passed directly to the Product API, which accepts only `cli|desktop|mobile|web`, producing HTTP 400 `invalid_marketplace_platform`. Diagnostic artifact `mahayana-marketplace-validation-diagnostics` id `9991275111`, digest `sha256:f86763ee928dea7b74a0bc0c15429cea78e088ed836df1c885c154c1f7ddfd05`.
 - Fix commit `dd8520a49b00fcbdd8c468bce25577085ac99f8b`: normalize only Marketplace API browse/list native platforms (`ios|android → mobile`), preserving `ios` for device semantics, release artifact selection and install receipt; mapper unit test added.
+- Alignment merge commit: `9d51e3e3d514cfcc2b6337e1baaecdc51c8453d3` merges canonical `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa` into the governed iOS branch without conflicts.
+- Final pre-alignment head `c0c050b6120e744849a71d1df3fe05ec372413b6` had four failing checks — Mahayana iOS test-driver contract `34039955034`, Global Dharma Rust `34039955089`, Plugin Marketplace Contract `34039955156`, Mahayana fast checks `34039955007` — all blocked at the same `backend.rs` rustfmt delta before substantive test execution.
+- GitHub Actions supplied the exact rustfmt correction for `backend.rs`; this round applies only that emitted formatting delta and delegates authoritative `cargo fmt --check` to Actions because the local Mac has no Rust toolchain.
+- CI/Simulator payment acceptance is now explicitly canonical-ledger-only/no-charge; production Apple Advanced Commerce remains separately fail-closed on real Apple eligibility/configuration.
 - Final-head PR CI / merge-queue / accepted-main SHA / post-main iOS build / packaged journey / video / screenshots / `.xcresult` / trace/logs/report: pending; only real GitHub identifiers may satisfy them.
