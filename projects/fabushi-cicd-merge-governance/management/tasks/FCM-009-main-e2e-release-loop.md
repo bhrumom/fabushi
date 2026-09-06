@@ -55,6 +55,7 @@
 9. `FCM-009.9` Optional regression: validate update path from a previous release to the new release in automated macOS E2E. This is non-blocking by default.
 10. `FCM-009.10` Protected PR merge + required main delivery run + Release + canonical-main readback + closure records.
 11. `FCM-009.11` Mandatory visual evidence: every canonical-main required E2E retains detailed step screenshots, complete operation video, trace/action evidence, native reports/logs, and exact-SHA metadata for pass and failure; missing evidence keeps the gate incomplete.
+12. `FCM-009.13` Exact-source workflow_run binding: distinguish controller/default-branch SHA from upstream Electron source SHA, API-read back the triggering run, and always retain a binding ledger before success/failure gating.
 
 ## Acceptance criteria
 
@@ -135,3 +136,10 @@ Implement the canonical-main visual evidence contract in root `AGENTS.md` and po
 - Pass/fail parity is explicit: successful E2E must keep the visual evidence too; failure-only retention is insufficient.
 - Missing required screenshots/video/trace/report evidence means the post-main E2E delivery is incomplete even if assertions passed.
 - Active implementation branch is `project/fcm-009-e2e-evidence` from current `main`.
+
+## 2026-09-07 — Round 7 exact-source workflow_run binding repair
+
+- Observed post-main run `34055670967` under controller/default-branch SHA `43ce998fd5fbcae032c179a8814de9ec08d03f4c`, but its upstream Electron payload was run `34055345371` for source `cf80b3a0b6ddc0670ddd58deb9c8d2c30aeb2075`, conclusion `cancelled`. The failure is real for `cf80`; it is invalid as `43ce` evidence.
+- GitHub official `workflow_run` semantics explain the apparent mismatch: downstream `GITHUB_SHA` points at default branch while upstream source identity is `github.event.workflow_run.head_sha`.
+- Repair adds upstream REST readback, source/run/conclusion summary, a 90-day `post-main-source-binding.json` artifact, and explicit run-name provenance before the fail-closed conclusion gate.
+- Current `43ce998f...` Electron/mobile jobs remain independently required. This repair branch must not move canonical main before that requested evidence window is captured.

@@ -1,4 +1,5 @@
 name: Post-main E2E Release delivery
+run-name: Post-main source=${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.sha }} upstream=${{ github.event.workflow_run.id || github.event.pull_request.number || 'contract' }} conclusion=${{ github.event.workflow_run.conclusion || 'contract' }}
 
 on:
   pull_request:
@@ -48,6 +49,9 @@ jobs:
         run: |
           set -euo pipefail
           grep -F 'github.event.workflow_run.head_sha' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'run-name: Post-main source=' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'actions/runs/$ELECTRON_RUN_ID' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'post-main-source-binding.json' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'Native mobile result' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'Native iOS' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F -- '--paginate --slurp' .github/workflows/post-main-delivery.yml >/dev/null
@@ -76,27 +80,68 @@ jobs:
     outputs:
       source_sha: ${{ steps.meta.outputs.source_sha }}
       electron_run_id: ${{ steps.meta.outputs.electron_run_id }}
+      electron_conclusion: ${{ steps.meta.outputs.electron_conclusion }}
       native_run_id: ${{ steps.wait-native.outputs.native_run_id }}
     steps:
       - id: meta
         name: Bind delivery to the completed Electron main run
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
           ELECTRON_RUN_ID: ${{ github.event.workflow_run.id }}
           ELECTRON_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
           test -n "$SOURCE_SHA"
-          test "$ELECTRON_CONCLUSION" = success
+          test -n "$ELECTRON_RUN_ID"
+          upstream="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ELECTRON_RUN_ID")"
+          api_source_sha="$(jq -r '.head_sha // empty' <<<"$upstream")"
+          api_event="$(jq -r '.event // empty' <<<"$upstream")"
+          api_branch="$(jq -r '.head_branch // empty' <<<"$upstream")"
+          api_conclusion="$(jq -r '.conclusion // empty' <<<"$upstream")"
+          mkdir -p evidence/post-main-delivery
+          jq -n \
+            --arg controllerSha "$GITHUB_SHA" \
+            --arg sourceSha "$SOURCE_SHA" \
+            --arg electronRunId "$ELECTRON_RUN_ID" \
+            --arg event "$api_event" \
+            --arg branch "$api_branch" \
+            --arg conclusion "$api_conclusion" \
+            '{schemaVersion:1,controllerDefaultBranchSha:$controllerSha,sourceSha:$sourceSha,electronRunId:$electronRunId,electronEvent:$event,electronBranch:$branch,electronConclusion:$conclusion}' \
+            > evidence/post-main-delivery/post-main-source-binding.json
+          {
+            echo '## Post-main delivery source binding'
+            echo "- Controller/default-branch SHA: \`$GITHUB_SHA\`"
+            echo "- Upstream Electron source SHA: \`$SOURCE_SHA\`"
+            echo "- Upstream Electron run: \`$ELECTRON_RUN_ID\`"
+            echo "- Upstream event/branch: \`$api_event / $api_branch\`"
+            echo "- Upstream conclusion: \`$api_conclusion\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$api_source_sha" = "$SOURCE_SHA"
+          test "$api_event" = push
+          test "$api_branch" = main
+          test "$api_conclusion" = "$ELECTRON_CONCLUSION"
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
           echo "electron_run_id=$ELECTRON_RUN_ID" >> "$GITHUB_OUTPUT"
-          {
-            echo '## Post-main delivery source'
-            echo "- SHA: \`$SOURCE_SHA\`"
-            echo "- Electron run: \`$ELECTRON_RUN_ID\`"
-            echo "- Electron conclusion: \`$ELECTRON_CONCLUSION\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "electron_conclusion=$api_conclusion" >> "$GITHUB_OUTPUT"
+
+      - name: Preserve exact-source workflow_run binding evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: post-main-source-binding-${{ github.event.workflow_run.id }}
+          path: evidence/post-main-delivery/post-main-source-binding.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Require successful exact-source Electron result
+        shell: bash
+        env:
+          ELECTRON_CONCLUSION: ${{ steps.meta.outputs.electron_conclusion }}
+        run: |
+          set -euo pipefail
+          test "$ELECTRON_CONCLUSION" = success
 
       - id: wait-native
         name: Wait for Android and iOS platform checks on the same main SHA
