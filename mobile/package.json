@@ -1,12 +1,12 @@
 {
   "name": "@fabushi/native-mobile",
-  "version": "1.2.56",
+  "version": "1.2.57",
   "private": true,
   "description": "Native iOS (SwiftUI) and Android (Jetpack Compose) shells backed by the Mahayana Rust Host.",
   "scripts": {
-    "android:assemble": "cd android && ./gradlew assembleDebug",
-    "android:test": "cd android && ./gradlew testDebugUnitTest connectedDebugAndroidTest",
-    "ios:generate": "cd ios && xcodegen generate",
-    "ios:test": "cd ios && xcodebuild test -scheme Fabushi -destination 'platform=iOS Simulator,name=iPhone 16'"
+    "android:assemble": "node ../scripts/generate-cloth-ghost-icons.mjs --platform=android --repo-root=.. && cd android && ./gradlew assembleDebug",
+    "android:test": "node ../scripts/generate-cloth-ghost-icons.mjs --platform=android --repo-root=.. && cd android && ./gradlew testDebugUnitTest connectedDebugAndroidTest",
+    "ios:generate": "node ../scripts/generate-cloth-ghost-icons.mjs --platform=ios --repo-root=.. && cd ios && xcodegen generate",
+    "ios:test": "node ../scripts/generate-cloth-ghost-icons.mjs --platform=ios --repo-root=.. && cd ios && xcodebuild test -scheme Fabushi -destination 'platform=iOS Simulator,name=iPhone 16'"
   }
 }
