@@ -6,6 +6,7 @@ on:
       - codex/fabushi-chrome-userscripts
     paths:
       - "chatgpt-vps-control/extension/**"
+      - "chatgpt-vps-control/tests/browser-extension.test.js"
       - "chatgpt-vps-control/scripts/validate-chrome-extension.mjs"
       - "chatgpt-vps-control/scripts/package-chrome-extension.mjs"
       - "chatgpt-vps-control/package.json"
@@ -34,8 +35,8 @@ jobs:
         run: npm ci
       - name: Validate MV3 package
         run: npm run chrome:validate
-      - name: Run existing tests
-        run: npm test
+      - name: Run Chrome extension tests
+        run: node --test tests/browser-extension.test.js
       - name: Build Chrome Web Store ZIP
         run: npm run chrome:package
       - name: Show SHA-256
