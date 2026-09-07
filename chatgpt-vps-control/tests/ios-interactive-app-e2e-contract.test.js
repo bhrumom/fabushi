@@ -44,7 +44,7 @@ test("iOS Global Dharma workflow preserves exact-package autonomous journey and 
     "/v1/plugins/global-dharma/entitlements/local.prayer-wheel.start",
     "local-prayer-wheel.lifetime",
     "108000",
-    "canonical-ledger-status.txt",
+    "canonical-commerce-status.txt",
     "Observe optional external fabushi test evidence without blocking",
     "Collect complete evidence",
     "Upload complete evidence even on failure",
@@ -86,7 +86,7 @@ test("iOS Global Dharma workflow preserves exact-package autonomous journey and 
     "restore must be followed by a fresh server-authoritative entitlement fetch");
   assert.match(restoreBlock, /\.access\.allowed == true/u,
     "restore passes only when the server entitlement is allowed");
-  assert.match(restoreBlock, /\.purchase\.status == "fulfilled"/u,
+  assert.match(restoreBlock, /\.restored == true[\s\S]*\.status == "fulfilled"/u,
     "restore evidence must bind to a fulfilled canonical purchase ledger entry");
 
   const optionalBlock = workflow.slice(optionalExternalIndex, collectIndex);
