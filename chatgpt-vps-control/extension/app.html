@@ -9,72 +9,29 @@
         color-scheme: light dark;
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
-      body {
-        margin: 0;
-        min-width: 720px;
-        min-height: 520px;
-        background: Canvas;
-        color: CanvasText;
-      }
-      .shell {
-        display: grid;
-        grid-template-columns: 220px 1fr;
-        min-height: 100vh;
-      }
-      aside {
-        padding: 24px 18px;
-        border-right: 1px solid color-mix(in srgb, CanvasText 16%, transparent);
-      }
-      .brand {
-        margin: 0 0 24px;
-        font-size: 24px;
-      }
-      nav {
-        display: grid;
-        gap: 8px;
-      }
-      nav button {
-        width: 100%;
-        padding: 10px 12px;
-        border: 0;
-        border-radius: 10px;
-        background: transparent;
-        color: inherit;
-        text-align: left;
-        font: inherit;
-        cursor: pointer;
-      }
-      nav button[aria-current="page"] {
-        background: color-mix(in srgb, CanvasText 10%, transparent);
-        font-weight: 600;
-      }
-      main {
-        padding: 28px 32px;
-      }
-      .search {
-        width: min(680px, 100%);
-        box-sizing: border-box;
-        padding: 12px 14px;
-        border: 1px solid color-mix(in srgb, CanvasText 24%, transparent);
-        border-radius: 12px;
-        background: Canvas;
-        color: CanvasText;
-        font: inherit;
-      }
-      .panel {
-        margin-top: 24px;
-        max-width: 760px;
-      }
-      .panel h2 {
-        margin-bottom: 8px;
-      }
-      .panel p {
-        margin-top: 0;
-        opacity: 0.72;
-      }
+      body { margin: 0; min-width: 720px; min-height: 520px; background: Canvas; color: CanvasText; }
+      .shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+      aside { padding: 24px 18px; border-right: 1px solid color-mix(in srgb, CanvasText 16%, transparent); }
+      .brand { margin: 0 0 24px; font-size: 24px; }
+      nav { display: grid; gap: 8px; }
+      nav button { width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+      nav button[aria-current="page"] { background: color-mix(in srgb, CanvasText 10%, transparent); font-weight: 600; }
+      main { padding: 28px 32px; }
+      .search { width: min(680px, 100%); box-sizing: border-box; padding: 12px 14px; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 12px; background: Canvas; color: CanvasText; font: inherit; }
+      .panel { margin-top: 24px; max-width: 760px; }
+      .panel h2 { margin-bottom: 8px; }
+      .panel p { margin-top: 0; opacity: 0.72; }
+      .marketplace-meta { display: flex; gap: 8px; align-items: center; margin: 18px 0 12px; font-size: 13px; opacity: 0.72; }
+      .marketplace-list { display: grid; gap: 12px; margin-top: 12px; }
+      .marketplace-card { padding: 16px; border: 1px solid color-mix(in srgb, CanvasText 16%, transparent); border-radius: 14px; }
+      .marketplace-card h3 { margin: 0 0 6px; font-size: 16px; }
+      .marketplace-card p { margin: 0 0 10px; }
+      .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+      .badge { padding: 3px 7px; border-radius: 999px; background: color-mix(in srgb, CanvasText 9%, transparent); font-size: 12px; }
+      [hidden] { display: none !important; }
     </style>
   </head>
-  <body>
+  <body data-platform="chrome-extension">
     <div class="shell">
       <aside>
         <h1 class="brand">Fabushi</h1>
@@ -89,6 +46,14 @@
         <section class="panel" aria-live="polite">
           <h2 id="section-title">Chats</h2>
           <p id="section-description">Open conversations and continue your Fabushi work.</p>
+          <div id="marketplace-view" hidden>
+            <div class="marketplace-meta">
+              <span id="marketplace-platform">chrome-extension</span>
+              <span aria-hidden="true">·</span>
+              <span id="marketplace-count">0 results</span>
+            </div>
+            <div id="marketplace-list" class="marketplace-list"></div>
+          </div>
         </section>
       </main>
     </div>
