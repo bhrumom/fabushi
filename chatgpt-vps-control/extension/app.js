@@ -6,20 +6,19 @@ const sections = {
 
 const MARKETPLACE_SECTION = "Marketplace";
 const USER_SCRIPT_PORT = "fabushi-userscripts";
-const USERSCRIPT_CODE = `// ==UserScript==\n// @name Fabushi ChatGPT Control\n// @match https://chatgpt.com/*\n// @match https://chat.openai.com/*\n// @grant none\n// ==/UserScript==\nwindow.dispatchEvent(new CustomEvent("fabushi:userscript-ready", { detail: { source: "marketplace" } }));`;
 
 const marketplaceCatalog = [
   {
-    id: "userscript-chatgpt-control",
-    name: "ChatGPT Control Userscript",
-    description: "Run Fabushi browser-control automation directly in supported ChatGPT tabs.",
+    id: "userscript-chatgpt-task-queue",
+    name: "ChatGPT Task Queue",
+    description: "Queue ChatGPT tasks, send them sequentially, safely confirm explicit low-risk @ChatGPT prompts, retry failures, and display status.",
     kind: "userscript",
     surfaces: [MARKETPLACE_SECTION],
     platforms: ["chrome-extension"],
-    tags: ["ChatGPT", "automation", "userscript"],
+    tags: ["ChatGPT", "task queue", "automation", "userscript", "safe confirmation"],
     version: "1.0.0",
     matches: ["https://chatgpt.com/*", "https://chat.openai.com/*"],
-    code: USERSCRIPT_CODE,
+    sourcePath: "marketplace/chatgpt-task-queue.user.js",
   },
   {
     id: "desktop-device-control",
@@ -51,6 +50,7 @@ const marketplaceCount = document.querySelector("#marketplace-count");
 const marketplacePlatform = document.querySelector("#marketplace-platform");
 const currentPlatform = document.body.dataset.platform || "unknown";
 let userscriptStatus = { available: false, consent: false, scripts: [] };
+const userscriptSourceCache = new Map();
 
 marketplacePlatform.textContent = currentPlatform;
 
@@ -77,17 +77,19 @@ function userscriptRequest(action, payload = {}) {
   return new Promise((resolve, reject) => {
     const port = chrome.runtime.connect({ name: USER_SCRIPT_PORT });
     const requestId = crypto.randomUUID();
+    let settled = false;
     const cleanup = () => {
       try { port.disconnect(); } catch {}
     };
     port.onMessage.addListener((message) => {
       if (message?.requestId !== requestId) return;
+      settled = true;
       cleanup();
       if (message.ok) resolve(message.result);
       else reject(new Error(message.error || "Userscript request failed."));
     });
     port.onDisconnect.addListener(() => {
-      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      if (!settled && chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
     });
     port.postMessage({ requestId, action, ...payload });
   });
@@ -97,6 +99,25 @@ async function sha256(value) {
   const bytes = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function loadUserscriptSource(item) {
+  if (item.kind !== "userscript" || !item.sourcePath) throw new Error("Marketplace userscript release is missing its packaged source path.");
+  if (userscriptSourceCache.has(item.id)) return userscriptSourceCache.get(item.id);
+  const url = chrome.runtime.getURL(item.sourcePath);
+  const response = await fetch(url, { cache: "no-store", credentials: "same-origin" });
+  if (!response.ok) throw new Error(`Could not load packaged userscript source (${response.status}).`);
+  const code = await response.text();
+  if (!code.includes("// ==UserScript==") || !code.includes("// ==/UserScript==")) {
+    throw new Error("Packaged userscript source has invalid metadata.");
+  }
+  for (const match of item.matches) {
+    if (!code.includes(`// @match        ${match}`) && !code.includes(`// @match ${match}`)) {
+      throw new Error(`Packaged userscript metadata is missing approved match ${match}.`);
+    }
+  }
+  userscriptSourceCache.set(item.id, code);
+  return code;
 }
 
 async function refreshUserscriptStatus() {
@@ -118,14 +139,15 @@ async function installUserscript(item, statusNode) {
     if (!userscriptStatus.consent) {
       userscriptStatus = await userscriptRequest("set-consent", { consent: true, userConfirmed: true });
     }
-    const digest = await sha256(item.code);
+    const code = await loadUserscriptSource(item);
+    const digest = await sha256(code);
     await userscriptRequest("install", {
       userConfirmed: true,
       script: {
         id: item.id,
         name: item.name,
         version: item.version,
-        code: item.code,
+        code,
         matches: item.matches,
         permissions: ["page-dom"],
         runAt: "document_idle",
