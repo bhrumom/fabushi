@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/macos-global-dharma-packaged-e2e.yml'
       - 'chatgpt-vps-control/tests/macos-global-dharma-packaged-e2e-contract.test.js'
+      - 'desktop/e2e/miniapp-search-entry.spec.ts'
       - 'desktop/e2e/miniapp-bot-parity.spec.ts'
   release:
     types: [published]
@@ -234,7 +235,7 @@ jobs:
           echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
 
       - id: journey
-        name: Run only the packaged Global Dharma simulated-user journey
+        name: Run packaged Global Dharma search/install and full simulated-user journeys
         continue-on-error: true
         working-directory: desktop
         shell: bash
@@ -242,7 +243,7 @@ jobs:
           FABUSHI_ELECTRON_EXECUTABLE: /Applications/Fabushi.app/Contents/MacOS/fabushi
           FABUSHI_FEATURE_HOST_MODE: test
           FABUSHI_E2E: '1'
-        run: npx playwright test e2e/miniapp-bot-parity.spec.ts
+        run: npx playwright test e2e/miniapp-search-entry.spec.ts e2e/miniapp-bot-parity.spec.ts
 
       - name: Stop whole-session recorder
         if: always()
@@ -277,6 +278,8 @@ jobs:
         run: |
           set -euo pipefail
           expected_screenshots=(
+            '01-search-miniapp-finds-global-dharma.png'
+            '02-global-dharma-installed-from-miniapp-search.png'
             '01-authenticated-messenger.png'
             '02-marketplace-search-global-dharma.png'
             '03-marketplace-installed.png'
@@ -296,7 +299,10 @@ jobs:
           done
           first_video="$(find desktop/test-results -type f -name 'global-dharma-user-journey.webm' -print -quit 2>/dev/null || true)"
           restart_video="$(find desktop/test-results -type f -name 'global-dharma-user-journey-restart-logout.webm' -print -quit 2>/dev/null || true)"
+          entry_video="$(find desktop/test-results -type f -name 'miniapp-search-entry-user-journey.webm' -print -quit 2>/dev/null || true)"
           trace="$(find desktop/test-results -type f -name 'trace.zip' -print -quit 2>/dev/null || true)"
+          test -n "$entry_video"
+          test -s "$entry_video"
           test -n "$first_video"
           test -s "$first_video"
           test -n "$restart_video"
@@ -318,10 +324,11 @@ jobs:
             --arg serviceRunId "$SERVICE_RUN_ID" \
             --arg serviceRunUrl "$SERVICE_RUN_URL" \
             --arg journeyOutcome "$JOURNEY_OUTCOME" \
+            --arg entryVideo "$entry_video" \
             --arg firstVideo "$first_video" \
             --arg restartVideo "$restart_video" \
             --arg trace "$trace" \
-            '{sourceSha:$sourceSha,release:{tag:$releaseTag,id:$releaseId,assetId:$releaseAssetId,assetName:$releaseAssetName,version:$releaseVersion},serviceContract:{runId:$serviceRunId,url:$serviceRunUrl},journeyOutcome:$journeyOutcome,evidence:{firstVideo:$firstVideo,restartVideo:$restartVideo,trace:$trace,htmlReport:"desktop/playwright-report/index.html",wholeSession:"macos-global-dharma-evidence/macos-session.mov"},verifiedAt:(now|todateiso8601)}' \
+            '{sourceSha:$sourceSha,release:{tag:$releaseTag,id:$releaseId,assetId:$releaseAssetId,assetName:$releaseAssetName,version:$releaseVersion},serviceContract:{runId:$serviceRunId,url:$serviceRunUrl},journeyOutcome:$journeyOutcome,evidence:{entryVideo:$entryVideo,firstVideo:$firstVideo,restartVideo:$restartVideo,trace:$trace,htmlReport:"desktop/playwright-report/index.html",wholeSession:"macos-global-dharma-evidence/macos-session.mov"},verifiedAt:(now|todateiso8601)}' \
             > "$EVIDENCE_DIR/report.json"
 
       - name: Upload complete macOS Global Dharma evidence even on failure
@@ -365,4 +372,4 @@ jobs:
           test "$JOURNEY_OUTCOME" = success
           test "$SERVICE_OUTCOME" = success
           test "$EVIDENCE_OUTCOME" = success
-          echo "PASS: exact published macOS package completed Global Dharma search/install -> Bot -> natural-language WebMCP -> open-app revision parity -> bounded Fabushi session -> CNY 1080 test purchase/restore -> entitlement -> local prayer wheel -> restart -> logout without any external device-plugin prerequisite." >> "$GITHUB_STEP_SUMMARY"
+          echo "PASS: exact published macOS package completed exact 小程序 search/install -> Global Dharma -> Bot -> natural-language WebMCP -> open-app revision parity -> bounded Fabushi session -> CNY 1080 test purchase/restore -> entitlement -> local prayer wheel -> restart -> logout without any external device-plugin prerequisite." >> "$GITHUB_STEP_SUMMARY"
