@@ -17,6 +17,7 @@ async function mustExist(relative) {
 }
 
 assert(manifest.manifest_version === 3, "manifest_version must be 3");
+assert(/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(manifest.version), "manifest.version must be Chrome Web Store compatible");
 assert(manifest.action?.default_popup === "app.html", "action.default_popup must be app.html");
 assert(manifest.background?.service_worker === "service-worker.js", "background.service_worker must be service-worker.js");
 assert(manifest.background?.type === "module", "background service worker must be a module");
@@ -28,10 +29,24 @@ for (const relative of [manifest.action.default_popup, manifest.background.servi
 const serviceWorker = await readFile(join(extension, manifest.background.service_worker), "utf8");
 assert(serviceWorker.includes('import "./background.js"'), "service worker must import background.js");
 assert(serviceWorker.includes('import "./userscripts.js"'), "service worker must preserve existing userscripts runtime import");
+
 const appHtml = await readFile(join(extension, "app.html"), "utf8");
-for (const required of ["Fabushi", "Chats", "Mini Apps", "Marketplace", "app-search", "loading-state", "empty-state"]) assert(appHtml.includes(required), `app.html missing required UI marker: ${required}`);
+for (const required of ["Fabushi", "Chats", "Mini Apps", "Marketplace", "app-search", "loading-state", "empty-state", "error-state", "retry-button"]) {
+  assert(appHtml.includes(required), `app.html missing required UI marker: ${required}`);
+}
+assert(appHtml.startsWith("<!doctype html>"), "app.html must declare HTML5 doctype");
+assert(/<html\b[^>]*>[\s\S]*<head\b[^>]*>[\s\S]*<\/head>[\s\S]*<body\b[^>]*>[\s\S]*<\/body>[\s\S]*<\/html>\s*$/i.test(appHtml), "app.html must contain complete html/head/body structure");
 assert(!/<script[^>]+src=["']https?:\/\//i.test(appHtml), "remote scripts are not allowed in app.html");
 assert(!/<link[^>]+href=["']https?:\/\//i.test(appHtml), "remote stylesheets are not allowed in app.html");
+assert(!/\bon\w+\s*=/i.test(appHtml), "inline event handlers are not allowed in app.html");
 
-for (const relative of ["app.js", "background.js", "service-worker.js", "userscripts.js"]) execFileSync(process.execPath, ["--check", join(extension, relative)], { stdio: "inherit" });
+const localRefs = [...appHtml.matchAll(/(?:src|href)=["']([^"']+)["']/gi)]
+  .map((match) => match[1])
+  .filter((value) => !value.startsWith("#") && !/^[a-z]+:/i.test(value));
+for (const relative of localRefs) await mustExist(relative.replace(/^\.\//, ""));
+
+for (const relative of ["app.js", "background.js", "service-worker.js", "userscripts.js"]) {
+  execFileSync(process.execPath, ["--check", join(extension, relative)], { stdio: "inherit" });
+}
 console.log(`Chrome extension validation passed: ${manifest.name} ${manifest.version}`);
+console.log(`Validated local app resources: ${localRefs.join(", ")}`);
