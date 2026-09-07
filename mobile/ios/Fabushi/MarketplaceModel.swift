@@ -91,6 +91,7 @@ final class MarketplaceModel {
     var chatMessages: [MobileChatMessage] = []
     var chatBusy = false
     var activeOperationId: String?
+    let globalDharmaCommerce: GlobalDharmaCommerceModel
 
     private let host: MahayanaHost
     private let onboardingKey = "fabushi.mobile.onboarding-complete.v1"
@@ -99,6 +100,7 @@ final class MarketplaceModel {
 
     init(host: MahayanaHost) {
         self.host = host
+        globalDharmaCommerce = GlobalDharmaCommerceModel(host: host)
         onboardingStep = UserDefaults.standard.bool(forKey: onboardingKey) ? 3 : 0
     }
 
@@ -635,6 +637,18 @@ final class MarketplaceModel {
             let pluginId = object["pluginId"] as? String ?? plugin.pluginId
             let runtime = object["runtime"] as? String ?? "unknown"
             let permissions = object["requestedPermissions"] as? [String] ?? []
+            let accountInstall = try await host.request(
+                method: "feature.marketplace.add",
+                params: ["pluginId": pluginId, "platform": "ios"]
+            )
+            guard let accountObject = accountInstall.value as? [String: Any],
+                  accountObject["accountSynchronized"] as? Bool == true,
+                  let bot = accountObject["bot"] as? [String: Any],
+                  let botId = bot["id"] as? String,
+                  !botId.isEmpty
+            else {
+                throw MahayanaHost.HostError.requestFailed("Mini App 已本地安装，但 Fabushi 账号/Bot 同步未完成")
+            }
             installingPluginId = nil
             if permissions.isEmpty {
                 await startPortableRuntime(pluginId: pluginId, runtime: runtime)

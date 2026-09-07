@@ -29,6 +29,44 @@ struct MiniAppWebMcpSurface: View {
             }
             .padding(12)
 
+            if plugin.pluginId == GlobalDharmaCommerceModel.miniAppId {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: model.globalDharmaCommerce.accessAllowed ? "checkmark.seal.fill" : "lock.fill")
+                            .foregroundStyle(model.globalDharmaCommerce.accessAllowed ? .green : .secondary)
+                        Text(model.globalDharmaCommerce.message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .accessibilityIdentifier("global-dharma-entitlement-status")
+
+                    HStack(spacing: 10) {
+                        if model.globalDharmaCommerce.accessAllowed {
+                            Label("本地转经轮已买断", systemImage: "infinity")
+                                .font(.subheadline.weight(.semibold))
+                                .accessibilityIdentifier("global-dharma-entitlement-allowed")
+                        } else {
+                            Button("\(model.globalDharmaCommerce.lifetimePriceLabel) 买断本地转经轮") {
+                                Task { await model.globalDharmaCommerce.purchaseLifetime() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!model.globalDharmaCommerce.canBuyLifetime)
+                            .accessibilityIdentifier("global-dharma-buy-lifetime")
+                        }
+
+                        Button("恢复购买") {
+                            Task { await model.globalDharmaCommerce.restoreLifetime() }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.globalDharmaCommerce.busy)
+                        .accessibilityIdentifier("global-dharma-restore-purchase")
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+            }
+
             MiniAppWebView(
                 plugin: plugin,
                 model: model,
@@ -39,6 +77,9 @@ struct MiniAppWebMcpSurface: View {
         }
         .accessibilityIdentifier("miniapp-webmcp-surface")
         .task(id: plugin.pluginId) {
+            if plugin.pluginId == GlobalDharmaCommerceModel.miniAppId {
+                await model.globalDharmaCommerce.refresh()
+            }
             localHtml = await model.loadLocalMiniAppHtml(pluginId: plugin.pluginId)
             sourceResolved = true
             status = localHtml == nil ? "正在加载 Hosted WebMCP…" : "正在加载本地 WebMCP…"
@@ -136,6 +177,45 @@ private struct MiniAppWebView: UIViewRepresentable {
                 let local = webView?.url?.host == localWebMcpOriginHost
                 if result.contains("\"ready\":true") {
                     self.status = local ? "本地 WebMCP 已连接" : "WebMCP 已连接"
+                    if self.plugin.pluginId == GlobalDharmaCommerceModel.miniAppId {
+                        let sharedRuntimeProbe = """
+                        (() => {
+                          const tools=window.__fabushiWebMcp?.list?.()||[];
+                          function marker(label,text,revision){
+                            let node=document.getElementById('fabushi-shared-runtime-sync');
+                            if(!node){
+                              node=document.createElement('div');
+                              node.id='fabushi-shared-runtime-sync';
+                              node.setAttribute('role','status');
+                              node.style.cssText='margin:12px;padding:10px 12px;border:1px solid rgba(0,0,0,.12);border-radius:12px;font:600 13px -apple-system,BlinkMacSystemFont,sans-serif;';
+                              document.body.prepend(node);
+                            }
+                            node.setAttribute('aria-label',label);
+                            node.dataset.revision=revision===undefined?'':String(revision);
+                            node.textContent=text;
+                            return node;
+                          }
+                          if(!tools.some((tool)=>tool&&tool.name==='status')){
+                            marker('共享状态恢复失败','共享状态恢复失败 · WebMCP status 未暴露');
+                            return;
+                          }
+                          window.__fabushiWebMcp.call('status',{}).then((result)=>{
+                            const canonicalRuntime=result?.structuredContent?.runtime;
+                            const revision=Number(canonicalRuntime?.revision??-1);
+                            if(canonicalRuntime?.protocol!=='fabushi.miniapp.runtime.v1'||canonicalRuntime?.miniAppId!=='global-dharma'||!Number.isInteger(revision)||revision<0){
+                              marker('共享状态恢复失败','共享状态恢复失败 · canonical runtime 无效');
+                              return;
+                            }
+                            const label=`Bot / Web UI 同一共享状态 · revision ${revision}`;
+                            marker(label,label,revision);
+                            window.dispatchEvent(new CustomEvent('fabushi:shared-runtime-restored',{detail:canonicalRuntime}));
+                          }).catch((error)=>{
+                            marker('共享状态恢复失败',`共享状态恢复失败 · ${String(error?.message||error)}`);
+                          });
+                        })()
+                        """
+                        webView?.evaluateJavaScript(sharedRuntimeProbe)
+                    }
                 } else {
                     self.status = "WebMCP 页面已打开"
                 }
@@ -179,11 +259,20 @@ private struct MiniAppWebView: UIViewRepresentable {
                             return
                         }
                     }
-                    let result = try await model.callRuntimeTool(
-                        pluginId: plugin.pluginId,
-                        name: name,
-                        arguments: input
-                    )
+                    let result: Any
+                    if plugin.pluginId == GlobalDharmaCommerceModel.miniAppId && name == "status" {
+                        let runtime = try await model.globalDharmaCommerce.fetchCanonicalSharedRuntime()
+                        result = [
+                            "content": [["type": "text", "text": "已读取全球法布施状态。"]],
+                            "structuredContent": ["runtime": runtime],
+                        ] as [String: Any]
+                    } else {
+                        result = try await model.callRuntimeTool(
+                            pluginId: plugin.pluginId,
+                            name: name,
+                            arguments: input
+                        )
+                    }
                     resolve(webView: webView, requestId: requestId, payload: ["ok": true, "result": result])
                 } catch {
                     resolve(webView: webView, requestId: requestId, payload: [
