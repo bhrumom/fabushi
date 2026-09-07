@@ -1,0 +1,43 @@
+name: Apply Chrome Platform Host Integration
+
+on:
+  push:
+    branches:
+      - codex/fabushi-chrome-userscripts
+    paths:
+      - ".github/scripts/apply-chrome-platform-host-patch.mjs"
+      - ".github/workflows/chrome-platform-host-patch.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/fabushi-chrome-userscripts
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply deterministic Host patch
+        run: node .github/scripts/apply-chrome-platform-host-patch.mjs
+      - name: Syntax check integration
+        run: |
+          node --check desktop/electron/host-process.cjs
+          node --check desktop/electron/chrome-platform-server.cjs
+          node --check chatgpt-vps-control/scripts/chrome-platform-host.mjs
+      - name: Commit integration
+        run: |
+          if git diff --quiet -- desktop/electron/host-process.cjs; then
+            echo "Desktop Host integration already applied."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add desktop/electron/host-process.cjs
+          git commit -m "feat(chrome): connect desktop Host to Chrome platform"
+          git push origin HEAD:codex/fabushi-chrome-userscripts
