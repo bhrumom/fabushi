@@ -42,6 +42,7 @@ assert(serviceWorker.includes('import "./browser-control.js"'), "service worker 
 assert(!serviceWorker.includes("userscripts"), "new service worker must not load legacy userscript runtime");
 
 const appHtml = await readFile(join(extension, "app.html"), "utf8");
+const appJs = await readFile(join(extension, "app.js"), "utf8");
 for (const required of ["Fabushi", "聊天", "小程序", "Marketplace", "浏览器", "设置", "search", "open-desktop-settings"]) {
   assert(appHtml.includes(required), `app.html missing required first-class platform marker: ${required}`);
 }
@@ -59,7 +60,7 @@ for (const relative of localRefs) await mustExist(relative.replace(/^\.\//, ""))
 const platformBridge = await readFile(join(extension, "platform-bridge.js"), "utf8");
 const browserControl = await readFile(join(extension, "browser-control.js"), "utf8");
 assert(platformBridge.includes('com.fabushi.chrome_platform'), "platform bridge must use its independent native host");
-assert(platformBridge.includes("desktop.settings.open"), "platform bridge must support native desktop settings request through generic desktop request routing");
+assert(appJs.includes("desktop.settings.open"), "Fabushi Chrome UI must route desktop Settings through the native product bridge");
 assert(browserControl.includes('com.fabushi.chatgpt_computer_control'), "browser control must preserve the local browser-control native host contract");
 assert(browserControl.includes("chrome.debugger.attach"), "browser control must operate the user's existing Chrome through chrome.debugger");
 
