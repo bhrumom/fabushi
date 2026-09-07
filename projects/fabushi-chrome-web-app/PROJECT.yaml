@@ -1,0 +1,9 @@
+project_id: FAB-P0011
+project_key: CWA
+slug: fabushi-chrome-web-app
+name: Fabushi Chrome Extension App & Web Store
+status: active
+owners:
+  - fabushi-maintainers
+source_of_truth: SOURCE_OF_TRUTH.md
+legacy_project_ids: []
