@@ -1,67 +1,44 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fabushi</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      * { box-sizing: border-box; }
-      body { margin: 0; min-width: 720px; min-height: 520px; background: Canvas; color: CanvasText; }
-      .shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
-      aside { padding: 24px 18px; border-right: 1px solid color-mix(in srgb, CanvasText 16%, transparent); }
-      .brand { margin: 0 0 24px; font-size: 24px; }
-      nav { display: grid; gap: 8px; }
-      nav button { width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
-      nav button[aria-current="page"] { background: color-mix(in srgb, CanvasText 10%, transparent); font-weight: 600; }
-      main { padding: 28px 32px; }
-      .search { width: min(680px, 100%); padding: 12px 14px; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 12px; background: Canvas; color: CanvasText; font: inherit; }
-      .panel { margin-top: 24px; max-width: 760px; }
-      .panel h2 { margin-bottom: 8px; }
-      .panel p { margin-top: 0; opacity: 0.72; }
-      .marketplace-meta { display: flex; gap: 8px; align-items: center; margin: 18px 0 12px; font-size: 13px; opacity: 0.72; }
-      .marketplace-list { display: grid; gap: 12px; margin-top: 12px; }
-      .marketplace-card { padding: 16px; border: 1px solid color-mix(in srgb, CanvasText 16%, transparent); border-radius: 14px; }
-      .marketplace-card h3 { margin: 0 0 6px; font-size: 16px; }
-      .marketplace-card p { margin: 0 0 10px; }
-      .badges { display: flex; flex-wrap: wrap; gap: 6px; }
-      .badge { padding: 3px 7px; border-radius: 999px; background: color-mix(in srgb, CanvasText 9%, transparent); font-size: 12px; }
-      .marketplace-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
-      .marketplace-action { border: 0; border-radius: 10px; padding: 8px 12px; background: CanvasText; color: Canvas; font: inherit; font-weight: 600; cursor: pointer; }
-      .marketplace-action:disabled { cursor: not-allowed; opacity: 0.45; }
-      .marketplace-status { font-size: 12px; opacity: 0.72; }
-      [hidden] { display: none !important; }
-    </style>
-  </head>
-  <body data-platform="chrome-extension">
-    <div class="shell">
-      <aside>
-        <h1 class="brand">Fabushi</h1>
-        <nav aria-label="Fabushi">
-          <button type="button" data-section="Chats" aria-current="page">Chats</button>
-          <button type="button" data-section="Mini Apps">Mini Apps</button>
-          <button type="button" data-section="Marketplace">Marketplace</button>
-        </nav>
-      </aside>
-      <main>
-        <input id="marketplace-search" class="search" type="search" placeholder="Search Marketplace" aria-label="Search Marketplace" />
-        <section class="panel" aria-live="polite">
-          <h2 id="section-title">Chats</h2>
-          <p id="section-description">Open conversations and continue your Fabushi work.</p>
-          <div id="marketplace-view" hidden>
-            <div class="marketplace-meta">
-              <span id="marketplace-platform">chrome-extension</span>
-              <span aria-hidden="true">·</span>
-              <span id="marketplace-count">0 results</span>
-            </div>
-            <div id="marketplace-list" class="marketplace-list"></div>
-          </div>
-        </section>
-      </main>
-    </div>
-    <script src="app.js" type="module"></script>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Fabushi</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body data-platform="chrome-extension">
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Fabushi navigation">
+      <div class="brand-row"><div class="brand-mark" aria-hidden="true">F</div><div><h1>Fabushi</h1><p>Chrome</p></div></div>
+      <nav class="primary-nav">
+        <button type="button" data-section="Chats" aria-current="page">Chats</button>
+        <button type="button" data-section="Mini Apps">Mini Apps</button>
+        <button type="button" data-section="Marketplace">Marketplace</button>
+      </nav>
+      <div class="sidebar-status" role="status"><span class="status-dot" aria-hidden="true"></span><div><strong>Extension ready</strong><span>MV3 local app</span></div></div>
+    </aside>
+    <main class="workspace">
+      <header class="topbar">
+        <div><p class="eyebrow">Fabushi workspace</p><h2 id="section-title">Chats</h2></div>
+        <label class="search-wrap" for="app-search"><span aria-hidden="true">⌕</span><input id="app-search" type="search" placeholder="Search Chats" autocomplete="off" /><kbd>⌘K</kbd></label>
+      </header>
+      <section class="content" aria-live="polite" aria-busy="false">
+        <div class="section-copy"><p id="section-description">Open conversations and continue your Fabushi work.</p><span id="section-status" class="pill">Ready</span></div>
+        <div id="loading-state" class="state-card" hidden><div class="spinner" aria-hidden="true"></div><div><strong>Loading Fabushi…</strong><p>Preparing this workspace.</p></div></div>
+        <div id="chats-view" class="section-view">
+          <div class="feature-grid"><article class="feature-card"><span class="card-kicker">Recent</span><h3>Start a conversation</h3><p>Your Chrome app shell is ready for Fabushi chat surfaces and connected workflows.</p><button type="button" data-section-jump="Marketplace">Explore Marketplace</button></article><article class="feature-card"><span class="card-kicker">Status</span><h3>Local bridge</h3><p>The MV3 service worker remains available for the existing Fabushi computer-control bridge.</p></article></div>
+          <div class="empty-state"><div class="empty-icon" aria-hidden="true">◌</div><h3>No synced chats yet</h3><p>Chats will appear here when the Fabushi account surface is connected.</p></div>
+        </div>
+        <div id="mini-apps-view" class="section-view" hidden>
+          <div class="feature-grid"><article class="feature-card"><span class="card-kicker">Mini Apps</span><h3>Focused tools, one shell</h3><p>Launch compatible Fabushi mini apps without leaving the extension.</p><button type="button" data-section-jump="Marketplace">Find Mini Apps</button></article></div>
+          <div class="empty-state"><div class="empty-icon" aria-hidden="true">◇</div><h3>No installed Mini Apps</h3><p>Install compatible apps from Marketplace to see them here.</p></div>
+        </div>
+        <div id="marketplace-view" class="section-view" hidden><div class="marketplace-meta"><span id="marketplace-platform" class="pill">chrome-extension</span><span id="marketplace-count">0 results</span></div><div id="marketplace-list" class="marketplace-list"></div></div>
+      </section>
+      <footer class="mobile-nav" aria-label="Fabushi mobile navigation"><button type="button" data-section="Chats" aria-current="page">Chats</button><button type="button" data-section="Mini Apps">Mini Apps</button><button type="button" data-section="Marketplace">Market</button></footer>
+    </main>
+  </div>
+  <script src="app.js" type="module"></script>
+</body>
 </html>
