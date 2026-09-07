@@ -10,13 +10,13 @@
 ## Migrate
 
 1. 向维护者展示迁移前后清单和回滚方案。
-2. 仅在动作前确认后，临时调整最小范围的 `main`/tag 写入保护；不要改变账号权限。
-3. 使用逐 ref lease + 原子策略推送 heads/tags；不覆盖未在快照中的新 ref。
+2. 仅在动作前确认后，临时调整最小范围的 `main` 写入保护；不要改变账号权限。immutable release tags 不尝试删除或重建。
+3. 使用隔离候选和原子策略推送 heads；不覆盖未在快照中的新 ref。GitHub `refs/pull/*` 是 server-managed，不纳入普通 push。
 4. 立即恢复原规则，不等待其他工作。
 
 ## Verify and rollback
 
-验证 GitHub ref 集合、关键路径、`git fsck --full`/connectivity、规则状态和项目记录。若失败，停止并按原始 `name -> OID` 清单恢复 refs，再恢复规则；保留失败证据，不宣称完成。
+验证 GitHub heads/tags 集合、关键路径、`git fsck --full`/connectivity、规则状态和项目记录，并明确标注 immutable tags 与 `refs/pull/*` 边界。若失败，停止并按原始 `name -> OID` 清单恢复受影响 heads，再恢复规则；保留失败证据，不宣称完成。
 
 ## Safety
 
