@@ -6,7 +6,6 @@ const sections = {
 
 const MARKETPLACE_SECTION = "Marketplace";
 const USER_SCRIPT_PORT = "fabushi-userscripts";
-
 const marketplaceCatalog = [
   {
     id: "userscript-chatgpt-task-queue",
@@ -42,13 +41,21 @@ const marketplaceCatalog = [
 
 const title = document.querySelector("#section-title");
 const description = document.querySelector("#section-description");
+const status = document.querySelector("#section-status");
+const content = document.querySelector(".content");
 const buttons = [...document.querySelectorAll("[data-section]")];
-const search = document.querySelector("#marketplace-search");
-const marketplaceView = document.querySelector("#marketplace-view");
+const search = document.querySelector("#app-search");
+const loadingState = document.querySelector("#loading-state");
+const views = {
+  Chats: document.querySelector("#chats-view"),
+  "Mini Apps": document.querySelector("#mini-apps-view"),
+  Marketplace: document.querySelector("#marketplace-view"),
+};
 const marketplaceList = document.querySelector("#marketplace-list");
 const marketplaceCount = document.querySelector("#marketplace-count");
 const marketplacePlatform = document.querySelector("#marketplace-platform");
 const currentPlatform = document.body.dataset.platform || "unknown";
+let currentSection = "Chats";
 let userscriptStatus = { available: false, consent: false, scripts: [] };
 const userscriptSourceCache = new Map();
 
@@ -67,10 +74,7 @@ function isVisibleInMarketplace(item) {
 
 function getVisibleMarketplaceItems(query = "") {
   const normalizedQuery = query.trim().toLowerCase();
-  return marketplaceCatalog.filter((item) => {
-    const queryMatches = !normalizedQuery || normalizedSearchText(item).includes(normalizedQuery);
-    return isVisibleInMarketplace(item) && queryMatches;
-  });
+  return marketplaceCatalog.filter((item) => isVisibleInMarketplace(item) && (!normalizedQuery || normalizedSearchText(item).includes(normalizedQuery)));
 }
 
 function userscriptRequest(action, payload = {}) {
@@ -78,9 +82,7 @@ function userscriptRequest(action, payload = {}) {
     const port = chrome.runtime.connect({ name: USER_SCRIPT_PORT });
     const requestId = crypto.randomUUID();
     let settled = false;
-    const cleanup = () => {
-      try { port.disconnect(); } catch {}
-    };
+    const cleanup = () => { try { port.disconnect(); } catch {} };
     port.onMessage.addListener((message) => {
       if (message?.requestId !== requestId) return;
       settled = true;
@@ -96,25 +98,19 @@ function userscriptRequest(action, payload = {}) {
 }
 
 async function sha256(value) {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function loadUserscriptSource(item) {
   if (item.kind !== "userscript" || !item.sourcePath) throw new Error("Marketplace userscript release is missing its packaged source path.");
   if (userscriptSourceCache.has(item.id)) return userscriptSourceCache.get(item.id);
-  const url = chrome.runtime.getURL(item.sourcePath);
-  const response = await fetch(url, { cache: "no-store", credentials: "same-origin" });
+  const response = await fetch(chrome.runtime.getURL(item.sourcePath), { cache: "no-store", credentials: "same-origin" });
   if (!response.ok) throw new Error(`Could not load packaged userscript source (${response.status}).`);
   const code = await response.text();
-  if (!code.includes("// ==UserScript==") || !code.includes("// ==/UserScript==")) {
-    throw new Error("Packaged userscript source has invalid metadata.");
-  }
+  if (!code.includes("// ==UserScript==") || !code.includes("// ==/UserScript==")) throw new Error("Packaged userscript source has invalid metadata.");
   for (const match of item.matches) {
-    if (!code.includes(`// @match        ${match}`) && !code.includes(`// @match ${match}`)) {
-      throw new Error(`Packaged userscript metadata is missing approved match ${match}.`);
-    }
+    if (!code.includes(`// @match        ${match}`) && !code.includes(`// @match ${match}`)) throw new Error(`Packaged userscript metadata is missing approved match ${match}.`);
   }
   userscriptSourceCache.set(item.id, code);
   return code;
@@ -122,11 +118,8 @@ async function loadUserscriptSource(item) {
 
 async function refreshUserscriptStatus() {
   if (currentPlatform !== "chrome-extension") return;
-  try {
-    userscriptStatus = await userscriptRequest("status");
-  } catch (error) {
-    userscriptStatus = { available: false, consent: false, scripts: [], runtimeError: error.message };
-  }
+  try { userscriptStatus = await userscriptRequest("status"); }
+  catch (error) { userscriptStatus = { available: false, consent: false, scripts: [], runtimeError: error.message }; }
 }
 
 function installedScript(item) {
@@ -136,57 +129,32 @@ function installedScript(item) {
 async function installUserscript(item, statusNode) {
   statusNode.textContent = "Installing…";
   try {
-    if (!userscriptStatus.consent) {
-      userscriptStatus = await userscriptRequest("set-consent", { consent: true, userConfirmed: true });
-    }
+    if (!userscriptStatus.consent) userscriptStatus = await userscriptRequest("set-consent", { consent: true, userConfirmed: true });
     const code = await loadUserscriptSource(item);
     const digest = await sha256(code);
     await userscriptRequest("install", {
       userConfirmed: true,
-      script: {
-        id: item.id,
-        name: item.name,
-        version: item.version,
-        code,
-        matches: item.matches,
-        permissions: ["page-dom"],
-        runAt: "document_idle",
-        source: { kind: "marketplace", pluginId: item.id, version: item.version, sha256: digest },
-      },
+      script: { id: item.id, name: item.name, version: item.version, code, matches: item.matches, permissions: ["page-dom"], runAt: "document_idle", source: { kind: "marketplace", pluginId: item.id, version: item.version, sha256: digest } },
     });
     await refreshUserscriptStatus();
-    statusNode.textContent = "Installed. Enable it to run.";
     renderMarketplace(search.value);
-  } catch (error) {
-    statusNode.textContent = error.message;
-  }
+  } catch (error) { statusNode.textContent = error.message; }
 }
 
 async function setUserscriptEnabled(item, enabled, statusNode) {
   statusNode.textContent = enabled ? "Enabling…" : "Stopping…";
   try {
-    userscriptStatus = await userscriptRequest("set-enabled", {
-      id: item.id,
-      enabled,
-      userConfirmed: enabled,
-    });
-    statusNode.textContent = enabled ? "Running on matched ChatGPT pages." : "Stopped.";
+    userscriptStatus = await userscriptRequest("set-enabled", { id: item.id, enabled, userConfirmed: enabled });
     renderMarketplace(search.value);
-  } catch (error) {
-    statusNode.textContent = error.message;
-  }
+  } catch (error) { statusNode.textContent = error.message; }
 }
 
 function renderMarketplace(query = "") {
   const visibleItems = getVisibleMarketplaceItems(query);
   marketplaceList.replaceChildren();
-
   for (const item of visibleItems) {
     const card = document.createElement("article");
     card.className = "marketplace-card";
-    card.dataset.kind = item.kind;
-    card.dataset.platforms = item.platforms.join(",");
-
     const heading = document.createElement("h3");
     heading.textContent = item.name;
     const body = document.createElement("p");
@@ -200,7 +168,6 @@ function renderMarketplace(query = "") {
       badges.append(badge);
     }
     card.append(heading, body, badges);
-
     if (item.kind === "userscript") {
       const state = installedScript(item);
       const actions = document.createElement("div");
@@ -211,51 +178,51 @@ function renderMarketplace(query = "") {
       actionButton.textContent = !state ? "Install" : state.enabled ? "Stop" : "Run";
       const statusNode = document.createElement("span");
       statusNode.className = "marketplace-status";
-      statusNode.textContent = userscriptStatus.available === false && userscriptStatus.runtimeError
-        ? userscriptStatus.runtimeError
-        : state?.enabled ? "Running" : state ? "Installed" : "Not installed";
-      actionButton.disabled = userscriptStatus.available === false && Boolean(userscriptStatus.runtimeError);
-      actionButton.addEventListener("click", () => {
-        if (!state) void installUserscript(item, statusNode);
-        else void setUserscriptEnabled(item, !state.enabled, statusNode);
-      });
+      statusNode.textContent = userscriptStatus.runtimeError ? userscriptStatus.runtimeError : state?.enabled ? "Running" : state ? "Installed" : "Not installed";
+      actionButton.disabled = Boolean(userscriptStatus.runtimeError);
+      actionButton.addEventListener("click", () => { if (!state) void installUserscript(item, statusNode); else void setUserscriptEnabled(item, !state.enabled, statusNode); });
       actions.append(actionButton, statusNode);
       card.append(actions);
     }
-
     marketplaceList.append(card);
   }
-
-  if (visibleItems.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "marketplace-empty";
-    empty.textContent = "No Marketplace items match this search on this platform.";
+  if (!visibleItems.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.innerHTML = "<div class=\"empty-icon\" aria-hidden=\"true\">⌕</div><h3>No results</h3><p>No Marketplace items match this search on this platform.</p>";
     marketplaceList.append(empty);
   }
   marketplaceCount.textContent = `${visibleItems.length} ${visibleItems.length === 1 ? "result" : "results"}`;
 }
 
+function setLoading(active) {
+  loadingState.hidden = !active;
+  content.setAttribute("aria-busy", String(active));
+  status.textContent = active ? "Loading" : "Ready";
+}
+
 function activateSection(section) {
-  for (const item of buttons) {
-    if (item.dataset.section === section) item.setAttribute("aria-current", "page");
-    else item.removeAttribute("aria-current");
-  }
+  currentSection = section;
+  for (const button of buttons) button.toggleAttribute("aria-current", button.dataset.section === section);
+  for (const [name, view] of Object.entries(views)) view.hidden = name !== section;
   title.textContent = section;
-  description.textContent = sections[section] ?? "";
-  const isMarketplace = section === MARKETPLACE_SECTION;
-  marketplaceView.hidden = !isMarketplace;
-  if (isMarketplace) {
-    renderMarketplace(search.value);
-    search.focus();
-  }
+  description.textContent = sections[section] || "";
+  search.placeholder = `Search ${section}`;
+  if (section === MARKETPLACE_SECTION) renderMarketplace(search.value);
 }
 
 for (const button of buttons) button.addEventListener("click", () => activateSection(button.dataset.section));
+for (const button of document.querySelectorAll("[data-section-jump]")) button.addEventListener("click", () => activateSection(button.dataset.sectionJump));
 search.addEventListener("input", () => {
-  activateSection(MARKETPLACE_SECTION);
+  if (currentSection !== MARKETPLACE_SECTION) activateSection(MARKETPLACE_SECTION);
   const query = search.value.trim();
   description.textContent = query ? `Searching Marketplace for “${query}” on ${currentPlatform}.` : sections.Marketplace;
 });
+document.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); search.focus(); }
+});
 
+setLoading(true);
 await refreshUserscriptStatus();
-renderMarketplace();
+setLoading(false);
+activateSection("Chats");
