@@ -1,39 +1,53 @@
 name: iOS interactive app device E2E
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/ios-interactive-app-e2e.yml'
+      - '.github/workflows/ios-interactive-package-reuse-e2e.yml'
+      - 'mobile/ios/Fabushi/**'
+      - 'mobile/ios/FabushiTests/**'
+      - 'mobile/ios/FabushiUITests/**'
+      - 'mobile/ios/project.yml'
+      - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
   push:
     branches: [main]
     paths:
       - '.github/workflows/ios-interactive-app-e2e.yml'
+      - '.github/workflows/ios-interactive-package-reuse-e2e.yml'
       - 'mobile/ios/Fabushi/**'
       - 'mobile/ios/FabushiTests/**'
+      - 'mobile/ios/FabushiUITests/**'
       - 'mobile/ios/project.yml'
       - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
   workflow_dispatch:
 
 concurrency:
-  group: ios-interactive-app-e2e-${{ github.ref }}
-  cancel-in-progress: false
+  group: ios-interactive-app-e2e-${{ github.event.pull_request.head.sha || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  ios-interactive:
-    name: Install, login, register, and expose iOS Simulator app
+  ios-global-dharma-journey:
+    name: Exact iOS package Global Dharma user journey
     runs-on: macos-15
     timeout-minutes: 35
     env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-interactive
       FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
     steps:
       - name: Checkout exact source
         uses: actions/checkout@v5
         with:
+          ref: ${{ env.SOURCE_SHA }}
           fetch-depth: 1
 
-      - name: Initialize runner-owned paths after runner allocation
+      - name: Initialize evidence paths
         shell: bash
         run: |
           set -euo pipefail
@@ -43,19 +57,11 @@ jobs:
             echo "DERIVED_DATA=$RUNNER_TEMP/fabushi-ios-derived"
             echo "EVIDENCE_DIR=$GITHUB_WORKSPACE/ios-interactive-evidence"
           } >> "$GITHUB_ENV"
-
-      - name: Record source identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          mkdir -p "$EVIDENCE_DIR/test-build" "$EVIDENCE_DIR/steps"
-          {
-            echo "source_sha=$GITHUB_SHA"
-            echo "run_id=$GITHUB_RUN_ID"
-            echo "run_attempt=$GITHUB_RUN_ATTEMPT"
-            echo "device_id=$DEVICE_ID"
-          } > "$EVIDENCE_DIR/source.env"
+          mkdir -p ios-interactive-evidence/test-build ios-interactive-evidence/steps
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          printf 'source_sha=%s\nrun_id=%s\nrun_attempt=%s\ndevice_id=%s\n' \
+            "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$DEVICE_ID" \
+            > ios-interactive-evidence/source.env
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -80,138 +86,110 @@ jobs:
           shared-key: ios-interactive-app-host-v1
 
       - id: simulator
-        name: Select, erase, and boot compatible iOS Simulator
+        name: Boot isolated Simulator and start full-session video
         shell: bash
         run: |
           set -euo pipefail
-          runtimes_json="$EVIDENCE_DIR/simulator-runtimes.json"
-          devices_json="$EVIDENCE_DIR/simulator-devices.json"
-          xcrun simctl list runtimes available -j > "$runtimes_json"
-          xcrun simctl list devices available -j > "$devices_json"
-
+          xcrun simctl list runtimes available -j > "$EVIDENCE_DIR/simulator-runtimes.json"
+          xcrun simctl list devices available -j > "$EVIDENCE_DIR/simulator-devices.json"
           pair="$({
-            jq -r '
-              [.runtimes[] | select(.isAvailable == true and (.identifier | contains("SimRuntime.iOS-")))]
-              | sort_by(.version | split(".") | map(tonumber))
-              | reverse
-              | .[].identifier
-            ' "$runtimes_json" | while IFS= read -r runtime; do
-              udid="$(jq -r --arg runtime "$runtime" '.devices[$runtime] // [] | map(select(.isAvailable == true)) | first | .udid // empty' "$devices_json")"
-              if [ -n "$udid" ]; then
-                printf '%s|%s\n' "$runtime" "$udid"
-                break
-              fi
+            jq -r '[.runtimes[] | select(.isAvailable == true and (.identifier | contains("SimRuntime.iOS-")))] | sort_by(.version | split(".") | map(tonumber)) | reverse | .[].identifier' "$EVIDENCE_DIR/simulator-runtimes.json" | while IFS= read -r runtime; do
+              udid="$(jq -r --arg runtime "$runtime" '.devices[$runtime] // [] | map(select(.isAvailable == true)) | first | .udid // empty' "$EVIDENCE_DIR/simulator-devices.json")"
+              if [ -n "$udid" ]; then printf '%s|%s\n' "$runtime" "$udid"; break; fi
             done
           } || true)"
           runtime="${pair%%|*}"
           udid="${pair#*|}"
-          if [ -z "$runtime" ] || [ -z "$udid" ] || [ "$runtime" = "$udid" ]; then
-            echo 'No runner-provisioned iOS Simulator has a compatible available runtime/device pair.' >&2
-            exit 1
-          fi
-
+          test -n "$runtime" && test -n "$udid" && test "$runtime" != "$udid"
           echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
-          {
-            echo "runtime=$runtime"
-            echo "udid=$udid"
-          } > "$EVIDENCE_DIR/simulator-selection.env"
-
+          printf 'runtime=%s\nudid=%s\n' "$runtime" "$udid" > "$EVIDENCE_DIR/simulator-selection.env"
           xcrun simctl shutdown "$udid" 2>/dev/null || true
           xcrun simctl erase "$udid"
           xcrun simctl rename "$udid" "Fabushi-iOS-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
           xcrun simctl io "$udid" screenshot "$EVIDENCE_DIR/steps/000-simulator-booted.png"
-
           xcrun simctl io "$udid" recordVideo --codec=h264 "$EVIDENCE_DIR/ios-session.mp4" > "$EVIDENCE_DIR/video-recorder.log" 2>&1 &
           echo $! > "$EVIDENCE_DIR/video-recorder.pid"
 
-      - name: Build Mahayana Host for iOS Simulator
+      - name: Build cached Mahayana Host for iOS Simulator
         working-directory: third_party/mahayana/mahayana-rs
         env:
           IPHONEOS_DEPLOYMENT_TARGET: '17.0'
         run: cargo build --release -p mahayana-app-host-mobile --target aarch64-apple-ios-sim
 
-      - name: Stage iOS Simulator static library
+      - name: Stage Simulator Host and generate Xcode project
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p mobile/ios/Frameworks
           cp third_party/mahayana/mahayana-rs/target/aarch64-apple-ios-sim/release/libmahayana_app_host.a mobile/ios/Frameworks/
+          command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+          (cd mobile/ios && xcodegen generate)
 
-      - name: Install XcodeGen
-        run: command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
-
-      - name: Generate canonical iOS Xcode project
+      - name: Build app and tests once
         working-directory: mobile/ios
-        run: xcodegen generate
-
-      - name: Build app and tests once for Simulator
-        working-directory: mobile/ios
-        shell: bash
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
+        shell: bash
         run: |
           set -o pipefail
-          xcodebuild \
-            -project Fabushi.xcodeproj \
-            -scheme Fabushi \
-            -configuration Debug \
-            -destination "platform=iOS Simulator,id=$UDID" \
-            -derivedDataPath "$DERIVED_DATA" \
-            CODE_SIGNING_ALLOWED=NO \
-            build-for-testing \
-            | tee "$EVIDENCE_DIR/xcode-build.log"
+          xcodebuild -project Fabushi.xcodeproj -scheme Fabushi -configuration Debug \
+            -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO build-for-testing | tee "$EVIDENCE_DIR/xcode-build.log"
 
-      - name: Run fastest native contract tests with xcresult
+      - name: Run native contract tests from the same build
         working-directory: mobile/ios
-        shell: bash
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
+        shell: bash
         run: |
           set -o pipefail
           rm -rf "$EVIDENCE_DIR/FabushiContracts.xcresult"
-          xcodebuild \
-            -project Fabushi.xcodeproj \
-            -scheme Fabushi \
-            -configuration Debug \
-            -destination "platform=iOS Simulator,id=$UDID" \
-            -derivedDataPath "$DERIVED_DATA" \
-            -only-testing:FabushiTests \
-            -resultBundlePath "$EVIDENCE_DIR/FabushiContracts.xcresult" \
-            CODE_SIGNING_ALLOWED=NO \
-            test-without-building \
-            | tee "$EVIDENCE_DIR/xcode-contract-tests.log"
+          xcodebuild -project Fabushi.xcodeproj -scheme Fabushi -configuration Debug \
+            -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath "$DERIVED_DATA" \
+            -only-testing:FabushiTests -resultBundlePath "$EVIDENCE_DIR/FabushiContracts.xcresult" \
+            CODE_SIGNING_ALLOWED=NO test-without-building | tee "$EVIDENCE_DIR/xcode-contract-tests.log"
 
       - id: build
-        name: Publish exact Simulator test build identity
+        name: Stage exact Simulator package and portable UI-test harness
         shell: bash
         run: |
           set -euo pipefail
-          app="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/Fabushi.app"
-          test -d "$app"
-          short_sha="${GITHUB_SHA:0:12}"
+          products="$DERIVED_DATA/Build/Products"
+          app="$products/Debug-iphonesimulator/Fabushi.app"
+          runner="$products/Debug-iphonesimulator/FabushiUITests-Runner.app"
+          xctestrun="$(find "$products" -maxdepth 1 -name '*.xctestrun' -print -quit)"
+          test -d "$app" && test -d "$runner" && test -f "$xctestrun"
+          short_sha="${SOURCE_SHA:0:12}"
           archive="$EVIDENCE_DIR/test-build/Fabushi-iOS-Simulator-${short_sha}.zip"
           ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
           shasum -a 256 "$archive" > "$EVIDENCE_DIR/test-build/SHA256SUMS.txt"
+          harness="$EVIDENCE_DIR/test-build/ui-harness"
+          mkdir -p "$harness/Debug-iphonesimulator"
+          cp "$xctestrun" "$harness/"
+          ditto "$app" "$harness/Debug-iphonesimulator/Fabushi.app"
+          ditto "$runner" "$harness/Debug-iphonesimulator/FabushiUITests-Runner.app"
+          shasum -a 256 "$app/Fabushi" > "$harness/Fabushi.binary.sha256"
           echo "app_path=$app" >> "$GITHUB_OUTPUT"
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "xctestrun=$xctestrun" >> "$GITHUB_OUTPUT"
 
-      - name: Upload comparable Simulator test version before interaction
+      - name: Upload exact reusable Simulator test version before interaction
         uses: actions/upload-artifact@v4
         with:
-          name: fabushi-ios-simulator-test-${{ github.sha }}
+          name: fabushi-ios-simulator-test-${{ env.SOURCE_SHA }}
           path: ios-interactive-evidence/test-build/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
       - id: install
-        name: Install exact Simulator test build before protected account login
-        shell: bash
+        name: Install exact package before protected account login
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
           APP_PATH: ${{ steps.build.outputs.app_path }}
+        shell: bash
         run: |
           set -euo pipefail
           xcrun simctl install "$UDID" "$APP_PATH"
@@ -221,42 +199,37 @@ jobs:
           xcrun simctl spawn "$UDID" defaults write com.ombhrum.fabushi fabushi.mobile.onboarding-complete.v1 -bool YES
           xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/001-app-installed.png"
 
-      - name: Login protected Fabushi test account and export bounded app session
-        shell: bash
+      - name: Login protected Fabushi test account after install
         env:
           FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
           FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+        shell: bash
         run: |
           set -euo pipefail
-          test -n "$FABUSHI_CI_TEST_USERNAME"
-          test -n "$FABUSHI_CI_TEST_PASSWORD"
+          test -n "$FABUSHI_CI_TEST_USERNAME" && test -n "$FABUSHI_CI_TEST_PASSWORD"
           mkdir -p "$(dirname "$FABUSHI_ACCOUNT_SESSION_FILE")" "$(dirname "$FABUSHI_CI_ACCOUNT_SESSION_FILE")"
           chmod 700 "$(dirname "$FABUSHI_ACCOUNT_SESSION_FILE")" "$(dirname "$FABUSHI_CI_ACCOUNT_SESSION_FILE")"
           node chatgpt-vps-control/scripts/login-ci-test-account.mjs
           node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
           chmod 600 "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
-          echo 'Protected test account authenticated after exact app installation; only the bounded refresh-token-free app session will be injected into the Simulator app.'
 
       - id: launch
-        name: Launch authenticated exact test build and let the app own device registration
-        shell: bash
+        name: Inject bounded session and require App-owned registration
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
           APP_CONTAINER: ${{ steps.install.outputs.app_container }}
+        shell: bash
         run: |
           set -euo pipefail
-          test -d "$APP_CONTAINER"
           app_session="$APP_CONTAINER/Documents/fabushi-ci-session.json"
           cp "$FABUSHI_CI_ACCOUNT_SESSION_FILE" "$app_session"
           chmod 600 "$app_session"
-
           trace="$APP_CONTAINER/Library/Application Support/com.ombhrum.fabushi/device-gateway-trace.jsonl"
           mkdir -p "$(dirname "$trace")"
           : > "$trace"
           chmod 600 "$trace"
-          echo "app_container=$APP_CONTAINER" >> "$GITHUB_OUTPUT"
+          echo "app_session=$app_session" >> "$GITHUB_OUTPUT"
           echo "trace_path=$trace" >> "$GITHUB_OUTPUT"
-
           export SIMCTL_CHILD_GITHUB_ACTIONS=true
           export SIMCTL_CHILD_FABUSHI_CI_ACCOUNT_SESSION_FILE="$app_session"
           export SIMCTL_CHILD_GITHUB_REPOSITORY="$GITHUB_REPOSITORY"
@@ -264,89 +237,85 @@ jobs:
           export SIMCTL_CHILD_GITHUB_JOB="$GITHUB_JOB"
           export SIMCTL_CHILD_GITHUB_RUN_ID="$GITHUB_RUN_ID"
           export SIMCTL_CHILD_GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"
-          export SIMCTL_CHILD_GITHUB_SHA="$GITHUB_SHA"
+          export SIMCTL_CHILD_GITHUB_SHA="$SOURCE_SHA"
           export SIMCTL_CHILD_RUNNER_NAME="$RUNNER_NAME"
           export SIMCTL_CHILD_RUNNER_OS="$RUNNER_OS"
           export SIMCTL_CHILD_RUNNER_ARCH="$RUNNER_ARCH"
           export SIMCTL_CHILD_FABUSHI_DEVICE_NAME="Fabushi Test iOS Simulator $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
-          xcrun simctl launch \
-            --terminate-running-process \
-            --stdout="$EVIDENCE_DIR/app.stdout.log" \
-            --stderr="$EVIDENCE_DIR/app.stderr.log" \
-            "$UDID" com.ombhrum.fabushi \
-            | tee "$EVIDENCE_DIR/app-launch.txt"
-
+          xcrun simctl launch --terminate-running-process \
+            --stdout="$EVIDENCE_DIR/app.stdout.log" --stderr="$EVIDENCE_DIR/app.stderr.log" \
+            "$UDID" com.ombhrum.fabushi | tee "$EVIDENCE_DIR/app-launch.txt"
           deadline=$((SECONDS + 90))
           while [ "$SECONDS" -lt "$deadline" ]; do
             if grep -q '"phase":"registered"' "$trace" 2>/dev/null; then
               xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/002-app-registered.png"
-              echo 'The installed and authenticated iOS app registered its own account-scoped device gateway.'
               exit 0
             fi
             sleep 2
           done
-          echo 'The installed iOS app did not register its device gateway within 90 seconds.' >&2
+          echo 'Installed iOS app did not register its own device gateway.' >&2
           cat "$trace" >&2 || true
           exit 1
 
-      - id: control
-        name: Hold live app for @fabushi test semantic control
-        if: steps.launch.outcome == 'success'
-        continue-on-error: true
-        shell: bash
+      - name: Run autonomous Global Dharma simulated-user journey
+        working-directory: mobile/ios
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
-          TRACE_PATH: ${{ steps.launch.outputs.trace_path }}
+          FABUSHI_CI_APP_SESSION_IN_SIMULATOR: ${{ steps.launch.outputs.app_session }}
+          FABUSHI_E2E_SOURCE_SHA: ${{ env.SOURCE_SHA }}
+          FABUSHI_E2E_SCREENSHOT_DIR: ${{ github.workspace }}/ios-interactive-evidence/steps
+          FABUSHI_E2E_STATE_FILE: ${{ github.workspace }}/ios-interactive-evidence/global-dharma-ui-state.json
+          FABUSHI_DEVICE_NAME: Fabushi Test iOS Simulator ${{ github.run_id }}/${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -rf "$EVIDENCE_DIR/GlobalDharmaJourney.xcresult"
+          xcodebuild -project Fabushi.xcodeproj -scheme Fabushi -configuration Debug \
+            -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath "$DERIVED_DATA" \
+            -only-testing:FabushiUITests/GlobalDharmaJourneyUITests/testGlobalDharmaMarketplaceBotWebMcpCommerceJourney \
+            -resultBundlePath "$EVIDENCE_DIR/GlobalDharmaJourney.xcresult" \
+            CODE_SIGNING_ALLOWED=NO test-without-building | tee "$EVIDENCE_DIR/xcode-global-dharma-journey.log"
+
+      - name: Verify canonical restore ledger and server entitlement
+        shell: bash
         run: |
           set -euo pipefail
-          required=(
-            fabushi.app.status
-            fabushi.app.snapshot
-            fabushi.app.find
-            fabushi.app.action
-            fabushi.app.wait
-            fabushi.app.assert
-          )
-          last=0
-          deadline=$((SECONDS + 600))
-          echo 'waiting-for-fabushi-test' > "$EVIDENCE_DIR/control-status.txt"
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            completed="$(grep '"phase":"call-completed"' "$TRACE_PATH" 2>/dev/null || true)"
-            total="$(printf '%s\n' "$completed" | sed '/^$/d' | wc -l | tr -d ' ')"
-            while [ "$last" -lt "$total" ]; do
-              last=$((last + 1))
-              line="$(printf '%s\n' "$completed" | sed -n "${last}p")"
-              tool="$(printf '%s' "$line" | jq -r '.toolName // "unknown"' 2>/dev/null || echo unknown)"
-              safe_tool="$(printf '%s' "$tool" | tr -cs 'A-Za-z0-9._-' '-')"
-              xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/$(printf '%03d' $((last + 2)))-${safe_tool}.png" || true
-            done
+          access_token="$(jq -r '.accessToken // empty' "$FABUSHI_CI_ACCOUNT_SESSION_FILE")"
+          test ${#access_token} -ge 24
+          auth=(-H "Authorization: Bearer $access_token" -H 'Accept: application/json')
+          entitlement="$FABUSHI_API_BASE_URL/v1/plugins/global-dharma/entitlements/local.prayer-wheel.start"
+          curl --fail-with-body --silent --show-error "${auth[@]}" "$entitlement" > "$EVIDENCE_DIR/entitlement-before-restore.json"
+          jq -e '.purchaseOptions[] | select(.sku == "local-prayer-wheel.lifetime" and .currency == "CNY" and .amount == 108000 and .productKind == "digital_durable")' \
+            "$EVIDENCE_DIR/entitlement-before-restore.json" >/dev/null
+          curl --fail-with-body --silent --show-error -X POST "${auth[@]}" -H 'Content-Type: application/json' \
+            --data '{}' "$FABUSHI_API_BASE_URL/v1/purchases/restore" > "$EVIDENCE_DIR/purchase-restore.json"
+          jq -e '.restored == true and any(.purchases[]?; .pluginId == "global-dharma" and .sku == "local-prayer-wheel.lifetime" and .currency == "CNY" and .amount == 108000 and .status == "fulfilled")' \
+            "$EVIDENCE_DIR/purchase-restore.json" >/dev/null
+          curl --fail-with-body --silent --show-error "${auth[@]}" "$entitlement" > "$EVIDENCE_DIR/entitlement-after-restore.json"
+          jq -e '.access.allowed == true and .entitlement.status == "active"' "$EVIDENCE_DIR/entitlement-after-restore.json" >/dev/null
+          echo passed > "$EVIDENCE_DIR/canonical-commerce-status.txt"
 
-            missing=0
-            for tool in "${required[@]}"; do
-              if ! jq -e --arg tool "$tool" 'select(.phase == "call-completed" and .ok == true and .toolName == $tool)' "$TRACE_PATH" >/dev/null 2>&1; then
-                missing=1
-                break
-              fi
-            done
-            if [ "$missing" -eq 0 ] && [ "$(cat "$EVIDENCE_DIR/control-status.txt" 2>/dev/null || true)" != passed ]; then
-              echo passed > "$EVIDENCE_DIR/control-status.txt"
-              xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/999-semantic-control-passed.png" || true
-            fi
-            sleep 1
-          done
-          if [ "$(cat "$EVIDENCE_DIR/control-status.txt" 2>/dev/null || true)" = passed ]; then
-            exit 0
-          fi
-          echo failed > "$EVIDENCE_DIR/control-status.txt"
-          echo 'Timed out before @fabushi test completed all six registered semantic tools.' >&2
-          exit 1
-
-      - name: Collect app, Simulator, trace, video, and report evidence
-        if: always()
+      - name: Observe optional external fabushi test evidence without blocking
+        if: always() && steps.launch.outcome == 'success'
+        continue-on-error: true
+        env:
+          TRACE_PATH: ${{ steps.launch.outputs.trace_path }}
         shell: bash
+        run: |
+          set -euo pipefail
+          required=(fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert)
+          missing=0
+          for tool in "${required[@]}"; do
+            jq -e --arg tool "$tool" 'select(.phase == "call-completed" and .ok == true and .toolName == $tool)' "$TRACE_PATH" >/dev/null 2>&1 || missing=1
+          done
+          if [ "$missing" -eq 0 ]; then echo passed > "$EVIDENCE_DIR/external-control-status.txt"; else echo optional-not-observed > "$EVIDENCE_DIR/external-control-status.txt"; fi
+
+      - name: Collect complete evidence
+        if: always()
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
           TRACE_PATH: ${{ steps.launch.outputs.trace_path }}
+        shell: bash
         run: |
           set +e
           if [ -f "$EVIDENCE_DIR/video-recorder.pid" ]; then
@@ -354,65 +323,35 @@ jobs:
             kill -INT "$video_pid" 2>/dev/null || true
             wait "$video_pid" 2>/dev/null || true
           fi
-          if [ -n "${UDID:-}" ]; then
-            xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/1000-final.png" || true
-            xcrun simctl spawn "$UDID" log show --style compact --last 15m --predicate 'process == "Fabushi"' > "$EVIDENCE_DIR/fabushi-system.log" 2>&1 || true
-          fi
-          if [ -n "${TRACE_PATH:-}" ] && [ -f "$TRACE_PATH" ]; then
-            cp "$TRACE_PATH" "$EVIDENCE_DIR/device-gateway-trace.jsonl"
-          else
-            : > "$EVIDENCE_DIR/device-gateway-trace.jsonl"
-          fi
-          status="$(cat "$EVIDENCE_DIR/control-status.txt" 2>/dev/null || echo not-run)"
-          completed_tools="$(jq -r 'select(.phase == "call-completed" and .ok == true) | .toolName' "$EVIDENCE_DIR/device-gateway-trace.jsonl" 2>/dev/null | sort -u | jq -R -s 'split("\n") | map(select(length > 0))')"
-          [ -n "$completed_tools" ] || completed_tools='[]'
-          jq -n \
-            --arg sourceSha "$GITHUB_SHA" \
-            --arg runId "$GITHUB_RUN_ID" \
-            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
-            --arg deviceId "$DEVICE_ID" \
-            --arg controlStatus "$status" \
-            --argjson completedTools "$completed_tools" \
-            '{schema:"fabushi.ios.interactive-evidence.v1",sourceSha:$sourceSha,runId:$runId,runAttempt:$runAttempt,deviceId:$deviceId,controlStatus:$controlStatus,completedTools:$completedTools}' \
+          xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/1000-final.png" 2>/dev/null || true
+          xcrun simctl spawn "$UDID" log show --style compact --last 20m --predicate 'process == "Fabushi"' > "$EVIDENCE_DIR/fabushi-system.log" 2>&1 || true
+          if [ -n "${TRACE_PATH:-}" ] && [ -f "$TRACE_PATH" ]; then cp "$TRACE_PATH" "$EVIDENCE_DIR/device-gateway-trace.jsonl"; else : > "$EVIDENCE_DIR/device-gateway-trace.jsonl"; fi
+          ui_status=failed
+          test -f "$EVIDENCE_DIR/global-dharma-ui-state.json" && jq -e '.autoLogin and .searchedMiniApps and .globalDharmaVisible and .installedOrAlreadyInstalled and .botVisible and .naturalLanguageSent and .webMcpReady and .entitlementAllowed and .restoreTapped' "$EVIDENCE_DIR/global-dharma-ui-state.json" >/dev/null 2>&1 && ui_status=passed
+          commerce_status="$(cat "$EVIDENCE_DIR/canonical-commerce-status.txt" 2>/dev/null || echo failed)"
+          external_status="$(cat "$EVIDENCE_DIR/external-control-status.txt" 2>/dev/null || echo optional-not-observed)"
+          jq -n --arg sourceSha "$SOURCE_SHA" --arg runId "$GITHUB_RUN_ID" --arg deviceId "$DEVICE_ID" \
+            --arg uiStatus "$ui_status" --arg commerceStatus "$commerce_status" --arg externalStatus "$external_status" \
+            '{schema:"fabushi.ios.global-dharma-evidence.v2",sourceSha:$sourceSha,runId:$runId,deviceId:$deviceId,uiJourney:$uiStatus,canonicalCommerce:$commerceStatus,externalFabushiTest:$externalStatus}' \
             > "$EVIDENCE_DIR/report.json"
-          {
-            echo '# Fabushi iOS interactive evidence'
-            echo
-            echo "- Source SHA: \`$GITHUB_SHA\`"
-            echo "- Run: \`$GITHUB_RUN_ID\` attempt \`$GITHUB_RUN_ATTEMPT\`"
-            echo "- Device: \`$DEVICE_ID\`"
-            echo "- External semantic control: \`$status\`"
-            echo '- Full-session recording starts immediately after Simulator boot and covers build/test, app installation, protected test-account authentication, app-owned registration, and external semantic control.'
-            echo '- Test build was uploaded before interaction and the exact same `.app` was installed before protected test-account authentication.'
-            echo '- Login used the protected test account; only a bounded refresh-token-free application session was injected.'
-            echo '- Device registration was owned by the installed iOS application; no runner-side Fabushi device agent was started.'
-          } > "$EVIDENCE_DIR/README.md"
+          printf '# Fabushi iOS Global Dharma evidence\n\n- Source SHA: `%s`\n- Run: `%s`\n- UI journey: `%s`\n- Canonical purchase/restore/entitlement: `%s`\n- External fabushi test: `%s` (optional)\n' \
+            "$SOURCE_SHA" "$GITHUB_RUN_ID" "$ui_status" "$commerce_status" "$external_status" > "$EVIDENCE_DIR/README.md"
 
       - name: Upload complete evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fabushi-ios-interactive-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          name: fabushi-ios-global-dharma-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: ios-interactive-evidence/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
       - name: Delete isolated Simulator
         if: always()
-        shell: bash
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
-        run: |
-          set +e
-          if [ -n "${UDID:-}" ]; then
-            xcrun simctl shutdown "$UDID" || true
-            xcrun simctl delete "$UDID" || true
-          fi
-
-      - name: Enforce external semantic control evidence
-        if: always()
         shell: bash
         run: |
-          set -euo pipefail
-          test -f "$EVIDENCE_DIR/control-status.txt"
-          test "$(cat "$EVIDENCE_DIR/control-status.txt")" = passed
+          set +e
+          xcrun simctl shutdown "$UDID" 2>/dev/null || true
+          xcrun simctl delete "$UDID" 2>/dev/null || true

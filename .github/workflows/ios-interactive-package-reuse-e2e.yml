@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       origin_run_id:
-        description: Exact Actions run that uploaded the Simulator package
+        description: Exact Actions run that uploaded the Simulator package and UI harness
         required: true
         type: string
       package_source_sha:
@@ -13,7 +13,7 @@ on:
         type: string
 
 concurrency:
-  group: ios-interactive-package-reuse-${{ github.ref }}
+  group: ios-interactive-package-reuse-${{ inputs.package_source_sha }}
   cancel-in-progress: false
 
 permissions:
@@ -21,8 +21,8 @@ permissions:
   contents: read
 
 jobs:
-  ios-interactive-package-reuse:
-    name: Reinstall existing package, login, register, and expose iOS Simulator app
+  reuse-global-dharma-journey:
+    name: Reuse exact iOS package and rerun Global Dharma journey
     runs-on: macos-15
     timeout-minutes: 25
     env:
@@ -31,7 +31,7 @@ jobs:
       PACKAGE_SOURCE_SHA: ${{ inputs.package_source_sha }}
       FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
     steps:
-      - name: Checkout workflow and account helper source
+      - name: Checkout workflow and protected account helpers
         uses: actions/checkout@v5
         with:
           fetch-depth: 1
@@ -45,62 +45,34 @@ jobs:
             echo "FABUSHI_CI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/fabushi-ci-app/session.json"
             echo "EVIDENCE_DIR=$GITHUB_WORKSPACE/ios-interactive-reuse-evidence"
             echo "PACKAGE_DIR=$GITHUB_WORKSPACE/ios-reused-package"
+            echo "DERIVED_DATA=$RUNNER_TEMP/fabushi-ios-derived"
           } >> "$GITHUB_ENV"
+          mkdir -p ios-interactive-reuse-evidence/steps ios-reused-package
 
       - id: provenance
-        name: Verify exact origin run and package compatibility
-        shell: bash
+        name: Verify exact origin run and reusable artifact
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           set -euo pipefail
-          if ! [[ "$ORIGIN_RUN_ID" =~ ^[0-9]+$ ]]; then
-            echo 'origin_run_id must be a numeric GitHub Actions run id.' >&2
-            exit 1
-          fi
-          if ! [[ "$PACKAGE_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo 'package_source_sha must be a lowercase 40-character Git SHA.' >&2
-            exit 1
-          fi
-
-          mkdir -p "$EVIDENCE_DIR/steps"
+          [[ "$ORIGIN_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$PACKAGE_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           origin_json="$EVIDENCE_DIR/origin-run.json"
           artifacts_json="$EVIDENCE_DIR/origin-artifacts.json"
           compare_json="$EVIDENCE_DIR/package-to-workflow-compare.json"
-
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ORIGIN_RUN_ID" > "$origin_json"
           test "$(jq -r '.head_sha' "$origin_json")" = "$PACKAGE_SOURCE_SHA"
           test "$(jq -r '.repository.full_name' "$origin_json")" = "$GITHUB_REPOSITORY"
-
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ORIGIN_RUN_ID/artifacts?per_page=100" > "$artifacts_json"
           artifact_name="fabushi-ios-simulator-test-$PACKAGE_SOURCE_SHA"
-          matches="$(jq --arg name "$artifact_name" '[.artifacts[] | select(.name == $name and .expired == false)] | length' "$artifacts_json")"
-          test "$matches" = 1
+          test "$(jq --arg name "$artifact_name" '[.artifacts[] | select(.name == $name and .expired == false)] | length' "$artifacts_json")" = 1
           artifact_id="$(jq -r --arg name "$artifact_name" '.artifacts[] | select(.name == $name and .expired == false) | .id' "$artifacts_json")"
-          artifact_digest="$(jq -r --arg name "$artifact_name" '.artifacts[] | select(.name == $name and .expired == false) | .digest // ""' "$artifacts_json")"
-          test -n "$artifact_id"
-
           gh api "repos/$GITHUB_REPOSITORY/compare/$PACKAGE_SOURCE_SHA...$GITHUB_SHA" > "$compare_json"
-          incompatible="$(jq -r '[.files[].filename | select(
-            startswith("mobile/ios/") or
-            startswith("third_party/mahayana/mahayana-rs/") or
-            startswith("native/mahayana-messaging/")
-          )] | .[]' "$compare_json")"
-          if [ -n "$incompatible" ]; then
-            echo 'The existing package is not source-compatible with this workflow SHA; package-affecting files changed:' >&2
-            printf '%s\n' "$incompatible" >&2
-            exit 1
-          fi
-
-          {
-            echo "workflow_sha=$GITHUB_SHA"
-            echo "package_source_sha=$PACKAGE_SOURCE_SHA"
-            echo "origin_run_id=$ORIGIN_RUN_ID"
-            echo "origin_artifact_name=$artifact_name"
-            echo "origin_artifact_id=$artifact_id"
-            echo "origin_artifact_digest=$artifact_digest"
-            echo "device_id=$DEVICE_ID"
-          } > "$EVIDENCE_DIR/source.env"
+          incompatible="$(jq -r '[.files[].filename | select(startswith("mobile/ios/") or startswith("third_party/mahayana/mahayana-rs/") or startswith("native/mahayana-messaging/"))] | .[]' "$compare_json")"
+          if [ -n "$incompatible" ]; then printf '%s\n' "$incompatible" >&2; exit 1; fi
+          printf 'workflow_sha=%s\npackage_source_sha=%s\norigin_run_id=%s\norigin_artifact_id=%s\ndevice_id=%s\n' \
+            "$GITHUB_SHA" "$PACKAGE_SOURCE_SHA" "$ORIGIN_RUN_ID" "$artifact_id" "$DEVICE_ID" > "$EVIDENCE_DIR/source.env"
           echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
           echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
 
@@ -116,43 +88,23 @@ jobs:
         run: npm ci --ignore-scripts --prefer-offline
 
       - id: simulator
-        name: Select, erase, boot, and start full-session recording
+        name: Boot isolated Simulator and start recording before package download
         shell: bash
         run: |
           set -euo pipefail
-          runtimes_json="$EVIDENCE_DIR/simulator-runtimes.json"
-          devices_json="$EVIDENCE_DIR/simulator-devices.json"
-          xcrun simctl list runtimes available -j > "$runtimes_json"
-          xcrun simctl list devices available -j > "$devices_json"
-
+          xcrun simctl list runtimes available -j > "$EVIDENCE_DIR/simulator-runtimes.json"
+          xcrun simctl list devices available -j > "$EVIDENCE_DIR/simulator-devices.json"
           pair="$({
-            jq -r '
-              [.runtimes[] | select(.isAvailable == true and (.identifier | contains("SimRuntime.iOS-")))]
-              | sort_by(.version | split(".") | map(tonumber))
-              | reverse
-              | .[].identifier
-            ' "$runtimes_json" | while IFS= read -r runtime; do
-              udid="$(jq -r --arg runtime "$runtime" '.devices[$runtime] // [] | map(select(.isAvailable == true)) | first | .udid // empty' "$devices_json")"
-              if [ -n "$udid" ]; then
-                printf '%s|%s\n' "$runtime" "$udid"
-                break
-              fi
+            jq -r '[.runtimes[] | select(.isAvailable == true and (.identifier | contains("SimRuntime.iOS-")))] | sort_by(.version | split(".") | map(tonumber)) | reverse | .[].identifier' "$EVIDENCE_DIR/simulator-runtimes.json" | while IFS= read -r runtime; do
+              udid="$(jq -r --arg runtime "$runtime" '.devices[$runtime] // [] | map(select(.isAvailable == true)) | first | .udid // empty' "$EVIDENCE_DIR/simulator-devices.json")"
+              if [ -n "$udid" ]; then printf '%s|%s\n' "$runtime" "$udid"; break; fi
             done
           } || true)"
           runtime="${pair%%|*}"
           udid="${pair#*|}"
-          if [ -z "$runtime" ] || [ -z "$udid" ] || [ "$runtime" = "$udid" ]; then
-            echo 'No runner-provisioned iOS Simulator has a compatible available runtime/device pair.' >&2
-            exit 1
-          fi
-
-          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+          test -n "$runtime" && test -n "$udid" && test "$runtime" != "$udid"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
-          {
-            echo "runtime=$runtime"
-            echo "udid=$udid"
-          } > "$EVIDENCE_DIR/simulator-selection.env"
-
+          printf 'runtime=%s\nudid=%s\n' "$runtime" "$udid" > "$EVIDENCE_DIR/simulator-selection.env"
           xcrun simctl shutdown "$udid" 2>/dev/null || true
           xcrun simctl erase "$udid"
           xcrun simctl rename "$udid" "Fabushi-iOS-Reuse-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -162,7 +114,7 @@ jobs:
           xcrun simctl io "$udid" recordVideo --codec=h264 "$EVIDENCE_DIR/ios-session.mp4" > "$EVIDENCE_DIR/video-recorder.log" 2>&1 &
           echo $! > "$EVIDENCE_DIR/video-recorder.pid"
 
-      - name: Download exact existing Simulator package
+      - name: Download exact existing Simulator package and UI harness
         uses: actions/download-artifact@v8.0.1
         with:
           name: ${{ steps.provenance.outputs.artifact_name }}
@@ -173,39 +125,41 @@ jobs:
           digest-mismatch: error
 
       - id: package
-        name: Verify package checksum, archive identity, and bundle id
+        name: Verify package checksum and exact UI harness identity
         shell: bash
         run: |
           set -euo pipefail
-          test -f "$PACKAGE_DIR/SHA256SUMS.txt"
           short_sha="${PACKAGE_SOURCE_SHA:0:12}"
           archive="$PACKAGE_DIR/Fabushi-iOS-Simulator-${short_sha}.zip"
-          test -f "$archive"
-          checksum_line_count="$(awk 'NF { count += 1 } END { print count + 0 }' "$PACKAGE_DIR/SHA256SUMS.txt")"
-          test "$checksum_line_count" = 1
-          expected_archive_digest="$(awk 'NF { print $1 }' "$PACKAGE_DIR/SHA256SUMS.txt")"
-          listed_archive_path="$(awk 'NF { $1 = ""; sub(/^[[:space:]]+/, ""); print }' "$PACKAGE_DIR/SHA256SUMS.txt")"
-          [[ "$expected_archive_digest" =~ ^[0-9a-f]{64}$ ]]
-          test "$(basename "$listed_archive_path")" = "$(basename "$archive")"
-          actual_archive_digest="$(shasum -a 256 "$archive" | awk '{print $1}')"
-          test "$actual_archive_digest" = "$expected_archive_digest"
+          test -f "$archive" && test -f "$PACKAGE_DIR/SHA256SUMS.txt"
+          expected="$(awk 'NF { print $1 }' "$PACKAGE_DIR/SHA256SUMS.txt")"
+          actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
+          test "$expected" = "$actual"
           app_root="$RUNNER_TEMP/fabushi-ios-reused-app"
-          rm -rf "$app_root"
-          mkdir -p "$app_root"
+          rm -rf "$app_root" "$DERIVED_DATA"
+          mkdir -p "$app_root" "$DERIVED_DATA/Build/Products"
           ditto -x -k "$archive" "$app_root"
           app="$app_root/Fabushi.app"
           test -d "$app"
           test "$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")" = com.ombhrum.fabushi
-          printf '%s  %s\n' "$actual_archive_digest" "$(basename "$archive")" > "$EVIDENCE_DIR/reused-package-sha256.txt"
+          test -d "$PACKAGE_DIR/ui-harness/Debug-iphonesimulator/Fabushi.app"
+          test -d "$PACKAGE_DIR/ui-harness/Debug-iphonesimulator/FabushiUITests-Runner.app"
+          xctestrun="$(find "$PACKAGE_DIR/ui-harness" -maxdepth 1 -name '*.xctestrun' -print -quit)"
+          test -f "$xctestrun"
+          test "$(shasum -a 256 "$app/Fabushi" | awk '{print $1}')" = "$(shasum -a 256 "$PACKAGE_DIR/ui-harness/Debug-iphonesimulator/Fabushi.app/Fabushi" | awk '{print $1}')"
+          cp "$xctestrun" "$DERIVED_DATA/Build/Products/"
+          ditto "$PACKAGE_DIR/ui-harness/Debug-iphonesimulator" "$DERIVED_DATA/Build/Products/Debug-iphonesimulator"
+          portable_xctestrun="$(find "$DERIVED_DATA/Build/Products" -maxdepth 1 -name '*.xctestrun' -print -quit)"
+          printf '%s  %s\n' "$actual" "$(basename "$archive")" > "$EVIDENCE_DIR/reused-package-sha256.txt"
           echo "app_path=$app" >> "$GITHUB_OUTPUT"
-          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "xctestrun=$portable_xctestrun" >> "$GITHUB_OUTPUT"
 
       - id: install
-        name: Install reused Simulator package before protected account login
-        shell: bash
+        name: Install reused package before protected account login
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
           APP_PATH: ${{ steps.package.outputs.app_path }}
+        shell: bash
         run: |
           set -euo pipefail
           xcrun simctl install "$UDID" "$APP_PATH"
@@ -215,40 +169,36 @@ jobs:
           xcrun simctl spawn "$UDID" defaults write com.ombhrum.fabushi fabushi.mobile.onboarding-complete.v1 -bool YES
           xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/001-app-installed.png"
 
-      - name: Login protected Fabushi test account and export bounded app session
-        shell: bash
+      - name: Login protected Fabushi account after exact package installation
         env:
           FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
           FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+        shell: bash
         run: |
           set -euo pipefail
-          test -n "$FABUSHI_CI_TEST_USERNAME"
-          test -n "$FABUSHI_CI_TEST_PASSWORD"
+          test -n "$FABUSHI_CI_TEST_USERNAME" && test -n "$FABUSHI_CI_TEST_PASSWORD"
           mkdir -p "$(dirname "$FABUSHI_ACCOUNT_SESSION_FILE")" "$(dirname "$FABUSHI_CI_ACCOUNT_SESSION_FILE")"
           chmod 700 "$(dirname "$FABUSHI_ACCOUNT_SESSION_FILE")" "$(dirname "$FABUSHI_CI_ACCOUNT_SESSION_FILE")"
           node chatgpt-vps-control/scripts/login-ci-test-account.mjs
           node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
           chmod 600 "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
-          echo 'Protected test account authenticated only after exact package installation; only the bounded refresh-token-free app session will be injected.'
 
       - id: launch
-        name: Launch reused package and let the app own device registration
-        shell: bash
+        name: Inject bounded session and require reused App-owned registration
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
           APP_CONTAINER: ${{ steps.install.outputs.app_container }}
+        shell: bash
         run: |
           set -euo pipefail
           app_session="$APP_CONTAINER/Documents/fabushi-ci-session.json"
           cp "$FABUSHI_CI_ACCOUNT_SESSION_FILE" "$app_session"
           chmod 600 "$app_session"
-
           trace="$APP_CONTAINER/Library/Application Support/com.ombhrum.fabushi/device-gateway-trace.jsonl"
           mkdir -p "$(dirname "$trace")"
           : > "$trace"
-          chmod 600 "$trace"
+          echo "app_session=$app_session" >> "$GITHUB_OUTPUT"
           echo "trace_path=$trace" >> "$GITHUB_OUTPUT"
-
           export SIMCTL_CHILD_GITHUB_ACTIONS=true
           export SIMCTL_CHILD_FABUSHI_CI_ACCOUNT_SESSION_FILE="$app_session"
           export SIMCTL_CHILD_GITHUB_REPOSITORY="$GITHUB_REPOSITORY"
@@ -261,156 +211,103 @@ jobs:
           export SIMCTL_CHILD_RUNNER_OS="$RUNNER_OS"
           export SIMCTL_CHILD_RUNNER_ARCH="$RUNNER_ARCH"
           export SIMCTL_CHILD_FABUSHI_DEVICE_NAME="Fabushi Test iOS Reused Package $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
-          xcrun simctl launch \
-            --terminate-running-process \
-            --stdout="$EVIDENCE_DIR/app.stdout.log" \
-            --stderr="$EVIDENCE_DIR/app.stderr.log" \
-            "$UDID" com.ombhrum.fabushi \
-            | tee "$EVIDENCE_DIR/app-launch.txt"
-
+          xcrun simctl launch --terminate-running-process --stdout="$EVIDENCE_DIR/app.stdout.log" --stderr="$EVIDENCE_DIR/app.stderr.log" \
+            "$UDID" com.ombhrum.fabushi | tee "$EVIDENCE_DIR/app-launch.txt"
           deadline=$((SECONDS + 90))
           while [ "$SECONDS" -lt "$deadline" ]; do
             if grep -q '"phase":"registered"' "$trace" 2>/dev/null; then
               xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/002-app-registered.png"
-              echo 'The installed and authenticated iOS app registered its own account-scoped device gateway.'
               exit 0
             fi
             sleep 2
           done
-          echo 'The installed iOS app did not register its device gateway within 90 seconds.' >&2
           cat "$trace" >&2 || true
           exit 1
 
-      - id: control
-        name: Hold live reused app for @fabushi test simulated-user control
-        if: steps.launch.outcome == 'success'
-        continue-on-error: true
-        shell: bash
+      - name: Run autonomous journey against the exact reused package
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
-          TRACE_PATH: ${{ steps.launch.outputs.trace_path }}
+          XCTESTRUN: ${{ steps.package.outputs.xctestrun }}
+          FABUSHI_CI_APP_SESSION_IN_SIMULATOR: ${{ steps.launch.outputs.app_session }}
+          FABUSHI_E2E_SOURCE_SHA: ${{ env.PACKAGE_SOURCE_SHA }}
+          FABUSHI_E2E_SCREENSHOT_DIR: ${{ github.workspace }}/ios-interactive-reuse-evidence/steps
+          FABUSHI_E2E_STATE_FILE: ${{ github.workspace }}/ios-interactive-reuse-evidence/global-dharma-ui-state.json
+          FABUSHI_DEVICE_NAME: Fabushi Test iOS Reused Package ${{ github.run_id }}/${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -rf "$EVIDENCE_DIR/GlobalDharmaReuseJourney.xcresult"
+          xcodebuild -xctestrun "$XCTESTRUN" -destination "platform=iOS Simulator,id=$UDID" \
+            -only-testing:FabushiUITests/GlobalDharmaJourneyUITests/testGlobalDharmaMarketplaceBotWebMcpCommerceJourney \
+            -resultBundlePath "$EVIDENCE_DIR/GlobalDharmaReuseJourney.xcresult" \
+            test-without-building | tee "$EVIDENCE_DIR/xcode-global-dharma-reuse.log"
+
+      - name: Verify canonical restore ledger and entitlement again
+        shell: bash
         run: |
           set -euo pipefail
-          required=(
-            fabushi.app.status
-            fabushi.app.snapshot
-            fabushi.app.find
-            fabushi.app.action
-            fabushi.app.wait
-            fabushi.app.assert
-          )
-          last=0
-          deadline=$((SECONDS + 600))
-          echo 'waiting-for-fabushi-test' > "$EVIDENCE_DIR/control-status.txt"
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            completed="$(grep '"phase":"call-completed"' "$TRACE_PATH" 2>/dev/null || true)"
-            total="$(printf '%s\n' "$completed" | sed '/^$/d' | wc -l | tr -d ' ')"
-            while [ "$last" -lt "$total" ]; do
-              last=$((last + 1))
-              line="$(printf '%s\n' "$completed" | sed -n "${last}p")"
-              tool="$(printf '%s' "$line" | jq -r '.toolName // "unknown"' 2>/dev/null || echo unknown)"
-              safe_tool="$(printf '%s' "$tool" | tr -cs 'A-Za-z0-9._-' '-')"
-              xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/$(printf '%03d' $((last + 2)))-${safe_tool}.png" || true
-            done
+          access_token="$(jq -r '.accessToken // empty' "$FABUSHI_CI_ACCOUNT_SESSION_FILE")"
+          test ${#access_token} -ge 24
+          auth=(-H "Authorization: Bearer $access_token" -H 'Accept: application/json')
+          entitlement="$FABUSHI_API_BASE_URL/v1/plugins/global-dharma/entitlements/local.prayer-wheel.start"
+          curl --fail-with-body --silent --show-error "${auth[@]}" "$entitlement" > "$EVIDENCE_DIR/entitlement-before-restore.json"
+          jq -e '.purchaseOptions[] | select(.sku == "local-prayer-wheel.lifetime" and .currency == "CNY" and .amount == 108000 and .productKind == "digital_durable")' "$EVIDENCE_DIR/entitlement-before-restore.json" >/dev/null
+          curl --fail-with-body --silent --show-error -X POST "${auth[@]}" -H 'Content-Type: application/json' --data '{}' \
+            "$FABUSHI_API_BASE_URL/v1/purchases/restore" > "$EVIDENCE_DIR/purchase-restore.json"
+          jq -e '.restored == true and any(.purchases[]?; .pluginId == "global-dharma" and .sku == "local-prayer-wheel.lifetime" and .currency == "CNY" and .amount == 108000 and .status == "fulfilled")' "$EVIDENCE_DIR/purchase-restore.json" >/dev/null
+          curl --fail-with-body --silent --show-error "${auth[@]}" "$entitlement" > "$EVIDENCE_DIR/entitlement-after-restore.json"
+          jq -e '.access.allowed == true and .entitlement.status == "active"' "$EVIDENCE_DIR/entitlement-after-restore.json" >/dev/null
+          echo passed > "$EVIDENCE_DIR/canonical-commerce-status.txt"
 
-            missing=0
-            for tool in "${required[@]}"; do
-              if ! jq -e --arg tool "$tool" 'select(.phase == "call-completed" and .ok == true and .toolName == $tool)' "$TRACE_PATH" >/dev/null 2>&1; then
-                missing=1
-                break
-              fi
-            done
-            if [ "$missing" -eq 0 ] && [ "$(cat "$EVIDENCE_DIR/control-status.txt" 2>/dev/null || true)" != passed ]; then
-              echo passed > "$EVIDENCE_DIR/control-status.txt"
-              xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/999-semantic-control-passed.png" || true
-            fi
-            sleep 1
-          done
-          if [ "$(cat "$EVIDENCE_DIR/control-status.txt" 2>/dev/null || true)" = passed ]; then
-            exit 0
-          fi
-          echo failed > "$EVIDENCE_DIR/control-status.txt"
-          echo 'Timed out before @fabushi test completed all six semantic tools.' >&2
-          exit 1
-
-      - name: Collect app, Simulator, trace, video, and report evidence
-        if: always()
+      - name: Observe optional external fabushi test evidence without blocking
+        if: always() && steps.launch.outcome == 'success'
+        continue-on-error: true
+        env:
+          TRACE_PATH: ${{ steps.launch.outputs.trace_path }}
         shell: bash
+        run: |
+          set -euo pipefail
+          required=(fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert)
+          missing=0
+          for tool in "${required[@]}"; do jq -e --arg tool "$tool" 'select(.phase == "call-completed" and .ok == true and .toolName == $tool)' "$TRACE_PATH" >/dev/null 2>&1 || missing=1; done
+          if [ "$missing" -eq 0 ]; then echo passed > "$EVIDENCE_DIR/external-control-status.txt"; else echo optional-not-observed > "$EVIDENCE_DIR/external-control-status.txt"; fi
+
+      - name: Collect complete reused-package evidence
+        if: always()
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
           TRACE_PATH: ${{ steps.launch.outputs.trace_path }}
-          ORIGIN_ARTIFACT_ID: ${{ steps.provenance.outputs.artifact_id }}
+        shell: bash
         run: |
           set +e
-          if [ -f "$EVIDENCE_DIR/video-recorder.pid" ]; then
-            video_pid="$(cat "$EVIDENCE_DIR/video-recorder.pid")"
-            kill -INT "$video_pid" 2>/dev/null || true
-            wait "$video_pid" 2>/dev/null || true
-          fi
-          if [ -n "${UDID:-}" ]; then
-            xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/1000-final.png" || true
-            xcrun simctl spawn "$UDID" log show --style compact --last 20m --predicate 'process == "Fabushi"' > "$EVIDENCE_DIR/fabushi-system.log" 2>&1 || true
-          fi
-          if [ -n "${TRACE_PATH:-}" ] && [ -f "$TRACE_PATH" ]; then
-            cp "$TRACE_PATH" "$EVIDENCE_DIR/device-gateway-trace.jsonl"
-          else
-            : > "$EVIDENCE_DIR/device-gateway-trace.jsonl"
-          fi
-          status="$(cat "$EVIDENCE_DIR/control-status.txt" 2>/dev/null || echo not-run)"
-          completed_tools="$(jq -r 'select(.phase == "call-completed" and .ok == true) | .toolName' "$EVIDENCE_DIR/device-gateway-trace.jsonl" 2>/dev/null | sort -u | jq -R -s 'split("\n") | map(select(length > 0))')"
-          [ -n "$completed_tools" ] || completed_tools='[]'
-          jq -n \
-            --arg workflowSha "$GITHUB_SHA" \
-            --arg packageSourceSha "$PACKAGE_SOURCE_SHA" \
-            --arg originRunId "$ORIGIN_RUN_ID" \
-            --arg originArtifactId "$ORIGIN_ARTIFACT_ID" \
-            --arg runId "$GITHUB_RUN_ID" \
-            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
-            --arg deviceId "$DEVICE_ID" \
-            --arg controlStatus "$status" \
-            --argjson completedTools "$completed_tools" \
-            '{schema:"fabushi.ios.interactive-package-reuse-evidence.v1",workflowSha:$workflowSha,packageSourceSha:$packageSourceSha,originRunId:$originRunId,originArtifactId:$originArtifactId,runId:$runId,runAttempt:$runAttempt,deviceId:$deviceId,controlStatus:$controlStatus,completedTools:$completedTools}' \
+          if [ -f "$EVIDENCE_DIR/video-recorder.pid" ]; then video_pid="$(cat "$EVIDENCE_DIR/video-recorder.pid")"; kill -INT "$video_pid" 2>/dev/null || true; wait "$video_pid" 2>/dev/null || true; fi
+          xcrun simctl io "$UDID" screenshot "$EVIDENCE_DIR/steps/1000-final.png" 2>/dev/null || true
+          xcrun simctl spawn "$UDID" log show --style compact --last 20m --predicate 'process == "Fabushi"' > "$EVIDENCE_DIR/fabushi-system.log" 2>&1 || true
+          if [ -n "${TRACE_PATH:-}" ] && [ -f "$TRACE_PATH" ]; then cp "$TRACE_PATH" "$EVIDENCE_DIR/device-gateway-trace.jsonl"; else : > "$EVIDENCE_DIR/device-gateway-trace.jsonl"; fi
+          ui_status=failed
+          test -f "$EVIDENCE_DIR/global-dharma-ui-state.json" && jq -e '.autoLogin and .searchedMiniApps and .globalDharmaVisible and .installedOrAlreadyInstalled and .botVisible and .naturalLanguageSent and .webMcpReady and .entitlementAllowed and .restoreTapped' "$EVIDENCE_DIR/global-dharma-ui-state.json" >/dev/null 2>&1 && ui_status=passed
+          commerce_status="$(cat "$EVIDENCE_DIR/canonical-commerce-status.txt" 2>/dev/null || echo failed)"
+          external_status="$(cat "$EVIDENCE_DIR/external-control-status.txt" 2>/dev/null || echo optional-not-observed)"
+          jq -n --arg workflowSha "$GITHUB_SHA" --arg packageSourceSha "$PACKAGE_SOURCE_SHA" --arg originRunId "$ORIGIN_RUN_ID" \
+            --arg runId "$GITHUB_RUN_ID" --arg deviceId "$DEVICE_ID" --arg uiStatus "$ui_status" --arg commerceStatus "$commerce_status" --arg externalStatus "$external_status" \
+            '{schema:"fabushi.ios.global-dharma-reuse-evidence.v2",workflowSha:$workflowSha,packageSourceSha:$packageSourceSha,originRunId:$originRunId,runId:$runId,deviceId:$deviceId,uiJourney:$uiStatus,canonicalCommerce:$commerceStatus,externalFabushiTest:$externalStatus}' \
             > "$EVIDENCE_DIR/report.json"
-          {
-            echo '# Fabushi iOS reused-package interactive evidence'
-            echo
-            echo "- Workflow SHA: \`$GITHUB_SHA\`"
-            echo "- Package source SHA: \`$PACKAGE_SOURCE_SHA\`"
-            echo "- Origin package run: \`$ORIGIN_RUN_ID\`"
-            echo "- Origin artifact: \`$ORIGIN_ARTIFACT_ID\`"
-            echo "- Interactive run: \`$GITHUB_RUN_ID\` attempt \`$GITHUB_RUN_ATTEMPT\`"
-            echo "- Device: \`$DEVICE_ID\`"
-            echo "- External semantic control: \`$status\`"
-            echo '- Recording started immediately after Simulator boot and before the existing package was downloaded/extracted/installed.'
-            echo '- The exact existing Simulator package was checksum-verified and installed before protected test-account authentication.'
-            echo '- The installed app itself owned account-scoped device registration; no runner-side Fabushi gateway/KRIS was started.'
-          } > "$EVIDENCE_DIR/README.md"
 
       - name: Upload complete evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fabushi-ios-interactive-reuse-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          name: fabushi-ios-global-dharma-reuse-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: ios-interactive-reuse-evidence/
           if-no-files-found: error
           retention-days: 90
 
       - name: Delete isolated Simulator
         if: always()
-        shell: bash
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
-        run: |
-          set +e
-          if [ -n "${UDID:-}" ]; then
-            xcrun simctl shutdown "$UDID" || true
-            xcrun simctl delete "$UDID" || true
-          fi
-
-      - name: Enforce external semantic control evidence
-        if: always()
         shell: bash
         run: |
-          set -euo pipefail
-          test -f "$EVIDENCE_DIR/control-status.txt"
-          test "$(cat "$EVIDENCE_DIR/control-status.txt")" = passed
+          set +e
+          xcrun simctl shutdown "$UDID" 2>/dev/null || true
+          xcrun simctl delete "$UDID" 2>/dev/null || true

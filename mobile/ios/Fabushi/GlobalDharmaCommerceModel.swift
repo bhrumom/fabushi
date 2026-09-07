@@ -220,12 +220,12 @@ final class GlobalDharmaCommerceModel {
         defer { busy = false }
         do {
             try applyEntitlement(try await fetchEntitlement())
-            if accessAllowed {
-                message = "永久权限已在当前 Fabushi 账号生效"
-                return
-            }
             if canonicalLedgerTestMode {
                 try await restoreLifetimeThroughCanonicalLedger()
+                return
+            }
+            if accessAllowed {
+                message = "永久权限已在当前 Fabushi 账号生效"
                 return
             }
 
