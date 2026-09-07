@@ -1,51 +1,45 @@
+import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { createConnection } from "node:net";
+import { readFile, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import test from "node:test";
-
 import {
-  browserExtensionPaths,
+  ExtensionCdpClient,
   browserExtensionRequest,
-  browserExtensionStatus,
-  installBrowserExtension,
   listBrowserExtensionConnections,
   startBrowserExtensionBridge,
   stopBrowserExtensionBridgeForTests,
-} from "../lib/browser-extension.js";
-import { ExtensionCdpClient } from "../lib/browser-session-cdp.js";
-import { browserSessionCua, listBrowserSessions } from "../lib/browser-session.js";
-import { browserSessionUtility } from "../lib/browser-session-utils.js";
+} from "../lib/browser-extension-bridge.js";
+import { browserExtensionPaths, NATIVE_HOST_NAME } from "../lib/browser-extension-paths.js";
+import { browserExtensionStatus, installBrowserExtension } from "../lib/browser-extension-install.js";
+import { browserSessionCua, browserSessionUtility, listBrowserSessions } from "../lib/browser-session.js";
 
-const NATIVE_HOST_NAME = "com.fabushi.chatgpt_computer_control";
-
-function lineClient(socketPath) {
-  const socket = createConnection(socketPath);
-  const messages = [];
+function lineClient(path) {
+  const socket = connect(path);
   let buffer = "";
-  const listeners = new Set();
+  const messages = [];
+  const handlers = [];
+  socket.setEncoding("utf8");
   socket.on("data", (chunk) => {
-    buffer += chunk.toString("utf8");
+    buffer += chunk;
     while (buffer.includes("\n")) {
-      const newline = buffer.indexOf("\n");
-      const line = buffer.slice(0, newline);
-      buffer = buffer.slice(newline + 1);
-      if (!line.trim()) continue;
-      const message = JSON.parse(line);
+      const index = buffer.indexOf("\n");
+      const message = JSON.parse(buffer.slice(0, index));
       messages.push(message);
-      for (const listener of listeners) listener(message);
+      for (const handler of handlers) handler(message);
+      buffer = buffer.slice(index + 1);
     }
   });
-  return { socket, messages, onMessage(listener) { listeners.add(listener); } };
+  return { socket, messages, onMessage: (handler) => handlers.push(handler) };
 }
 
 function writeNativeMessage(stream, message) {
-  const payload = Buffer.from(JSON.stringify(message), "utf8");
+  const body = Buffer.from(JSON.stringify(message), "utf8");
   const header = Buffer.alloc(4);
-  header.writeUInt32LE(payload.length, 0);
-  stream.write(Buffer.concat([header, payload]));
+  header.writeUInt32LE(body.length, 0);
+  stream.write(Buffer.concat([header, body]));
 }
 
 async function waitFor(check, timeout = 2_000) {
@@ -152,10 +146,20 @@ test("private browser bridge authenticates native hosts and correlates extension
       }
       client.socket.write(`${JSON.stringify({ type: "response", requestId: message.requestId, ok, ...(ok ? { result } : { error }) })}\n`);
     });
-    const exported = await browserSessionUtility({ name: extension.name, action: "export_text", targetId: extension.targets[0].id, targetClaim: extension.targets[0].claim });
+    const exported = await browserSessionUtility({
+      name: extension.name,
+      action: "export_text",
+      targetId: extension.targets[0].id,
+      targetClaim: extension.targets[0].claim,
+    });
     assert.equal(exported.text, "signed-in page text");
 
-    const cua = await browserSessionCua({ name: extension.name, targetId: extension.targets[0].id, targetClaim: extension.targets[0].claim, actions: [{ action: "move", x: 10, y: 10 }] });
+    const cua = await browserSessionCua({
+      name: extension.name,
+      targetId: extension.targets[0].id,
+      targetClaim: extension.targets[0].claim,
+      actions: [{ action: "move", x: 10, y: 10 }],
+    });
     assert.equal(cua.actionCount, 1);
     assert.equal(cua.screenshot?.mimeType, "image/png");
     assert.equal(captureAttempts, 2);
@@ -180,14 +184,27 @@ test("native messaging host reconnects and re-registers after the local bridge r
     await mkdir(root, { recursive: true });
     await writeFile(paths.secret, "reconnect-secret-at-least-thirty-two-characters\n", { mode: 0o600 });
     await startBrowserExtensionBridge();
-    host = spawn(process.execPath, [resolve("scripts/browser-extension-host.mjs")], { env: { ...process.env, COMPUTER_BROWSER_EXTENSION_HOME: root }, stdio: ["pipe", "pipe", "pipe"] });
+    host = spawn(process.execPath, [resolve("scripts/browser-extension-host.mjs")], {
+      env: { ...process.env, COMPUTER_BROWSER_EXTENSION_HOME: root },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     host.stdout.resume();
     host.stderr.resume();
-    writeNativeMessage(host.stdin, { type: "hello", instanceId: "instance-reconnect-123", generation: "generation-reconnect-123", browser: "Test Chrome", tabs: [{ id: "11", title: "Reconnect", url: "https://example.test/" }] });
+    writeNativeMessage(host.stdin, {
+      type: "hello",
+      instanceId: "instance-reconnect-123",
+      generation: "generation-reconnect-123",
+      browser: "Test Chrome",
+      tabs: [{ id: "11", title: "Reconnect", url: "https://example.test/" }],
+    });
     await waitFor(() => listBrowserExtensionConnections().find((item) => item.instanceId === "instance-reconnect-123"));
+
     await stopBrowserExtensionBridgeForTests();
     await startBrowserExtensionBridge();
-    const reconnected = await waitFor(() => listBrowserExtensionConnections().find((item) => item.instanceId === "instance-reconnect-123"), 4_000);
+    const reconnected = await waitFor(
+      () => listBrowserExtensionConnections().find((item) => item.instanceId === "instance-reconnect-123"),
+      4_000,
+    );
     assert.equal(reconnected.tabs[0].id, "11");
   } finally {
     host?.kill();
