@@ -10,6 +10,7 @@ import { installLocalRuntime } from "./local-install.js";
 
 const execFileAsync = promisify(execFile);
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+export const CHROME_PLATFORM_NATIVE_HOST_NAME = "com.fabushi.chrome_platform";
 
 function extensionIdFromPublicKey(publicKey) {
   const digest = createHash("sha256").update(Buffer.from(publicKey, "base64")).digest().subarray(0, 16);
@@ -52,11 +53,22 @@ async function ensureSecret(path) {
   return secret;
 }
 
-async function installWindowsRegistry(manifestPath) {
-  for (const key of [
-    `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${NATIVE_HOST_NAME}`,
-    `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${NATIVE_HOST_NAME}`,
-  ]) await execFileAsync("reg.exe", ["ADD", key, "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f"]);
+async function installWindowsRegistry(manifests) {
+  for (const manifest of manifests) {
+    for (const product of ["Google\\Chrome", "Microsoft\\Edge"]) {
+      const key = `HKCU\\Software\\${product}\\NativeMessagingHosts\\${manifest.name}`;
+      await execFileAsync("reg.exe", ["ADD", key, "/ve", "/t", "REG_SZ", "/d", manifest.path, "/f"]);
+    }
+  }
+}
+
+async function writeLauncher(currentPlatform, launcherPath, hostScript, home) {
+  if (currentPlatform === "win32") {
+    await writeFile(launcherPath, `@echo off\r\nset "COMPUTER_BROWSER_EXTENSION_HOME=${home}"\r\n"${process.execPath}" "${hostScript}"\r\n`, { mode: 0o700 });
+    return;
+  }
+  await writeFile(launcherPath, `#!/bin/sh\nexport COMPUTER_BROWSER_EXTENSION_HOME=${shellQuote(home)}\nexec ${shellQuote(process.execPath)} ${shellQuote(hostScript)}\n`, { mode: 0o700 });
+  await chmod(launcherPath, 0o700);
 }
 
 export async function installBrowserExtension({ currentPlatform = platform(), manifestDestinations, runtimeInstaller = installLocalRuntime } = {}) {
@@ -72,41 +84,69 @@ export async function installBrowserExtension({ currentPlatform = platform(), ma
   metadata.extensionId = extensionIdFromPublicKey(metadata.publicKey);
   metadata.installedAt = new Date().toISOString();
 
-  await cp(join(runtime.root || packageRoot, "extension"), paths.extension, { recursive: true, force: true });
+  // Chrome is a first-class Fabushi platform. Keep the legacy extension source
+  // in the repository for migration/history, but install the independent
+  // chrome-platform application package.
+  const runtimeRoot = runtime.root || packageRoot;
+  await cp(join(runtimeRoot, "chrome-platform", "extension"), paths.extension, { recursive: true, force: true });
   const extensionManifestPath = join(paths.extension, "manifest.json");
   const extensionManifest = JSON.parse(await readFile(extensionManifestPath, "utf8"));
   extensionManifest.key = metadata.publicKey;
   await writeFile(extensionManifestPath, `${JSON.stringify(extensionManifest, null, 2)}\n`, { mode: 0o600 });
 
-  // Chrome can start this host long after setup completes. Point it at the
-  // private staged runtime rather than a checkout under Desktop/Documents so
-  // macOS does not repeatedly ask `node` for protected-folder access.
-  const hostScript = runtime.browserHostPath;
-  if (currentPlatform === "win32") {
-    await writeFile(paths.launcher, `@echo off\r\nset "COMPUTER_BROWSER_EXTENSION_HOME=${paths.home}"\r\n"${process.execPath}" "${hostScript}"\r\n`, { mode: 0o700 });
-  } else {
-    await writeFile(paths.launcher, `#!/bin/sh\nexport COMPUTER_BROWSER_EXTENSION_HOME=${shellQuote(paths.home)}\nexec ${shellQuote(process.execPath)} ${shellQuote(hostScript)}\n`, { mode: 0o700 });
-    await chmod(paths.launcher, 0o700);
-  }
-  const nativeManifest = {
-    name: NATIVE_HOST_NAME,
-    description: "Local bridge for Fabushi Computer Control",
-    path: paths.launcher,
-    type: "stdio",
-    allowed_origins: [`chrome-extension://${metadata.extensionId}/`],
-  };
-  await writeFile(paths.manifest, `${JSON.stringify(nativeManifest, null, 2)}\n`, { mode: 0o600 });
+  const browserLauncher = paths.launcher;
+  const platformLauncher = join(paths.home, currentPlatform === "win32" ? "chrome-platform-host.cmd" : "chrome-platform-host");
+  const browserHostScript = runtime.browserHostPath || join(runtimeRoot, "scripts", "browser-extension-host.mjs");
+  const platformHostScript = join(runtimeRoot, "scripts", "chrome-platform-host.mjs");
+  await writeLauncher(currentPlatform, browserLauncher, browserHostScript, paths.home);
+  await writeLauncher(currentPlatform, platformLauncher, platformHostScript, paths.home);
+
+  const allowedOrigins = [`chrome-extension://${metadata.extensionId}/`];
+  const nativeHosts = [
+    {
+      name: NATIVE_HOST_NAME,
+      description: "Fabushi bridge for controlling the Chrome browser the user already has open",
+      path: browserLauncher,
+      type: "stdio",
+      allowed_origins: allowedOrigins,
+    },
+    {
+      name: CHROME_PLATFORM_NATIVE_HOST_NAME,
+      description: "Fabushi Chrome platform bridge to the signed-in desktop Host",
+      path: platformLauncher,
+      type: "stdio",
+      allowed_origins: allowedOrigins,
+    },
+  ];
+
   const destinations = manifestDestinations || nativeManifestDestinations(currentPlatform);
   const installedManifests = [];
   for (const destination of destinations) {
     await mkdir(destination.directory, { recursive: true, mode: 0o700 });
-    const target = join(destination.directory, `${NATIVE_HOST_NAME}.json`);
-    await writeFile(target, `${JSON.stringify(nativeManifest, null, 2)}\n`, { mode: 0o600 });
-    installedManifests.push({ browser: destination.browser, path: target });
+    for (const nativeHost of nativeHosts) {
+      const target = join(destination.directory, `${nativeHost.name}.json`);
+      await writeFile(target, `${JSON.stringify(nativeHost, null, 2)}\n`, { mode: 0o600 });
+      installedManifests.push({ browser: destination.browser, name: nativeHost.name, path: target });
+    }
   }
-  if (currentPlatform === "win32" && !manifestDestinations && !process.env.COMPUTER_BROWSER_NATIVE_MANIFEST_DIR) await installWindowsRegistry(paths.manifest);
-  await writeFile(paths.metadata, `${JSON.stringify({ ...metadata, manifests: installedManifests }, null, 2)}\n`, { mode: 0o600 });
-  return { ...paths, extensionId: metadata.extensionId, manifests: installedManifests, runtime: runtime.root ?? null };
+
+  if (currentPlatform === "win32" && !manifestDestinations && !process.env.COMPUTER_BROWSER_NATIVE_MANIFEST_DIR) {
+    await installWindowsRegistry(nativeHosts.map((host) => ({ name: host.name, path: join(paths.home, `${host.name}.json`) })));
+  }
+
+  await writeFile(paths.metadata, `${JSON.stringify({
+    ...metadata,
+    platform: "chrome-extension",
+    platformVersion: extensionManifest.version,
+    manifests: installedManifests,
+  }, null, 2)}\n`, { mode: 0o600 });
+  return {
+    ...paths,
+    extensionId: metadata.extensionId,
+    manifests: installedManifests,
+    platformLauncher,
+    runtime: runtime.root ?? null,
+  };
 }
 
 export async function browserExtensionStatus() {
@@ -115,6 +155,8 @@ export async function browserExtensionStatus() {
   const manifest = await readJson(join(paths.extension, "manifest.json"));
   return {
     installed: Boolean(metadata?.extensionId && manifest?.key),
+    platform: metadata?.platform ?? null,
+    version: manifest?.version ?? null,
     extensionId: metadata?.extensionId ?? null,
     extensionPath: paths.extension,
     manifests: metadata?.manifests ?? [],
