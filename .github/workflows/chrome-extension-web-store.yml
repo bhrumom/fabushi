@@ -1,0 +1,51 @@
+name: Chrome Extension Web Store
+
+on:
+  push:
+    branches:
+      - codex/fabushi-chrome-userscripts
+    paths:
+      - "chatgpt-vps-control/extension/**"
+      - "chatgpt-vps-control/scripts/validate-chrome-extension.mjs"
+      - "chatgpt-vps-control/scripts/package-chrome-extension.mjs"
+      - "chatgpt-vps-control/package.json"
+      - ".github/workflows/chrome-extension-web-store.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chatgpt-vps-control
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate MV3 package
+        run: npm run chrome:validate
+      - name: Run existing tests
+        run: npm test
+      - name: Build Chrome Web Store ZIP
+        run: npm run chrome:package
+      - name: Record SHA-256
+        run: sha256sum dist/chrome-extension/*.zip | tee dist/chrome-extension/SHA256SUMS.txt
+      - name: Upload Web Store package
+        uses: actions/upload-artifact@v4
+        with:
+          name: fabushi-chrome-web-store-${{ github.sha }}
+          path: |
+            chatgpt-vps-control/dist/chrome-extension/*.zip
+            chatgpt-vps-control/dist/chrome-extension/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
