@@ -5,6 +5,9 @@ const STORAGE = {
   instanceId: "fabushiBrowserInstanceId",
   generation: "fabushiBrowserGeneration",
   claimed: "fabushiClaimedTabs",
+  automation: "fabushiAutomationTabs",
+  retained: "fabushiRetainedTabs",
+  automationGroup: "fabushiAutomationGroupId",
 };
 
 let nativePort = null;
@@ -14,6 +17,8 @@ let reconnectTimer = null;
 let reconnectDelayMs = 500;
 const attachedTabs = new Set();
 const queues = new Map();
+const childSessions = new Map();
+const childSessionWaiters = new Map();
 
 function randomId() {
   return crypto.randomUUID().replaceAll("-", "");
@@ -26,7 +31,13 @@ function isOrdinaryWebUrl(value) {
 
 async function state() {
   const local = await chrome.storage.local.get([STORAGE.instanceId]);
-  const session = await chrome.storage.session.get([STORAGE.generation, STORAGE.claimed]);
+  const session = await chrome.storage.session.get([
+    STORAGE.generation,
+    STORAGE.claimed,
+    STORAGE.automation,
+    STORAGE.retained,
+    STORAGE.automationGroup,
+  ]);
   if (!local[STORAGE.instanceId]) {
     local[STORAGE.instanceId] = randomId();
     await chrome.storage.local.set({ [STORAGE.instanceId]: local[STORAGE.instanceId] });
@@ -39,13 +50,22 @@ async function state() {
     instanceId: local[STORAGE.instanceId],
     generation: session[STORAGE.generation],
     claimed: new Set((session[STORAGE.claimed] || []).map(Number)),
+    automation: new Set((session[STORAGE.automation] || []).map(Number)),
+    retained: new Set((session[STORAGE.retained] || []).map(Number)),
+    automationGroup: Number.isInteger(session[STORAGE.automationGroup]) ? session[STORAGE.automationGroup] : null,
   };
 }
 
-async function saveClaimed(claimed) {
-  await chrome.storage.session.set({ [STORAGE.claimed]: [...claimed] });
-  await chrome.action.setBadgeBackgroundColor({ color: claimed.size ? "#111827" : "#9ca3af" });
-  await chrome.action.setBadgeText({ text: claimed.size ? String(Math.min(claimed.size, 99)) : "" });
+async function saveState(current) {
+  await chrome.storage.session.set({
+    [STORAGE.claimed]: [...current.claimed],
+    [STORAGE.automation]: [...current.automation],
+    [STORAGE.retained]: [...current.retained],
+    [STORAGE.automationGroup]: current.automationGroup,
+  });
+  const count = new Set([...current.claimed, ...current.automation]).size;
+  await chrome.action.setBadgeBackgroundColor({ color: count ? "#111827" : "#9ca3af" });
+  await chrome.action.setBadgeText({ text: count ? String(Math.min(count, 99)) : "" });
 }
 
 async function visibleTabs() {
@@ -53,20 +73,22 @@ async function visibleTabs() {
   const tabs = await chrome.tabs.query({});
   const present = new Set(tabs.map((tab) => tab.id));
   let changed = false;
-  for (const id of current.claimed) {
-    if (!present.has(id)) { current.claimed.delete(id); changed = true; }
+  for (const set of [current.claimed, current.automation, current.retained]) {
+    for (const id of set) if (!present.has(id)) { set.delete(id); changed = true; }
   }
-  if (changed) await saveClaimed(current.claimed);
-  return tabs.filter((tab) => isOrdinaryWebUrl(tab.url || tab.pendingUrl)).map((tab) => ({
-    id: String(tab.id),
-    title: String(tab.title || ""),
-    url: String(tab.url || tab.pendingUrl || ""),
-    active: tab.active === true,
-    windowId: tab.windowId,
-    owner: "user",
-    retained: true,
-    claimed: current.claimed.has(tab.id),
-  }));
+  if (changed) await saveState(current);
+  return tabs
+    .filter((tab) => current.automation.has(tab.id) || isOrdinaryWebUrl(tab.url || tab.pendingUrl))
+    .map((tab) => ({
+      id: String(tab.id),
+      title: String(tab.title || ""),
+      url: String(tab.url || tab.pendingUrl || ""),
+      active: tab.active === true,
+      windowId: tab.windowId,
+      owner: current.automation.has(tab.id) ? "automation" : "user",
+      retained: current.automation.has(tab.id) ? current.retained.has(tab.id) : true,
+      claimed: current.claimed.has(tab.id) || current.automation.has(tab.id),
+    }));
 }
 
 function post(message) {
@@ -136,11 +158,99 @@ async function ensureDebugger(tabId) {
   });
 }
 
+function childSessionKey(tabId, parentSessionId, targetId) {
+  return `${tabId}:${String(parentSessionId || "")}:${String(targetId || "")}`;
+}
+
+function clearChildSessions(tabId) {
+  const prefix = `${tabId}:`;
+  for (const key of childSessions.keys()) if (key.startsWith(prefix)) childSessions.delete(key);
+  for (const [key, waiters] of childSessionWaiters) {
+    if (!key.startsWith(prefix)) continue;
+    for (const waiter of waiters) waiter.reject(new Error("Browser debugger child session closed."));
+    childSessionWaiters.delete(key);
+  }
+}
+
+function rememberChildSession(tabId, parentSessionId, targetId, sessionId) {
+  const key = childSessionKey(tabId, parentSessionId, targetId);
+  childSessions.set(key, String(sessionId));
+  const waiters = childSessionWaiters.get(key);
+  if (!waiters) return;
+  childSessionWaiters.delete(key);
+  for (const waiter of waiters) waiter.resolve(String(sessionId));
+}
+
+function forgetChildSession(tabId, sessionId) {
+  const prefix = `${tabId}:`;
+  for (const [key, value] of childSessions) if (key.startsWith(prefix) && value === String(sessionId)) childSessions.delete(key);
+}
+
+function waitForChildSession(key, timeoutMs = 3_000) {
+  let waiter;
+  const promise = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const waiters = childSessionWaiters.get(key);
+      waiters?.delete(waiter);
+      if (!waiters?.size) childSessionWaiters.delete(key);
+      reject(new Error("Timed out waiting for Chrome to attach the out-of-process iframe."));
+    }, timeoutMs);
+    waiter = {
+      resolve: (value) => { clearTimeout(timer); resolve(value); },
+      reject: (error) => { clearTimeout(timer); reject(error); },
+    };
+    const waiters = childSessionWaiters.get(key) ?? new Set();
+    waiters.add(waiter);
+    childSessionWaiters.set(key, waiters);
+  });
+  void promise.catch(() => {});
+  return { promise, cancel(error) {
+    const waiters = childSessionWaiters.get(key);
+    waiters?.delete(waiter);
+    if (!waiters?.size) childSessionWaiters.delete(key);
+    waiter.reject(error);
+  } };
+}
+
+async function autoAttachFrame(tabId, parentSessionId, frameTargetId) {
+  const key = childSessionKey(tabId, parentSessionId, frameTargetId);
+  const existing = childSessions.get(key);
+  if (existing) return existing;
+  const pending = waitForChildSession(key);
+  try {
+    const target = { tabId, ...(parentSessionId ? { sessionId: String(parentSessionId) } : {}) };
+    await locked(tabId, () => chrome.debugger.sendCommand(target, "Target.setAutoAttach", {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+      filter: [{ type: "iframe", exclude: false }],
+    }));
+    return childSessions.get(key) ?? await pending.promise;
+  } catch (error) {
+    pending.cancel(error);
+    throw error;
+  }
+}
+
+async function ensureAutomationGroup(tabId, current) {
+  try {
+    if (current.automationGroup != null) {
+      await chrome.tabs.group({ groupId: current.automationGroup, tabIds: tabId });
+      return;
+    }
+  } catch { current.automationGroup = null; }
+  try {
+    current.automationGroup = await chrome.tabs.group({ tabIds: tabId });
+    await chrome.tabGroups.update(current.automationGroup, { title: "Fabushi", color: "grey" });
+    await saveState(current);
+  } catch { current.automationGroup = null; }
+}
+
 async function requireClaimed(targetId) {
   const id = Number(targetId);
   if (!Number.isInteger(id)) throw new Error("Browser target id must be numeric.");
   const current = await state();
-  if (!current.claimed.has(id)) throw new Error("Tab has not been claimed by Fabushi.");
+  if (!current.claimed.has(id) && !current.automation.has(id)) throw new Error("Tab has not been claimed by Fabushi.");
   return { id, current };
 }
 
@@ -152,12 +262,39 @@ async function handleCommand(command, params = {}) {
     const tab = await chrome.tabs.get(id);
     const url = String(tab.url || tab.pendingUrl || "");
     const title = String(tab.title || "");
-    if (!isOrdinaryWebUrl(url)) throw new Error("Only ordinary http/https tabs can be controlled by Fabushi.");
-    if (String(params.url || "") !== url || String(params.title || "") !== title) throw new Error("The tab changed before Fabushi could claim it. Refresh browser sessions and retry.");
     const current = await state();
+    if (!current.automation.has(id) && !isOrdinaryWebUrl(url)) throw new Error("Only ordinary http/https tabs can be controlled by Fabushi.");
+    if (String(params.url || "") !== url || String(params.title || "") !== title) throw new Error("The tab changed before Fabushi could claim it. Refresh browser sessions and retry.");
     current.claimed.add(id);
-    await saveClaimed(current.claimed);
+    await saveState(current);
     return { targetId: String(id), title, url };
+  }
+  if (command === "downloads") {
+    const id = Number(params.downloadGuid);
+    if (params.action === "download_cancel") {
+      if (!Number.isInteger(id)) throw new Error("download_cancel requires a numeric download id.");
+      await chrome.downloads.cancel(id);
+    }
+    if (params.action === "download_wait") {
+      if (!Number.isInteger(id)) throw new Error("download_wait requires a numeric download id.");
+      const deadline = Date.now() + Math.max(0, Math.min(Number(params.timeoutMs) || 30_000, 30_000));
+      while (Date.now() < deadline) {
+        const [item] = await chrome.downloads.search({ id });
+        if (!item || item.state !== "in_progress") break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    const items = await chrome.downloads.search({ limit: 100, orderBy: ["-startTime"] });
+    return { downloads: items.map((item) => ({
+      guid: String(item.id),
+      url: String(item.finalUrl || item.url || ""),
+      suggestedFilename: String(item.filename || "").split(/[\\/]/).pop() || "download",
+      state: item.state === "in_progress" ? "inProgress" : String(item.state || "unknown"),
+      receivedBytes: Number(item.bytesReceived) || 0,
+      totalBytes: Number(item.totalBytes) >= 0 ? Number(item.totalBytes) : null,
+      path: null,
+      size: item.state === "complete" ? Number(item.fileSize) || null : null,
+    })) };
   }
   if (command === "cdp") {
     const { id } = await requireClaimed(params.targetId);
@@ -165,21 +302,52 @@ async function handleCommand(command, params = {}) {
     const target = { tabId: id, ...(params.sessionId ? { sessionId: String(params.sessionId) } : {}) };
     return locked(id, () => chrome.debugger.sendCommand(target, String(params.method), params.params || {}));
   }
+  if (command === "cdp_auto_attach_frame") {
+    const { id } = await requireClaimed(params.targetId);
+    const frameTargetId = String(params.frameTargetId || "");
+    const parentSessionId = String(params.parentSessionId || "");
+    if (!frameTargetId || frameTargetId.length > 200) throw new Error("cdp_auto_attach_frame requires a frame target id.");
+    if (parentSessionId.length > 200) throw new Error("cdp_auto_attach_frame parent session id is too long.");
+    await ensureDebugger(id);
+    return { sessionId: await autoAttachFrame(id, parentSessionId, frameTargetId) };
+  }
   if (command === "detach") {
     const { id, current } = await requireClaimed(params.targetId);
     await chrome.debugger.detach({ tabId: id }).catch(() => {});
     attachedTabs.delete(id);
-    current.claimed.delete(id);
-    await saveClaimed(current.claimed);
+    clearChildSessions(id);
+    if (!current.automation.has(id)) current.claimed.delete(id);
+    await saveState(current);
     return {};
   }
   if (command === "create_tab") {
-    const url = String(params.url || "about:blank");
-    const tab = await chrome.tabs.create({ url, active: params.active !== false });
+    const tab = await chrome.tabs.create({ url: String(params.url || "about:blank"), active: params.active !== false });
+    const current = await state();
+    current.automation.add(tab.id);
+    current.claimed.add(tab.id);
+    if (params.retained === true) current.retained.add(tab.id);
+    await saveState(current);
+    await ensureAutomationGroup(tab.id, current);
+    await announce();
     return { targetId: String(tab.id) };
   }
+  if (command === "cleanup_tabs") {
+    const current = await state();
+    const ids = [...current.automation].filter((id) => !current.retained.has(id));
+    if (ids.length) await chrome.tabs.remove(ids).catch(() => {});
+    for (const id of ids) {
+      current.automation.delete(id);
+      current.claimed.delete(id);
+      current.retained.delete(id);
+      attachedTabs.delete(id);
+      clearChildSessions(id);
+    }
+    await saveState(current);
+    await announce();
+    return { closed: ids.map(String) };
+  }
   if (command === "tab_action") {
-    const { id } = await requireClaimed(params.targetId);
+    const { id, current } = await requireClaimed(params.targetId);
     if (params.action === "activate_tab") {
       const tab = await chrome.tabs.get(id);
       await chrome.windows.update(tab.windowId, { focused: true });
@@ -189,7 +357,11 @@ async function handleCommand(command, params = {}) {
     else if (params.action === "reload") await chrome.tabs.reload(id);
     else if (params.action === "back") await chrome.tabs.goBack(id);
     else if (params.action === "forward") await chrome.tabs.goForward(id);
-    else throw new Error(`Unsupported tab action: ${params.action}`);
+    else if (params.action === "retain_tab" || params.action === "release_tab") {
+      if (!current.automation.has(id)) throw new Error("Only Fabushi-created tabs can change lifecycle.");
+      if (params.action === "retain_tab") current.retained.add(id); else current.retained.delete(id);
+      await saveState(current);
+    } else throw new Error(`Unsupported tab action: ${params.action}`);
     await announce();
     return {};
   }
@@ -207,24 +379,54 @@ async function handleRequest(message) {
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
   if (source.tabId == null) return;
+  if (method === "Target.attachedToTarget" && params?.sessionId && params?.targetInfo?.targetId) {
+    rememberChildSession(source.tabId, source.sessionId || "", params.targetInfo.targetId, params.sessionId);
+  } else if (method === "Target.detachedFromTarget" && params?.sessionId) {
+    forgetChildSession(source.tabId, params.sessionId);
+  }
   post({ type: "cdp_event", targetId: String(source.tabId), method, params });
 });
-chrome.debugger.onDetach.addListener((source) => { if (source.tabId != null) attachedTabs.delete(source.tabId); });
+chrome.debugger.onDetach.addListener((source) => {
+  if (source.tabId != null) { attachedTabs.delete(source.tabId); clearChildSessions(source.tabId); }
+});
 chrome.tabs.onUpdated.addListener(() => { void announce(); });
 chrome.tabs.onRemoved.addListener((tabId) => {
   void (async () => {
     const current = await state();
     current.claimed.delete(tabId);
+    current.automation.delete(tabId);
+    current.retained.delete(tabId);
     attachedTabs.delete(tabId);
-    await saveClaimed(current.claimed);
+    clearChildSessions(tabId);
+    await saveState(current);
     await announce();
   })();
 });
-chrome.webNavigation.onCreatedNavigationTarget.addListener(() => { void announce(); });
+chrome.tabGroups.onRemoved.addListener((group) => {
+  void (async () => {
+    const current = await state();
+    if (current.automationGroup === group.id) {
+      current.automationGroup = null;
+      await saveState(current);
+    }
+  })();
+});
+chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {
+  void (async () => {
+    const current = await state();
+    if (!current.claimed.has(details.sourceTabId) && !current.automation.has(details.sourceTabId)) return;
+    current.automation.add(details.tabId);
+    current.claimed.add(details.tabId);
+    current.retained.delete(details.tabId);
+    await saveState(current);
+    await ensureAutomationGroup(details.tabId, current);
+    await announce();
+  })();
+});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "fabushi.browser.status") return false;
-  visibleTabs().then((tabs) => sendResponse({ connected: nativeConnected, error: nativeError, tabs }), (error) => sendResponse({ connected: false, error: error?.message || String(error), tabs: [] }));
+  visibleTabs().then((tabs) => sendResponse({ connected: nativeConnected, error: nativeError, tabs, extensionId: chrome.runtime.id }), (error) => sendResponse({ connected: false, error: error?.message || String(error), tabs: [] }));
   return true;
 });
 
@@ -238,4 +440,4 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 connectNative();
 chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
-void saveClaimed((await state()).claimed);
+void saveState(await state());
