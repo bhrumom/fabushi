@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   android-interactive:
-    name: Install released APK, login, self-register, and expose Android App
+    name: Install released APK, login, self-register, and self-drive Android App
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -82,7 +82,7 @@ jobs:
           test -w /dev/kvm
 
       - id: interactive
-        name: Run released Android App interactive matrix window
+        name: Run released Android App Global Dharma journey
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         env:
@@ -118,9 +118,22 @@ jobs:
           test -f "$EVIDENCE_DIR/report.json"
           test "$(jq -r .status "$EVIDENCE_DIR/report.json")" = passed-logged-out
           test -s "$EVIDENCE_DIR/device-gateway-trace.jsonl"
+          test -s "$EVIDENCE_DIR/ci-public-mcp-driver.jsonl"
+          test -s "$EVIDENCE_DIR/ci-public-mcp-driver.log"
           test -s "$EVIDENCE_DIR/logcat-final.txt"
           test -s "$EVIDENCE_DIR/android-session.mp4"
           required=(fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert)
           for tool in "${required[@]}"; do
             jq -e --arg tool "$tool" 'select(.phase == "call-completed" and .ok == true and .toolName == $tool)' "$EVIDENCE_DIR/device-gateway-trace.jsonl" >/dev/null
           done
+          for phase in device-discovered bot-natural-language-verified miniapp-opened restore-verified journey-complete; do
+            jq -e --arg phase "$phase" 'select(.phase == $phase)' "$EVIDENCE_DIR/ci-public-mcp-driver.jsonl" >/dev/null
+          done
+          jq -e 'select(.phase == "purchase-verified" or .phase == "purchase-preexisting-entitlement")' "$EVIDENCE_DIR/ci-public-mcp-driver.jsonl" >/dev/null
+          jq -e 'select(.phase == "miniapp-opened" and .webMcp == true and .autoLogin == true and .sharedRuntimeRestored == true)' "$EVIDENCE_DIR/ci-public-mcp-driver.jsonl" >/dev/null
+          jq -e 'select(.phase == "restore-verified" and .serverEntitlementAllowed == true)' "$EVIDENCE_DIR/ci-public-mcp-driver.jsonl" >/dev/null
+          test -s "$EVIDENCE_DIR/steps/120-global-dharma-search.png"
+          test -s "$EVIDENCE_DIR/steps/140-global-dharma-bot-projected.png"
+          test -s "$EVIDENCE_DIR/steps/160-bot-webmcp-command-complete.png"
+          test -s "$EVIDENCE_DIR/steps/170-miniapp-web-ui-shared-runtime.png"
+          test -s "$EVIDENCE_DIR/steps/191-restore-entitlement-confirmed.png"
