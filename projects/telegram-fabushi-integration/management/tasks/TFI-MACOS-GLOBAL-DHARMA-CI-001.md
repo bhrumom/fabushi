@@ -68,3 +68,11 @@ Implement the workflow + contract, open one atomic PR, use the narrow PR contrac
 - Protected merge: `#2477` -> `main@694218dc9a427670fec610e458223646d2d4c461`; canonical main was re-read after merge.
 - Next governed macOS test SemVer: `1.2.54`, strictly newer than `1.2.53`; Android `versionCode=29` and iOS `CURRENT_PROJECT_VERSION=29` remain unchanged because this is a shared SemVer-only retest round.
 - 1.2.54 release PR/run/tag/asset plus release-triggered macOS Global Dharma packaged journey/video/screenshots/trace/report are `PENDING` until actually generated.
+
+## Acceptance coherence update — 2026-09-07 exact `小程序` entry
+
+- Canonical desktop search repair `#2476` protected-merged as `main@b774b30f539cb1120fa11b5bfe17771f24d63c93` after repeated CI evidence proved exact query `小程序` previously did not surface the official Global Dharma Mini App.
+- The dedicated macOS Release gate from `#2477` still invoked only `miniapp-bot-parity.spec.ts`, so a Release could pass without fail-closed proof of the newly required exact `小程序` search/install entry.
+- Minimal repair: the same exact published macOS package must run both `miniapp-search-entry.spec.ts` and `miniapp-bot-parity.spec.ts`; evidence now additionally requires `01-search-miniapp-finds-global-dharma.png`, `02-global-dharma-installed-from-miniapp-search.png`, and `miniapp-search-entry-user-journey.webm`.
+- No product runtime is changed in this repair. No external device/plugin prerequisite is introduced.
+- Final Release/video evidence remains `PENDING` until this repair protected-merges and the newest canonical-main package passes the release-triggered macOS gate.
