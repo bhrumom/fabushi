@@ -11,6 +11,7 @@ const MINI_APP_DISCOVERY_ALIASES = new Set([
   'miniapp',
   'miniapps',
 ]);
+const MINI_APP_DISCOVERY_LABEL = '小程序 · Mini App';
 
 type MarketplaceBrowse = (query?: string) => Promise<MarketplaceBrowseResult>;
 type PatchableTransportPrototype = {
@@ -18,11 +19,30 @@ type PatchableTransportPrototype = {
   [INSTALL_MARKER]?: boolean;
 };
 
+function normalizedDiscoveryTerm(query?: string): string | undefined {
+  const trimmed = query?.normalize('NFKC').trim();
+  return trimmed ? trimmed.toLocaleLowerCase().replace(/\s+/g, ' ') : undefined;
+}
+
+export function isMiniAppDiscoveryAlias(query?: string): boolean {
+  const normalized = normalizedDiscoveryTerm(query);
+  return Boolean(normalized && MINI_APP_DISCOVERY_ALIASES.has(normalized));
+}
+
 export function normalizeMiniAppDiscoveryQuery(query?: string): string | undefined {
   const trimmed = query?.normalize('NFKC').trim();
   if (!trimmed) return undefined;
-  const normalized = trimmed.toLocaleLowerCase().replace(/\s+/g, ' ');
-  return MINI_APP_DISCOVERY_ALIASES.has(normalized) ? undefined : trimmed;
+  return isMiniAppDiscoveryAlias(trimmed) ? undefined : trimmed;
+}
+
+function projectMiniAppCategoryForSearch(result: MarketplaceBrowseResult): MarketplaceBrowseResult {
+  return {
+    ...result,
+    plugins: result.plugins.map((app) => ({
+      ...app,
+      description: `${app.description} · ${MINI_APP_DISCOVERY_LABEL}`,
+    })),
+  };
 }
 
 /**
@@ -31,6 +51,12 @@ export function normalizeMiniAppDiscoveryQuery(query?: string): string | undefin
  * Apps search tab. Normalize only those category aliases at the existing
  * Mahayana transport boundary; title/id/description searches remain untouched
  * and the Host remains authoritative for which apps are discoverable.
+ *
+ * GlobalSearchWorkspace performs a second client-side text filter over the
+ * returned summaries. For a generic category query, preserve that true category
+ * as display metadata so the same result survives the second filter. This also
+ * keeps deterministic CI Test Host metadata semantically aligned with the
+ * production Marketplace, whose Global Dharma description already says 小程序.
  */
 export function installDesktopMiniAppDiscoveryAliases(): void {
   const prototype = ElectronMahayanaHostTransport.prototype as PatchableTransportPrototype;
@@ -42,7 +68,9 @@ export function installDesktopMiniAppDiscoveryAliases(): void {
     value: true,
     writable: false,
   });
-  prototype.marketplaceBrowse = function marketplaceBrowseWithDiscoveryAliases(query?: string) {
-    return browse.call(this, normalizeMiniAppDiscoveryQuery(query));
+  prototype.marketplaceBrowse = async function marketplaceBrowseWithDiscoveryAliases(query?: string) {
+    const discoveryAlias = isMiniAppDiscoveryAlias(query);
+    const result = await browse.call(this, normalizeMiniAppDiscoveryQuery(query));
+    return discoveryAlias ? projectMiniAppCategoryForSearch(result) : result;
   };
 }
