@@ -29,6 +29,44 @@ struct MiniAppWebMcpSurface: View {
             }
             .padding(12)
 
+            if plugin.pluginId == GlobalDharmaCommerceModel.miniAppId {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: model.globalDharmaCommerce.accessAllowed ? "checkmark.seal.fill" : "lock.fill")
+                            .foregroundStyle(model.globalDharmaCommerce.accessAllowed ? .green : .secondary)
+                        Text(model.globalDharmaCommerce.message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .accessibilityIdentifier("global-dharma-entitlement-status")
+
+                    HStack(spacing: 10) {
+                        if model.globalDharmaCommerce.accessAllowed {
+                            Label("本地转经轮已买断", systemImage: "infinity")
+                                .font(.subheadline.weight(.semibold))
+                                .accessibilityIdentifier("global-dharma-entitlement-allowed")
+                        } else {
+                            Button("\(model.globalDharmaCommerce.lifetimePriceLabel) 买断本地转经轮") {
+                                Task { await model.globalDharmaCommerce.purchaseLifetime() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!model.globalDharmaCommerce.canBuyLifetime)
+                            .accessibilityIdentifier("global-dharma-buy-lifetime")
+                        }
+
+                        Button("恢复购买") {
+                            Task { await model.globalDharmaCommerce.restoreLifetime() }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.globalDharmaCommerce.busy)
+                        .accessibilityIdentifier("global-dharma-restore-purchase")
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+            }
+
             MiniAppWebView(
                 plugin: plugin,
                 model: model,
@@ -39,6 +77,9 @@ struct MiniAppWebMcpSurface: View {
         }
         .accessibilityIdentifier("miniapp-webmcp-surface")
         .task(id: plugin.pluginId) {
+            if plugin.pluginId == GlobalDharmaCommerceModel.miniAppId {
+                await model.globalDharmaCommerce.refresh()
+            }
             localHtml = await model.loadLocalMiniAppHtml(pluginId: plugin.pluginId)
             sourceResolved = true
             status = localHtml == nil ? "正在加载 Hosted WebMCP…" : "正在加载本地 WebMCP…"
@@ -136,6 +177,43 @@ private struct MiniAppWebView: UIViewRepresentable {
                 let local = webView?.url?.host == localWebMcpOriginHost
                 if result.contains("\"ready\":true") {
                     self.status = local ? "本地 WebMCP 已连接" : "WebMCP 已连接"
+                    if self.plugin.pluginId == GlobalDharmaCommerceModel.miniAppId {
+                        let sharedRuntimeProbe = """
+                        (() => {
+                          const tools = window.__fabushiWebMcp?.list?.() || [];
+                          if (!tools.some((tool) => tool && tool.name === 'status')) return;
+                          window.__fabushiWebMcp.call('status', {}).then((result) => {
+                            const runtime = result?.structuredContent?.runtime ?? result?.runtime ?? result;
+                            const revision = Number(runtime?.revision ?? -1);
+                            let marker = document.getElementById('fabushi-shared-runtime-sync');
+                            if (!marker) {
+                              marker = document.createElement('div');
+                              marker.id = 'fabushi-shared-runtime-sync';
+                              marker.setAttribute('role', 'status');
+                              marker.style.cssText = 'margin:12px;padding:10px 12px;border:1px solid rgba(0,0,0,.12);border-radius:12px;font:600 13px -apple-system,BlinkMacSystemFont,sans-serif;';
+                              document.body.prepend(marker);
+                            }
+                            marker.setAttribute('aria-label', 'Bot / Web UI 同一共享状态');
+                            marker.dataset.revision = revision >= 0 ? String(revision) : '';
+                            marker.textContent = revision >= 0
+                              ? `Bot / Web UI 同一共享状态 · revision ${revision}`
+                              : 'Bot / Web UI 同一共享状态';
+                            window.dispatchEvent(new CustomEvent('fabushi:shared-runtime-restored', { detail: runtime }));
+                          }).catch((error) => {
+                            let marker = document.getElementById('fabushi-shared-runtime-sync');
+                            if (!marker) {
+                              marker = document.createElement('div');
+                              marker.id = 'fabushi-shared-runtime-sync';
+                              marker.setAttribute('role', 'status');
+                              document.body.prepend(marker);
+                            }
+                            marker.setAttribute('aria-label', '共享状态恢复失败');
+                            marker.textContent = `共享状态恢复失败 · ${String(error?.message || error)}`;
+                          });
+                        })()
+                        """
+                        webView?.evaluateJavaScript(sharedRuntimeProbe)
+                    }
                 } else {
                     self.status = "WebMCP 页面已打开"
                 }

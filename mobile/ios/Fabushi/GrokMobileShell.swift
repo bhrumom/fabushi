@@ -145,6 +145,7 @@ private struct MobileBotChat: View {
     let bot: MobileBotSummary
     let host: MahayanaHost
     let appAgentSurface: FabushiAppAgentSurface
+    let onOpenApp: (() -> Void)?
     let onClose: () -> Void
 
     @State private var draft = ""
@@ -172,10 +173,23 @@ private struct MobileBotChat: View {
                 .background(.white, in: Capsule())
                 .shadow(color: .black.opacity(0.08), radius: 12, y: 3)
                 Spacer()
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: 16, weight: .medium))
-                    .frame(width: 38, height: 38)
-                    .background(Color.black.opacity(0.045), in: Circle())
+                if let onOpenApp {
+                    Button(action: onOpenApp) {
+                        Image(systemName: "desktopcomputer")
+                            .font(.system(size: 16, weight: .medium))
+                            .frame(width: 38, height: 38)
+                            .background(Color.black.opacity(0.045), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("打开应用")
+                    .accessibilityIdentifier("mobile-bot-open-app")
+                } else {
+                    Image(systemName: "desktopcomputer")
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 38, height: 38)
+                        .background(Color.black.opacity(0.045), in: Circle())
+                        .accessibilityHidden(true)
+                }
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
             .background(Color.white.opacity(0.97))
@@ -246,6 +260,7 @@ private struct MobileBotChat: View {
             String(busy),
             activeOperationId ?? "",
             errorText ?? "",
+            String(onOpenApp != nil),
             entries.map { "\($0.id):\($0.kind.rawValue):\($0.role.rawValue)" }.joined(separator: ","),
         ].joined(separator: "|")
     }
@@ -257,6 +272,9 @@ private struct MobileBotChat: View {
             .init(agentId: "mobile-bot-close", role: "button", name: "关闭 Bot 对话"),
             .init(agentId: "mobile-bot-draft", role: "textbox", name: "Bot 消息"),
         ]
+        if onOpenApp != nil {
+            elements.append(.init(agentId: "mobile-bot-open-app", role: "button", name: "打开应用"))
+        }
         let sendId = busy ? "mobile-bot-stop" : "mobile-bot-send"
         elements.append(.init(
             agentId: sendId,
@@ -273,6 +291,9 @@ private struct MobileBotChat: View {
             "mobile-bot-close": .init(allowed: ["invoke"]) { _ in onClose() },
             "mobile-bot-draft": .init(allowed: ["setValue"]) { value in draft = value ?? "" },
         ]
+        if let onOpenApp {
+            actions["mobile-bot-open-app"] = .init(allowed: ["invoke"]) { _ in onOpenApp() }
+        }
         actions[sendId] = .init(allowed: ["invoke"]) { _ in
             if busy { Task { await stop() } } else { Task { await send() } }
         }
@@ -434,13 +455,21 @@ internal struct GrokMobileShell: View {
     @State private var botError: String?
     @State private var bots: [MobileBotSummary] = []
     @State private var selectedBot: MobileBotSummary?
+    @State private var openedMiniApp: MarketplacePlugin?
     @State private var legacyOpen = false
 
     var body: some View {
+        Group {
         if model.onboardingStep < 3 || !model.authResolved || !model.loggedIn {
             ContentView(model: model, messaging: messaging, appAgentSurface: appAgentSurface)
         } else if let selectedBot {
-            MobileBotChat(bot: selectedBot, host: host, appAgentSurface: appAgentSurface) { self.selectedBot = nil }
+            MobileBotChat(
+                bot: selectedBot,
+                host: host,
+                appAgentSurface: appAgentSurface,
+                onOpenApp: isGlobalDharmaBot(selectedBot) ? { Task { await openGlobalDharmaMiniApp() } } : nil,
+                onClose: { self.selectedBot = nil }
+            )
         } else if legacyOpen {
             VStack(spacing: 0) {
                 HStack {
@@ -457,7 +486,12 @@ internal struct GrokMobileShell: View {
                 .padding(.vertical, 8)
                 .background(.ultraThinMaterial)
 
-                ContentView(model: model, messaging: messaging, appAgentSurface: appAgentSurface)
+                ContentView(
+                    model: model,
+                    messaging: messaging,
+                    appAgentSurface: appAgentSurface,
+                    onShellBack: { legacyOpen = false }
+                )
             }
         } else {
             home
@@ -465,6 +499,69 @@ internal struct GrokMobileShell: View {
                 .task { await messaging.refresh() }
                 .task(id: appAgentSurfaceFingerprint) { publishAppAgentSurface() }
         }
+        }
+        .fullScreenCover(item: $openedMiniApp) { plugin in
+            MiniAppWebMcpSurface(plugin: plugin, model: model)
+        }
+    }
+
+    private func isGlobalDharmaBot(_ bot: MobileBotSummary) -> Bool {
+        bot.id == "global-dharma-bot" || bot.id == GlobalDharmaCommerceModel.miniAppId || bot.name == "全球法布施"
+    }
+
+    @MainActor
+    private func openGlobalDharmaMiniApp() async {
+        do {
+            let active = try await host.request(
+                method: "feature.plugin.active",
+                params: ["pluginId": GlobalDharmaCommerceModel.miniAppId]
+            )
+            guard active.value is [String: Any] else {
+                model.message = "请先在 Marketplace 安装全球法布施"
+                return
+            }
+
+            let previousQuery = model.query
+            model.query = "全球法布施"
+            await model.refresh()
+            model.query = previousQuery
+            guard let plugin = model.plugins.first(where: { $0.pluginId == GlobalDharmaCommerceModel.miniAppId }) else {
+                model.message = "已安装全球法布施，但 Marketplace 元数据当前不可用"
+                return
+            }
+            await model.globalDharmaCommerce.refresh()
+            openedMiniApp = plugin
+            publishGlobalDharmaMiniAppSurface(plugin)
+        } catch {
+            model.message = "打开全球法布施失败：\(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func publishGlobalDharmaMiniAppSurface(_ plugin: MarketplacePlugin) {
+        let commerce = model.globalDharmaCommerce
+        let elements: [FabushiAppAgentSurface.Element] = [
+            .init(agentId: "miniapp-global-dharma", role: "application", name: plugin.displayName),
+            .init(agentId: "global-dharma-entitlement-status", role: "status", name: commerce.message),
+            .init(agentId: "global-dharma-local-prayer-wheel-access", role: "status", name: commerce.accessAllowed ? "local.prayer-wheel.start allowed" : "local.prayer-wheel.start denied"),
+            .init(agentId: "global-dharma-buy-lifetime", role: "button", name: "\(commerce.lifetimePriceLabel) 买断本地转经轮", enabled: commerce.canBuyLifetime),
+            .init(agentId: "global-dharma-restore-purchase", role: "button", name: "恢复购买", enabled: !commerce.busy),
+        ]
+        let actions: [String: FabushiAppAgentSurface.Action] = [
+            "global-dharma-buy-lifetime": .init(allowed: ["invoke"]) { _ in
+                Task {
+                    await commerce.purchaseLifetime()
+                    publishGlobalDharmaMiniAppSurface(plugin)
+                }
+            },
+            "global-dharma-restore-purchase": .init(allowed: ["invoke"]) { _ in
+                Task {
+                    await commerce.restoreLifetime()
+                    publishGlobalDharmaMiniAppSurface(plugin)
+                }
+            },
+        ]
+        try? appAgentSurface.publish(screen: "miniapp-global-dharma", elements: elements, actions: actions)
     }
 
     private var appAgentSurfaceFingerprint: String {
