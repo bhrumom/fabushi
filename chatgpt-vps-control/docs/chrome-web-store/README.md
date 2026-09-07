@@ -17,6 +17,14 @@ From `chatgpt-vps-control/`:
 
 ```bash
 npm ci
+npm run chrome:release
+```
+
+`chrome:release` is the production preflight: it validates manifest/app/resources and documented version alignment, runs the focused existing browser-extension tests, creates the Web Store ZIP, reads the ZIP back, verifies the archived file list exactly matches the allowlisted staged tree, and writes SHA-256 evidence.
+
+Equivalent individual commands:
+
+```bash
 npm run chrome:validate
 node --test tests/browser-extension.test.js
 npm run chrome:package
@@ -33,7 +41,7 @@ The production ZIP uses an allowlist, puts `manifest.json` at archive root, inte
 
 ## Manual unpacked smoke test
 
-1. Run `npm run chrome:package`.
+1. Run `npm run chrome:release`.
 2. Open `chrome://extensions`, enable Developer mode, then choose **Load unpacked**.
 3. Select `dist/chrome-extension/fabushi-<version>/`.
 4. Confirm Chrome shows no manifest or service-worker registration error.
