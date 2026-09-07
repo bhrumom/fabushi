@@ -98,7 +98,14 @@ fn natural_arguments(command: &Value, input: &str) -> Value {
     let mut arguments = serde_json::Map::new();
     arguments.insert(
         argument_name.to_string(),
-        Value::String(if content.is_empty() { input.trim() } else { content }.to_string()),
+        Value::String(
+            if content.is_empty() {
+                input.trim()
+            } else {
+                content
+            }
+            .to_string(),
+        ),
     );
     Value::Object(arguments)
 }
@@ -225,7 +232,12 @@ pub(crate) fn route_marketplace_input(
         }
     }
     if let Some((command, score)) = best.filter(|(_, score)| *score > 0) {
-        return dispatch(plugin_id, projection, command, natural_arguments(command, input));
+        return dispatch(
+            plugin_id,
+            projection,
+            command,
+            natural_arguments(command, input),
+        );
     }
     let surface = projection
         .get("surfaces")
