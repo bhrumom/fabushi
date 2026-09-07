@@ -36,7 +36,7 @@ Equivalent individual commands:
 
 ```bash
 npm run chrome:validate
-node --test tests/browser-extension.test.js
+node --test tests/browser-extension.test.js tests/chrome-platform.test.js
 npm run chrome:package
 ```
 
@@ -48,6 +48,10 @@ Outputs:
 The production ZIP puts `manifest.json` at archive root and contains only `app.html`, `app.css`, `app.js`, `service-worker.js`, `platform-bridge.js`, `browser-control.js`, and `manifest.json`. Packaging fails if legacy popup/userscript/Marketplace-user-script assets appear or if archive verification differs. Standard `zip` and `unzip` executables are required on `PATH`.
 
 `.github/workflows/chrome-extension-web-store.yml` runs the same preflight on the Chrome platform branch and uploads the ZIP plus SHA-256 file as a GitHub Actions artifact.
+
+## Verified branch evidence
+
+The first-class platform release gate has passed in GitHub Actions. Run `34118863314` on `cdbfcab02419c150e9fea47d692bd5faf64eb3ac` validated Fabushi `0.3.0`, passed **10/10** focused tests, generated a **15,197 byte** `fabushi-0.3.0.zip`, verified the exact seven-file allowlist, recorded SHA-256 `2f060ff84152ff8c06c2712d26cc38d1d00a1c77836a29041039a9a77488357e`, and uploaded artifact `10017367281`. A follow-up reconnect hardening run `34119000281` on `d772c033b774eb4ccae6335d6a01c9ea8f233f9c` also passed.
 
 ## Manual unpacked smoke test
 
