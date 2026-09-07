@@ -140,11 +140,20 @@ final class GlobalDharmaJourneyUITests: XCTestCase {
         mark("webMcpReady", true)
         checkpoint("060-miniapp-webmcp-open")
 
-        let sharedRuntime = app.descendants(matching: .any)["Bot / Web UI 同一共享状态"]
+        let sharedRuntimePrefix = "Bot / Web UI 同一共享状态 · revision "
+        let sharedRuntime = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", sharedRuntimePrefix))
+            .firstMatch
         XCTAssertTrue(
             sharedRuntime.waitForExistence(timeout: 30),
-            "Opening the Global Dharma Web UI must restore the same shared runtime through the read-only WebMCP status tool"
+            "Opening the Global Dharma Web UI must restore the canonical account-scoped runtime and complete the read-only WebMCP status bridge"
         )
+        let revisionText = String(sharedRuntime.label.dropFirst(sharedRuntimePrefix.count))
+        guard let revision = Int(revisionText), revision > 0 else {
+            XCTFail("Bot/Web UI synchronization must expose a positive canonical runtime revision, got: \(sharedRuntime.label)")
+            return
+        }
+        state["sharedRuntimeRevision"] = revision
         mark("sharedRuntimeSynced", true)
         checkpoint("061-bot-webui-shared-runtime")
 
