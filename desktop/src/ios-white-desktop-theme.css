@@ -1,0 +1,179 @@
+/* Canonical white desktop palette aligned with the iOS Grok-style shell. */
+:root {
+  color-scheme: light;
+  --fabushi-desktop-bg: #ffffff;
+  --fabushi-desktop-surface: #ffffff;
+  --fabushi-desktop-raised: #f7f7f8;
+  --fabushi-desktop-hover: #f1f2f4;
+  --fabushi-desktop-border: #e7e7e9;
+  --fabushi-desktop-text: #111214;
+  --fabushi-desktop-muted: #6d7178;
+  --fabushi-desktop-accent: #147dfa;
+}
+
+html,
+body,
+#root,
+[class*='desktopRoot'],
+[data-testid='messenger-workspace'] {
+  background: var(--fabushi-desktop-bg) !important;
+  color: var(--fabushi-desktop-text) !important;
+}
+
+[class*='productRail'],
+[class*='navRail'],
+[class*='chatList'],
+[class*='chatWorkspace'],
+[class*='chatHeader'],
+[class*='listHeader'],
+[class*='inChatSearch'],
+[class*='infoPanel'],
+[class*='settingsPanel'],
+[class*='productSurface'] {
+  background: var(--fabushi-desktop-surface) !important;
+  color: var(--fabushi-desktop-text) !important;
+  border-color: var(--fabushi-desktop-border) !important;
+}
+
+[class*='productRail'],
+[class*='navRail'] {
+  border-right: 1px solid var(--fabushi-desktop-border) !important;
+}
+
+[class*='productRail'] button,
+[class*='navRail'] > button {
+  color: #666b73 !important;
+}
+
+[class*='productRail'] button:hover,
+[class*='navRail'] > button:hover,
+[class*='iconButton']:hover,
+[class*='listHeader'] button:hover,
+[class*='headerActions'] button:hover {
+  background: var(--fabushi-desktop-hover) !important;
+  color: #181a1e !important;
+}
+
+[class*='productRail'] button[data-active='true'],
+[class*='navRail'] > button[data-active='true'] {
+  background: #eef5ff !important;
+  color: var(--fabushi-desktop-accent) !important;
+}
+
+[class*='railBrand'],
+[class*='brandOrb'] {
+  background: #f3f4f6 !important;
+  color: #17191d !important;
+  box-shadow: inset 0 0 0 1px var(--fabushi-desktop-border);
+}
+
+[class*='chatWorkspace']::before {
+  opacity: 0 !important;
+}
+
+[class*='messageArea'] {
+  background: #fbfbfc !important;
+}
+
+[class*='messagePeer'],
+[class*='messageMine'],
+[class*='chatEmpty'],
+[class*='composer'],
+[class*='composerBanner'],
+[class*='popover'],
+[class*='contextMenu'],
+[class*='communityDialog'] {
+  color: var(--fabushi-desktop-text) !important;
+  border-color: var(--fabushi-desktop-border) !important;
+  box-shadow: 0 8px 28px rgba(20, 24, 32, 0.07) !important;
+}
+
+[class*='messagePeer'],
+[class*='chatEmpty'],
+[class*='composer'],
+[class*='composerBanner'],
+[class*='popover'],
+[class*='contextMenu'],
+[class*='communityDialog'] {
+  background: #ffffff !important;
+}
+
+[class*='messageMine'] {
+  background: #eef5ff !important;
+}
+
+[class*='searchBox'] {
+  background: #f4f5f7 !important;
+  color: #7a7f87 !important;
+}
+
+[class*='searchBox']:focus-within {
+  background: #ffffff !important;
+  box-shadow: inset 0 0 0 2px rgba(20, 125, 250, 0.55) !important;
+}
+
+[class*='searchBox'] input,
+[class*='inChatSearch'] input,
+[data-testid='messenger-input'] {
+  color: var(--fabushi-desktop-text) !important;
+  caret-color: var(--fabushi-desktop-accent);
+}
+
+[data-testid='messenger-workspace'] {
+  --agent-surface: rgba(255, 255, 255, 0.98) !important;
+  --agent-surface-raised: rgba(248, 248, 249, 0.98) !important;
+  --agent-stroke: rgba(17, 18, 20, 0.09) !important;
+  --agent-text-muted: rgba(17, 18, 20, 0.5) !important;
+}
+
+[data-testid='messenger-workspace'] [class*='chatWorkspace'] {
+  background: #fbfbfc !important;
+}
+
+[data-testid='messenger-workspace'] [class*='chatHeader'] {
+  background: rgba(255, 255, 255, 0.94) !important;
+  border-bottom-color: var(--fabushi-desktop-border) !important;
+}
+
+[data-testid='conversation-status'][data-mahayana-state] {
+  color: #66717f !important;
+}
+
+[data-testid='conversation-status'][data-mahayana-state='alerting'],
+[data-testid='conversation-status'][data-mahayana-state='error'] {
+  color: #c74343 !important;
+}
+
+[data-testid='conversation-status'][data-mahayana-state='result'] {
+  color: #20875a !important;
+}
+
+[data-testid='messenger-workspace'] [class*='dayDivider'] {
+  border: 1px solid var(--fabushi-desktop-border) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #7b8088 !important;
+}
+
+[data-testid='messenger-workspace'] [class*='messagePeer'] {
+  background: #ffffff !important;
+}
+
+[data-testid='messenger-workspace'] [class*='messageMine'] {
+  background: #eef5ff !important;
+}
+
+[data-testid='messenger-workspace'] [class*='composer'] {
+  border: 1px solid var(--fabushi-desktop-border) !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  box-shadow: 0 16px 42px rgba(25, 31, 40, 0.09) !important;
+}
+
+[data-testid='messenger-send'] {
+  box-shadow: 0 7px 18px rgba(20, 125, 250, 0.16) !important;
+}
+
+html[data-fabushi-motion-paused='true'] *,
+html[data-fabushi-motion-paused='true'] *::before,
+html[data-fabushi-motion-paused='true'] *::after {
+  animation-play-state: paused !important;
+}
