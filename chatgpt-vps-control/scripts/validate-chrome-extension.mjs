@@ -8,6 +8,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const extension = join(root, "extension");
 const manifestPath = join(extension, "manifest.json");
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+const releaseReadme = await readFile(join(root, "docs", "chrome-web-store", "README.md"), "utf8");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -18,6 +19,8 @@ async function mustExist(relative) {
 
 assert(manifest.manifest_version === 3, "manifest_version must be 3");
 assert(/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(manifest.version), "manifest.version must be Chrome Web Store compatible");
+assert(releaseReadme.includes(`Production candidate: **${manifest.version}**`), "Chrome Web Store README production candidate must match manifest.version");
+assert(releaseReadme.includes("Every Chrome Web Store update must increment `extension/manifest.json`"), "release docs must preserve the Web Store monotonic version gate");
 assert(manifest.action?.default_popup === "app.html", "action.default_popup must be app.html");
 assert(manifest.background?.service_worker === "service-worker.js", "background.service_worker must be service-worker.js");
 assert(manifest.background?.type === "module", "background service worker must be a module");
@@ -49,4 +52,5 @@ for (const relative of ["app.js", "background.js", "service-worker.js", "userscr
   execFileSync(process.execPath, ["--check", join(extension, relative)], { stdio: "inherit" });
 }
 console.log(`Chrome extension validation passed: ${manifest.name} ${manifest.version}`);
+console.log(`Release version contract passed: manifest ${manifest.version} == documented production candidate`);
 console.log(`Validated local app resources: ${localRefs.join(", ")}`);
