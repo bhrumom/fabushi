@@ -322,16 +322,32 @@ try {
   await waitElement("mobile-bot-open-miniapp", "enabled", 30_000);
   screenshot("150-global-dharma-bot-open");
 
+  const beforeCommand = await snapshot();
+  const beforeCommandLogCount = (beforeCommand.elements || []).filter((item) => item?.role === "log").length;
   await action("mobile-bot-draft", "setValue", "现在运行到哪里？请查看状态");
   await action("mobile-bot-send", "invoke");
-  await waitSnapshot(
-    (value) => value.screen === "bot-chat" && (value.elements || []).some((item) => item?.agentId === "mobile-bot-send" && item?.enabled === false),
-    "Bot natural-language status command completes",
+  await waitElement("mobile-bot-stop", "enabled", 30_000);
+  const completedCommand = await waitSnapshot(
+    (value) => {
+      const elements = value.elements || [];
+      const idle = elements.some((item) => item?.agentId === "mobile-bot-send")
+        && !elements.some((item) => item?.agentId === "mobile-bot-stop");
+      const logCount = elements.filter((item) => item?.role === "log").length;
+      return value.screen === "bot-chat" && idle && logCount >= beforeCommandLogCount + 2;
+    },
+    "Bot natural-language status command reaches terminal idle with new user and Bot logs",
     60_000,
   );
   await assertElement("mobile-bot-error", "absent");
+  const afterCommandLogCount = (completedCommand.elements || []).filter((item) => item?.role === "log").length;
   screenshot("160-bot-webmcp-command-complete");
-  record("bot-natural-language-verified", { input: "现在运行到哪里？请查看状态", expectedTool: "status" });
+  record("bot-natural-language-verified", {
+    input: "现在运行到哪里？请查看状态",
+    expectedTool: "status",
+    observedBusy: true,
+    beforeCommandLogCount,
+    afterCommandLogCount,
+  });
 
   await action("mobile-bot-open-miniapp", "invoke");
   await waitForUiText("本地 WebMCP 已连接", 45_000);
