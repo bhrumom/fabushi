@@ -12,6 +12,7 @@ final class GlobalDharmaJourneyUITests: XCTestCase {
         "botVisible": false,
         "naturalLanguageSent": false,
         "webMcpReady": false,
+        "sharedRuntimeSynced": false,
         "purchaseTapped": false,
         "entitlementAllowed": false,
         "restoreTapped": false,
@@ -138,6 +139,14 @@ final class GlobalDharmaJourneyUITests: XCTestCase {
         )
         mark("webMcpReady", true)
         checkpoint("060-miniapp-webmcp-open")
+
+        let sharedRuntime = app.descendants(matching: .any)["Bot / Web UI 同一共享状态"]
+        XCTAssertTrue(
+            sharedRuntime.waitForExistence(timeout: 30),
+            "Opening the Global Dharma Web UI must restore the same shared runtime through the read-only WebMCP status tool"
+        )
+        mark("sharedRuntimeSynced", true)
+        checkpoint("061-bot-webui-shared-runtime")
 
         let allowed = app.descendants(matching: .any)["global-dharma-entitlement-allowed"]
         let buy = app.buttons["global-dharma-buy-lifetime"]

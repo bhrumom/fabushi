@@ -327,7 +327,7 @@ jobs:
           xcrun simctl spawn "$UDID" log show --style compact --last 20m --predicate 'process == "Fabushi"' > "$EVIDENCE_DIR/fabushi-system.log" 2>&1 || true
           if [ -n "${TRACE_PATH:-}" ] && [ -f "$TRACE_PATH" ]; then cp "$TRACE_PATH" "$EVIDENCE_DIR/device-gateway-trace.jsonl"; else : > "$EVIDENCE_DIR/device-gateway-trace.jsonl"; fi
           ui_status=failed
-          test -f "$EVIDENCE_DIR/global-dharma-ui-state.json" && jq -e '.autoLogin and .searchedMiniApps and .globalDharmaVisible and .installedOrAlreadyInstalled and .botVisible and .naturalLanguageSent and .webMcpReady and .entitlementAllowed and .restoreTapped' "$EVIDENCE_DIR/global-dharma-ui-state.json" >/dev/null 2>&1 && ui_status=passed
+          test -f "$EVIDENCE_DIR/global-dharma-ui-state.json" && jq -e '.autoLogin and .searchedMiniApps and .globalDharmaVisible and .installedOrAlreadyInstalled and .botVisible and .naturalLanguageSent and .webMcpReady and .sharedRuntimeSynced and .entitlementAllowed and .restoreTapped' "$EVIDENCE_DIR/global-dharma-ui-state.json" >/dev/null 2>&1 && ui_status=passed
           commerce_status="$(cat "$EVIDENCE_DIR/canonical-commerce-status.txt" 2>/dev/null || echo failed)"
           external_status="$(cat "$EVIDENCE_DIR/external-control-status.txt" 2>/dev/null || echo optional-not-observed)"
           jq -n --arg sourceSha "$SOURCE_SHA" --arg runId "$GITHUB_RUN_ID" --arg deviceId "$DEVICE_ID" \

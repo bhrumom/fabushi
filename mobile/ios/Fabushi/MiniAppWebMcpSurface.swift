@@ -177,6 +177,43 @@ private struct MiniAppWebView: UIViewRepresentable {
                 let local = webView?.url?.host == localWebMcpOriginHost
                 if result.contains("\"ready\":true") {
                     self.status = local ? "本地 WebMCP 已连接" : "WebMCP 已连接"
+                    if self.plugin.pluginId == GlobalDharmaCommerceModel.miniAppId {
+                        let sharedRuntimeProbe = """
+                        (() => {
+                          const tools = window.__fabushiWebMcp?.list?.() || [];
+                          if (!tools.some((tool) => tool && tool.name === 'status')) return;
+                          window.__fabushiWebMcp.call('status', {}).then((result) => {
+                            const runtime = result?.structuredContent?.runtime ?? result?.runtime ?? result;
+                            const revision = Number(runtime?.revision ?? -1);
+                            let marker = document.getElementById('fabushi-shared-runtime-sync');
+                            if (!marker) {
+                              marker = document.createElement('div');
+                              marker.id = 'fabushi-shared-runtime-sync';
+                              marker.setAttribute('role', 'status');
+                              marker.style.cssText = 'margin:12px;padding:10px 12px;border:1px solid rgba(0,0,0,.12);border-radius:12px;font:600 13px -apple-system,BlinkMacSystemFont,sans-serif;';
+                              document.body.prepend(marker);
+                            }
+                            marker.setAttribute('aria-label', 'Bot / Web UI 同一共享状态');
+                            marker.dataset.revision = revision >= 0 ? String(revision) : '';
+                            marker.textContent = revision >= 0
+                              ? `Bot / Web UI 同一共享状态 · revision ${revision}`
+                              : 'Bot / Web UI 同一共享状态';
+                            window.dispatchEvent(new CustomEvent('fabushi:shared-runtime-restored', { detail: runtime }));
+                          }).catch((error) => {
+                            let marker = document.getElementById('fabushi-shared-runtime-sync');
+                            if (!marker) {
+                              marker = document.createElement('div');
+                              marker.id = 'fabushi-shared-runtime-sync';
+                              marker.setAttribute('role', 'status');
+                              document.body.prepend(marker);
+                            }
+                            marker.setAttribute('aria-label', '共享状态恢复失败');
+                            marker.textContent = `共享状态恢复失败 · ${String(error?.message || error)}`;
+                          });
+                        })()
+                        """
+                        webView?.evaluateJavaScript(sharedRuntimeProbe)
+                    }
                 } else {
                     self.status = "WebMCP 页面已打开"
                 }
