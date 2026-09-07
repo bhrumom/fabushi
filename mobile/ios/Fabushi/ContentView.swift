@@ -71,7 +71,20 @@ struct ContentView: View {
     @Bindable var model: MarketplaceModel
     @Bindable var messaging: MessagingModel
     let appAgentSurface: FabushiAppAgentSurface
-    let onShellBack: (() -> Void)? = nil
+    let onShellBack: (() -> Void)?
+
+    init(
+        model: MarketplaceModel,
+        messaging: MessagingModel,
+        appAgentSurface: FabushiAppAgentSurface,
+        onShellBack: (() -> Void)? = nil
+    ) {
+        self.model = model
+        self.messaging = messaging
+        self.appAgentSurface = appAgentSurface
+        self.onShellBack = onShellBack
+    }
+
     @State private var openedMiniApp: MarketplacePlugin?
     @State private var destination: MobileDestination = .home
     @State private var agentChatPresented = false
