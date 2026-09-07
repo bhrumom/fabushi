@@ -3,7 +3,7 @@
 - Project: `FAB-P0001 / TFI`
 - Platform: Windows / Electron Desktop
 - Status: `TESTING`
-- Canonical baseline: `main@9f8ab6fd960c8563d2ee8c1c58b1d421f734c1b4`
+- Canonical baseline: `main@0c482add8711801151d397edf6b725dd7d72286e`
 - Branch: `fix/tfi-windows-miniapp-search-entry-20260907`
 - PR: `#2476`
 - Heavy build/test policy: GitHub Actions only; no local build/test
@@ -50,27 +50,33 @@
 - Failure artifact: `9999986933`, SHA256 `8c8668ebf4615f33c631b64d528f535f7f210f43ad06970099474620dc90c920`.
 - Repair: project the Mini App category on every Marketplace summary, including unfiltered install/uninstall refreshes; production summaries already carrying the category are preserved.
 
-## Latest verified pre-merge evidence
+## Verified pre-merge evidence before latest-main synchronization
 
-- Exact-base head: `8701a3ed2b8dbbc4bee36590708e22e0bae9c9e0`, merged with `main@9f8ab6fd960c8563d2ee8c1c58b1d421f734c1b4` before validation.
-- Electron run: `34069692447`.
-- Real Linux Rust Host simulated-user step: `success`.
-- Evidence artifact: `10000096527`, `electron-prepackage-e2e-34069692447-1`, SHA256 `4e19cb1c38806bc61ee1bb117df86675d5ca30de77f1930b096a35adbbe12781`.
-- Focused entry evidence present:
-  - `01-search-miniapp-finds-global-dharma.png`
-  - `02-global-dharma-installed-from-miniapp-search.png`
-  - `miniapp-search-entry-user-journey.webm`
-  - focused Playwright `trace.zip`
-- Full Global Dharma parity evidence present in the same artifact:
-  - screenshots `01-authenticated-messenger.png` through `12-logout-clears-miniapp-session-and-execution.png`
-  - `global-dharma-user-journey.webm`
-  - `global-dharma-user-journey-restart-logout.webm`
-  - full parity Playwright `trace.zip`
+- Exact-base head: `8701a3ed2b8dbbc4bee36590708e22e0bae9c9e0`, merged with then-canonical `main@9f8ab6fd960c8563d2ee8c1c58b1d421f734c1b4` before validation.
+- Electron run: `34069692447` — real Linux Rust Host simulated-user step `success`.
+- Evidence artifact: `10000096527`, SHA256 `4e19cb1c38806bc61ee1bb117df86675d5ca30de77f1930b096a35adbbe12781`.
+- Final docs+code head on that base: `0eff459d741045dfedf963359cfa1f7963206eff`.
+- Final-head runs on that now-superseded base:
+  - Electron `34069939145` — simulated-user and aggregate result `success`; artifact `10000160399`, SHA256 `7ac62cf403334686bd5d9b449145c15154b616c637f3cef47e8b19a348cd0c6c`.
+  - CI `34069939158` — `success`.
+  - Project portfolio governance `34069939151` — `success`.
+  - Global Dharma Web Service Contract `34069939157` — `success`, including Backend MCP/runtime/account and CNY 1080 order/webhook/refund/restore contracts.
+- Evidence present in `10000160399`:
+  - focused entry screenshots `01-search-miniapp-finds-global-dharma.png`, `02-global-dharma-installed-from-miniapp-search.png`;
+  - `miniapp-search-entry-user-journey.webm` plus focused `trace.zip`;
+  - full parity screenshots `01-authenticated-messenger.png` through `12-logout-clears-miniapp-session-and-execution.png`;
+  - `global-dharma-user-journey.webm`, `global-dharma-user-journey-restart-logout.webm`, full parity `trace.zip`, Playwright report.
+
+## Latest canonical-main synchronization
+
+- While the prior final-head security matrix was still running, canonical `main` advanced via Android-only PR `#2480` to `0c482add8711801151d397edf6b725dd7d72286e`.
+- `#2480` changed only Android public-MCP E2E/contract/task files and did not overlap the four Windows/Desktop files in `#2476`.
+- Fail-closed action: discard the older-base merge conclusion, merge latest canonical main into the Windows branch, and rerun all final gates on the resulting exact-base head. No prior green run may substitute for this rerun.
 
 ## Remaining gates
 
-1. Re-run required PR gates on the final docs+code head and fail closed on any new semantic regression or canonical-main drift.
-2. Protected merge #2476 only after required gates are green.
-3. On exact merged canonical main, require the Windows matrix/package gate and post-main exact-SHA Release delivery.
-4. Because existing `windows-interactive-app-e2e.yml` hard-waits for live `@fabushi test`, close the separate plugin-independent packaged Windows Global Dharma acceptance gap as a new atomic task/PR, reusing the already-merged macOS exact-Release simulated-user pattern rather than blocking on the device plugin.
+1. Required PR gates must be green on the final head whose ancestry includes `main@0c482add8711801151d397edf6b725dd7d72286e`; any further canonical-main drift reopens this gate.
+2. Protected merge #2476 only after those exact-head gates are green.
+3. On exact merged canonical main, require Windows matrix/package evidence and post-main exact-SHA Release delivery.
+4. Existing `windows-interactive-app-e2e.yml` hard-waits for live `@fabushi test`; close the separate plugin-independent packaged Windows Global Dharma acceptance gap in a new atomic task/PR by reusing the merged macOS exact-Release simulated-user pattern.
 5. Final release acceptance stays `PENDING` until the latest Windows Release asset is installed/tested from its exact source SHA and video/screenshots/trace/report/log links are read back from GitHub.
