@@ -5,12 +5,19 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Fabushi Computer Control</title>
   <style>
-    body { width: 290px; margin: 0; padding: 16px; color: #171717; font: 14px/1.45 system-ui, sans-serif; }
+    body { width: 340px; margin: 0; padding: 16px; color: #171717; font: 14px/1.45 system-ui, sans-serif; }
     h1 { margin: 0 0 8px; font-size: 16px; }
+    h2 { margin: 18px 0 8px; padding-top: 14px; border-top: 1px solid #e5e7eb; font-size: 14px; }
     p { margin: 6px 0 14px; color: #555; }
     button { width: 100%; padding: 10px 12px; border: 0; border-radius: 8px; color: white; background: #1677ff; font-weight: 650; cursor: pointer; }
-    #bridge, #details { margin-top: 10px; font-size: 12px; overflow-wrap: anywhere; }
-    #details { color: #777; white-space: pre-wrap; }
+    button.secondary { width: auto; padding: 5px 8px; font-size: 12px; }
+    button.danger { background: #b42318; }
+    #bridge, #details, #userscript-status, .userscript-meta { margin-top: 10px; font-size: 12px; overflow-wrap: anywhere; }
+    #details, .userscript-meta { color: #777; white-space: pre-wrap; }
+    .switch { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+    .userscript-item { margin-top: 10px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .userscript-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .userscript-header label { display: flex; align-items: center; gap: 7px; min-width: 0; }
   </style>
 </head>
 <body>
@@ -19,6 +26,12 @@
   <button id="toggle">重新连接本机服务</button>
   <div id="bridge"></div>
   <div id="details"></div>
+
+  <h2>用户脚本</h2>
+  <label class="switch"><input id="userscript-consent" type="checkbox">允许 Fabushi 运行已安装用户脚本</label>
+  <p>默认关闭。脚本只能由 Fabushi 市场安装，不会从 @require/@resource 或远程 URL 动态加载代码；安装后仍需逐个启用。</p>
+  <div id="userscript-status"></div>
+  <div id="userscript-list"></div>
   <script src="popup.js"></script>
 </body>
 </html>
