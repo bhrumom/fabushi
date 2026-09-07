@@ -48,18 +48,29 @@ function chunk(type, data = Buffer.alloc(0)) {
   return Buffer.concat([length, name, data, crc]);
 }
 
-function encodePng(width, height, rgba) {
+function encodePng(width, height, rgba, { alpha = false } = {}) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
-  ihdr[9] = 6;
-  const stride = width * 4;
+  ihdr[9] = alpha ? 6 : 2;
+  const channels = alpha ? 4 : 3;
+  const stride = width * channels;
   const raw = Buffer.alloc((stride + 1) * height);
   for (let y = 0; y < height; y += 1) {
     const row = y * (stride + 1);
     raw[row] = 0;
-    rgba.copy(raw, row + 1, y * stride, (y + 1) * stride);
+    if (alpha) {
+      rgba.copy(raw, row + 1, y * width * 4, (y + 1) * width * 4);
+      continue;
+    }
+    for (let x = 0; x < width; x += 1) {
+      const source = (y * width + x) * 4;
+      const target = row + 1 + x * 3;
+      raw[target] = rgba[source];
+      raw[target + 1] = rgba[source + 1];
+      raw[target + 2] = rgba[source + 2];
+    }
   }
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -149,7 +160,7 @@ function renderIcon(size, { transparent = false, safeZone = false } = {}) {
       for (let i = 0; i < 4; i += 1) rgba[index + i] = Math.round(accum[i] / offsets.length);
     }
   }
-  return encodePng(size, size, rgba);
+  return encodePng(size, size, rgba, { alpha: transparent });
 }
 
 function write(file, content) {
