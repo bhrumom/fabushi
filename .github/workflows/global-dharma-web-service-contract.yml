@@ -8,7 +8,20 @@ on:
       - 'frontend/apps/web/src/app/miniapps/[id]/**'
       - 'projects/telegram-fabushi-integration/**'
       - 'projects/fabushi-account-access-control/**'
+      - 'app-version.json'
       - '.github/workflows/global-dharma-web-service-contract.yml'
+      - '.github/workflows/macos-global-dharma-packaged-e2e.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ai-backend/**'
+      - 'fabushi/web/tests/global-dharma-*.test.js'
+      - 'frontend/apps/web/src/app/miniapps/[id]/**'
+      - 'projects/telegram-fabushi-integration/**'
+      - 'projects/fabushi-account-access-control/**'
+      - 'app-version.json'
+      - '.github/workflows/global-dharma-web-service-contract.yml'
+      - '.github/workflows/macos-global-dharma-packaged-e2e.yml'
   workflow_dispatch:
 
 permissions:
