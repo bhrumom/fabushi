@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const workflowPath = new URL('../../.github/workflows/macos-global-dharma-packaged-e2e.yml', import.meta.url);
 const journeyPath = new URL('../../desktop/e2e/miniapp-bot-parity.spec.ts', import.meta.url);
+const serviceWorkflowPath = new URL('../../.github/workflows/global-dharma-web-service-contract.yml', import.meta.url);
 
 async function sources() {
   return Promise.all([readFile(workflowPath, 'utf8'), readFile(journeyPath, 'utf8')]);
@@ -63,6 +64,14 @@ test('macOS Global Dharma journey uses protected Fabushi account projection and 
   assert.match(journey, /loggedIn:\s*true/u);
   assert.match(journey, /tokenExposed:\s*false/u);
   assert.match(journey, /accessToken\|refreshToken\|bearer/i);
+});
+
+test('exact-SHA service entitlement evidence self-starts on canonical main release changes', async () => {
+  const serviceWorkflow = await readFile(serviceWorkflowPath, 'utf8');
+  assert.match(serviceWorkflow, /push:\s*\n\s*branches:\s*\[main\]/u);
+  assert.ok(serviceWorkflow.includes("- 'app-version.json'"));
+  assert.ok(serviceWorkflow.includes("- '.github/workflows/macos-global-dharma-packaged-e2e.yml'"));
+  assert.match(serviceWorkflow, /CNY 1080 order\/webhook\/refund\/restore contract/u);
 });
 
 test('packaged user journey covers search, install, Bot/WebMCP parity, CNY 1080 purchase/restore and local prayer-wheel authorization', async () => {

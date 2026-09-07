@@ -8,7 +8,9 @@ on:
       - '.github/workflows/android-interactive-app-e2e.yml'
       - '.github/workflows/native-android-release.yml'
       - 'chatgpt-vps-control/scripts/run-android-interactive-app-e2e.sh'
+      - 'chatgpt-vps-control/scripts/android-global-dharma-public-mcp-e2e.mjs'
       - 'chatgpt-vps-control/tests/android-interactive-app-e2e-contract.test.js'
+      - 'chatgpt-vps-control/tests/android-global-dharma-ci-self-drive-contract.test.js'
       - 'mobile/android/app/build.gradle'
       - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiCiBootstrap.kt'
       - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiRemoteDeviceGateway.kt'
@@ -17,6 +19,8 @@ on:
       - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/MiniAppPlatformBridge.kt'
       - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/MobileBotViewModel.kt'
       - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/GrokMobileShellAndroid.kt'
+      - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/GlobalDharmaHostShell.kt'
+      - 'mobile/android/app/src/main/java/com/ombhrum/fabushi/GlobalDharmaCommercePanel.kt'
 
 permissions:
   contents: read
@@ -42,7 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           bash -n chatgpt-vps-control/scripts/run-android-interactive-app-e2e.sh
-          node --test chatgpt-vps-control/tests/android-interactive-app-e2e-contract.test.js
+          node --check chatgpt-vps-control/scripts/android-global-dharma-public-mcp-e2e.mjs
+          node --test \
+            chatgpt-vps-control/tests/android-interactive-app-e2e-contract.test.js \
+            chatgpt-vps-control/tests/android-global-dharma-ci-self-drive-contract.test.js
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -88,7 +95,6 @@ jobs:
         working-directory: mobile/android
         run: ./gradlew --no-daemon --build-cache :app:compileDebugKotlin
 
-
       - name: Record Android Bot projection contract evidence
         if: always()
         shell: bash
@@ -96,10 +102,12 @@ jobs:
           set -euo pipefail
           mkdir -p android-bot-projection-contract-evidence
           git rev-parse HEAD > android-bot-projection-contract-evidence/head-sha.txt
-          node --test chatgpt-vps-control/tests/android-interactive-app-e2e-contract.test.js \
+          node --test \
+            chatgpt-vps-control/tests/android-interactive-app-e2e-contract.test.js \
+            chatgpt-vps-control/tests/android-global-dharma-ci-self-drive-contract.test.js \
             > android-bot-projection-contract-evidence/contract-test.txt 2>&1
-          grep -n -E 'readInstalledMiniApps|confirmInstalledMiniApp|canonical installed projection|Bot 刷新异常' \
-            mobile/android/app/src/main/java/com/ombhrum/fabushi/{MiniAppPlatformBridge.kt,MobileBotViewModel.kt,GrokMobileShellAndroid.kt} \
+          grep -n -E 'readInstalledMiniApps|confirmInstalledMiniApp|canonical installed projection|Bot 刷新异常|tools/list|restoreSharedRuntime|PRAYER_WHEEL_LIFETIME_SKU' \
+            mobile/android/app/src/main/java/com/ombhrum/fabushi/{MiniAppPlatformBridge.kt,MobileBotViewModel.kt,GrokMobileShellAndroid.kt,GlobalDharmaHostShell.kt,GlobalDharmaCommercePanel.kt} \
             > android-bot-projection-contract-evidence/projection-contract.txt
 
       - name: Upload Android Bot projection contract evidence
