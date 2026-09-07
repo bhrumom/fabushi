@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
@@ -28,14 +28,14 @@ function record(phase, data = {}) {
   process.stdout.write(`[android-global-dharma] ${phase} ${JSON.stringify(data)}\n`);
 }
 
+function adb(...args) {
+  return execFileSync("adb", args, { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 }).trim();
+}
+
 function screenshot(name) {
   const output = execFileSync("adb", ["exec-out", "screencap", "-p"], { encoding: null, maxBuffer: 20 * 1024 * 1024 });
   writeFileSync(join(stepDir, `${name}.png`), output);
   record("screenshot", { name });
-}
-
-function adb(...args) {
-  return execFileSync("adb", args, { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 }).trim();
 }
 
 function uiXml() {
@@ -193,12 +193,13 @@ function parseRelay(result, toolName) {
     throw new Error(`device_call ${toolName} returned no resultJson`);
   }
   const envelope = JSON.parse(structured.resultJson);
-  if (envelope?.isError === true || envelope?.ok === false) {
+  if (envelope?.ok === false || envelope?.isError === true) {
     throw new Error(`device_call ${toolName} returned an error: ${JSON.stringify(envelope).slice(0, 1200)}`);
   }
-  const payload = envelope?.structuredContent && typeof envelope.structuredContent === "object"
-    ? envelope.structuredContent
-    : envelope;
+  const resultEnvelope = envelope?.result && typeof envelope.result === "object" ? envelope.result : envelope;
+  const payload = resultEnvelope?.structuredContent && typeof resultEnvelope.structuredContent === "object"
+    ? resultEnvelope.structuredContent
+    : resultEnvelope;
   record("semantic-call", { toolName, ok: true, screen: payload?.screen, generation: payload?.generation });
   return payload;
 }
@@ -288,7 +289,7 @@ try {
     await action("grok-mobile-legacy", "invoke");
     await new Promise((resolve) => setTimeout(resolve, 700));
   }
-  current = await waitSnapshot((value) => value.screen === "home", "legacy Fabushi home");
+  await waitSnapshot((value) => value.screen === "home", "legacy Fabushi home");
   await action("profile-avatar", "invoke");
   await waitElement("marketplace-entry", "present");
   await action("marketplace-entry", "invoke");
@@ -302,9 +303,7 @@ try {
 
   current = await snapshot();
   const install = (current.elements || []).find((item) => item?.agentId === "install-global-dharma");
-  if (install?.enabled === true) {
-    await action("install-global-dharma", "invoke");
-  }
+  if (install?.enabled === true) await action("install-global-dharma", "invoke");
   await waitSnapshot(
     (value) => (value.elements || []).some((item) => item?.agentId === "host-status" && String(item?.name || "").includes("global-dharma 已安装")),
     "canonical Global Dharma installed state",
@@ -312,6 +311,8 @@ try {
   );
   screenshot("130-global-dharma-installed");
 
+  await action("marketplace-back", "invoke");
+  await waitSnapshot((value) => value.screen === "home", "return to Fabushi home");
   await action("app-shell", "pressKey", "BACK");
   await waitSnapshot((value) => value.screen === "grok-home", "Grok Messenger home");
   await waitElement("grok-bot-global-dharma-bot", "present", 30_000);
@@ -321,25 +322,23 @@ try {
   await waitElement("mobile-bot-open-miniapp", "enabled", 30_000);
   screenshot("150-global-dharma-bot-open");
 
-  await action("mobile-bot-draft", "setValue", "please show status now");
+  await action("mobile-bot-draft", "setValue", "现在运行到哪里？请查看状态");
   await action("mobile-bot-send", "invoke");
   await waitSnapshot(
     (value) => value.screen === "bot-chat" && (value.elements || []).some((item) => item?.agentId === "mobile-bot-send" && item?.enabled === false),
-    "Bot natural-language command completes",
+    "Bot natural-language status command completes",
     60_000,
-  ).catch(async () => waitSnapshot(
-    (value) => value.screen === "bot-chat" && (value.elements || []).some((item) => item?.agentId === "mobile-bot-send"),
-    "Bot natural-language command returns to idle",
-    60_000,
-  ));
+  );
   await assertElement("mobile-bot-error", "absent");
   screenshot("160-bot-webmcp-command-complete");
+  record("bot-natural-language-verified", { input: "现在运行到哪里？请查看状态", expectedTool: "status" });
 
   await action("mobile-bot-open-miniapp", "invoke");
   await waitForUiText("本地 WebMCP 已连接", 45_000);
   await waitForUiText("Fabushi 已登录", 45_000);
-  screenshot("170-miniapp-web-ui-synced");
-  record("miniapp-opened", { webMcp: true, autoLogin: true });
+  await waitForUiText("Bot / Web UI 同一共享状态", 60_000);
+  screenshot("170-miniapp-web-ui-shared-runtime");
+  record("miniapp-opened", { webMcp: true, autoLogin: true, sharedRuntimeRestored: true });
 
   const beforePurchaseXml = uiXml();
   const alreadyAllowed = beforePurchaseXml.includes("本地转经轮：已解锁");
@@ -348,28 +347,33 @@ try {
     await waitForUiText("本地转经轮：已解锁", 45_000);
     await waitForUiText("¥1080 买断权益已由服务端确认", 45_000);
     screenshot("181-purchase-entitlement-confirmed");
-    record("purchase-verified", { amountMinor: 108000, currency: "CNY", sku: "prod.global-dharma.local-prayer-wheel.lifetime" });
+    record("purchase-verified", {
+      sku: "local-prayer-wheel.lifetime",
+      productId: "prod.global-dharma.local-prayer-wheel.lifetime",
+      amountMinor: 108000,
+      currency: "CNY",
+      serverEntitlementAllowed: true,
+    });
   } else {
-    record("purchase-already-entitled", { allowed: true });
+    record("purchase-preexisting-entitlement", { serverEntitlementAllowed: true });
   }
 
   await tapUiText("恢复购买", "190-restore-requested");
   await waitForUiText("权益恢复完成", 45_000);
   await waitForUiText("本地转经轮：已解锁", 45_000);
   screenshot("191-restore-entitlement-confirmed");
-  record("restore-verified", { allowed: true });
+  record("restore-verified", { serverEntitlementAllowed: true });
 
   adb("shell", "input", "keyevent", "4");
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  current = await waitSnapshot((value) => value.screen === "bot-chat", "return from Mini App to Bot", 30_000);
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  await waitSnapshot((value) => value.screen === "bot-chat", "return from Mini App to Bot", 30_000);
   await action("mobile-bot-close", "invoke");
   await waitSnapshot((value) => value.screen === "grok-home", "return to Grok home", 30_000);
   await action("grok-mobile-legacy", "invoke");
   await waitSnapshot((value) => value.screen === "home", "legacy home before logout", 30_000);
   await action("profile-avatar", "invoke");
-  await waitElement("mobile-logout", "present", 20_000);
   screenshot("198-before-logout");
-  await action("mobile-logout", "invoke");
+  await tapUiText("退出登录", "199-logout");
   record("journey-complete", { status: "passed-logged-out" });
 } finally {
   await client.close().catch(() => {});
