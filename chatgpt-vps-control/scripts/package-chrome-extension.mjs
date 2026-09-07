@@ -53,6 +53,21 @@ try {
 } catch (error) {
   throw new Error("Production ZIP creation requires the standard `zip` executable on PATH.", { cause: error });
 }
+
+let archivedEntries;
+try {
+  archivedEntries = execFileSync("unzip", ["-Z1", zipPath], { encoding: "utf8" })
+    .split(/\r?\n/)
+    .map((entry) => entry.replace(/^\.\//, ""))
+    .filter((entry) => entry && !entry.endsWith("/"))
+    .sort();
+} catch (error) {
+  throw new Error("Production ZIP verification requires the standard `unzip` executable on PATH.", { cause: error });
+}
+if (JSON.stringify(archivedEntries) !== JSON.stringify(stagedEntries)) {
+  throw new Error(`ZIP content verification failed. staged=${stagedEntries.join(",")} archived=${archivedEntries.join(",")}`);
+}
+
 const zipBytes = await readFile(zipPath);
 const checksum = createHash("sha256").update(zipBytes).digest("hex");
 await writeFile(checksumsPath, `${checksum}  ${basename(zipPath)}\n`, "utf8");
@@ -61,4 +76,4 @@ console.log(`Packaged Fabushi Chrome extension ${version}`);
 console.log(`Staging: ${stage}`);
 console.log(`ZIP: ${zipPath} (${bytes} bytes)`);
 console.log(`SHA-256: ${checksum}`);
-console.log(`Files: ${stagedEntries.join(", ")}`);
+console.log(`Verified ZIP files: ${archivedEntries.join(", ")}`);
