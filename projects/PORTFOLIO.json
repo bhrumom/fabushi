@@ -114,7 +114,7 @@
       "authoritative_path": "projects/fabushi-repository-history-slimming",
       "status": "active",
       "registered_at": "2026-09-07",
-      "first_canonical_main_commit": null,
+      "first_canonical_main_commit": "9556afe338bc05f268b9bcdf43a09a76ce332327",
       "legacy_project_ids": []
     }
   ]
