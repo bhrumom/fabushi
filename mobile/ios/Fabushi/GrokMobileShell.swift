@@ -459,7 +459,7 @@ internal struct GrokMobileShell: View {
     @State private var legacyOpen = false
 
     var body: some View {
-        Group {
+        ZStack {
         if model.onboardingStep < 3 || !model.authResolved || !model.loggedIn {
             ContentView(model: model, messaging: messaging, appAgentSurface: appAgentSurface)
         } else if let selectedBot {
@@ -500,6 +500,7 @@ internal struct GrokMobileShell: View {
                 .task(id: appAgentSurfaceFingerprint) { publishAppAgentSurface() }
         }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .fullScreenCover(item: $openedMiniApp) { plugin in
             MiniAppWebMcpSurface(plugin: plugin, model: model)
         }
