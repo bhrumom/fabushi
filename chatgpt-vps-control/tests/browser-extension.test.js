@@ -13,7 +13,7 @@ import {
   stopBrowserExtensionBridgeForTests,
 } from "../lib/browser-extension-bridge.js";
 import { browserExtensionPaths, NATIVE_HOST_NAME } from "../lib/browser-extension-paths.js";
-import { browserExtensionStatus, installBrowserExtension } from "../lib/browser-extension-install.js";
+import { browserExtensionStatus, CHROME_PLATFORM_NATIVE_HOST_NAME, installBrowserExtension } from "../lib/browser-extension-install.js";
 import { browserSessionCua, browserSessionUtility, listBrowserSessions } from "../lib/browser-session.js";
 
 function lineClient(path) {
@@ -52,7 +52,7 @@ async function waitFor(check, timeout = 2_000) {
   throw new Error("Timed out waiting for browser extension test event.");
 }
 
-test("browser extension install creates a stable isolated extension and allow-listed native host", async () => {
+test("browser extension install creates a stable isolated first-class platform and two allow-listed native hosts", async () => {
   const root = await mkdtemp(join(tmpdir(), "browser-extension-install-"));
   const nativeDir = join(root, "native-manifests");
   const oldHome = process.env.COMPUTER_BROWSER_EXTENSION_HOME;
@@ -70,14 +70,23 @@ test("browser extension install creates a stable isolated extension and allow-li
     assert.ok(manifest.permissions.includes("debugger"));
     assert.ok(manifest.permissions.includes("tabGroups"));
     assert.ok(manifest.permissions.includes("webNavigation"));
-    assert.deepEqual(manifest.host_permissions, ["https://chatgpt.com/*", "https://chat.openai.com/*"]);
-    const native = JSON.parse(await readFile(join(nativeDir, `${NATIVE_HOST_NAME}.json`), "utf8"));
-    assert.deepEqual(native.allowed_origins, [`chrome-extension://${first.extensionId}/`]);
-    assert.equal(native.type, "stdio");
+    assert.equal(manifest.permissions.includes("userScripts"), false);
+    assert.equal(Boolean(manifest.host_permissions?.length), false);
+    const browserNative = JSON.parse(await readFile(join(nativeDir, `${NATIVE_HOST_NAME}.json`), "utf8"));
+    const platformNative = JSON.parse(await readFile(join(nativeDir, `${CHROME_PLATFORM_NATIVE_HOST_NAME}.json`), "utf8"));
+    assert.deepEqual(browserNative.allowed_origins, [`chrome-extension://${first.extensionId}/`]);
+    assert.deepEqual(platformNative.allowed_origins, [`chrome-extension://${first.extensionId}/`]);
+    assert.equal(browserNative.type, "stdio");
+    assert.equal(platformNative.type, "stdio");
     const launcher = await readFile(first.launcher, "utf8");
+    const platformLauncher = await readFile(first.platformLauncher, "utf8");
     assert.ok(launcher.includes(privateHost));
+    assert.match(platformLauncher, /chrome-platform-host\.mjs/);
     assert.equal(first.runtime, resolve("."));
-    assert.equal((await browserExtensionStatus()).installed, true);
+    const status = await browserExtensionStatus();
+    assert.equal(status.installed, true);
+    assert.equal(status.platform, "chrome-extension");
+    assert.equal(status.version, "0.3.0");
   } finally {
     if (oldHome === undefined) delete process.env.COMPUTER_BROWSER_EXTENSION_HOME; else process.env.COMPUTER_BROWSER_EXTENSION_HOME = oldHome;
     await rm(root, { recursive: true, force: true });
@@ -214,7 +223,7 @@ test("native messaging host reconnects and re-registers after the local bridge r
   }
 });
 
-test("packaged extension contains no remotely hosted executable code", async () => {
+test("legacy extension source still contains no remotely hosted executable code", async () => {
   const manifest = JSON.parse(await readFile(resolve("extension/manifest.json"), "utf8"));
   const serviceWorker = await readFile(resolve("extension/service-worker.js"), "utf8");
   const background = await readFile(resolve("extension/background.js"), "utf8");
@@ -235,7 +244,7 @@ test("packaged extension contains no remotely hosted executable code", async () 
   assert.match(background, /HEARTBEAT_ALARM/);
 });
 
-test("extension app is the popup and Marketplace filters userscripts to chrome-extension", async () => {
+test("legacy extension Marketplace remains intact but is not the first-class production package", async () => {
   const manifest = JSON.parse(await readFile(resolve("extension/manifest.json"), "utf8"));
   const appHtml = await readFile(resolve("extension/app.html"), "utf8");
   const appJs = await readFile(resolve("extension/app.js"), "utf8");
