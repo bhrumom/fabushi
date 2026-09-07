@@ -1,0 +1,368 @@
+name: macOS Global Dharma packaged E2E
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/macos-global-dharma-packaged-e2e.yml'
+      - 'chatgpt-vps-control/tests/macos-global-dharma-packaged-e2e-contract.test.js'
+      - 'desktop/e2e/miniapp-bot-parity.spec.ts'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: macos-global-dharma-${{ github.event.release.id || github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: macOS Global Dharma CI ownership contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout workflow source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Prove the focused macOS gate is plugin-independent
+        run: node --test chatgpt-vps-control/tests/macos-global-dharma-packaged-e2e-contract.test.js
+
+  packaged-journey:
+    name: Exact Release Global Dharma user journey
+    needs: contract
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'desktop-')) }}
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-macos-app
+      FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+      MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+
+    steps:
+      - name: Checkout exact Release source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.target_commitish || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - id: source
+        name: Freeze exact source and isolated evidence paths
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          test -n "$source_sha"
+          evidence="$GITHUB_WORKSPACE/macos-global-dharma-evidence"
+          account_dir="$RUNNER_TEMP/fabushi-global-dharma-account"
+          app_session_dir="$RUNNER_TEMP/fabushi-global-dharma-app-session"
+          mkdir -p "$evidence/release" "$evidence/service" "$evidence/steps" "$account_dir" "$app_session_dir"
+          chmod 700 "$account_dir" "$app_session_dir"
+          {
+            echo "SOURCE_SHA=$source_sha"
+            echo "EVIDENCE_DIR=$evidence"
+            echo "FABUSHI_ACCOUNT_SESSION_FILE=$account_dir/session.json"
+            echo "FABUSHI_CI_ACCOUNT_SESSION_FILE=$app_session_dir/session.json"
+          } >> "$GITHUB_ENV"
+          echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "source_sha=$source_sha"
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "run_attempt=$GITHUB_RUN_ATTEMPT"
+            echo "event=$GITHUB_EVENT_NAME"
+            echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "$evidence/source.env"
+
+      - name: Start whole-session macOS recording before Release install
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/000-recording-start.png"
+          RUNNER_TRACKING_ID= nohup /usr/sbin/screencapture -v -V 2100 -D 1 "$EVIDENCE_DIR/macos-session.mov" \
+            > "$EVIDENCE_DIR/screencapture.log" 2>&1 &
+          recorder_pid=$!
+          echo "$recorder_pid" > "$EVIDENCE_DIR/screencapture.pid"
+          sleep 2
+          kill -0 "$recorder_pid"
+
+      - name: Set up Node.js with reusable npm cache
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            chatgpt-vps-control/package-lock.json
+            desktop/package-lock.json
+
+      - name: Install only account-helper and Playwright dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix chatgpt-vps-control --ignore-scripts --prefer-offline --no-audit --no-fund
+          npm ci --prefix desktop --prefer-offline --no-audit --no-fund
+          (cd desktop && npx playwright install ffmpeg)
+
+      - id: release
+        name: Resolve and install the exact published macOS Release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source_sha="$SOURCE_SHA"
+          release_json="$EVIDENCE_DIR/release/release.json"
+          if [ "$GITHUB_EVENT_NAME" = release ]; then
+            tag="$(jq -r '.release.tag_name' "$GITHUB_EVENT_PATH")"
+            target="$(jq -r '.release.target_commitish' "$GITHUB_EVENT_PATH")"
+            if ! [[ "$target" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "Desktop test Release target_commitish must be an exact commit SHA, got: $target" >&2
+              exit 1
+            fi
+            resolved_target="$(gh api "repos/$GITHUB_REPOSITORY/commits/$target" --jq .sha)"
+            test "$resolved_target" = "$source_sha"
+            gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > "$release_json"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$EVIDENCE_DIR/release/releases.json"
+            jq '[.[] | select(.draft == false)] | sort_by(.published_at // .created_at) | reverse' \
+              "$EVIDENCE_DIR/release/releases.json" > "$EVIDENCE_DIR/release/candidates.json"
+            found=false
+            resolved_target=''
+            count="$(jq 'length' "$EVIDENCE_DIR/release/candidates.json")"
+            for ((index=0; index<count; index++)); do
+              target="$(jq -r ".[$index].target_commitish // empty" "$EVIDENCE_DIR/release/candidates.json")"
+              [ -n "$target" ] || continue
+              resolved_target="$(gh api "repos/$GITHUB_REPOSITORY/commits/$target" --jq .sha 2>/dev/null || true)"
+              [ "$resolved_target" = "$source_sha" ] || continue
+              jq ".[$index]" "$EVIDENCE_DIR/release/candidates.json" > "$release_json"
+              found=true
+              break
+            done
+            test "$found" = true
+            test "$resolved_target" = "$source_sha"
+            tag="$(jq -r .tag_name "$release_json")"
+          fi
+          jq -e '.draft == false' "$release_json" >/dev/null
+          jq '[.assets[] | select((.name // "") | test("^fabushi-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$"))] | first' \
+            "$release_json" > "$EVIDENCE_DIR/release/asset.json"
+          jq -e 'type == "object" and (.browser_download_url | type == "string")' "$EVIDENCE_DIR/release/asset.json" >/dev/null
+          asset_name="$(jq -r .name "$EVIDENCE_DIR/release/asset.json")"
+          release_id="$(jq -r .id "$release_json")"
+          asset_id="$(jq -r .id "$EVIDENCE_DIR/release/asset.json")"
+          published_at="$(jq -r .published_at "$release_json")"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$asset_name" --dir "$EVIDENCE_DIR/release"
+          archive="$EVIDENCE_DIR/release/$asset_name"
+          test -s "$archive"
+          actual_sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
+          declared_digest="$(jq -r '.digest // ""' "$EVIDENCE_DIR/release/asset.json")"
+          if [[ "$declared_digest" == sha256:* ]]; then
+            test "$actual_sha" = "${declared_digest#sha256:}"
+          fi
+          printf '%s  %s\n' "$actual_sha" "$asset_name" > "$EVIDENCE_DIR/release/SHA256SUMS.txt"
+          stage="$RUNNER_TEMP/fabushi-global-dharma-release"
+          rm -rf "$stage"
+          mkdir -p "$stage"
+          ditto -x -k "$archive" "$stage"
+          shopt -s nullglob
+          top_level_apps=("$stage"/*.app)
+          test "${#top_level_apps[@]}" -eq 1
+          sudo rm -rf /Applications/Fabushi.app
+          sudo ditto "${top_level_apps[0]}" /Applications/Fabushi.app
+          app=/Applications/Fabushi.app
+          executable="$app/Contents/MacOS/fabushi"
+          test -x "$executable"
+          file "$executable" | tee "$EVIDENCE_DIR/release/executable-file.txt"
+          grep -qi arm64 "$EVIDENCE_DIR/release/executable-file.txt"
+          codesign --verify --deep --strict --verbose=2 "$app" 2> "$EVIDENCE_DIR/release/codesign-verify.log"
+          spctl --assess --type execute --verbose=2 "$app" 2> "$EVIDENCE_DIR/release/gatekeeper-assess.log"
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+          expected="${asset_name#fabushi-}"
+          expected="${expected%-macos-arm64.zip}"
+          test "$bundle_id" = com.ombhrum.fabushi
+          test "$version" = "$expected"
+          {
+            echo "tag=$tag"
+            echo "release_id=$release_id"
+            echo "asset_id=$asset_id"
+            echo "asset_name=$asset_name"
+            echo "version=$version"
+            echo "published_at=$published_at"
+            echo "executable=$executable"
+          } >> "$GITHUB_OUTPUT"
+          /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/001-release-installed.png"
+
+      - name: Login protected Fabushi test account and export bounded Mini App session
+        shell: bash
+        env:
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$FABUSHI_CI_TEST_USERNAME"
+          test -n "$FABUSHI_CI_TEST_PASSWORD"
+          node chatgpt-vps-control/scripts/login-ci-test-account.mjs
+          node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
+          chmod 600 "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
+          jq -e '.refreshToken | not' "$FABUSHI_CI_ACCOUNT_SESSION_FILE" >/dev/null
+          /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/002-account-session-ready.png"
+
+      - id: service
+        name: Require exact-SHA Global Dharma Web/service entitlement contract
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/global-dharma-web-service-contract.yml/runs?status=success&per_page=100" \
+            > "$EVIDENCE_DIR/service/runs.json"
+          jq -e --arg sha "$SOURCE_SHA" \
+            '[.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success")] | sort_by(.updated_at // .created_at) | reverse | first' \
+            "$EVIDENCE_DIR/service/runs.json" > "$EVIDENCE_DIR/service/exact-source-run.json"
+          run_id="$(jq -r .id "$EVIDENCE_DIR/service/exact-source-run.json")"
+          run_url="$(jq -r .html_url "$EVIDENCE_DIR/service/exact-source-run.json")"
+          test -n "$run_id"
+          test "$run_id" != null
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+
+      - id: journey
+        name: Run only the packaged Global Dharma simulated-user journey
+        continue-on-error: true
+        working-directory: desktop
+        shell: bash
+        env:
+          FABUSHI_ELECTRON_EXECUTABLE: /Applications/Fabushi.app/Contents/MacOS/fabushi
+          FABUSHI_FEATURE_HOST_MODE: test
+          FABUSHI_E2E: '1'
+        run: npx playwright test e2e/miniapp-bot-parity.spec.ts
+
+      - name: Stop whole-session recorder
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/999-final.png" 2>/dev/null
+          if [ -f "$EVIDENCE_DIR/screencapture.pid" ]; then
+            recorder_pid="$(cat "$EVIDENCE_DIR/screencapture.pid")"
+            kill -TERM "$recorder_pid" 2>/dev/null || true
+            for _ in $(seq 1 20); do
+              kill -0 "$recorder_pid" 2>/dev/null || break
+              sleep 1
+            done
+          fi
+
+      - id: evidence
+        name: Verify Global Dharma screenshots, videos, trace and reports
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          JOURNEY_OUTCOME: ${{ steps.journey.outcome }}
+          SERVICE_OUTCOME: ${{ steps.service.outcome }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+          RELEASE_ASSET_ID: ${{ steps.release.outputs.asset_id }}
+          RELEASE_ASSET_NAME: ${{ steps.release.outputs.asset_name }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          SERVICE_RUN_ID: ${{ steps.service.outputs.run_id }}
+          SERVICE_RUN_URL: ${{ steps.service.outputs.run_url }}
+        run: |
+          set -euo pipefail
+          expected_screenshots=(
+            '01-authenticated-messenger.png'
+            '02-marketplace-search-global-dharma.png'
+            '03-marketplace-installed.png'
+            '04-contact-bot-projection.png'
+            '05-bot-natural-language-webmcp-complete.png'
+            '06-open-app-same-revision-account-and-paywall.png'
+            '07-cny1080-lifetime-entitlement-purchased.png'
+            '08-entitlement-restored.png'
+            '09-bot-starts-entitled-local-prayer-wheel.png'
+            '10-open-app-follows-bot-prayer-wheel-revision.png'
+            '11-restart-recovers-history-state-entitlement-cloud.png'
+            '12-logout-clears-miniapp-session-and-execution.png'
+          )
+          for screenshot in "${expected_screenshots[@]}"; do
+            found="$(find desktop/test-results -type f -name "$screenshot" -print -quit 2>/dev/null || true)"
+            test -n "$found"
+          done
+          first_video="$(find desktop/test-results -type f -name 'global-dharma-user-journey.webm' -print -quit 2>/dev/null || true)"
+          restart_video="$(find desktop/test-results -type f -name 'global-dharma-user-journey-restart-logout.webm' -print -quit 2>/dev/null || true)"
+          trace="$(find desktop/test-results -type f -name 'trace.zip' -print -quit 2>/dev/null || true)"
+          test -n "$first_video"
+          test -s "$first_video"
+          test -n "$restart_video"
+          test -s "$restart_video"
+          test -n "$trace"
+          test -s "$trace"
+          test -s desktop/playwright-report/index.html
+          test -s "$EVIDENCE_DIR/macos-session.mov"
+          test "$JOURNEY_OUTCOME" = success
+          test "$SERVICE_OUTCOME" = success
+          test -n "$SERVICE_RUN_ID"
+          jq -n \
+            --arg sourceSha "$SOURCE_SHA" \
+            --arg releaseTag "$RELEASE_TAG" \
+            --arg releaseId "$RELEASE_ID" \
+            --arg releaseAssetId "$RELEASE_ASSET_ID" \
+            --arg releaseAssetName "$RELEASE_ASSET_NAME" \
+            --arg releaseVersion "$RELEASE_VERSION" \
+            --arg serviceRunId "$SERVICE_RUN_ID" \
+            --arg serviceRunUrl "$SERVICE_RUN_URL" \
+            --arg journeyOutcome "$JOURNEY_OUTCOME" \
+            --arg firstVideo "$first_video" \
+            --arg restartVideo "$restart_video" \
+            --arg trace "$trace" \
+            '{sourceSha:$sourceSha,release:{tag:$releaseTag,id:$releaseId,assetId:$releaseAssetId,assetName:$releaseAssetName,version:$releaseVersion},serviceContract:{runId:$serviceRunId,url:$serviceRunUrl},journeyOutcome:$journeyOutcome,evidence:{firstVideo:$firstVideo,restartVideo:$restartVideo,trace:$trace,htmlReport:"desktop/playwright-report/index.html",wholeSession:"macos-global-dharma-evidence/macos-session.mov"},verifiedAt:(now|todateiso8601)}' \
+            > "$EVIDENCE_DIR/report.json"
+
+      - name: Upload complete macOS Global Dharma evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-global-dharma-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            macos-global-dharma-evidence/**
+            desktop/playwright-report/**
+            desktop/test-results/**
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Upload downloadable Global Dharma video evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-global-dharma-videos-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            macos-global-dharma-evidence/macos-session.mov
+            desktop/test-results/**/*.webm
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Remove private account material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE" || true
+
+      - name: Enforce plugin-independent Global Dharma acceptance
+        if: always()
+        shell: bash
+        env:
+          JOURNEY_OUTCOME: ${{ steps.journey.outcome }}
+          SERVICE_OUTCOME: ${{ steps.service.outcome }}
+          EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
+        run: |
+          set -euo pipefail
+          test "$JOURNEY_OUTCOME" = success
+          test "$SERVICE_OUTCOME" = success
+          test "$EVIDENCE_OUTCOME" = success
+          echo "PASS: exact published macOS package completed Global Dharma search/install -> Bot -> natural-language WebMCP -> open-app revision parity -> bounded Fabushi session -> CNY 1080 test purchase/restore -> entitlement -> local prayer wheel -> restart -> logout without any external device-plugin prerequisite." >> "$GITHUB_STEP_SUMMARY"
