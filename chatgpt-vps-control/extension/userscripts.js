@@ -6,6 +6,7 @@ const STORAGE_KEYS = {
 const MAX_SCRIPT_BYTES = 256 * 1024;
 const MAX_MATCHES = 32;
 const ALLOWED_DECLARED_PERMISSIONS = new Set(["page-dom"]);
+const ALLOWED_MATCH_PATTERNS = new Set(["https://chatgpt.com/*", "https://chat.openai.com/*"]);
 const SCRIPT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,63}$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 let runtimeError = "";
@@ -24,6 +25,9 @@ function normalizeMatchPattern(value) {
   const match = pattern.match(/^https:\/\/(\*\.)?([a-z0-9.-]+)(?::\d+)?\/(.*)$/i);
   if (!match || !match[2] || match[2] === "*" || match[2].includes("..")) {
     throw new Error(`Unsupported user-script match pattern: ${pattern}`);
+  }
+  if (!ALLOWED_MATCH_PATTERNS.has(pattern)) {
+    throw new Error(`User-script match is outside this extension's approved host permissions: ${pattern}`);
   }
   return pattern;
 }
@@ -145,8 +149,19 @@ function registration(script) {
   };
 }
 
+async function ensureUserScriptsAvailable() {
+  if (!chrome.userScripts?.getScripts || !chrome.userScripts?.register || !chrome.userScripts?.unregister) {
+    throw new Error("Chrome userScripts API is unavailable. Enable Allow User Scripts in the extension details page.");
+  }
+  try {
+    await chrome.userScripts.getScripts();
+  } catch (error) {
+    throw new Error(`Chrome userScripts API is disabled: ${error?.message || String(error)}`);
+  }
+}
+
 async function clearRegistrations() {
-  if (!chrome.userScripts?.unregister) throw new Error("Chrome userScripts API is unavailable.");
+  await ensureUserScriptsAvailable();
   await chrome.userScripts.unregister();
 }
 
@@ -154,7 +169,9 @@ async function syncRegistrations() {
   runtimeError = "";
   try {
     const store = await loadStore();
-    await clearRegistrations();
+    await ensureUserScriptsAvailable();
+    await chrome.userScripts.configureWorld?.({ csp: "script-src 'self'; object-src 'none'", messaging: false });
+    await chrome.userScripts.unregister();
     if (!store.consent) return { registered: 0, skipped: store.scripts.length };
     const valid = [];
     for (const raw of store.scripts) {
@@ -188,8 +205,10 @@ function publicScript(script) {
 
 async function status() {
   const store = await loadStore();
+  let available = true;
+  try { await ensureUserScriptsAvailable(); } catch { available = false; }
   return {
-    available: Boolean(chrome.userScripts?.register && chrome.userScripts?.unregister),
+    available,
     consent: store.consent,
     runtimeError,
     scripts: store.scripts.map(publicScript),
@@ -260,6 +279,7 @@ void syncRegistrations();
 
 export {
   ALLOWED_DECLARED_PERMISSIONS,
+  ALLOWED_MATCH_PATTERNS,
   metadataDirectives,
   normalizeMatchPattern,
   normalizeScript,
