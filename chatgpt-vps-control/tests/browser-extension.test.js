@@ -229,3 +229,23 @@ test("packaged extension contains no remotely hosted executable code", async () 
   assert.match(background, /ensureAutomationGroup/);
   assert.match(background, /HEARTBEAT_ALARM/);
 });
+
+test("extension app is the popup and Marketplace filters userscripts to chrome-extension", async () => {
+  const manifest = JSON.parse(await readFile(resolve("extension/manifest.json"), "utf8"));
+  const appHtml = await readFile(resolve("extension/app.html"), "utf8");
+  const appJs = await readFile(resolve("extension/app.js"), "utf8");
+
+  assert.equal(manifest.action.default_popup, "app.html");
+  assert.match(appHtml, /Fabushi/);
+  assert.match(appHtml, /Chats/);
+  assert.match(appHtml, /Mini Apps/);
+  assert.match(appHtml, /Marketplace/);
+  assert.match(appHtml, /marketplace-search/);
+  assert.match(appHtml, /data-platform="chrome-extension"/);
+  assert.match(appJs, /MARKETPLACE_SECTION/);
+  assert.match(appJs, /item\.kind === "userscript"/);
+  assert.match(appJs, /currentPlatform === "chrome-extension"/);
+  assert.match(appJs, /item\.surfaces\.length === 1/);
+  assert.match(appJs, /normalizedSearchText/);
+  assert.match(appJs, /getVisibleMarketplaceItems/);
+});
