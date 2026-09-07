@@ -38,8 +38,8 @@ jobs:
         run: npm test
       - name: Build Chrome Web Store ZIP
         run: npm run chrome:package
-      - name: Record SHA-256
-        run: sha256sum dist/chrome-extension/*.zip | tee dist/chrome-extension/SHA256SUMS.txt
+      - name: Show SHA-256
+        run: cat dist/chrome-extension/SHA256SUMS.txt
       - name: Upload Web Store package
         uses: actions/upload-artifact@v4
         with:
