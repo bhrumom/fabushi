@@ -58,3 +58,13 @@ None for implementation. Existing interactive run `34067125800` remains suppleme
 ## Next action
 
 Implement the workflow + contract, open one atomic PR, use the narrow PR contract for fast feedback, protect-merge, then verify the newest exact-main Release and macOS packaged evidence before closing this task.
+
+## Execution update — 2026-09-07 macOS fast loop
+
+- Acceptance-path PR: `#2477`, final head `be7d3c775343ed26b7794317c9709e787f697a89`.
+- First focused contract run `34068461161`, job `101581303378`: FAILED only because the new asset-pattern contract over-escaped the workflow regex; the macOS packaged job was skipped, so no heavy runner was wasted.
+- Minimal contract-only repair commit: `be7d3c775343ed26b7794317c9709e787f697a89`.
+- Second focused contract run `34068511467`, job `101581446787`: plugin-independence/exact-release/evidence contract PASS.
+- Protected merge: `#2477` -> `main@694218dc9a427670fec610e458223646d2d4c461`; canonical main was re-read after merge.
+- Next governed macOS test SemVer: `1.2.54`, strictly newer than `1.2.53`; Android `versionCode=29` and iOS `CURRENT_PROJECT_VERSION=29` remain unchanged because this is a shared SemVer-only retest round.
+- 1.2.54 release PR/run/tag/asset plus release-triggered macOS Global Dharma packaged journey/video/screenshots/trace/report are `PENDING` until actually generated.
