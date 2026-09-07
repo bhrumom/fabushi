@@ -1,0 +1,25 @@
+project_id: FAB-P0010
+project_key: RHS
+legacy_project_ids: []
+name: Fabushi Repository History Slimming
+slug: fabushi-repository-history-slimming
+status: active
+repository: bhrumom/fabushi
+authoritative_branch: main
+authoritative_path: projects/fabushi-repository-history-slimming
+owner: repository-maintainers
+reviewers:
+  - repository-maintainers
+current_stage: baseline-and-prepared-rewrite
+risk_tier: tier-3
+security_classification: internal
+created_at: 2026-09-07
+updated_at: 2026-09-07
+target_finish: null
+related_projects:
+  - fabushi-project-governance
+  - fabushi-cicd-merge-governance
+source_systems:
+  - GitHub
+  - GitHub Actions
+  - isolated local rewrite sandbox

@@ -5,7 +5,7 @@
   "project_id_regex": "^FAB-P[0-9]{4}$",
   "allocation_policy": "monotonic-no-reuse",
   "ordering_basis": "first-formal-project-folder-commit-on-canonical-main",
-  "next_sequence": 10,
+  "next_sequence": 11,
   "projects": [
     {
       "project_id": "FAB-P0001",
@@ -104,6 +104,17 @@
       "status": "active",
       "registered_at": "2026-09-01",
       "first_canonical_main_commit": "9c7d16bf8bf57828adbb0bdb3d32ec0ba26abe6e",
+      "legacy_project_ids": []
+    },
+    {
+      "project_id": "FAB-P0010",
+      "project_key": "RHS",
+      "slug": "fabushi-repository-history-slimming",
+      "name": "Fabushi Repository History Slimming",
+      "authoritative_path": "projects/fabushi-repository-history-slimming",
+      "status": "active",
+      "registered_at": "2026-09-07",
+      "first_canonical_main_commit": null,
       "legacy_project_ids": []
     }
   ]
