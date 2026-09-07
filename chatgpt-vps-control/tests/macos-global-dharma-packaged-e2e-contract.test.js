@@ -40,7 +40,7 @@ test('macOS Global Dharma acceptance reuses an exact published package instead o
   assert.match(workflow, /target_commitish/u);
   assert.match(workflow, /resolved_target/u);
   assert.match(workflow, /test "\$resolved_target" = "\$source_sha"/u);
-  assert.match(workflow, /fabushi-\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+-macos-arm64/u);
+  assert.ok(workflow.includes('^fabushi-[0-9]+\\\\.[0-9]+\\\\.[0-9]+-macos-arm64\\\\.zip$'));
   assert.match(workflow, /codesign --verify --deep --strict/u);
   assert.match(workflow, /spctl --assess --type execute/u);
 
