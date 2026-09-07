@@ -5,6 +5,7 @@ import { join, relative, resolve, sep } from "node:path";
 
 const RUNTIME_ENTRIES = [
   "bin",
+  "chrome-platform",
   "extension",
   "lib",
   "native",
@@ -27,6 +28,10 @@ const REQUIRED_RUNTIME_PATHS = [
   "lib/fabushi-account-auth.js",
   "bin/fabushi-device-agent.js",
   "bin/fabushi-ci-account-login.js",
+  "chrome-platform/extension/manifest.json",
+  "chrome-platform/extension/app.html",
+  "chrome-platform/extension/app.js",
+  "chrome-platform/extension/service-worker.js",
   "extension/manifest.json",
   "lib/fabushi-computer-policy.js",
   "lib/device-agent.js",
@@ -41,6 +46,7 @@ const REQUIRED_RUNTIME_PATHS = [
   "native/macos/RequestService-Info.plist",
   "native/windows/computer-helper.ps1",
   "scripts/browser-extension-host.mjs",
+  "scripts/chrome-platform-host.mjs",
   "node_modules/@modelcontextprotocol/sdk/package.json",
   "node_modules/ws/package.json",
   "node_modules/zod/package.json",
@@ -77,8 +83,6 @@ async function hashEntry(hash, sourceRoot, relativePath) {
     return;
   }
   if (!metadata.isFile()) return;
-  // Permission bits are normalized by staging, packaging, and platform filesystems.
-  // Hash the runtime contents and layout, not transport-specific file modes.
   hash.update(`F\0${relativePath}\0`);
   hash.update(await readFile(absolutePath));
   hash.update("\0");
@@ -112,13 +116,14 @@ function runtimeResult(root, runtimeId, reused) {
     reused,
     cliPath: join(root, "bin", "chatgpt-computer-control.js"),
     browserHostPath: join(root, "scripts", "browser-extension-host.mjs"),
+    chromePlatformHostPath: join(root, "scripts", "chrome-platform-host.mjs"),
   };
 }
 
 /**
  * Copy the executable Node runtime out of a checkout (commonly under macOS
  * Documents) into the connector's private application-data directory. The
- * background service and Chrome native host must execute this staged copy so
+ * background service and Chrome native hosts must execute this staged copy so
  * macOS does not repeatedly attribute protected-folder reads to `node`.
  */
 export async function installPrivateRuntime({ sourceRoot, appHome }) {
@@ -127,8 +132,6 @@ export async function installPrivateRuntime({ sourceRoot, appHome }) {
   await mkdir(runtimeBase, { recursive: true, mode: 0o700 });
   await chmod(runtimeBase, 0o700).catch(() => {});
 
-  // A service already running from a staged bundle can reuse itself without
-  // copying or replacing files beneath its active module graph.
   if (isWithin(runtimeBase, resolvedSource)) {
     const manifest = await readManifest(join(resolvedSource, "runtime-manifest.json"));
     if (!manifest?.runtimeId || !await runtimeIsComplete(resolvedSource)) {
@@ -170,6 +173,7 @@ export async function installPrivateRuntime({ sourceRoot, appHome }) {
     await chmod(join(staging, "bin", "fabushi-device-agent.js"), 0o700).catch(() => {});
     await chmod(join(staging, "bin", "fabushi-ci-account-login.js"), 0o700).catch(() => {});
     await chmod(join(staging, "scripts", "browser-extension-host.mjs"), 0o700).catch(() => {});
+    await chmod(join(staging, "scripts", "chrome-platform-host.mjs"), 0o700).catch(() => {});
     await writeFile(join(staging, "runtime-manifest.json"), `${JSON.stringify({
       layoutVersion: RUNTIME_LAYOUT_VERSION,
       runtimeId,
@@ -177,8 +181,6 @@ export async function installPrivateRuntime({ sourceRoot, appHome }) {
       installedAt: new Date().toISOString(),
     }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 
-    // A deterministic content-addressed destination is safe to replace only
-    // when a prior interrupted install left it without a valid manifest.
     if (await pathExists(destination)) await rm(destination, { recursive: true, force: true });
     await rename(staging, destination);
   } catch (error) {
