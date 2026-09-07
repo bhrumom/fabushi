@@ -1,14 +1,31 @@
 {
   "manifest_version": 3,
-  "name": "Fabushi Computer Control Bridge",
+  "name": "Fabushi",
+  "short_name": "Fabushi",
   "version": "0.1.0",
   "minimum_chrome_version": "120",
-  "description": "Let your local Fabushi Computer Control service securely discover and claim signed-in Chrome tabs.",
-  "permissions": ["alarms", "debugger", "downloads", "nativeMessaging", "storage", "tabGroups", "tabs", "userScripts", "webNavigation"],
-  "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
-  "background": { "service_worker": "service-worker.js", "type": "module" },
+  "description": "Fabushi for Chrome: chats, mini apps, marketplace, and the local computer-control bridge.",
+  "permissions": [
+    "alarms",
+    "debugger",
+    "downloads",
+    "nativeMessaging",
+    "storage",
+    "tabGroups",
+    "tabs",
+    "userScripts",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
   "action": {
-    "default_title": "Fabushi",
+    "default_title": "Open Fabushi",
     "default_popup": "app.html"
   }
 }
