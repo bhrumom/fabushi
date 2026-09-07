@@ -1,0 +1,45 @@
+name: TFI M6 P0-001 atomic gate
+
+on:
+  pull_request:
+    branches:
+      - codex/tfi-m6-repair
+    paths:
+      - native/mahayana-messaging/src/engine.rs
+      - native/mahayana-messaging/src/service.rs
+      - native/mahayana-messaging/tests/m6_channels_topics_contract.rs
+      - .github/workflows/tfi-m6-p0-001-atomic-gate.yml
+      - projects/telegram-fabushi-integration/evidence/TFI-M6-P0-001/**
+      - projects/telegram-fabushi-integration/management/tasks/TFI-M6-P0-001-repair-compile-and-community-create-boundary.md
+      - projects/telegram-fabushi-integration/management/09-2026-09-04-P0-WBS.md
+      - projects/telegram-fabushi-integration/management/10-2026-09-04-P0-里程碑.md
+      - projects/telegram-fabushi-integration/management/11-2026-09-04-P0-验收追踪.md
+      - projects/telegram-fabushi-integration/management/12-2026-09-04-P0-风险与依赖.md
+      - projects/telegram-fabushi-integration/management/13-2026-09-04-P0-变更日志.md
+      - projects/telegram-fabushi-integration/management/wbs/M6.md
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tfi-m6-p0-001-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  atomic-contract:
+    name: Compile and run TFI-M6-P0-001 contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/mahayana-messaging
+      - name: Compile M6 contract test binary
+        run: cargo test --manifest-path native/mahayana-messaging/Cargo.toml --test m6_channels_topics_contract --no-run
+      - name: Run TFI-M6-P0-001 regressions
+        run: |
+          cargo test --manifest-path native/mahayana-messaging/Cargo.toml --test m6_channels_topics_contract respond_community_join_emits_participant_projection_only_when_approved
+          cargo test --manifest-path native/mahayana-messaging/Cargo.toml --test m6_channels_topics_contract community_backed_create_is_idempotent_and_update_cannot_reown_or_retype
+          cargo test --manifest-path native/mahayana-messaging/Cargo.toml --test m6_channels_topics_contract request_join_without_community_remains_community_not_found

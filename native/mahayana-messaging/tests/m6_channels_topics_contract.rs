@@ -614,6 +614,17 @@ fn slow_mode_and_moderation_are_enforced_by_the_rust_state_machine() {
             decided_at_ms: 10_102,
         })
         .unwrap();
+    {
+        let state = engine.state();
+        let group_id = ConversationId::new("group:m6");
+        let member_id = ActorId::new("human:member");
+        let community = &state.communities[&group_id];
+        assert_eq!(community.members[&member_id].status, MemberStatus::Banned);
+        assert!(!state.conversations[&group_id]
+            .participants
+            .iter()
+            .any(|participant| participant.actor_id == member_id));
+    }
     let banned_send_error = engine
         .execute(Command::QueueMessage {
             conversation_id: ConversationId::new("group:m6"),
@@ -631,7 +642,11 @@ fn slow_mode_and_moderation_are_enforced_by_the_rust_state_machine() {
         .unwrap_err();
     assert!(matches!(
         banned_send_error,
-        EngineError::CommunitySendRestricted(id) if id == ConversationId::new("group:m6")
+        EngineError::SenderNotParticipant {
+            conversation_id,
+            actor_id
+        } if conversation_id == ConversationId::new("group:m6")
+            && actor_id == ActorId::new("human:member")
     ));
 
     let final_community = &engine.state().communities[&ConversationId::new("group:m6")];
@@ -647,4 +662,283 @@ fn slow_mode_and_moderation_are_enforced_by_the_rust_state_machine() {
         .admin_log
         .iter()
         .any(|entry| entry.action == CommunityAuditAction::MemberChanged));
+}
+
+#[test]
+fn respond_community_join_emits_participant_projection_only_when_approved() {
+    let mut engine = MessagingEngine::new();
+    for actor_id in [
+        "human:owner",
+        "human:admin",
+        "human:approved",
+        "human:rejected",
+    ] {
+        engine
+            .execute(Command::UpsertActor {
+                actor: Actor::human(actor_id, actor_id),
+            })
+            .unwrap();
+    }
+    engine
+        .execute(Command::UpsertConversation {
+            conversation: channel_conversation(),
+        })
+        .unwrap();
+    engine
+        .execute(Command::UpdateCommunity {
+            actor_id: ActorId::new("human:owner"),
+            community: channel_community(),
+        })
+        .unwrap();
+
+    for (requester_id, requested_at_ms) in [("human:approved", 20_i64), ("human:rejected", 21_i64)]
+    {
+        engine
+            .execute(Command::RequestCommunityJoin {
+                actor_id: ActorId::new(requester_id),
+                request: JoinRequest {
+                    conversation_id: ConversationId::new("channel:m6"),
+                    actor_id: ActorId::new(requester_id),
+                    invite_link_id: None,
+                    bio: None,
+                    requested_at_ms,
+                },
+            })
+            .unwrap();
+    }
+
+    let approved = engine
+        .execute(Command::RespondCommunityJoin {
+            actor_id: ActorId::new("human:owner"),
+            conversation_id: ConversationId::new("channel:m6"),
+            requester_id: ActorId::new("human:approved"),
+            approved: true,
+            decided_at_ms: 30,
+        })
+        .unwrap();
+    assert_eq!(approved.len(), 2);
+    let approved_community = match &approved[0] {
+        Event::CommunityChanged { community } => community,
+        event => panic!("unexpected approved event: {event:?}"),
+    };
+    let owner_id = ActorId::new("human:owner");
+    let approved_id = ActorId::new("human:approved");
+    let approved_member = approved_community
+        .members
+        .get(&approved_id)
+        .expect("approved requester member");
+    assert_eq!(approved_member.status, MemberStatus::Member);
+    assert_eq!(approved_member.invited_by.as_ref(), Some(&owner_id));
+    assert!(!approved_community
+        .pending_join_requests
+        .contains_key(&approved_id));
+    let approved_audit = approved_community
+        .admin_log
+        .iter()
+        .find(|entry| entry.action == CommunityAuditAction::JoinApproved)
+        .expect("JoinApproved audit entry");
+    assert_eq!(&approved_audit.actor_id, &owner_id);
+    assert_eq!(approved_audit.target_actor_id.as_ref(), Some(&approved_id));
+    assert!(matches!(
+        &approved[1],
+        Event::ConversationParticipantUpserted {
+            conversation_id,
+            participant,
+        } if conversation_id == &ConversationId::new("channel:m6")
+            && participant.actor_id == ActorId::new("human:approved")
+            && participant.role == ParticipantRole::Member
+    ));
+
+    let rejected = engine
+        .execute(Command::RespondCommunityJoin {
+            actor_id: ActorId::new("human:owner"),
+            conversation_id: ConversationId::new("channel:m6"),
+            requester_id: ActorId::new("human:rejected"),
+            approved: false,
+            decided_at_ms: 31,
+        })
+        .unwrap();
+    assert_eq!(rejected.len(), 1);
+    let rejected_community = match &rejected[0] {
+        Event::CommunityChanged { community } => community,
+        event => panic!("unexpected rejected event: {event:?}"),
+    };
+    let rejected_id = ActorId::new("human:rejected");
+    assert!(!rejected_community.members.contains_key(&rejected_id));
+    assert!(!rejected_community
+        .pending_join_requests
+        .contains_key(&rejected_id));
+    let rejected_audit = rejected_community
+        .admin_log
+        .iter()
+        .find(|entry| entry.action == CommunityAuditAction::JoinRejected)
+        .expect("JoinRejected audit entry");
+    assert_eq!(&rejected_audit.actor_id, &owner_id);
+    assert_eq!(rejected_audit.target_actor_id.as_ref(), Some(&rejected_id));
+}
+
+#[test]
+fn community_backed_create_is_idempotent_and_update_cannot_reown_or_retype() {
+    let mut service = MessagingService::load(MemoryStateStore::default()).unwrap();
+    for actor_id in ["human:owner", "human:admin", "human:attacker"] {
+        service
+            .handle(
+                ClientEnvelope::new(
+                    context(actor_id, &format!("profile:{actor_id}")),
+                    ClientCommand::UpsertProfile {
+                        actor: Actor::human(actor_id, actor_id),
+                    },
+                ),
+                1,
+            )
+            .unwrap();
+    }
+
+    service
+        .handle(
+            ClientEnvelope::new(
+                context("human:owner", "create-community-conversation"),
+                ClientCommand::CreateConversation {
+                    conversation: channel_conversation(),
+                },
+            ),
+            2,
+        )
+        .unwrap();
+    service
+        .handle(
+            ClientEnvelope::new(
+                context("human:owner", "bind-community"),
+                ClientCommand::UpdateCommunity {
+                    community: channel_community(),
+                },
+            ),
+            3,
+        )
+        .unwrap();
+
+    let mut forged_create = Conversation::direct(
+        "channel:m6",
+        "forged create",
+        vec![participant("human:attacker", ParticipantRole::Owner)],
+        4,
+    );
+    forged_create.kind = ConversationKind::Direct;
+    forged_create.owner_id = Some(ActorId::new("human:attacker"));
+    let create_result = service
+        .handle(
+            ClientEnvelope::new(
+                context("human:attacker", "forged-create"),
+                ClientCommand::CreateConversation {
+                    conversation: forged_create,
+                },
+            ),
+            4,
+        )
+        .unwrap();
+    assert!(create_result.is_empty());
+
+    let after_create = &service.engine().state().conversations[&ConversationId::new("channel:m6")];
+    assert_eq!(after_create.kind, ConversationKind::Channel);
+    assert_eq!(after_create.owner_id, Some(ActorId::new("human:owner")));
+    assert_eq!(after_create.participants.len(), 2);
+    assert!(!after_create
+        .participants
+        .iter()
+        .any(|participant| participant.actor_id == ActorId::new("human:attacker")));
+
+    let mut forged_update = after_create.clone();
+    forged_update.title = "safe metadata update".into();
+    forged_update.kind = ConversationKind::Direct;
+    forged_update.owner_id = Some(ActorId::new("human:attacker"));
+    forged_update.participants = vec![participant("human:attacker", ParticipantRole::Owner)];
+    service
+        .handle(
+            ClientEnvelope::new(
+                context("human:owner", "forged-update"),
+                ClientCommand::UpdateConversation {
+                    conversation: forged_update,
+                },
+            ),
+            5,
+        )
+        .unwrap();
+
+    let after_update = &service.engine().state().conversations[&ConversationId::new("channel:m6")];
+    assert_eq!(after_update.title, "safe metadata update");
+    assert_eq!(after_update.kind, ConversationKind::Channel);
+    assert_eq!(after_update.owner_id, Some(ActorId::new("human:owner")));
+    assert_eq!(after_update.participants.len(), 2);
+    assert!(!after_update
+        .participants
+        .iter()
+        .any(|participant| participant.actor_id == ActorId::new("human:attacker")));
+
+    let ordinary = Conversation::direct(
+        "direct:p0-001",
+        "ordinary",
+        vec![participant("human:attacker", ParticipantRole::Owner)],
+        6,
+    );
+    service
+        .handle(
+            ClientEnvelope::new(
+                context("human:attacker", "ordinary-create"),
+                ClientCommand::CreateConversation {
+                    conversation: ordinary.clone(),
+                },
+            ),
+            6,
+        )
+        .unwrap();
+    assert_eq!(
+        service
+            .engine()
+            .state()
+            .conversations
+            .get(&ConversationId::new("direct:p0-001")),
+        Some(&ordinary)
+    );
+}
+
+#[test]
+fn request_join_without_community_remains_community_not_found() {
+    let mut engine = MessagingEngine::new();
+    for actor_id in ["human:owner", "human:requester"] {
+        engine
+            .execute(Command::UpsertActor {
+                actor: Actor::human(actor_id, actor_id),
+            })
+            .unwrap();
+    }
+    let mut group = Conversation::direct(
+        "group:no-community",
+        "No Community",
+        vec![participant("human:owner", ParticipantRole::Owner)],
+        1,
+    );
+    group.kind = ConversationKind::Group;
+    group.owner_id = Some(ActorId::new("human:owner"));
+    engine
+        .execute(Command::UpsertConversation {
+            conversation: group,
+        })
+        .unwrap();
+
+    let error = engine
+        .execute(Command::RequestCommunityJoin {
+            actor_id: ActorId::new("human:requester"),
+            request: JoinRequest {
+                conversation_id: ConversationId::new("group:no-community"),
+                actor_id: ActorId::new("human:requester"),
+                invite_link_id: None,
+                bio: None,
+                requested_at_ms: 2,
+            },
+        })
+        .unwrap_err();
+    assert_eq!(
+        error,
+        EngineError::CommunityNotFound(ConversationId::new("group:no-community"))
+    );
 }
