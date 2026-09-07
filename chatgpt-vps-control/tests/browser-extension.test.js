@@ -1,45 +1,51 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readFile, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { connect } from "node:net";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import test from "node:test";
+
 import {
-  ExtensionCdpClient,
+  browserExtensionPaths,
   browserExtensionRequest,
+  browserExtensionStatus,
+  installBrowserExtension,
   listBrowserExtensionConnections,
   startBrowserExtensionBridge,
   stopBrowserExtensionBridgeForTests,
-} from "../lib/browser-extension-bridge.js";
-import { browserExtensionPaths, NATIVE_HOST_NAME } from "../lib/browser-extension-paths.js";
-import { browserExtensionStatus, installBrowserExtension } from "../lib/browser-extension-install.js";
-import { browserSessionCua, browserSessionUtility, listBrowserSessions } from "../lib/browser-session.js";
+} from "../lib/browser-extension.js";
+import { ExtensionCdpClient } from "../lib/browser-session-cdp.js";
+import { browserSessionCua, listBrowserSessions } from "../lib/browser-session.js";
+import { browserSessionUtility } from "../lib/browser-session-utils.js";
 
-function lineClient(path) {
-  const socket = connect(path);
-  let buffer = "";
+const NATIVE_HOST_NAME = "com.fabushi.chatgpt_computer_control";
+
+function lineClient(socketPath) {
+  const net = require("node:net");
+  const socket = net.createConnection(socketPath);
   const messages = [];
-  const handlers = [];
-  socket.setEncoding("utf8");
+  let buffer = "";
+  const listeners = new Set();
   socket.on("data", (chunk) => {
-    buffer += chunk;
+    buffer += chunk.toString("utf8");
     while (buffer.includes("\n")) {
-      const index = buffer.indexOf("\n");
-      const message = JSON.parse(buffer.slice(0, index));
+      const newline = buffer.indexOf("\n");
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      if (!line.trim()) continue;
+      const message = JSON.parse(line);
       messages.push(message);
-      for (const handler of handlers) handler(message);
-      buffer = buffer.slice(index + 1);
+      for (const listener of listeners) listener(message);
     }
   });
-  return { socket, messages, onMessage: (handler) => handlers.push(handler) };
+  return { socket, messages, onMessage(listener) { listeners.add(listener); } };
 }
 
 function writeNativeMessage(stream, message) {
-  const body = Buffer.from(JSON.stringify(message), "utf8");
+  const payload = Buffer.from(JSON.stringify(message), "utf8");
   const header = Buffer.alloc(4);
-  header.writeUInt32LE(body.length, 0);
-  stream.write(Buffer.concat([header, body]));
+  header.writeUInt32LE(payload.length, 0);
+  stream.write(Buffer.concat([header, payload]));
 }
 
 async function waitFor(check, timeout = 2_000) {
@@ -70,7 +76,7 @@ test("browser extension install creates a stable isolated extension and allow-li
     assert.ok(manifest.permissions.includes("debugger"));
     assert.ok(manifest.permissions.includes("tabGroups"));
     assert.ok(manifest.permissions.includes("webNavigation"));
-    assert.ok(!manifest.host_permissions);
+    assert.deepEqual(manifest.host_permissions, ["https://chatgpt.com/*", "https://chat.openai.com/*"]);
     const native = JSON.parse(await readFile(join(nativeDir, `${NATIVE_HOST_NAME}.json`), "utf8"));
     assert.deepEqual(native.allowed_origins, [`chrome-extension://${first.extensionId}/`]);
     assert.equal(native.type, "stdio");
@@ -146,20 +152,10 @@ test("private browser bridge authenticates native hosts and correlates extension
       }
       client.socket.write(`${JSON.stringify({ type: "response", requestId: message.requestId, ok, ...(ok ? { result } : { error }) })}\n`);
     });
-    const exported = await browserSessionUtility({
-      name: extension.name,
-      action: "export_text",
-      targetId: extension.targets[0].id,
-      targetClaim: extension.targets[0].claim,
-    });
+    const exported = await browserSessionUtility({ name: extension.name, action: "export_text", targetId: extension.targets[0].id, targetClaim: extension.targets[0].claim });
     assert.equal(exported.text, "signed-in page text");
 
-    const cua = await browserSessionCua({
-      name: extension.name,
-      targetId: extension.targets[0].id,
-      targetClaim: extension.targets[0].claim,
-      actions: [{ action: "move", x: 10, y: 10 }],
-    });
+    const cua = await browserSessionCua({ name: extension.name, targetId: extension.targets[0].id, targetClaim: extension.targets[0].claim, actions: [{ action: "move", x: 10, y: 10 }] });
     assert.equal(cua.actionCount, 1);
     assert.equal(cua.screenshot?.mimeType, "image/png");
     assert.equal(captureAttempts, 2);
@@ -184,27 +180,14 @@ test("native messaging host reconnects and re-registers after the local bridge r
     await mkdir(root, { recursive: true });
     await writeFile(paths.secret, "reconnect-secret-at-least-thirty-two-characters\n", { mode: 0o600 });
     await startBrowserExtensionBridge();
-    host = spawn(process.execPath, [resolve("scripts/browser-extension-host.mjs")], {
-      env: { ...process.env, COMPUTER_BROWSER_EXTENSION_HOME: root },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    host = spawn(process.execPath, [resolve("scripts/browser-extension-host.mjs")], { env: { ...process.env, COMPUTER_BROWSER_EXTENSION_HOME: root }, stdio: ["pipe", "pipe", "pipe"] });
     host.stdout.resume();
     host.stderr.resume();
-    writeNativeMessage(host.stdin, {
-      type: "hello",
-      instanceId: "instance-reconnect-123",
-      generation: "generation-reconnect-123",
-      browser: "Test Chrome",
-      tabs: [{ id: "11", title: "Reconnect", url: "https://example.test/" }],
-    });
+    writeNativeMessage(host.stdin, { type: "hello", instanceId: "instance-reconnect-123", generation: "generation-reconnect-123", browser: "Test Chrome", tabs: [{ id: "11", title: "Reconnect", url: "https://example.test/" }] });
     await waitFor(() => listBrowserExtensionConnections().find((item) => item.instanceId === "instance-reconnect-123"));
-
     await stopBrowserExtensionBridgeForTests();
     await startBrowserExtensionBridge();
-    const reconnected = await waitFor(
-      () => listBrowserExtensionConnections().find((item) => item.instanceId === "instance-reconnect-123"),
-      4_000,
-    );
+    const reconnected = await waitFor(() => listBrowserExtensionConnections().find((item) => item.instanceId === "instance-reconnect-123"), 4_000);
     assert.equal(reconnected.tabs[0].id, "11");
   } finally {
     host?.kill();
@@ -216,9 +199,14 @@ test("native messaging host reconnects and re-registers after the local bridge r
 
 test("packaged extension contains no remotely hosted executable code", async () => {
   const manifest = JSON.parse(await readFile(resolve("extension/manifest.json"), "utf8"));
+  const serviceWorker = await readFile(resolve("extension/service-worker.js"), "utf8");
   const background = await readFile(resolve("extension/background.js"), "utf8");
-  assert.equal(manifest.background.service_worker, "background.js");
-  assert.doesNotMatch(background, /eval\s*\(|new Function\s*\(|https?:\/\/.*\.js/i);
+  const appHtml = await readFile(resolve("extension/app.html"), "utf8");
+  assert.equal(manifest.background.service_worker, "service-worker.js");
+  assert.equal(manifest.background.type, "module");
+  assert.match(serviceWorker, /import "\.\/background\.js"/);
+  assert.match(serviceWorker, /import "\.\/userscripts\.js"/);
+  assert.doesNotMatch(`${serviceWorker}\n${background}\n${appHtml}`, /eval\s*\(|new Function\s*\(|<script[^>]+src=["']https?:\/\//i);
   assert.match(background, /claim_tab/);
   assert.match(background, /chrome\.debugger\.sendCommand/);
   assert.match(background, /sessionId/);
@@ -240,7 +228,10 @@ test("extension app is the popup and Marketplace filters userscripts to chrome-e
   assert.match(appHtml, /Chats/);
   assert.match(appHtml, /Mini Apps/);
   assert.match(appHtml, /Marketplace/);
-  assert.match(appHtml, /marketplace-search/);
+  assert.match(appHtml, /app-search/);
+  assert.match(appHtml, /loading-state/);
+  assert.match(appHtml, /empty-state/);
+  assert.match(appHtml, /error-state/);
   assert.match(appHtml, /data-platform="chrome-extension"/);
   assert.match(appJs, /MARKETPLACE_SECTION/);
   assert.match(appJs, /item\.kind === "userscript"/);
