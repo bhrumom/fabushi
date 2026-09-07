@@ -8,7 +8,7 @@
   "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
   "background": { "service_worker": "service-worker.js", "type": "module" },
   "action": {
-    "default_title": "Fabushi Computer Control status",
-    "default_popup": "popup.html"
+    "default_title": "Fabushi",
+    "default_popup": "app.html"
   }
 }
