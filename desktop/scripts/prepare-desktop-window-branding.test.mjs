@@ -9,18 +9,30 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const realMainPath = path.resolve(here, '..', 'electron', 'main.cjs');
 
 const expectedFrameOptions = `  const frameOptions = process.platform === 'darwin'\n    ? { titleBarStyle: 'hiddenInset' }`;
+const whiteOverlay = "titleBarOverlay: { color: '#ffffff', symbolColor: '#1f2328', height: 54 }";
+const darkOverlay = "titleBarOverlay: { color: '#111111', symbolColor: '#ffffff', height: 54 }";
 
-test('brands the real guarded createWindow source and is idempotent', () => {
+test('brands the real guarded createWindow source with white native chrome and is idempotent', () => {
   const original = fs.readFileSync(realMainPath, 'utf8');
   const first = applyDesktopWindowBranding(original);
   assert.equal(first.changed, true);
   assert.match(first.source, /function createWindow\(\) \{\n  if \(mainWindow && !mainWindow\.isDestroyed\(\)\) return mainWindow;/u);
   assert.ok(first.source.includes(expectedFrameOptions));
+  assert.ok(first.source.includes(whiteOverlay));
+  assert.equal(first.source.includes(darkOverlay), false);
   assert.match(first.source, /title: 'Fabushi',\n    \.\.\.frameOptions,/u);
 
   const second = applyDesktopWindowBranding(first.source);
   assert.equal(second.changed, false);
   assert.equal(second.source, first.source);
+});
+
+test('migrates the previous dark branded title bar to the white palette', () => {
+  const legacyDark = `function createWindow() {\n  const frameOptions = process.platform === 'darwin'\n    ? { titleBarStyle: 'hiddenInset' }\n    : process.platform === 'win32'\n      ? {\n          titleBarStyle: 'hidden',\n          titleBarOverlay: { color: '#111111', symbolColor: '#ffffff', height: 54 },\n        }\n      : {};\n  const win = new BrowserWindow({\n    title: 'Fabushi',\n    ...frameOptions,\n  });\n}\n`;
+  const result = applyDesktopWindowBranding(legacyDark);
+  assert.equal(result.changed, true);
+  assert.ok(result.source.includes(whiteOverlay));
+  assert.equal(result.source.includes(darkOverlay), false);
 });
 
 test('preserves CRLF line endings', () => {
@@ -29,6 +41,7 @@ test('preserves CRLF line endings', () => {
   assert.equal(result.changed, true);
   assert.equal(result.source.replace(/\r\n/g, '').includes('\n'), false);
   assert.ok(result.source.includes("title: 'Fabushi'"));
+  assert.ok(result.source.includes(whiteOverlay));
 });
 
 test('fails closed for duplicate or out-of-scope anchors', () => {
