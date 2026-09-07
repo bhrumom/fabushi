@@ -100,3 +100,7 @@
 - A new product PR must start from freshly re-read canonical main. Implementation/config allowlist remains exactly `.github/workflows/ci.yml` plus `mobile/ios/project.yml` `CURRENT_PROJECT_VERSION 28 -> 29`, with only task-specific TFI records in addition.
 - `pull_request` acceptance requires raw proof that actual checkout HEAD equals the final product head before the unchanged canonical script runs. `merge_group` acceptance separately requires actual checkout HEAD equals the current merge-group SHA. Required `CI result` must remain fail-closed on exact child `success`.
 - Historical #2341/#2342/#2343/#2344 remain immutable provenance in this architecture round; no merge/rebase/retarget/force-push/close is authorized. Test release and stable release remain blocked.
+
+## 2026-09-07 — TFI-M3-SETTINGS-LOGOUT-001 General 顶部退出登录入口
+
+- `TFI-M3-SETTINGS-LOGOUT-001` — `IMPLEMENTED`: 将既有 `settings-logout` 从 General 底部移动到账户资料卡片之后、Theme 之前；保留原退出/缓存清理语义，新增真实 Messenger E2E 位置断言并将版本策略递增至 `1.2.56`。current-head CI、protected merge、exact-main delivery 与新版 Release 完成前不晋级 `RELEASED`。
