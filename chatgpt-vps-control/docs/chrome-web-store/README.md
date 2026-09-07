@@ -9,7 +9,7 @@
 - Minimum Chrome version: **120**
 - Toolbar action entry: **`app.html`**
 
-Every Chrome Web Store update must increment `extension/manifest.json` to a version greater than the version already uploaded to the store.
+Every Chrome Web Store update must increment `extension/manifest.json` to a version greater than the version already uploaded to the store. `npm run chrome:validate` also fails if the production-candidate version in this document drifts from `manifest.json`.
 
 ## Validate, test and package
 
@@ -18,7 +18,7 @@ From `chatgpt-vps-control/`:
 ```bash
 npm ci
 npm run chrome:validate
-npm test
+node --test tests/browser-extension.test.js
 npm run chrome:package
 ```
 
@@ -27,9 +27,9 @@ Outputs:
 - `dist/chrome-extension/fabushi-<manifest-version>.zip`
 - `dist/chrome-extension/SHA256SUMS.txt`
 
-The production ZIP uses an allowlist, puts `manifest.json` at archive root, and intentionally excludes legacy `popup.html` / `popup.js` because the production action opens `app.html`.
+The production ZIP uses an allowlist, puts `manifest.json` at archive root, intentionally excludes legacy `popup.html` / `popup.js`, then reads the completed archive back with `unzip -Z1` and requires its file list to exactly equal the staged allowlisted file list. Packaging fails closed if archive verification differs. The host running packaging therefore needs both standard `zip` and `unzip` executables on `PATH`.
 
-`.github/workflows/chrome-extension-web-store.yml` runs the same validation, existing tests and packaging on the Chrome extension branch and uploads the ZIP plus SHA-256 file as a GitHub Actions artifact.
+`.github/workflows/chrome-extension-web-store.yml` runs the same validation, the focused existing Chrome-extension test suite and packaging on the Chrome extension branch, then uploads the ZIP plus SHA-256 file as a GitHub Actions artifact.
 
 ## Manual unpacked smoke test
 
