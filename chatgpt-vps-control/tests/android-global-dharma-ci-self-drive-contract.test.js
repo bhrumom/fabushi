@@ -34,12 +34,12 @@ test("Android Global Dharma journey follows Marketplace to Bot to synchronized W
 
   const marketplaceBackAt = driver.indexOf('action("marketplace-back", "invoke")');
   const shellBackAt = driver.indexOf('action("app-shell", "pressKey", "BACK")');
-  const botAt = driver.indexOf('grok-bot-global-dharma-bot');
+  const botAt = driver.indexOf('action("grok-bot-global-dharma-bot", "invoke")');
   const naturalAt = driver.indexOf('现在运行到哪里？请查看状态');
-  const openAt = driver.indexOf('mobile-bot-open-miniapp');
-  const sharedAt = driver.indexOf('Bot / Web UI 同一共享状态');
-  const purchaseAt = driver.indexOf('¥1080 买断（测试）');
-  const restoreAt = driver.indexOf('恢复购买');
+  const openAt = driver.indexOf('action("mobile-bot-open-miniapp", "invoke")', naturalAt);
+  const sharedAt = driver.indexOf('waitForUiText("Bot / Web UI 同一共享状态"', openAt);
+  const purchaseAt = driver.indexOf('¥1080 买断（测试）', sharedAt);
+  const restoreAt = driver.indexOf('恢复购买', purchaseAt);
   assert.ok(marketplaceBackAt >= 0 && marketplaceBackAt < shellBackAt);
   assert.ok(shellBackAt < botAt && botAt < naturalAt && naturalAt < openAt && openAt < sharedAt);
   assert.ok(sharedAt < purchaseAt && purchaseAt < restoreAt);
