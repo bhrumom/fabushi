@@ -26,6 +26,7 @@
       <section class="content" aria-live="polite" aria-busy="false">
         <div class="section-copy"><p id="section-description">Open conversations and continue your Fabushi work.</p><span id="section-status" class="pill">Ready</span></div>
         <div id="loading-state" class="state-card" hidden><div class="spinner" aria-hidden="true"></div><div><strong>Loading Fabushi…</strong><p>Preparing this workspace.</p></div></div>
+        <div id="error-state" class="state-card" role="alert" hidden><div class="empty-icon" aria-hidden="true">!</div><div><strong>Fabushi could not finish loading</strong><p id="error-message">Reload the extension and try again.</p><button id="retry-button" type="button">Retry</button></div></div>
         <div id="chats-view" class="section-view">
           <div class="feature-grid"><article class="feature-card"><span class="card-kicker">Recent</span><h3>Start a conversation</h3><p>Your Chrome app shell is ready for Fabushi chat surfaces and connected workflows.</p><button type="button" data-section-jump="Marketplace">Explore Marketplace</button></article><article class="feature-card"><span class="card-kicker">Status</span><h3>Local bridge</h3><p>The MV3 service worker remains available for the existing Fabushi computer-control bridge.</p></article></div>
           <div class="empty-state"><div class="empty-icon" aria-hidden="true">◌</div><h3>No synced chats yet</h3><p>Chats will appear here when the Fabushi account surface is connected.</p></div>
