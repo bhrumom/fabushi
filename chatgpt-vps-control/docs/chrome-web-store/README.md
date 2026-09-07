@@ -2,14 +2,24 @@
 
 ## Release identity
 
-- Extension: **Fabushi**
-- Manifest: `extension/manifest.json`
-- Production candidate: **0.2.0**
+- Platform: **Fabushi for Chrome** (first-class Fabushi platform, not the legacy ChatGPT/Computer Control extension UI)
+- Manifest: `chrome-platform/extension/manifest.json`
+- Production candidate: **0.3.0**
 - Manifest format: **Manifest V3**
 - Minimum Chrome version: **120**
 - Toolbar action entry: **`app.html`**
+- Desktop product bridge: **`com.fabushi.chrome_platform`**
+- Existing-browser control bridge: **`com.fabushi.chatgpt_computer_control`**
 
-Every Chrome Web Store update must increment `extension/manifest.json` to a version greater than the version already uploaded to the store. `npm run chrome:validate` also fails if the production-candidate version in this document drifts from `manifest.json`.
+Every Chrome Web Store update must increment `chrome-platform/extension/manifest.json` to a version greater than the version already uploaded to the store. `npm run chrome:validate` also fails if the production-candidate version in this document drifts from `manifest.json`.
+
+## Architecture and credential boundary
+
+Chrome is packaged from `chrome-platform/extension/`, independently from the legacy `extension/` directory. The Web Store build does not request `userScripts`, does not include `.user.js` files, and does not carry the legacy ChatGPT-only host permissions.
+
+The extension uses two local Native Messaging channels. `com.fabushi.chrome_platform` connects the Chrome UI to the running desktop Fabushi Host for auth state, Chats, Mini Apps, Marketplace and allowed product commands. The desktop Host remains the owner of the account session: the extension never receives or persists the desktop password or refresh token. `com.fabushi.chatgpt_computer_control` exposes ordinary tabs from the user's already-running Chrome as extension browser sessions, allowing desktop computer control without launching a second CDP browser.
+
+The extension's **Open desktop settings** action is sent through Native Messaging. The native desktop side opens `fabushi://settings/<section>` itself, so Chrome does not navigate to a custom scheme and does not show the browser's “Open app?” protocol prompt.
 
 ## Validate, test and package
 
@@ -20,7 +30,7 @@ npm ci
 npm run chrome:release
 ```
 
-`chrome:release` is the production preflight: it validates manifest/app/resources and documented version alignment, runs the focused existing browser-extension tests, creates the Web Store ZIP, reads the ZIP back, verifies the archived file list exactly matches the allowlisted staged tree, and writes SHA-256 evidence.
+`chrome:release` validates the first-class platform manifest/app/resources, credential/native-host integration markers and documented version alignment, runs the focused browser-extension/platform tests, creates the Web Store ZIP, reads the ZIP back, verifies the archived file list exactly matches the allowlisted staged tree, and writes SHA-256 evidence.
 
 Equivalent individual commands:
 
@@ -35,20 +45,22 @@ Outputs:
 - `dist/chrome-extension/fabushi-<manifest-version>.zip`
 - `dist/chrome-extension/SHA256SUMS.txt`
 
-The production ZIP uses an allowlist, puts `manifest.json` at archive root, intentionally excludes legacy `popup.html` / `popup.js`, then reads the completed archive back with `unzip -Z1` and requires its file list to exactly equal the staged allowlisted file list. Packaging fails closed if archive verification differs. The host running packaging therefore needs both standard `zip` and `unzip` executables on `PATH`.
+The production ZIP puts `manifest.json` at archive root and contains only `app.html`, `app.css`, `app.js`, `service-worker.js`, `platform-bridge.js`, `browser-control.js`, and `manifest.json`. Packaging fails if legacy popup/userscript/Marketplace-user-script assets appear or if archive verification differs. Standard `zip` and `unzip` executables are required on `PATH`.
 
-`.github/workflows/chrome-extension-web-store.yml` runs the same validation, the focused existing Chrome-extension test suite and packaging on the Chrome extension branch, then uploads the ZIP plus SHA-256 file as a GitHub Actions artifact.
+`.github/workflows/chrome-extension-web-store.yml` runs the same preflight on the Chrome platform branch and uploads the ZIP plus SHA-256 file as a GitHub Actions artifact.
 
 ## Manual unpacked smoke test
 
 1. Run `npm run chrome:release`.
-2. Open `chrome://extensions`, enable Developer mode, then choose **Load unpacked**.
-3. Select `dist/chrome-extension/fabushi-<version>/`.
-4. Confirm Chrome shows no manifest or service-worker registration error.
-5. Click the Fabushi toolbar action and confirm `app.html` opens.
-6. Verify Chats, Mini Apps, Marketplace, search, loading, empty and error/retry states.
-7. Verify the narrow/mobile navigation layout by reducing the extension window width.
-8. Inspect the MV3 service worker and confirm its local module imports load without syntax/import errors.
+2. Start a current Fabushi desktop build signed into the test account and make sure its Chrome platform native bridge is installed.
+3. Open `chrome://extensions`, enable Developer mode, then choose **Load unpacked**.
+4. Select `dist/chrome-extension/fabushi-<version>/`.
+5. Confirm Chrome shows no manifest or service-worker registration error.
+6. Open Fabushi and confirm desktop account identity appears without a second login.
+7. Verify Chats, Mini Apps, Marketplace, search and Settings surfaces.
+8. Open the Browser surface and confirm ordinary tabs from the current Chrome are listed; verify desktop browser tooling reports an `extension` session rather than launching a separate managed browser.
+9. Click **Open desktop settings** and confirm Fabushi desktop is focused on Settings without a Chrome custom-protocol confirmation page.
+10. Inspect the MV3 service worker and confirm both native channels connect without syntax/import errors.
 
 ## Store preparation documents
 
@@ -56,7 +68,7 @@ The production ZIP uses an allowlist, puts `manifest.json` at archive root, inte
 - `PRIVACY_AND_PERMISSIONS.md`: permission-by-permission disclosure and privacy verification gates.
 - `RELEASE_CHECKLIST.md`: upload, dashboard, review and post-publication gates.
 
-No remote executable code is used by the app shell. Existing userscript runtime files remain packaged because the current service worker imports them; this workstream does not extend their behavior.
+No remote executable code is packaged. The legacy userscript implementation remains in repository history/source for other workstreams but is not loaded or shipped by this Chrome platform package.
 
 ## Publisher upload
 
