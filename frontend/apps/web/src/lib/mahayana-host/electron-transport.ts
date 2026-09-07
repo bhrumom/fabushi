@@ -83,7 +83,7 @@ export type MahayanaCommandBridgeDetail =
       context?: MahayanaCommandBridgeContext;
     };
 
-type ConversationJournalMessage = {
+export type ConversationJournalMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
@@ -211,6 +211,13 @@ function readConversationJournal(): ConversationJournal {
   } catch {
     return emptyConversationJournal();
   }
+}
+
+
+export function readCachedConversationMessages(conversationId: string): ConversationJournalMessage[] {
+  const id = conversationId.trim();
+  if (!id) return [];
+  return (readConversationJournal().conversations[id] ?? []).map((message) => ({ ...message }));
 }
 
 function persistConversationJournal(journal: ConversationJournal): void {
