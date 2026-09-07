@@ -38,10 +38,14 @@ export function normalizeMiniAppDiscoveryQuery(query?: string): string | undefin
 function projectMiniAppCategoryForSearch(result: MarketplaceBrowseResult): MarketplaceBrowseResult {
   return {
     ...result,
-    plugins: result.plugins.map((app) => ({
-      ...app,
-      description: `${app.description} · ${MINI_APP_DISCOVERY_LABEL}`,
-    })),
+    plugins: result.plugins.map((app) => {
+      const existing = `${app.displayName} ${app.description} ${app.pluginId}`.toLocaleLowerCase();
+      if (existing.includes('小程序') && existing.includes('mini app')) return app;
+      return {
+        ...app,
+        description: `${app.description} · ${MINI_APP_DISCOVERY_LABEL}`,
+      };
+    }),
   };
 }
 
@@ -53,10 +57,11 @@ function projectMiniAppCategoryForSearch(result: MarketplaceBrowseResult): Marke
  * and the Host remains authoritative for which apps are discoverable.
  *
  * GlobalSearchWorkspace performs a second client-side text filter over the
- * returned summaries. For a generic category query, preserve that true category
- * as display metadata so the same result survives the second filter. This also
- * keeps deterministic CI Test Host metadata semantically aligned with the
- * production Marketplace, whose Global Dharma description already says 小程序.
+ * returned summaries, and install/uninstall refreshes can re-browse with an
+ * empty Marketplace query while the global search box still contains 小程序.
+ * Preserve the true Mini App category on every Marketplace summary so both the
+ * initial category discovery and the post-install refresh survive that second
+ * filter. Production descriptions that already carry the category stay intact.
  */
 export function installDesktopMiniAppDiscoveryAliases(): void {
   const prototype = ElectronMahayanaHostTransport.prototype as PatchableTransportPrototype;
@@ -69,8 +74,7 @@ export function installDesktopMiniAppDiscoveryAliases(): void {
     writable: false,
   });
   prototype.marketplaceBrowse = async function marketplaceBrowseWithDiscoveryAliases(query?: string) {
-    const discoveryAlias = isMiniAppDiscoveryAlias(query);
     const result = await browse.call(this, normalizeMiniAppDiscoveryQuery(query));
-    return discoveryAlias ? projectMiniAppCategoryForSearch(result) : result;
+    return projectMiniAppCategoryForSearch(result);
   };
 }
