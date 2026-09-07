@@ -76,8 +76,9 @@ function connectPlatform() {
 function sendPlatform(message) {
   if (message.type === "platform_hello") {
     authenticatedHello = { ...message, secret };
-    if (socket && !socket.destroyed && socket.readyState === "open") socket.write(`${JSON.stringify(authenticatedHello)}\n`);
-    else enqueue(authenticatedHello);
+    if (socket && !socket.destroyed && socket.readyState === "open") {
+      socket.write(`${JSON.stringify(authenticatedHello)}\n`);
+    }
     return;
   }
   if (socket && !socket.destroyed && socket.readyState === "open") socket.write(`${JSON.stringify(message)}\n`);
