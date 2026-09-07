@@ -28,7 +28,7 @@ test("Android interactive runner self-drives over public MCP without a ChatGPT p
   assert.match(workflow, /journey-complete/u);
 });
 
-test("Android Global Dharma journey follows Marketplace to Bot to synchronized Web UI to commerce", async () => {
+test("Android Global Dharma journey requires terminal Bot WebMCP evidence before opening synchronized Web UI", async () => {
   const driver = await read("chatgpt-vps-control/scripts/android-global-dharma-public-mcp-e2e.mjs");
   const shell = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/GlobalDharmaHostShell.kt");
 
@@ -36,13 +36,23 @@ test("Android Global Dharma journey follows Marketplace to Bot to synchronized W
   const shellBackAt = driver.indexOf('action("app-shell", "pressKey", "BACK")');
   const botAt = driver.indexOf('action("grok-bot-global-dharma-bot", "invoke")');
   const naturalAt = driver.indexOf('现在运行到哪里？请查看状态');
-  const openAt = driver.indexOf('action("mobile-bot-open-miniapp", "invoke")', naturalAt);
+  const busyAt = driver.indexOf('waitElement("mobile-bot-stop", "enabled"', naturalAt);
+  const terminalAt = driver.indexOf('logCount >= beforeCommandLogCount + 2', busyAt);
+  const verifiedAt = driver.indexOf('record("bot-natural-language-verified"', terminalAt);
+  const openAt = driver.indexOf('action("mobile-bot-open-miniapp", "invoke")', verifiedAt);
   const sharedAt = driver.indexOf('waitForUiText("Bot / Web UI 同一共享状态"', openAt);
   const purchaseAt = driver.indexOf('¥1080 买断（测试）', sharedAt);
   const restoreAt = driver.indexOf('恢复购买', purchaseAt);
+
   assert.ok(marketplaceBackAt >= 0 && marketplaceBackAt < shellBackAt);
-  assert.ok(shellBackAt < botAt && botAt < naturalAt && naturalAt < openAt && openAt < sharedAt);
+  assert.ok(shellBackAt < botAt && botAt < naturalAt && naturalAt < busyAt);
+  assert.ok(busyAt < terminalAt && terminalAt < verifiedAt && verifiedAt < openAt && openAt < sharedAt);
   assert.ok(sharedAt < purchaseAt && purchaseAt < restoreAt);
+  assert.match(driver, /const beforeCommandLogCount = .*role === "log"/u);
+  assert.match(driver, /!elements\.some\(\(item\) => item\?\.agentId === "mobile-bot-stop"\)/u);
+  assert.match(driver, /assertElement\("mobile-bot-error", "absent"\)/u);
+  assert.match(driver, /observedBusy: true/u);
+  assert.match(driver, /afterCommandLogCount/u);
   assert.match(driver, /tapUiText\("退出登录"/u);
 
   assert.match(shell, /restoreSharedRuntime/u);
