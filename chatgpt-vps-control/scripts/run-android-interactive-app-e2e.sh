@@ -169,21 +169,19 @@ while [ "$SECONDS" -lt "$registration_deadline" ]; do
 done
 test "$(cat "$control_status")" = registered
 
+# Self-drive the same-account App-owned Android device over the production MCP
+# boundary. The ChatGPT/fabushi-test plugin remains an optional observer, never
+# a test precondition.
+export EXPECTED_DEVICE_ID="$DEVICE_ID"
+echo ci-self-driving > "$control_status"
+node chatgpt-vps-control/scripts/android-global-dharma-public-mcp-e2e.mjs \
+  2>&1 | tee "$EVIDENCE_DIR/ci-public-mcp-driver.log"
+echo ci-driver-completed > "$control_status"
+
 required=(fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert)
-last=0
-deadline=$((SECONDS + 900))
+deadline=$((SECONDS + 120))
 while [ "$SECONDS" -lt "$deadline" ]; do
   pull_trace
-  completed="$(jq -c 'select(.phase == "call-completed")' "$EVIDENCE_DIR/device-gateway-trace.jsonl" 2>/dev/null || true)"
-  total="$(printf '%s\n' "$completed" | sed '/^$/d' | wc -l | tr -d ' ')"
-  while [ "$last" -lt "$total" ]; do
-    last=$((last + 1))
-    line="$(printf '%s\n' "$completed" | sed -n "${last}p")"
-    tool="$(printf '%s' "$line" | jq -r '.toolName // "unknown"' 2>/dev/null || echo unknown)"
-    safe_tool="$(printf '%s' "$tool" | tr -cs 'A-Za-z0-9._-' '-')"
-    screenshot "$(printf '%03d' $((last + 2)))-${safe_tool}"
-  done
-
   missing=0
   for tool in "${required[@]}"; do
     if ! jq -e --arg tool "$tool" 'select(.phase == "call-completed" and .ok == true and .toolName == $tool)' "$EVIDENCE_DIR/device-gateway-trace.jsonl" >/dev/null 2>&1; then
@@ -191,11 +189,7 @@ while [ "$SECONDS" -lt "$deadline" ]; do
       break
     fi
   done
-  if [ "$missing" -eq 0 ]; then
-    echo six-tools-passed > "$control_status"
-  fi
-
-  if [ "$(cat "$control_status")" = six-tools-passed ] && jq -e 'select(.phase == "disconnected" and .reason == "logged-out")' "$EVIDENCE_DIR/device-gateway-trace.jsonl" >/dev/null 2>&1; then
+  if [ "$missing" -eq 0 ] && jq -e 'select(.phase == "disconnected" and .reason == "logged-out")' "$EVIDENCE_DIR/device-gateway-trace.jsonl" >/dev/null 2>&1; then
     echo passed-logged-out > "$control_status"
     screenshot 998-semantic-matrix-passed
     exit 0
@@ -203,6 +197,6 @@ while [ "$SECONDS" -lt "$deadline" ]; do
   sleep 1
 done
 
-echo failed-timeout > "$control_status"
-echo 'Timed out before external @fabushi test completed the six-tool Android feature matrix and real logout.' >&2
+echo failed-terminal-evidence > "$control_status"
+echo 'CI user journey completed, but six-tool success or logged-out device evidence was incomplete.' >&2
 exit 1
