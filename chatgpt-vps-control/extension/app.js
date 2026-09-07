@@ -4,12 +4,15 @@ const sections = {
   Marketplace: "Discover mini apps and integrations for Fabushi.",
 };
 
+const MARKETPLACE_SECTION = "Marketplace";
+
 const marketplaceCatalog = [
   {
     id: "userscript-chatgpt-control",
     name: "ChatGPT Control Userscript",
     description: "Run Fabushi browser-control automation directly in supported ChatGPT tabs.",
     kind: "userscript",
+    surfaces: [MARKETPLACE_SECTION],
     platforms: ["chrome-extension"],
     tags: ["ChatGPT", "automation", "userscript"],
   },
@@ -18,6 +21,7 @@ const marketplaceCatalog = [
     name: "Device Control",
     description: "Manage Fabushi devices from desktop application builds.",
     kind: "mini-app",
+    surfaces: [MARKETPLACE_SECTION],
     platforms: ["desktop"],
     tags: ["device", "desktop"],
   },
@@ -26,6 +30,7 @@ const marketplaceCatalog = [
     name: "Mobile Companion",
     description: "Mobile-only companion mini app.",
     kind: "mini-app",
+    surfaces: [MARKETPLACE_SECTION],
     platforms: ["ios", "android"],
     tags: ["mobile"],
   },
@@ -44,15 +49,23 @@ const currentPlatform = document.body.dataset.platform || "unknown";
 marketplacePlatform.textContent = currentPlatform;
 
 function normalizedSearchText(item) {
-  return [item.name, item.description, item.kind, ...item.tags].join(" ").toLowerCase();
+  return [item.name, item.description, item.kind, ...item.platforms, ...item.tags].join(" ").toLowerCase();
+}
+
+function isVisibleInMarketplace(item) {
+  if (!item.surfaces.includes(MARKETPLACE_SECTION)) return false;
+  if (!item.platforms.includes(currentPlatform)) return false;
+  if (item.kind === "userscript") {
+    return currentPlatform === "chrome-extension" && item.surfaces.length === 1;
+  }
+  return true;
 }
 
 function getVisibleMarketplaceItems(query = "") {
   const normalizedQuery = query.trim().toLowerCase();
   return marketplaceCatalog.filter((item) => {
-    const platformMatches = item.platforms.includes(currentPlatform);
     const queryMatches = !normalizedQuery || normalizedSearchText(item).includes(normalizedQuery);
-    return platformMatches && queryMatches;
+    return isVisibleInMarketplace(item) && queryMatches;
   });
 }
 
@@ -63,6 +76,8 @@ function renderMarketplace(query = "") {
   for (const item of visibleItems) {
     const card = document.createElement("article");
     card.className = "marketplace-card";
+    card.dataset.kind = item.kind;
+    card.dataset.platforms = item.platforms.join(",");
 
     const heading = document.createElement("h3");
     heading.textContent = item.name;
@@ -83,6 +98,13 @@ function renderMarketplace(query = "") {
     marketplaceList.append(card);
   }
 
+  if (visibleItems.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "marketplace-empty";
+    empty.textContent = "No Marketplace items match this search on this platform.";
+    marketplaceList.append(empty);
+  }
+
   marketplaceCount.textContent = `${visibleItems.length} ${visibleItems.length === 1 ? "result" : "results"}`;
 }
 
@@ -94,7 +116,7 @@ function activateSection(section) {
 
   title.textContent = section;
   description.textContent = sections[section] ?? "";
-  const isMarketplace = section === "Marketplace";
+  const isMarketplace = section === MARKETPLACE_SECTION;
   marketplaceView.hidden = !isMarketplace;
   if (isMarketplace) {
     renderMarketplace(search.value);
@@ -107,7 +129,7 @@ for (const button of buttons) {
 }
 
 search.addEventListener("input", () => {
-  activateSection("Marketplace");
+  activateSection(MARKETPLACE_SECTION);
   const query = search.value.trim();
   description.textContent = query
     ? `Searching Marketplace for “${query}” on ${currentPlatform}.`
