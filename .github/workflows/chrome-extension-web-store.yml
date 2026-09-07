@@ -5,12 +5,19 @@ on:
     branches:
       - codex/fabushi-chrome-userscripts
     paths:
-      - "chatgpt-vps-control/extension/**"
+      - "chatgpt-vps-control/chrome-platform/**"
+      - "chatgpt-vps-control/lib/browser-extension-install.js"
+      - "chatgpt-vps-control/lib/runtime-install.js"
+      - "chatgpt-vps-control/scripts/browser-extension-host.mjs"
+      - "chatgpt-vps-control/scripts/chrome-platform-host.mjs"
       - "chatgpt-vps-control/tests/browser-extension.test.js"
+      - "chatgpt-vps-control/tests/chrome-platform.test.js"
       - "chatgpt-vps-control/scripts/validate-chrome-extension.mjs"
       - "chatgpt-vps-control/scripts/package-chrome-extension.mjs"
       - "chatgpt-vps-control/docs/chrome-web-store/**"
       - "chatgpt-vps-control/package.json"
+      - "desktop/electron/chrome-platform-server.cjs"
+      - "desktop/electron/host-process.cjs"
       - ".github/workflows/chrome-extension-web-store.yml"
   workflow_dispatch:
 
