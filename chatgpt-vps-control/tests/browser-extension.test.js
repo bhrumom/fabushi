@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -21,8 +22,7 @@ import { browserSessionUtility } from "../lib/browser-session-utils.js";
 const NATIVE_HOST_NAME = "com.fabushi.chatgpt_computer_control";
 
 function lineClient(socketPath) {
-  const net = require("node:net");
-  const socket = net.createConnection(socketPath);
+  const socket = createConnection(socketPath);
   const messages = [];
   let buffer = "";
   const listeners = new Set();
