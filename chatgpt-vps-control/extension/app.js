@@ -46,6 +46,9 @@ const content = document.querySelector(".content");
 const buttons = [...document.querySelectorAll("[data-section]")];
 const search = document.querySelector("#app-search");
 const loadingState = document.querySelector("#loading-state");
+const errorState = document.querySelector("#error-state");
+const errorMessage = document.querySelector("#error-message");
+const retryButton = document.querySelector("#retry-button");
 const views = {
   Chats: document.querySelector("#chats-view"),
   "Mini Apps": document.querySelector("#mini-apps-view"),
@@ -201,13 +204,22 @@ function setLoading(active) {
   status.textContent = active ? "Loading" : "Ready";
 }
 
+function setError(error) {
+  errorState.hidden = !error;
+  errorMessage.textContent = error?.message || "Reload the extension and try again.";
+  status.textContent = error ? "Error" : "Ready";
+  for (const view of Object.values(views)) view.hidden = Boolean(error) || view.hidden;
+}
+
 function activateSection(section) {
   currentSection = section;
+  errorState.hidden = true;
   for (const button of buttons) button.toggleAttribute("aria-current", button.dataset.section === section);
   for (const [name, view] of Object.entries(views)) view.hidden = name !== section;
   title.textContent = section;
   description.textContent = sections[section] || "";
   search.placeholder = `Search ${section}`;
+  status.textContent = "Ready";
   if (section === MARKETPLACE_SECTION) renderMarketplace(search.value);
 }
 
@@ -221,8 +233,19 @@ search.addEventListener("input", () => {
 document.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); search.focus(); }
 });
+retryButton.addEventListener("click", () => { void initializeApp(); });
 
-setLoading(true);
-await refreshUserscriptStatus();
-setLoading(false);
-activateSection("Chats");
+async function initializeApp() {
+  setError(null);
+  setLoading(true);
+  try {
+    await refreshUserscriptStatus();
+    activateSection("Chats");
+  } catch (error) {
+    setError(error instanceof Error ? error : new Error(String(error)));
+  } finally {
+    setLoading(false);
+  }
+}
+
+await initializeApp();
