@@ -13,17 +13,17 @@
 
 ## Current verified status
 
-`in-progress`: 已完成一次本地只读体积审计和隔离式重写预案；截至本项目记录建立时，GitHub 远端 refs 尚未被改写。当前工作树中的其他任务改动不属于本项目，必须保持不变。
+`in-progress`: 已完成隔离式历史重写、canonical `main`/heads 迁移和规则恢复。远端 `main` 当前为 `bc4fb3032a03d6600d733ce28295256d77cca9d4`；heads 从 2116 个降为 1572 个，删除 544 个超过 90 天且没有开放 PR 关联的旧 heads。401 个 tags 保持原状，因为它们均绑定 GitHub immutable releases，GitHub 明确禁止移动或删除这些 tag。GitHub Actions 的 Electron 与 Native mobile 质量门仍在针对该 SHA 运行。
 
 ## Scope and next gate
 
 本项目覆盖：远端全量 refs 盘点、可审计的历史重写、产品路径保留审计、受保护 refs 的临时迁移窗口、推送后完整性验证、规则恢复与证据归档。
 
-下一道闸门：本项目引导 PR 先通过项目治理检查并合入 `main`；然后基于最新 canonical `main` 重新生成重写镜像。真正修改 GitHub 分支/标签保护规则前必须在动作发生前再次确认。
+下一道闸门：完成两个 post-main 质量门并把结果写回任务证据；若失败，按项目规则通过后续 PR 修复。原始 refs、远端 bare 镜像和上架/软著材料归档已保留，可回滚。当前工作树中的其他任务改动不属于本项目，必须保持不变。
 
 ## Acceptance summary
 
-必须满足：生成/缓存/临时树不再出现在重写历史；产品文件清单无意外删除；所有原有 head/tag 名称均有新 OID；`git fsck` 和连通性校验通过；GitHub 保护规则恢复；未在本机执行构建或测试。
+已验证：生成/缓存/临时树在候选重写历史中无残留；候选 `git fsck --full` 通过；远端新 `main` 与 heads 读回通过；分支保护规则已恢复且 bypass list 为空；未在本机执行构建或测试。受 immutable releases 和 GitHub server-managed `refs/pull/*` 限制，不能在同一仓库重写/删除已发布 tags，也不能声称 GitHub 全部历史对象已回收；这些边界已记录为验收例外。
 
 ## Navigation
 
