@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(jq -r .version app-version.json)" = "$(jq -r .version desktop/package.json)"
-          test "$(jq -r .version app-version.json)" = "1.2.53"
+          test "$(jq -r .version app-version.json)" = "1.2.54"
           release=.github/workflows/native-electron-release.yml
           grep -F 'workflow_dispatch:' "$release" >/dev/null
           grep -F 'runs-on: macos-15' "$release" >/dev/null

@@ -37,7 +37,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           version="$(jq -r .version app-version.json)"
           test "$version" = "$(jq -r .version desktop/package.json)"
-          test "$version" = '1.2.53'
+          test "$version" = '1.2.54'
           echo "FABUSHI_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=v$version" >> "$GITHUB_ENV"
           echo "HEAD_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
