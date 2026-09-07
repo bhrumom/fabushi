@@ -23,6 +23,29 @@ targets:
     platform: iOS
     sources:
       - path: Fabushi
+    preBuildScripts:
+      - name: Generate Fabushi cloth ghost AppIcon
+        script: |
+          cd "$SRCROOT/../.."
+          node scripts/generate-cloth-ghost-icons.mjs --platform=ios
+        inputFiles:
+          - $(SRCROOT)/../../scripts/generate-cloth-ghost-icons.mjs
+          - $(SRCROOT)/../../assets/brand/fabushi-cloth-ghost.svg
+        outputFiles:
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-20.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-29.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-40.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-58.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-60.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-76.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-80.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-87.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-120.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-152.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-167.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-180.png
+          - $(SRCROOT)/Fabushi/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
+        basedOnDependencyAnalysis: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ombhrum.fabushi
@@ -30,8 +53,8 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.lifestyle
         SWIFT_OBJC_BRIDGING_HEADER: $(SRCROOT)/Fabushi/Fabushi-Bridging-Header.h
         GENERATE_INFOPLIST_FILE: YES
-        MARKETING_VERSION: 1.2.56
-        CURRENT_PROJECT_VERSION: 29
+        MARKETING_VERSION: 1.2.57
+        CURRENT_PROJECT_VERSION: 30
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: '1,2'
     info:
