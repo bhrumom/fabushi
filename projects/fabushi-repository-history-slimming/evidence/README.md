@@ -2,13 +2,13 @@
 
 本目录记录可重放证据，不把聊天结论当作证据。
 
-待归档：
+证据已归档；以下记录可重放本轮结果：
 
 - 项目治理 PR、merge queue、canonical-main readback。
 - 迁移前后 heads/tags OID 清单与保护规则快照。
 - 过滤规则、关键路径差异、fsck/connectivity 输出。
 - 推送结果、规则恢复结果、pack/LFS/object 体积对照。
-- 若 GitHub Actions 运行治理检查，记录 workflow/run/job/check URL；本轮因当前树移除运行时输入，必须等待 packaged/quality gate 结果，不能以本机检查替代。
+- GitHub Actions 的 packaged/quality gate 结果和诊断产物；本机未执行构建、打包或测试。
 
 | Evidence | Location / identifier | Result |
 | --- | --- | --- |
@@ -19,7 +19,9 @@
 | Product/legal materials archive | `/Users/gloriachan/Documents/fabushi-rhs-archive-20260907/materials-7f31e977.tar.gz` | SHA-256 `a743786000d237b62c101a4edc0f526d0c5238ed6e5bc7643fad1c24ce88e667` |
 | Candidate integrity | `candidate-slim` | 75,238 objects; garbage 0; fsck passed |
 | Remote heads/tags | `git ls-remote` | 1572 heads; 401 immutable-release tags |
-| Electron quality gate | [run 34085259212](https://github.com/bhrumom/fabushi/actions/runs/34085259212) | in progress |
-| Native mobile quality gate | [run 34085259258](https://github.com/bhrumom/fabushi/actions/runs/34085259258) | in progress |
+| Electron quality gate | [run 34085259212](https://github.com/bhrumom/fabushi/actions/runs/34085259212)；macOS [job 101639923085](https://github.com/bhrumom/fabushi/actions/runs/34085259212/job/101639923085) | passed on rerun; first-attempt failure diagnostics retained |
+| Electron packaged evidence | `fabushi-electron-mac` / `fabushi-electron-mac-e2e-diagnostics` artifacts `10006720572` / `10006708101`; first-attempt diagnostics `10006079668` | retained, unexpired at verification |
+| Native mobile quality gate | [run 34085259258](https://github.com/bhrumom/fabushi/actions/runs/34085259258) | passed; Android reports and iOS xcresult retained |
+| Final record | PR [#2483](https://github.com/bhrumom/fabushi/pull/2483), merged `6afd3475744d284d797140a2393d3a3fc551c211`; current main `7ea5055b1e0d7ee078d0d21321b5884fa93bead2` | canonical-main readback passed |
 
 The original dirty worktree and untracked user files were not included in the rewrite source and were not modified.
