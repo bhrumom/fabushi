@@ -1,0 +1,185 @@
+name: Global Dharma exact-main evidence publish
+
+on:
+  workflow_run:
+    workflows:
+      - Electron desktop quality gate
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: global-dharma-evidence-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish direct Global Dharma evidence assets
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      ELECTRON_RUN_ID: ${{ github.event.workflow_run.id }}
+      DIAGNOSTICS_NAME: fabushi-electron-mac-e2e-diagnostics
+
+    steps:
+      - id: provenance
+        name: Freeze exact-main Electron provenance and original diagnostics metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "${#SOURCE_SHA}" -eq 40
+          run_json="$RUNNER_TEMP/electron-run.json"
+          artifacts_json="$RUNNER_TEMP/electron-artifacts.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ELECTRON_RUN_ID" > "$run_json"
+          test "$(jq -r .head_sha "$run_json")" = "$SOURCE_SHA"
+          test "$(jq -r .head_branch "$run_json")" = main
+          test "$(jq -r .event "$run_json")" = push
+          test "$(jq -r .conclusion "$run_json")" = success
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ELECTRON_RUN_ID/artifacts?per_page=100" > "$artifacts_json"
+          matches="$(jq --arg name "$DIAGNOSTICS_NAME" '[.artifacts[] | select(.name == $name and .expired == false)] | length' "$artifacts_json")"
+          test "$matches" -eq 1
+          artifact_id="$(jq -r --arg name "$DIAGNOSTICS_NAME" '.artifacts[] | select(.name == $name and .expired == false) | .id' "$artifacts_json")"
+          artifact_digest="$(jq -r --arg name "$DIAGNOSTICS_NAME" '.artifacts[] | select(.name == $name and .expired == false) | .digest // empty' "$artifacts_json")"
+          artifact_api_url="$(jq -r --arg name "$DIAGNOSTICS_NAME" '.artifacts[] | select(.name == $name and .expired == false) | .archive_download_url' "$artifacts_json")"
+          test -n "$artifact_id"
+          test -n "$artifact_digest"
+          test -n "$artifact_api_url"
+          echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+          echo "artifact_digest=$artifact_digest" >> "$GITHUB_OUTPUT"
+          echo "artifact_api_url=$artifact_api_url" >> "$GITHUB_OUTPUT"
+          echo "artifact_ui_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$ELECTRON_RUN_ID/artifacts/$artifact_id" >> "$GITHUB_OUTPUT"
+          echo "run_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$ELECTRON_RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Download the original macOS packaged E2E diagnostics artifact
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: ${{ env.DIAGNOSTICS_NAME }}
+          path: diagnostics
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.ELECTRON_RUN_ID }}
+          digest-mismatch: error
+
+      - id: stage
+        name: Require requested videos and composer screenshot, then hash evidence
+        shell: bash
+        env:
+          ORIGINAL_ARTIFACT_ID: ${{ steps.provenance.outputs.artifact_id }}
+          ORIGINAL_ARTIFACT_DIGEST: ${{ steps.provenance.outputs.artifact_digest }}
+          ORIGINAL_ARTIFACT_API_URL: ${{ steps.provenance.outputs.artifact_api_url }}
+          ORIGINAL_ARTIFACT_UI_URL: ${{ steps.provenance.outputs.artifact_ui_url }}
+          ELECTRON_RUN_URL: ${{ steps.provenance.outputs.run_url }}
+        run: |
+          set -euo pipefail
+          short="${SOURCE_SHA:0:12}"
+          out="$GITHUB_WORKSPACE/release-assets"
+          mkdir -p "$out"
+
+          require_one() {
+            local pattern="$1"
+            local destination="$2"
+            mapfile -t found < <(find diagnostics -type f -name "$pattern" -print)
+            if [ "${#found[@]}" -ne 1 ]; then
+              printf 'Expected exactly one %s, found %s\n' "$pattern" "${#found[@]}" >&2
+              printf '%s\n' "${found[@]:-}" >&2
+              exit 1
+            fi
+            cp "${found[0]}" "$out/$destination"
+            test -s "$out/$destination"
+          }
+
+          require_one 'global-dharma-user-journey.webm' "global-dharma-user-journey-$short.webm"
+          require_one 'global-dharma-user-journey-restart-logout.webm' "global-dharma-user-journey-restart-logout-$short.webm"
+          require_one 'miniapp-search-entry-user-journey.webm' "miniapp-search-entry-user-journey-$short.webm"
+          require_one '03-global-dharma-bot-composer-open-app-adjacent.png' "global-dharma-bot-composer-open-app-adjacent-$short.png"
+
+          (cd diagnostics && zip -q -r "$out/global-dharma-mac-e2e-diagnostics-$short.zip" .)
+          test -s "$out/global-dharma-mac-e2e-diagnostics-$short.zip"
+          (
+            cd "$out"
+            sha256sum *.webm *.png *.zip | sort -k2 > SHA256SUMS.txt
+          )
+
+          jq -n \
+            --arg protocol 'fabushi.global-dharma.evidence.v1' \
+            --arg sourceSha "$SOURCE_SHA" \
+            --arg electronRunId "$ELECTRON_RUN_ID" \
+            --arg electronRunUrl "$ELECTRON_RUN_URL" \
+            --arg originalArtifactName "$DIAGNOSTICS_NAME" \
+            --arg originalArtifactId "$ORIGINAL_ARTIFACT_ID" \
+            --arg originalArtifactDigest "$ORIGINAL_ARTIFACT_DIGEST" \
+            --arg originalArtifactApiUrl "$ORIGINAL_ARTIFACT_API_URL" \
+            --arg originalArtifactUiUrl "$ORIGINAL_ARTIFACT_UI_URL" \
+            --arg paymentProvider 'FABUSHI_FEATURE_HOST_MODE=test (deterministic, non-charging)' \
+            '{
+              protocol: $protocol,
+              sourceSha: $sourceSha,
+              electronRunId: $electronRunId,
+              electronRunUrl: $electronRunUrl,
+              originalDiagnosticsArtifact: {
+                name: $originalArtifactName,
+                id: $originalArtifactId,
+                digest: $originalArtifactDigest,
+                apiDownloadUrl: $originalArtifactApiUrl,
+                uiUrl: $originalArtifactUiUrl
+              },
+              paymentProvider: $paymentProvider,
+              productionPspKycVerified: false
+            }' > "$out/global-dharma-evidence-metadata.json"
+          jq -e --arg sha "$SOURCE_SHA" '.sourceSha == $sha and .productionPspKycVerified == false' "$out/global-dharma-evidence-metadata.json" >/dev/null
+
+          echo "tag=global-dharma-evidence-$short" >> "$GITHUB_OUTPUT"
+          echo "asset_dir=$out" >> "$GITHUB_OUTPUT"
+
+      - id: publish
+        name: Publish directly downloadable evidence assets bound to exact main SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.stage.outputs.tag }}
+          ASSET_DIR: ${{ steps.stage.outputs.asset_dir }}
+          ORIGINAL_ARTIFACT_UI_URL: ${{ steps.provenance.outputs.artifact_ui_url }}
+          ORIGINAL_ARTIFACT_DIGEST: ${{ steps.provenance.outputs.artifact_digest }}
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/release-notes.md"
+          cat > "$notes" <<EOF
+          Exact-main Global Dharma desktop acceptance evidence.
+
+          - Source SHA: \`$SOURCE_SHA\`
+          - Electron packaged E2E run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$ELECTRON_RUN_ID
+          - Original macOS diagnostics artifact: $ORIGINAL_ARTIFACT_UI_URL
+          - Original diagnostics digest: \`$ORIGINAL_ARTIFACT_DIGEST\`
+          - Payment acceptance: deterministic non-charging Fabushi test provider; production PSP/KYC is not claimed.
+          - Android/iOS are not prerequisites for this evidence publication.
+          EOF
+
+          mapfile -t assets < <(find "$ASSET_DIR" -maxdepth 1 -type f -print | sort)
+          test "${#assets[@]}" -ge 7
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            target="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+            test "$target" = "$SOURCE_SHA"
+            gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$SOURCE_SHA" \
+              --title "Global Dharma evidence ${SOURCE_SHA:0:12}" \
+              --notes-file "$notes" \
+              --prerelease
+          fi
+          release_url="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
+          target="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          test "$target" = "$SOURCE_SHA"
+          echo "release_url=$release_url" >> "$GITHUB_OUTPUT"
+          echo "Published direct evidence: $release_url" >> "$GITHUB_STEP_SUMMARY"
