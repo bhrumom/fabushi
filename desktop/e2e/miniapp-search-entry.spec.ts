@@ -96,14 +96,12 @@ test('searching 小程序 exposes and installs the official 全球法布施 Mini
     await expect(open).toBeVisible({ timeout: 15_000 });
     await shot(page, testInfo, '02-global-dharma-installed-from-miniapp-search.png');
 
+    // End the global Application-search state before proving the installed Bot
+    // projection. This follows the product's own close-search action and keeps
+    // the exact “小程序” discovery step separate from the Bots sidebar state.
+    await page.getByRole('button', { name: '关闭搜索' }).click();
+    await expect(page.getByTestId('global-search-surface')).toBeHidden();
     await navigate(page, 'Bots');
-    // Global Application search intentionally projects its query into the
-    // sidebar search state. Clear that UI-local filter before proving that the
-    // newly installed Bot itself is present; otherwise the literal “小程序”
-    // query hides @global_dharma_bot even though installation succeeded.
-    const sidebarSearch = page.getByRole('complementary').getByPlaceholder('搜索');
-    await expect(sidebarSearch).toBeVisible();
-    await sidebarSearch.fill('');
 
     const bot = page.getByRole('button', { name: /@global_dharma_bot\b/ }).first();
     await expect(bot).toBeVisible({ timeout: 15_000 });
