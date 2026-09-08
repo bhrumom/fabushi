@@ -117,6 +117,7 @@ test('searching 小程序 exposes and installs the official 全球法布施 Mini
     await expect(composerOpen).toBeVisible();
     await expect(composerOpen).toHaveText('打开应用');
     await expect(input).toBeVisible();
+    await expect(input).toHaveAttribute('placeholder', '消息');
 
     const placement = await page.evaluate(() => {
       const inputElement = document.querySelector<HTMLTextAreaElement>('textarea[data-testid="messenger-input"]');
@@ -124,20 +125,26 @@ test('searching 小程序 exposes and installs the official 全球法布施 Mini
       if (!inputElement || !openElement) return null;
       const inputForm = inputElement.closest('form');
       const openForm = openElement.closest('form');
+      if (!inputForm) return null;
+      const formRect = inputForm.getBoundingClientRect();
       const inputRect = inputElement.getBoundingClientRect();
       const openRect = openElement.getBoundingClientRect();
       const verticalOverlap = Math.max(0, Math.min(inputRect.bottom, openRect.bottom) - Math.max(inputRect.top, openRect.top));
       const minimumHeight = Math.min(inputRect.height, openRect.height);
       return {
-        sameForm: Boolean(inputForm && inputForm === openForm),
+        sameForm: inputForm === openForm,
         immediatelyAfterInput: openElement.previousElementSibling === inputElement,
         inputRight: inputRect.right,
         openLeft: openRect.left,
         horizontalGap: openRect.left - inputRect.right,
         verticalOverlap,
         overlapRatio: minimumHeight > 0 ? verticalOverlap / minimumHeight : 0,
+        inputWidth: inputRect.width,
         inputHeight: inputRect.height,
+        openWidth: openRect.width,
         openHeight: openRect.height,
+        composerWidth: formRect.width,
+        inputShare: formRect.width > 0 ? inputRect.width / formRect.width : 0,
       };
     });
 
@@ -147,6 +154,13 @@ test('searching 小程序 exposes and installs the official 全球法布施 Mini
     expect(placement?.horizontalGap).toBeGreaterThanOrEqual(-1);
     expect(placement?.horizontalGap).toBeLessThanOrEqual(24);
     expect(placement?.overlapRatio).toBeGreaterThanOrEqual(0.6);
+    // Adjacency alone is insufficient: the user must still have a clearly
+    // usable message field, and the Mini App action must remain compact enough
+    // to read visually as a button beside that field rather than as the field.
+    expect(placement?.inputWidth).toBeGreaterThanOrEqual(240);
+    expect(placement?.inputShare).toBeGreaterThanOrEqual(0.35);
+    expect(placement?.openWidth).toBeGreaterThanOrEqual(72);
+    expect(placement?.openWidth).toBeLessThanOrEqual(120);
     await shot(page, testInfo, '03-global-dharma-bot-composer-open-app-adjacent.png');
 
     await page.screencast.stop();
