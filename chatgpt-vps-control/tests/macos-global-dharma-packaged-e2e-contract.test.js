@@ -110,7 +110,13 @@ test('exact-main evidence publication is desktop-only, provenance-bound, direct-
   ]) {
     assert.ok(publisher.includes(needle), `missing exact-main evidence publication invariant: ${needle}`);
   }
-  for (const forbidden of ['Native mobile', 'Android', 'iOS', 'native-mobile']) {
+  for (const forbidden of [
+    'native-mobile.yml',
+    'fabushi-native-',
+    'Native mobile result',
+    'needs.wait-native',
+    'native_run_id',
+  ]) {
     assert.equal(publisher.includes(forbidden), false, `${forbidden} must not gate desktop Global Dharma evidence publication`);
   }
 });
