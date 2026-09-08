@@ -27,12 +27,12 @@ Make the official Global Dharma local prayer-wheel capability a canonical Fabush
 
 ### Round B — Host enforcement and checkout
 
-- [ ] Wire the narrow authenticated user Pay proxy into the Platform Router without exposing admin/provider routes.
-- [ ] Wire desktop Mini App Host access check + createIntent/openCheckout to the native authenticated bridge.
-- [ ] Gate Global Dharma `hostRequest` before any local prayer-wheel execution/staging.
-- [ ] Add desktop E2E: no entitlement -> purchase required -> checkout action; valid entitlement -> host request allowed.
-- [ ] Verify refund/cancel/expiry removes access in E2E/contract path.
-- [ ] Extend the same canonical access contract to native mobile host execution paths.
+- [x] Wire the narrow authenticated user Pay proxy into the Platform Router without exposing admin/provider routes.
+- [x] Wire desktop Mini App Host access check + createIntent/openCheckout to the native authenticated bridge.
+- [x] Gate Global Dharma `hostRequest` before any local prayer-wheel execution/staging.
+- [x] Add desktop E2E: no entitlement -> purchase required -> checkout action; valid entitlement -> host request allowed.
+- [ ] Verify refund/cancel/expiry removes access in the full cross-platform E2E path. Server contract coverage exists, but mobile terminal acceptance remains open.
+- [ ] Extend the same canonical access contract to native mobile host execution paths and close terminal mobile evidence.
 
 ### Round C — production delivery
 
@@ -61,7 +61,6 @@ Until those provider-side facts exist, the corresponding rail must remain unavai
   - `src/worker_api/commerce.rs`
   - `fabushi/web/tests/global-dharma-paid-capability.test.js`
 
-
 ## 2026-09-06 — Desktop Round B execution
 
 - Intake canonical main: `8f7e83902a616ecdb62fdaded65ea79227e745f3`.
@@ -77,20 +76,28 @@ Implementation slice:
 - [x] One host-owned durable `fabushi.miniapp.execution.v1` revision shared by Bot and Mini App UI, mirrored through native client persistence and deleted on account-session reset.
 - [x] Exact `local.prayer-wheel.start` entitlement gate before prayer-wheel start and before accepting a returned hostRequest for that capability.
 - [x] Explicit deterministic CI-only payment provider under `FABUSHI_FEATURE_HOST_MODE=test`, with intent idempotency, callback dedupe, durable entitlement and restore; production stays on canonical Pay/entitlement authority.
-- [x] Packaged Electron E2E now covers search -> install -> Bot -> natural language -> WebMCP -> open app same revision -> safe account projection -> CNY 1080 purchase -> restore -> prayer-wheel start -> restart recovery, with 11 named screenshots plus repository-level video/trace recording.
+- [x] Packaged Electron E2E covers search -> install -> Bot -> natural language -> WebMCP -> open app same revision -> safe account projection -> CNY 1080 purchase -> restore -> prayer-wheel start -> restart recovery -> logout cleanup, with 12 named screenshots plus video/trace recording.
 - [x] Linux light native contract gate: 35/35 PASS; no local heavy build/E2E.
-- [ ] Protected PR CI green.
-- [ ] Protected merge to canonical main and exact-main readback.
-- [ ] Canonical-main packaged Electron Linux/macOS/Windows journey green with screenshots/video/trace/report and real downloadable links.
+- [x] Protected PR CI green and PR #2448 merged.
+- [x] Protected merge to canonical main as `d7c8b45c3a7409d14d11bbf49107ff320b05ad84`.
+- [x] Canonical-main packaged Electron Linux/macOS/Windows matrix green in Actions run `34052575208`; diagnostics artifacts `9995167107` / `9995176003` / `9995159094` retain screenshots/video/trace/report.
 
 Evidence: `../../evidence/M9-GLOBAL-DHARMA-003/README.md`.
+
 ## 2026-09-07 Web/service credential dependency
 
-The Host-controlled Mini App credential now has an explicit server-consumer contract: five-minute, session-bound, exact-plugin scope; canonical entitlement may consume it only for the matching plugin/capability read. Purchase/restore remain Host-authenticated Platform Router operations. This closes the Web/service side of the AAC-004 bootstrap/revoke gap without creating a second payment or identity authority. Packaged proof remains pending until the protected PR lands and desktop/mobile exact-main journeys run.
+The Host-controlled Mini App credential now has an explicit server-consumer contract: five-minute, session-bound, exact-plugin scope; canonical entitlement may consume it only for the matching plugin/capability read. Purchase/restore remain Host-authenticated Platform Router operations. This closes the Web/service side of the AAC-004 bootstrap/revoke gap without creating a second payment or identity authority.
 
 ## 2026-09-07 desktop evidence and Android blocker readback
 
 - Desktop #2448 functional evidence head `1655ea8070e07ad7dd8ab8e9347fbcb43f6ddf8f` passed Electron run `34051925481`. Artifact `9994834346` contains checkpoints `01`-`12`, including exact CNY `108000` purchase, restore, entitled `local.prayer-wheel.start`, restart recovery and logout cleanup; Global Dharma journey WebM and trace are included.
-- No real provider charge occurred: the desktop evidence uses the existing deterministic `FABUSHI_FEATURE_HOST_MODE=test` provider path while server-authoritative product/entitlement semantics remain unchanged.
+- No real provider charge occurred: the desktop evidence uses the deterministic `FABUSHI_FEATURE_HOST_MODE=test` provider path while server-authoritative product/entitlement semantics remain unchanged.
 - Android release `android-v1.2.52-262491811@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab` is immutable and checksummed. Interactive run `34051316405` did not reach terminal success; artifact `9994884584` reports `failed-timeout` after stale generation calls and App-owned connection refresh failure. Android purchase/restore/terminal evidence remains PENDING.
-- Final completion still requires #2448 protected merge, accepted-main packaged Electron rerun, and a fresh Android terminal journey.
+
+## 2026-09-08 — Canonical-main packaged desktop closure readback
+
+- PR #2448 is merged; accepted feature merge SHA is `d7c8b45c3a7409d14d11bbf49107ff320b05ad84`.
+- Exact-SHA `Electron desktop quality gate` run `34052575208` is SUCCESS. Linux, macOS and Windows packaged jobs all completed successfully, and the aggregate `Electron desktop result` job passed.
+- Canonical-main diagnostics artifacts: Linux `9995167107`, macOS `9995176003`, Windows `9995159094`; all are tied to `main@d7c8b45c3a7409d14d11bbf49107ff320b05ad84`.
+- macOS packaged evidence contains `global-dharma-user-journey.webm`, `trace.zip`, and checkpoints `01`-`12`. The journey proves Marketplace search/install, Bot projection, natural-language WebMCP execution, Telegram-style app opening at the same runtime revision, bounded logged-in account projection with `tokenExposed:false`, exact CNY `108000` lifetime purchase, restore, entitled `local.prayer-wheel.start`, restart persistence and logout cleanup.
+- Desktop Round B is therefore `E2E_VERIFIED` for deterministic CI payment semantics. Overall task remains `IN_PROGRESS` because real PSP/provider activation, Round C production smoke/reconciliation, and fresh terminal mobile proof are not complete.
