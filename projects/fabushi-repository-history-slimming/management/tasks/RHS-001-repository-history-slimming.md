@@ -4,9 +4,9 @@
 - Project Key: `RHS`
 - Task ID: `RHS-001`
 - Source requirement: `source/2026-09-07-repository-history-slimming.md`
-- Status: `in-progress`
+- Status: `passed with immutable-release exception`
 - Started: `2026-09-07`
-- Updated: `2026-09-07`
+- Updated: `2026-09-09`
 
 ## Objective
 
@@ -20,7 +20,7 @@
 
 1. 项目记录先通过项目治理检查并合入 canonical `main`。
 2. 推送前后远端 heads 名称集合按批准的 544 个过期 head 清理收敛；401 个 immutable-release tags 保持原 OID；OID 映射和原始回滚清单齐全。
-3. 审核生成路径在候选新历史中无残留，关键产品路径差异已审计；当前树的体积变化交由 post-main CI 继续验证。
+3. 审核生成路径在候选新历史中无残留，关键产品路径差异已审计；post-main CI 已验证接受的瘦身产品树。
 4. 候选 `git fsck --full`、连通性和 GitHub 新 `main`/heads 读回通过。
 5. 规则只在迁移窗口改变，完成后恢复；页面显示 `Bypass list is empty`。
 6. 本机不运行构建、打包、原生测试或 E2E。
@@ -39,6 +39,8 @@
 - Project bootstrap PR: [#2482](https://github.com/bhrumom/fabushi/pull/2482), merged into canonical main at `7f31e97787c7c669a005b08245b72c03b07f306f`
 - History rewrite: direct canonical ref migration from isolated candidate; rewritten `main` is `bc4fb3032a03d6600d733ce28295256d77cca9d4`; no normal PR can represent a force-updated history.
 - Final record branch: `codex/rhs-finalize-20260907` (this documentation round)
+- Final record PR: [#2483](https://github.com/bhrumom/fabushi/pull/2483), merged at `6afd3475744d284d797140a2393d3a3fc551c211`.
+- Canonical-main readback on 2026-09-09: `7ea5055b1e0d7ee078d0d21321b5884fa93bead2`; it contains the accepted rewritten product SHA `bc4fb3032a03d6600d733ce28295256d77cca9d4`.
 
 ## Verification and evidence
 
@@ -49,11 +51,12 @@
 - 材料归档：`/Users/gloriachan/Documents/fabushi-rhs-archive-20260907/materials-7f31e977.tar.gz`，133 MiB，SHA-256 `a743786000d237b62c101a4edc0f526d0c5238ed6e5bc7643fad1c24ce88e667`。
 - 候选 self-contained bare 镜像：`candidate-slim`；pack 717,939 KiB，75,238 objects，garbage 为 0，`git fsck --full` 通过。
 - 当前树审计：13,678 files / 1,104,229,976 bytes → 10,894 files / 455,418,012 bytes，减少 2,784 files、648,811,964 bytes（约 58.7%）。
-- 远端读回：`main=bc4fb3032a03d6600d733ce28295256d77cca9d4`，1572 heads，401 tags。
-- 质量门：[`Electron desktop quality gate`](https://github.com/bhrumom/fabushi/actions/runs/34085259212) 与 [`Native mobile quality gate`](https://github.com/bhrumom/fabushi/actions/runs/34085259258) 针对该 SHA 仍在运行；不得用本机检查替代它们。
+- 远端迁移时读回：`main=bc4fb3032a03d6600d733ce28295256d77cca9d4`，1572 heads，401 tags；2026-09-09 当前读回为 `main=7ea5055b1e0d7ee078d0d21321b5884fa93bead2`，1598 heads，419 tags。
+- [`Electron desktop quality gate`](https://github.com/bhrumom/fabushi/actions/runs/34085259212)：首次 macOS 用户旅程失败，保留失败诊断；重跑 attempt 2 成功，macOS job [101639923085](https://github.com/bhrumom/fabushi/actions/runs/34085259212/job/101639923085)，Linux/Windows 与汇总任务也成功。成功产物包括 Electron macOS 包和用户旅程诊断；失败与成功诊断均保留在该 run 的 artifacts 中。
+- [`Native mobile quality gate`](https://github.com/bhrumom/fabushi/actions/runs/34085259258)：成功，Android instrumentation 报告和 iOS xcresult 已保留。
 
-Post-main product delivery：`in-progress`。虽然目标是历史治理，当前树移除了重复/生成路径，故按应用影响路径等待 GitHub Actions packaged/quality evidence；本机未执行构建、打包、原生测试或 E2E。
+Post-main product delivery：`passed`，针对接受的瘦身产品 SHA `bc4fb3032a03d6600d733ce28295256d77cca9d4`。Electron macOS/Linux/Windows 打包、签名、公证及完整用户旅程均由 GitHub Actions 重跑通过；Native mobile quality gate 也通过。本机未执行构建、打包、原生测试或 E2E。
 
 ## Blockers / risks
 
-主要风险为 force push、路径误删、漏 ref、immutable release 限制和 post-main 质量门失败；缓解措施见 `management/04-风险登记.md`。下一动作是等待两个质量门完成并回填结果；若失败，建立后续修复 PR。
+主要风险为 force push、路径误删、漏 ref 和 immutable release 限制；前述风险已通过归档、隔离镜像、读回审计和 post-main 质量门缓解。下一动作：无；若未来需要改写 immutable tags，必须另行评估 release 保留与仓库迁移方案。
