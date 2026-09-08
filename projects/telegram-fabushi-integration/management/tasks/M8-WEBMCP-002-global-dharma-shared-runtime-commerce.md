@@ -2,11 +2,12 @@
 
 - Project: `FAB-P0001 / TFI`
 - Stage: `M8 WebMCP + M9 payment integration`
-- Status: `IN_PROGRESS`
+- Status: `DESKTOP_E2E_VERIFIED / OVERALL_IN_PROGRESS`
 - Started: `2026-09-06`
 - Canonical intake base: `main@8f7e83902a616ecdb62fdaded65ea79227e745f3`
-- Current canonical main readback: `main@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`
+- Current canonical main readback: `main@77f72b13304b75a45530de03fb807f52c3624be1`
 - Web/service protected merge: #2445 `7ec44b0b000e25ceb8799843cf98f85f3c6aa9b6` -> `c82b29cd6404c2f19b93d8479b2e2cae45469249`
+- Desktop protected merge: #2448 -> `d7c8b45c3a7409d14d11bbf49107ff320b05ad84`
 - Branch: `feat/tfi-global-dharma-web-service-sync-pay-20260906`
 - Source: `../../source/2026-09-06-global-dharma-web-service-sync-commerce.md`
 - Cross-project dependency: `FAB-P0008/AAC-004`
@@ -53,29 +54,34 @@ Close the Web/server authority boundary for the official `global-dharma` Mini Ap
 - Protected PR merge + canonical-main readback required.
 - Final packaged-user journey must retain full video, meaningful checkpoint screenshots, trace/report/logs and a real downloadable artifact link. If provider sandbox/package/device is unavailable, task remains BLOCKED/IN_PROGRESS and records the exact dependency.
 
-## Known baseline and stale records
+## Baseline history
 
-- PR #2169 (`M8-WEBMCP-001`) is already merged as `fefb35fc8a4e5c8dabecc9c11803764ec950b6e9`; old task/WBS pre-merge wording must be corrected in this round.
-- PR #2135 (`M9-GLOBAL-DHARMA-003` Round A) is already merged as `db287caa1b8495c94bf9ecafe7f064bca2ee57a0`; Round B Host/Web integration and packaged payment/restore evidence remain open.
-- M2 account sync already provides durable `as1:<sequence>` difference/snapshot recovery and is the required event substrate.
+- PR #2169 (`M8-WEBMCP-001`) merged as `fefb35fc8a4e5c8dabecc9c11803764ec950b6e9`.
+- PR #2135 (`M9-GLOBAL-DHARMA-003` Round A) merged as `db287caa1b8495c94bf9ecafe7f064bca2ee57a0`.
+- M2 account sync provides durable `as1:<sequence>` difference/snapshot recovery and is the required event substrate.
 
-## Evidence
+## Web/service evidence
 
 - Intake source commit: `2eb4b0cf524942f003bc6ec973ba8119745b2030`.
 - Implementation commit: `f9a2df5850e81bd5f1fbe3450adf4ec4e3b0f906`.
-- Current-main synchronization merge: `a53b576ab99f0c3fbeed65e4e3937424d9abd3c6` (merged `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa`; zero overlapping paths with #2447).
-- Governed PR: #2445, OPEN / MERGEABLE at this evidence readback.
-- Current-head targeted Actions: run `34047757146` SUCCESS; jobs `101525766224` backend, `101525766209` Web build, `101525766045` CNY1080 commerce; artifacts `9993622901`, `9993636543`, `9993616364`.
-- Protected merge and accepted-main packaged evidence remain pending.
-
-## Blockers
-
-- Real production/sandbox payment provider credentials and KYC/provider activation are external; tests must fail closed if absent.
-- Packaged-user video depends on an installable accepted-main release/Actions device lane and is not considered complete until a real artifact exists. Related desktop facade PR #2448 is OPEN and its Electron run `34047238103` currently fails the Global Dharma journey before packaging, so it cannot satisfy this gate.
-
-## 2026-09-07 merged Web/service + consumer evidence
-
+- Current-main synchronization merge: `a53b576ab99f0c3fbeed65e4e3937424d9abd3c6`.
 - #2445 is MERGED. Exact-head run `34049805438` is SUCCESS with backend/runtime/account job `101531239556`, CNY1080 order/webhook/refund/restore job `101531239450`, and Web production build job `101531239575`; artifacts `9994199494` / `9994192661` / `9994207785`.
-- Merge queue run `34049934041` / job `101531586697` accepted `c82b29cd6404c2f19b93d8479b2e2cae45469249`. Later Android #2451/#2452 advanced canonical main to `380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab` without overlapping Web/service logic.
-- Desktop consumer PR #2448 has green real-Rust-Host pre-package evidence at `1655ea8070e07ad7dd8ab8e9347fbcb43f6ddf8f`: run `34051925481`, artifact `9994834346`, 12 screenshots, trace and Global Dharma user-journey video. It covers search/install -> Bot natural language -> shared revision -> CNY1080 test purchase -> restore -> entitled local prayer wheel -> restart -> logout cleanup.
-- This does not yet substitute for post-merge installable Electron package evidence. Android 1.2.52 interactive `34051316405` is a real failed timeout with artifact `9994884584`; mobile terminal proof remains blocked.
+- Merge queue run `34049934041` / job `101531586697` accepted `c82b29cd6404c2f19b93d8479b2e2cae45469249`.
+
+## Desktop consumer evidence
+
+- Pre-package real-Rust-Host evidence: #2448 head `1655ea8070e07ad7dd8ab8e9347fbcb43f6ddf8f`, run `34051925481`, artifact `9994834346`; 12 screenshots, trace and Global Dharma user-journey video.
+- #2448 then merged through protected main as `d7c8b45c3a7409d14d11bbf49107ff320b05ad84`.
+- Exact accepted-main Electron run `34052575208` is SUCCESS. Packaged Linux, macOS and Windows jobs all succeeded and aggregate `Electron desktop result` passed.
+- Exact-main diagnostics: Linux `9995167107`, macOS `9995176003`, Windows `9995159094`. macOS artifact contains 12 named checkpoints, `global-dharma-user-journey.webm`, `trace.zip`, and Playwright report.
+- The packaged journey proves: search `全球法布施` -> install -> Bot projection -> natural-language WebMCP `status` -> open Telegram-style app -> same host revision -> controlled logged-in account projection (`tokenExposed:false`) -> exact CNY 108000 lifetime entitlement -> restore -> Bot starts entitled local prayer wheel -> reopen app at same newer revision -> restart recovery -> logout cleanup.
+
+## Blockers / non-claims
+
+- No real payment provider charge is claimed. Packaged evidence uses explicit deterministic `FABUSHI_FEATURE_HOST_MODE=test`; production product/price/entitlement authority remains canonical Fabushi Pay.
+- Real PSP/web-provider credentials, checkout URL, KYC/KYB/provider activation and production reconciliation remain external Round C dependencies and must fail closed when absent.
+- Android 1.2.52 interactive run `34051316405` failed with timeout / stale surface generation / App-owned connection refresh failure; artifact `9994884584` preserves the failure. Mobile terminal proof remains PENDING.
+
+## 2026-09-08 acceptance position
+
+Desktop/Web/service requirements for the requested Global Dharma search/install -> Bot -> WebMCP -> synchronized Web UI -> bounded Fabushi account session -> CNY 1080 lifetime entitlement -> restore -> local prayer-wheel journey are `E2E_VERIFIED` on packaged Electron. The overall cross-platform/production task remains `IN_PROGRESS` until mobile terminal acceptance and production provider/reconciliation evidence are closed.
