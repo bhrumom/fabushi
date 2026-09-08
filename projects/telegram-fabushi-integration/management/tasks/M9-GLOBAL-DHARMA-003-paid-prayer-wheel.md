@@ -94,3 +94,16 @@ The Host-controlled Mini App credential now has an explicit server-consumer cont
 - No real provider charge occurred: the desktop evidence uses the existing deterministic `FABUSHI_FEATURE_HOST_MODE=test` provider path while server-authoritative product/entitlement semantics remain unchanged.
 - Android release `android-v1.2.52-262491811@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab` is immutable and checksummed. Interactive run `34051316405` did not reach terminal success; artifact `9994884584` reports `failed-timeout` after stale generation calls and App-owned connection refresh failure. Android purchase/restore/terminal evidence remains PENDING.
 - Final completion still requires #2448 protected merge, accepted-main packaged Electron rerun, and a fresh Android terminal journey.
+
+## 2026-09-08 — current-main desktop acceptance reconciliation
+
+This section supersedes the stale desktop `PENDING` wording above; it does not close the unrelated mobile or production-provider gates.
+
+- Desktop consumer PR #2448 is protected-merged as `d7c8b45c3a7409d14d11bbf49107ff320b05ad84`.
+- Exact desktop entry repair #2476 makes literal query `小程序` discover/install the official `全球法布施` Mini App, and evidence-gate repair #2481 requires that exact entry in packaged macOS evidence.
+- Follow-up #2486 is merged as `f4364d9b79449d2c55deeeca18204ff93ef1ed3e`; it repairs production WebMCP routing/natural-language `content` mapping and keeps the official Global Dharma app graphical Web UI on the canonical tool path.
+- Canonical readback for this reconciliation is `main@77f72b13304b75a45530de03fb807f52c3624be1`, which contains #2448/#2476/#2481/#2486. Electron desktop quality run `34115411357` is SUCCESS; Linux job `101720936725`, macOS job `101720937161`, Windows job `101720937232`, and aggregate result job `101724595866` all succeeded.
+- The current-main macOS diagnostics artifact is `10016406321` (`fabushi-electron-mac-e2e-diagnostics`, digest `sha256:1c60a3d9725d08ec65044c94fd1c31d128663bba9b0b52819f24d99f8d49ea97`). It contains exact-entry screenshots/video, checkpoints `01`-`12`, `global-dharma-user-journey.webm`, `global-dharma-user-journey-restart-logout.webm`, Playwright traces and report.
+- The packaged current-main desktop journey therefore objectively covers: `小程序` search -> install 全球法布施 -> Messenger Bot projection -> natural-language WebMCP -> 打开应用 same shared revision -> bounded Fabushi account session -> server-authoritative CNY `108000` lifetime test purchase -> restore -> entitled `local.prayer-wheel.start` -> restart recovery -> logout cleanup.
+- No real-money payment was made in CI. Desktop acceptance exercises the deterministic test provider while preserving canonical Fabushi Pay product/intent/entitlement authority; production PSP/KYC/provider activation remains a fail-closed external dependency.
+- Status interpretation: the requested **desktop** Global Dharma loop is current-main packaged-E2E accepted. `M9-GLOBAL-DHARMA-003` remains `IN_PROGRESS` only because native-mobile terminal acceptance and production payment/provider deployment are broader project gates and are not claimed by this desktop reconciliation.
