@@ -3,8 +3,10 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const workflowPath = new URL('../../.github/workflows/macos-global-dharma-packaged-e2e.yml', import.meta.url);
+const publisherWorkflowPath = new URL('../../.github/workflows/global-dharma-exact-main-evidence-publish.yml', import.meta.url);
 const entryJourneyPath = new URL('../../desktop/e2e/miniapp-search-entry.spec.ts', import.meta.url);
 const journeyPath = new URL('../../desktop/e2e/miniapp-bot-parity.spec.ts', import.meta.url);
+const composerBridgePath = new URL('../../desktop/src/miniapp-composer-open-bridge.ts', import.meta.url);
 const serviceWorkflowPath = new URL('../../.github/workflows/global-dharma-web-service-contract.yml', import.meta.url);
 
 async function sources() {
@@ -12,6 +14,8 @@ async function sources() {
     readFile(workflowPath, 'utf8'),
     readFile(entryJourneyPath, 'utf8'),
     readFile(journeyPath, 'utf8'),
+    readFile(composerBridgePath, 'utf8'),
+    readFile(publisherWorkflowPath, 'utf8'),
   ]);
 }
 
@@ -79,25 +83,86 @@ test('exact-SHA service entitlement evidence self-starts on canonical main relea
   assert.match(serviceWorkflow, /CNY 1080 order\/webhook\/refund\/restore contract/u);
 });
 
+test('exact-main evidence publication is desktop-only, provenance-bound, direct-downloadable and fail-closed', async () => {
+  const [, , , , publisher] = await sources();
+  for (const needle of [
+    'workflow_run:',
+    'Electron desktop quality gate',
+    "github.event.workflow_run.event == 'push'",
+    "github.event.workflow_run.head_branch == 'main'",
+    "github.event.workflow_run.conclusion == 'success'",
+    'SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}',
+    'ELECTRON_RUN_ID: ${{ github.event.workflow_run.id }}',
+    'fabushi-electron-mac-e2e-diagnostics',
+    'actions/download-artifact@v8.0.1',
+    'digest-mismatch: error',
+    "require_one 'global-dharma-user-journey.webm'",
+    "require_one 'global-dharma-user-journey-restart-logout.webm'",
+    "require_one 'miniapp-search-entry-user-journey.webm'",
+    "require_one '03-global-dharma-bot-composer-open-app-adjacent.png'",
+    'sha256sum *.webm *.png *.zip',
+    'ORIGINAL_ARTIFACT_DIGEST',
+    'ORIGINAL_ARTIFACT_UI_URL',
+    'gh release create "$TAG"',
+    '--target "$SOURCE_SHA"',
+    '--prerelease',
+    'productionPspKycVerified: false',
+  ]) {
+    assert.ok(publisher.includes(needle), `missing exact-main evidence publication invariant: ${needle}`);
+  }
+  for (const forbidden of [
+    'native-mobile.yml',
+    'fabushi-native-',
+    'Native mobile result',
+    'needs.wait-native',
+    'native_run_id',
+  ]) {
+    assert.equal(publisher.includes(forbidden), false, `${forbidden} must not gate desktop Global Dharma evidence publication`);
+  }
+});
+
 test('packaged user journey covers exact 小程序 discovery/install plus Bot/WebMCP parity, CNY 1080 purchase/restore and local prayer-wheel authorization', async () => {
-  const [, entryJourney, journey] = await sources();
+  const [, entryJourney, journey, composerBridge] = await sources();
   for (const needle of [
     "fill('小程序')",
-    "global-search-app-global-dharma",
+    'global-search-app-global-dharma',
     "name: '安装'",
     "name: '打开'",
   ]) {
     assert.ok(entryJourney.includes(needle), `missing exact Mini App entry assertion: ${needle}`);
   }
 
+  for (const needle of [
+    "getByTestId('miniapp-bot-open')",
+    'sameForm',
+    'immediatelyAfterInput',
+    'horizontalGap',
+    'overlapRatio',
+    'toBeLessThanOrEqual(24)',
+    'toBeGreaterThanOrEqual(0.6)',
+    '03-global-dharma-bot-composer-open-app-adjacent.png',
+  ]) {
+    assert.ok(entryJourney.includes(needle), `missing composer placement assertion: ${needle}`);
+  }
+
+  for (const needle of [
+    "const SOURCE_TEST_ID = 'miniapp-bot-open-source'",
+    "const OPEN_TEST_ID = 'miniapp-bot-open'",
+    "bridge.className = 'fabushi-miniapp-composer-open'",
+    'source.hidden = true',
+    "input.insertAdjacentElement('afterend', bridge)",
+  ]) {
+    assert.ok(composerBridge.includes(needle), `missing composer bridge contract: ${needle}`);
+  }
+
   const required = [
     "fill('全球法布施')",
-    "global-search-app-global-dharma",
+    'global-search-app-global-dharma',
     "getByRole('button', { name: '安装' })",
     "getByTestId('miniapp-bot-open')",
     "source: 'bot'",
     "tool: 'status'",
-    "iframe[title=\"global-dharma\"]",
+    'iframe[title="global-dharma"]',
     "['status', 'start', 'stop', 'send']",
     "productId: 'prod.global-dharma.local-prayer-wheel.lifetime'",
     "productKind: 'digital_durable'",
@@ -106,7 +171,7 @@ test('packaged user journey covers exact 小程序 discovery/install plus Bot/We
     "getByTestId('fabushi-miniapp-purchase-lifetime')",
     "toContainText('¥1080')",
     "getByTestId('fabushi-miniapp-restore-purchases')",
-    "fill(prayerText)",
+    'fill(prayerText)',
     "surface: 'local-prayer-wheel'",
     'entitlementAllowed: true',
     "getByTestId('settings-logout')",
@@ -123,6 +188,9 @@ test('macOS Global Dharma evidence requires entry and parity screenshots, segmen
     assert.ok(entryJourney.includes(name));
     assert.ok(workflow.includes(name));
   }
+  assert.ok(entryJourney.includes('03-global-dharma-bot-composer-open-app-adjacent.png'));
+  assert.match(workflow, /desktop\/test-results\/\*\*\/\*\.webm/u);
+  assert.match(workflow, /desktop\/test-results/u);
   assert.match(entryJourney, /miniapp-search-entry-user-journey\.webm/u);
   assert.match(workflow, /miniapp-search-entry-user-journey\.webm/u);
 
