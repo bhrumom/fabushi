@@ -48,9 +48,12 @@ function syncComposerOpenAction(root: BridgeRoot): void {
     });
   }
 
-  bridge.textContent = label;
-  bridge.title = label;
-  bridge.setAttribute('aria-label', label);
+  // textContent mutates child nodes. Because this bridge observes childList
+  // changes, rewriting an identical label on every sync would schedule an
+  // endless MutationObserver microtask loop and block the conversation click.
+  if (bridge.textContent !== label) bridge.textContent = label;
+  if (bridge.title !== label) bridge.title = label;
+  if (bridge.getAttribute('aria-label') !== label) bridge.setAttribute('aria-label', label);
 
   if (bridge.closest('form') !== composer || bridge.previousElementSibling !== input) {
     input.insertAdjacentElement('afterend', bridge);
