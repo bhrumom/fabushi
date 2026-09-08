@@ -1,6 +1,11 @@
 name: Global Dharma exact-main evidence publish
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/global-dharma-exact-main-evidence-publish.yml'
+      - 'chatgpt-vps-control/tests/macos-global-dharma-packaged-e2e-contract.test.js'
   workflow_run:
     workflows:
       - Electron desktop quality gate
@@ -9,19 +14,45 @@ on:
 
 permissions:
   actions: read
-  contents: write
+  contents: read
 
 concurrency:
-  group: global-dharma-evidence-${{ github.event.workflow_run.head_sha }}
+  group: global-dharma-evidence-${{ github.event.workflow_run.head_sha || github.event.pull_request.number || github.sha }}
   cancel-in-progress: false
 
 jobs:
+  contract:
+    name: Global Dharma evidence publication contract
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout only evidence-contract sources
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/workflows/global-dharma-exact-main-evidence-publish.yml
+            .github/workflows/macos-global-dharma-packaged-e2e.yml
+            .github/workflows/global-dharma-web-service-contract.yml
+            chatgpt-vps-control/tests/macos-global-dharma-packaged-e2e-contract.test.js
+            desktop/e2e/miniapp-search-entry.spec.ts
+            desktop/e2e/miniapp-bot-parity.spec.ts
+            desktop/src/miniapp-composer-open-bridge.ts
+      - name: Prove exact-main evidence publication invariants
+        run: node --test chatgpt-vps-control/tests/macos-global-dharma-packaged-e2e-contract.test.js
+
   publish:
     name: Publish direct Global Dharma evidence assets
     if: >-
+      github.event_name == 'workflow_run' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.conclusion == 'success'
+    permissions:
+      actions: read
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
