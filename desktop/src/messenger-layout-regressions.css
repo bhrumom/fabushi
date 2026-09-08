@@ -25,16 +25,28 @@
 
 /*
  * Mini App Bot menu actions belong beside the message input, Telegram-style.
- * The delegated bridge is deliberately compact and non-shrinking so geometry
- * stays stable in the packaged 1280x800 acceptance viewport.
+ * Keep the action content-sized and the textarea as the dominant flexible
+ * region. The explicit width constraints are intentional: independent review
+ * of the first exact-main package showed the action stretching across almost
+ * the whole composer while the textarea collapsed to a sliver even though the
+ * original adjacency-only bounding-box assertion still passed.
  */
+[data-testid="messenger-workspace"] form:has(.fabushi-miniapp-composer-open) textarea[data-testid="messenger-input"] {
+  flex: 1 1 320px;
+  width: auto;
+  min-width: 180px;
+}
+
 [data-testid="messenger-workspace"] .fabushi-miniapp-composer-open {
   display: inline-flex;
   flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
+  width: auto;
+  min-width: 88px;
+  max-width: 120px;
   min-height: 36px;
   padding: 0 12px;
+  align-items: center;
+  justify-content: center;
   border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
   border-radius: 10px;
   background: color-mix(in srgb, currentColor 7%, transparent);
