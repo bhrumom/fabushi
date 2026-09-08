@@ -81,7 +81,8 @@ test('searching 小程序 exposes and installs the official 全球法布施 Mini
 
     await page.getByTestId('global-search-trigger').click();
     await page.getByTestId('global-search-tab-apps').click();
-    await page.getByTestId('global-search-input').fill('小程序');
+    const globalSearchInput = page.getByTestId('global-search-input');
+    await globalSearchInput.fill('小程序');
     const appResult = page.getByTestId('global-search-app-global-dharma');
     await expect(appResult).toBeVisible({ timeout: 15_000 });
     await expect(appResult).toContainText('全球法布施');
@@ -96,9 +97,11 @@ test('searching 小程序 exposes and installs the official 全球法布施 Mini
     await expect(open).toBeVisible({ timeout: 15_000 });
     await shot(page, testInfo, '02-global-dharma-installed-from-miniapp-search.png');
 
-    // End the global Application-search state before proving the installed Bot
-    // projection. This follows the product's own close-search action and keeps
-    // the exact “小程序” discovery step separate from the Bots sidebar state.
+    // The search control is intentionally two-state: with a non-empty query its
+    // X action is “清除搜索”; once empty, the same slot becomes “关闭搜索”. Finish
+    // both states before switching to Bots so Application results cannot mask
+    // the newly installed @global_dharma_bot projection.
+    await globalSearchInput.fill('');
     await page.getByRole('button', { name: '关闭搜索' }).click();
     await expect(page.getByTestId('global-search-surface')).toBeHidden();
     await navigate(page, 'Bots');
