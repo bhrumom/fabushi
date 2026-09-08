@@ -8,9 +8,10 @@ const runtime = process.env.CHATGPT_AUTO_CONFIRM_NATIVE ||
   fileURLToPath(new URL('../runtime/macos/chatgpt-auto-confirm', import.meta.url));
 const controller = fileURLToPath(new URL('./run-actions-controller.mjs', import.meta.url));
 const resultPath = process.env.ACTION_RESULT_PATH || 'action-result.json';
-const repository = process.env.GITHUB_REPOSITORY || 'bhrumom/fabushi';
+const repository = process.env.CHATGPT_AUTO_CONFIRM_REPOSITORY?.trim() ||
+  process.env.GITHUB_REPOSITORY || 'bhrumom/fabushi';
 const controlPath = process.env.CHATGPT_AUTO_CONFIRM_TASK_CONTROL_PATH ||
-  '.agents/plugins/plugins/chatgpt-auto-confirm/tasks/actions-inbox.json';
+  'tasks/actions-inbox.json';
 const controlRef = process.env.CHATGPT_AUTO_CONFIRM_TASK_CONTROL_REF || 'main';
 const pollSeconds = Math.max(15, Number(
   process.env.CHATGPT_AUTO_CONFIRM_TASK_CONTROL_POLL_SECONDS || 30,
@@ -45,10 +46,10 @@ const native = (command, params = undefined) => {
   return payload;
 };
 
-const fetchRepositoryContent = repositoryPath => {
+const fetchRepositoryContent = (repositoryPath, sourceRepository = repository) => {
   const result = spawnSync('gh', [
     'api', '--method', 'GET',
-    `repos/${repository}/contents/${repositoryPath}`,
+    `repos/${sourceRepository}/contents/${repositoryPath}`,
     '-f', `ref=${controlRef}`,
   ], {
     encoding: 'utf8',
@@ -63,29 +64,31 @@ const fetchRepositoryContent = repositoryPath => {
 };
 
 const fetchControl = () => {
-  const envelope = fetchRepositoryContent(controlPath);
+  const envelope = fetchRepositoryContent(controlPath, repository);
   const raw = Buffer.from(String(envelope.content || '').replace(/\s+/g, ''), 'base64')
     .toString('utf8');
   const control = JSON.parse(raw);
   const directoryCache = new Map();
-  const directoryEntries = directory => {
-    if (!directoryCache.has(directory)) {
-      const entries = fetchRepositoryContent(directory);
+  const directoryEntries = (directory, sourceRepository = repository) => {
+    const cacheKey = `${sourceRepository}:${directory}`;
+    if (!directoryCache.has(cacheKey)) {
+      const entries = fetchRepositoryContent(directory, sourceRepository);
       if (!Array.isArray(entries)) throw new Error(`task document path is not a directory: ${directory}`);
-      directoryCache.set(directory, entries.filter(entry => entry?.type === 'file'));
+      directoryCache.set(cacheKey, entries.filter(entry => entry?.type === 'file'));
     }
-    return directoryCache.get(directory);
+    return directoryCache.get(cacheKey);
   };
   control.tasks = (Array.isArray(control.tasks) ? control.tasks : []).map(task => {
+    const taskSpecRepository = String(task.specRepository || task.repository || repository).trim();
     const documentDirectory = normalizedDirectory(task.documentDirectory);
     const sources = Array.isArray(task.specSources) && task.specSources.length > 0
       ? task.specSources.map(source => String(source || '').replace(/^\/+/, ''))
       : documentDirectory
-        ? directoryEntries(documentDirectory).map(entry => entry.path)
+        ? directoryEntries(documentDirectory, taskSpecRepository).map(entry => entry.path)
         : [];
     const files = sources.map(source => {
       const directory = path.posix.dirname(source);
-      const entry = directoryEntries(directory).find(candidate => candidate.path === source);
+      const entry = directoryEntries(directory, taskSpecRepository).find(candidate => candidate.path === source);
       if (!entry?.sha) throw new Error(`task specification source is missing: ${source}`);
       return { path: source, sha: entry.sha };
     });
@@ -109,36 +112,27 @@ const fetchControl = () => {
   return control;
 };
 
-const reportContract = task => {
-  const taskId = JSON.stringify(runtimeId(task));
-  const revision = taskRevision(task);
-  const digest = JSON.stringify(task._specDigest || '');
-  return `
-MAHAYANA_TASK_REPORT_CONTRACT_V4
-每轮结束只使用下面这一种模板；`completed` 仅表示已完成事项，不代表整个任务完成：
-MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","task_id":${taskId},"applied_task_revision":${revision},"applied_spec_digest":${digest},"status":"incomplete","all_tasks_complete":false,"summary":"本轮实际结果","completed":["本轮已完成项"],"remaining":["整个任务仍未完成项"],"blockers":[],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"下一轮必须继续完成的具体工作"}
-MAHAYANA_TASK_REPORT_V1_END
-
-每轮结束都只允许输出上面这一种模板。只有整个任务全部完成才可把同一模板改为 status=complete、all_tasks_complete=true，并清空 remaining、blockers、next_task，且 wait_seconds=0。只完成一项、仍有剩余、外部等待或人工卡点时，all_tasks_complete 必须为 false；等待信息也填写在同一模板中，禁止输出第二套等待格式。
+const workDispatchBoundary = `
+本轮是工作 Chat：请直接执行以上目标，并在回复中给出自然语言工作结果。
+不要输出规划/验收 Chat 的固定回执、完成回执、未完成回执或下一步模板。
+插件会把本轮自然结果交给新的规划/验收 Chat；只有规划/验收 Chat 才负责固定回执，并由插件把其中的 next_task 原文交给下一轮新的工作 Chat。
 `;
-};
 
 const normalizedDirectory = value => String(value || '')
   .trim()
   .replace(/^\/+|\/+$/g, '');
 
 const taskDocumentBlock = task => {
+  const taskRepository = String(task.specRepository || task.repository || repository).trim();
   const directory = normalizedDirectory(task.documentDirectory);
   if (!directory) {
     return [
-      '本任务没有配置任务文档；这是合法状态，不得因此拒绝、暂停或要求补建文档。',
-      '以本轮消息中的完整任务目标、当前 revision/规范摘要、代码仓库和代码目录为准，直接读取代码并实施。',
-      '共享执行技能：.agents/plugins/plugins/chatgpt-auto-confirm/skills/actions-first-task-queue/SKILL.md。每轮重新读取技能；只有配置了任务文件时才读取任务文件。',
-      `邮件只读与人工介入：每轮可使用 Gmail 按任务 id ${task.id} 检查 1315518325@qq.com 的新增要求。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 [需人工介入][${task.id}] 邮件。`,
+      `仓库中尚未登记任务 ${task.id} 的项目目录。先按稳定任务 id 和标题查找匹配项目。`,
+      `如果找不到，创建 tasks/${task.id}，写入目标/范围、架构、执行任务、验收标准和证据文档，并把文件登记到仓库任务控制项。`,
+      '共享执行技能：skills/actions-first-task-queue/SKILL.md。每轮重新读取技能和仓库项目文档。',
     ].join('\n');
   }
-  const directoryURL = `https://github.com/${repository}/tree/${controlRef}/${directory}`;
+  const directoryURL = `https://github.com/${taskRepository}/tree/${controlRef}/${directory}`;
   const additionalURLs = Array.isArray(task.documentURLs)
     ? task.documentURLs.map(value => String(value || '').trim()).filter(Boolean)
     : [];
@@ -152,8 +146,7 @@ const taskDocumentBlock = task => {
     '当前 goalVersion 对应的目录资料优先于旧 Chat 中的任务描述。',
     `当前规范摘要：${task._specDigest || 'unavailable'}。`,
     `规范文件：${(task._specFiles || []).join('、') || directory}`,
-    `共享执行技能：.agents/plugins/plugins/chatgpt-auto-confirm/skills/actions-first-task-queue/SKILL.md。每轮重新读取技能和任务目录全部文件。`,
-    `邮件只读与人工介入：第一轮、续作轮和验收轮开始时使用 Gmail 按任务 id ${task.id} 检查 1315518325@qq.com 的新增要求。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 [需人工介入][${task.id}] 邮件。若已存在人工介入线程，可把 threadId/messageId 记录到 ${directory}/.mahayana-project-email.json；没有线程时不得为了创建记录而发信。`,
+    `共享执行技能：skills/actions-first-task-queue/SKILL.md。每轮重新读取技能和任务目录全部文件。`,
   ].join('\n');
 };
 
@@ -173,11 +166,11 @@ const taskPrompt = (control, task) => [
   `本轮必须使用 GitHub 连接器读取和修改仓库 ${task.repository || repository}（https://github.com/${task.repository || repository}）。`,
   normalizedDirectory(task.documentDirectory)
     ? `任务文件在仓库路径 ${normalizedDirectory(task.documentDirectory)}；代码修改位置在仓库路径 ${normalizedDirectory(task.codeDirectory || '.')}。先读已配置的任务文件和现有代码，再直接实现。`
-    : `本任务未配置任务文件；代码修改位置在仓库路径 ${normalizedDirectory(task.codeDirectory || '.')}。直接根据本轮完整目标读取现有代码并实现，不得要求补建任务文档。`,
+    : `仓库中尚未登记本任务的项目文件；先按任务 id 查找，找不到就创建专用项目目录、完整立项文档并登记到任务控制项。代码修改位置在仓库路径 ${normalizedDirectory(task.codeDirectory || '.')}。`,
   `除非正在等待已启动的外部作业或确有人工卡点，本轮必须产生可核验的代码变更并运行相应测试；只阅读、检查、规划、发邮件或汇报结果都不算工作，不得因此结束。`,
   task.prompt,
   taskDocumentBlock(task),
-  reportContract(task),
+  workDispatchBoundary,
 ].filter(Boolean).join('\n\n');
 
 let activeControl = null;
@@ -240,7 +233,7 @@ const reconcileControl = control => {
       // The per-session controller owns recovery budgets for an unchanged
       // runtime id. Requeueing failed/blocked tasks here on every five-second
       // boundary bypassed maxRuntimeRetries and ACTION_MAX_SAME_FAILURE_RECOVERIES,
-      // so one broken hidden renderer could be resurrected indefinitely while
+      // so one broken plugin renderer could be resurrected indefinitely while
       // the outer Actions job remained in_progress. A changed revision/digest
       // gets a new runtime id and is still enqueued below; an unchanged
       // terminal task is left for the child controller to retry finitely or

@@ -4,20 +4,110 @@ import Darwin
 import Foundation
 import SystemConfiguration
 
-func loadedApprovalTargets(_ state: PluginState) -> [CDPApprovalTarget] {
-  // The general watcher may act only on the exact renderer it created and
-  // proved hidden. Scanning the primary debugging endpoint also included the
-  // user's visible Chat, so startup could click controls on the displayed page
-  // while still reporting `backgroundOnly=true`.
-  // Runtime.evaluate does not activate the app, but renderer ownership and
-  // hidden-window state are still mandatory before any page script may run.
+func canonicalPluginPath(_ rawPath: String) -> String {
+  URL(fileURLWithPath: rawPath, isDirectory: true).standardizedFileURL.path
+}
+
+func pluginOwnedProfilePath(_ rawPath: String?) -> Bool {
+  guard let rawPath,
+        !rawPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    return false
+  }
+  let candidate = canonicalPluginPath(rawPath)
+  let exactProfiles = [
+    hiddenChatProfilePath(),
+    configuredHiddenChatProfilePath(),
+  ].compactMap { $0 }.map(canonicalPluginPath)
+  if exactProfiles.contains(candidate) { return true }
+
+  let roots = [
+    accountsRootURL().standardizedFileURL.path,
+    queueDirectoryURL().appendingPathComponent("workers", isDirectory: true)
+      .standardizedFileURL.path,
+  ]
+  return roots.contains { root in
+    candidate == root || candidate.hasPrefix(root + "/")
+  }
+}
+
+func pluginProfilePathForPort(_ port: Int) -> String? {
+  let process = Process()
+  let output = Pipe()
+  process.executableURL = URL(fileURLWithPath: "/bin/ps")
+  process.arguments = ["-axo", "pid=,command="]
+  process.standardInput = FileHandle.nullDevice
+  process.standardOutput = output
+  process.standardError = FileHandle.nullDevice
+  let data: Data
+  do {
+    try process.run()
+    data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+  } catch {
+    return nil
+  }
+  guard let text = String(data: data, encoding: .utf8) else { return nil }
+  let portMarker = "--remote-debugging-port=\(port)"
+  for lineSlice in text.split(separator: "\n") {
+    let line = String(lineSlice)
+    guard line.contains("/Applications/ChatGPT.app/Contents/"),
+          line.contains(portMarker),
+          let profileRange = line.range(of: "--user-data-dir=") else { continue }
+    let profileTail = line[profileRange.upperBound...]
+    let profile = profileTail.range(of: " --").map {
+      String(profileTail[..<$0.lowerBound])
+    } ?? String(profileTail)
+    let normalized = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !normalized.isEmpty { return canonicalPluginPath(normalized) }
+  }
+  return nil
+}
+
+func pluginOwnsBackgroundTarget(
+  port: Int,
+  targetId: String,
+  state: PluginState
+) -> Bool {
+  guard state.backgroundAppPort == port,
+        state.backgroundChatTargetId == targetId else { return false }
+  let allowTestTarget = ProcessInfo.processInfo.environment[
+    "CHATGPT_AUTO_CONFIRM_ALLOW_TEST_WEB_TARGET"
+  ] == "1"
+  // The test seam may deliberately use the primary mock endpoint. Production
+  // must never attach the plugin controller to the user's primary renderer just
+  // because both endpoints happen to expose a Chat page.
+  if port == CDPClient.port() && !allowTestTarget { return false }
+  if allowTestTarget && port == CDPClient.port() { return true }
+  guard pluginOwnedProfilePath(state.backgroundProfilePath) else { return false }
+  guard let activeProfile = pluginProfilePathForPort(port) else { return false }
+  return canonicalPluginPath(activeProfile)
+    == canonicalPluginPath(state.backgroundProfilePath ?? "")
+}
+
+func pluginBackgroundRuntimeState(_ state: PluginState) -> QueueTargetRuntimeState? {
   guard let port = state.backgroundAppPort,
         let targetId = state.backgroundChatTargetId,
-        queueTargetRuntimeState(
-          port: port,
-          targetId: targetId,
-          refreshLifecycle: false
-        ) == .hidden,
+        pluginOwnsBackgroundTarget(port: port, targetId: targetId, state: state) else {
+    return nil
+  }
+  return queueTargetRuntimeState(
+    port: port,
+    targetId: targetId,
+    refreshLifecycle: false
+  )
+}
+
+func loadedApprovalTargets(_ state: PluginState) -> [CDPApprovalTarget] {
+  // The watcher may act only on the exact renderer recorded by the plugin. Its
+  // window may be visible or hidden; ownership and the real Chat surface are
+  // the safety boundary, while visibility is reported as telemetry.
+  guard let port = state.backgroundAppPort,
+        let targetId = state.backgroundChatTargetId,
+        pluginOwnsBackgroundTarget(port: port, targetId: targetId, state: state),
+        let runtimeState = pluginBackgroundRuntimeState(state),
+        runtimeState == .hidden || (
+          queueAllowsVisibleDedicatedRenderer() && runtimeState == .visible
+        ),
         let target = CDPClient.fetchTargets(portOverride: port).first(where: {
           $0["id"] as? String == targetId && isLoadedApprovalRendererTarget($0)
         }) else { return [] }
@@ -80,9 +170,114 @@ func synchronizeBackgroundTargets(
 
 func closeBackgroundTargets(_ state: inout PluginState) {
   for targetId in (state.backgroundTargets ?? [:]).values {
-    _ = CDPClient.closeTarget(targetId)
+    // These URLs are created through the primary CDP endpoint by
+    // synchronizeBackgroundTargets and are tracked by exact target id.
+    _ = CDPClient.closeTarget(targetId, portOverride: CDPClient.port())
+  }
+  if let port = state.backgroundAppPort,
+     let targetId = state.backgroundChatTargetId,
+     pluginOwnsBackgroundTarget(port: port, targetId: targetId, state: state) {
+    _ = CDPClient.closeTarget(targetId, portOverride: port)
+  }
+  if let profilePath = state.backgroundProfilePath,
+     pluginOwnedProfilePath(profilePath) {
+    terminatePluginChatProcess(profilePath: profilePath)
   }
   state.backgroundTargets = [:]
+  state.backgroundAppPort = nil
+  state.backgroundChatTargetId = nil
+  state.backgroundProfilePath = nil
+  state.backgroundCodexHomePath = nil
+  state.backgroundConversationId = nil
+}
+
+func pluginChatProcessIds(profilePath: String) -> [pid_t] {
+  guard pluginOwnedProfilePath(profilePath) else { return [] }
+  let canonicalProfile = canonicalPluginPath(profilePath)
+  let process = Process()
+  let output = Pipe()
+  process.executableURL = URL(fileURLWithPath: "/bin/ps")
+  process.arguments = ["-axo", "pid=,command="]
+  process.standardInput = FileHandle.nullDevice
+  process.standardOutput = output
+  process.standardError = FileHandle.nullDevice
+  let data: Data
+  do {
+    try process.run()
+    data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+  } catch {
+    return []
+  }
+  guard let text = String(data: data, encoding: .utf8) else { return [] }
+  let executableMarker = "/Applications/ChatGPT.app/Contents/"
+  let profileMarker = "--user-data-dir=\(canonicalProfile)"
+  let crashpadMarker = "--database=\(canonicalProfile)/Crashpad"
+  let ids = text.split(separator: "\n").compactMap { lineSlice -> pid_t? in
+    let line = String(lineSlice)
+    guard line.contains(executableMarker),
+          line.contains(profileMarker) || line.contains(crashpadMarker) else {
+      return nil
+    }
+    let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+    guard let first = fields.first, let pid = pid_t(String(first)), pid > 1, pid != getpid() else {
+      return nil
+    }
+    return pid
+  }
+  return Array(Set(ids)).sorted()
+}
+
+func terminatePluginChatProcess(profilePath: String) {
+  guard pluginOwnedProfilePath(profilePath) else { return }
+  if profilePath.contains("/task-queue/workers/") {
+    terminateDedicatedChatProcess(profilePath: profilePath)
+    return
+  }
+  func removeStaleProfileLocks() {
+    // A crashed or force-terminated ChatGPT renderer can leave Chromium's
+    // singleton links and Default/LOCK behind. They belong only to this
+    // plugin-owned profile; removing them after the process list is empty
+    // lets the next retry mount the same authenticated profile without
+    // creating another app instance or deleting its cookies.
+    let staleLockPaths = [
+      "SingletonCookie",
+      "SingletonLock",
+      "SingletonSocket",
+      "RunningChromeVersion",
+      "Default/LOCK",
+    ]
+    let fileManager = FileManager.default
+    for relativePath in staleLockPaths {
+      let lockURL = URL(fileURLWithPath: profilePath, isDirectory: true)
+        .appendingPathComponent(relativePath)
+      // removeItem also handles dangling Singleton* symlinks, for which
+      // fileExists(atPath:) intentionally returns false.
+      try? fileManager.removeItem(at: lockURL)
+    }
+  }
+  func liveIds() -> [pid_t] {
+    pluginChatProcessIds(profilePath: profilePath).filter { watcherIsAlive($0) }
+  }
+  var processIds = liveIds()
+  if processIds.isEmpty {
+    removeStaleProfileLocks()
+    return
+  }
+  for pid in processIds { _ = kill(pid, SIGTERM) }
+  let gracefulDeadline = Date().addingTimeInterval(2.0)
+  while Date() < gracefulDeadline {
+    processIds = liveIds()
+    if processIds.isEmpty {
+      removeStaleProfileLocks()
+      return
+    }
+    Thread.sleep(forTimeInterval: 0.1)
+  }
+  for pid in liveIds() { _ = kill(pid, SIGKILL) }
+  if liveIds().isEmpty {
+    removeStaleProfileLocks()
+  }
 }
 
 @discardableResult
@@ -769,7 +964,10 @@ func prepareBackgroundChatJS(
   return """
   (async () => {
     const result = {
-      ok: false, backgroundOnly: true, workerUsed: false,
+      ok: false,
+      backgroundOnly: document.visibilityState === 'hidden',
+      runtimeState: document.visibilityState === 'hidden' ? 'hidden' : 'visible',
+      workerUsed: false,
       newChatClicked: false, chatSelected: false, error: null,
       url: window.location.href || '', conversationId: null
     };
@@ -1217,6 +1415,38 @@ func clickChatJS() -> String {
         modeControls
       };
     }
+    // Current desktop builds expose an explicit top-level Chat/Work toggle.
+    // The shell can still expose a stale "current mode: ChatGPT" trigger while
+    // the composer belongs to Work. Prefer the real, unselected Chat tab before
+    // considering the compact-mode trigger or a Work-side "new conversation"
+    // button; otherwise the latter only creates another Work task and the
+    // plugin sender never reaches the Chat surface.
+    const explicitChatTab = modeTabs()
+      .filter(candidate => labelsFor(candidate).some(label => isChatLabel(label)))
+      .filter(candidate => !isSelected(candidate))
+      .filter(candidate => {
+        const role = normalize(candidate.getAttribute('role'));
+        return ['BUTTON', 'A'].includes(candidate.tagName)
+          || ['button', 'tab', 'menuitem', 'menuitemradio', 'option'].includes(role);
+      })
+      .sort((lhs, rhs) => modeTabScore(rhs) - modeTabScore(lhs))[0];
+    if (surface.workComposer && explicitChatTab) {
+      const rect = explicitChatTab.getBoundingClientRect();
+      setTimeout(() => {
+        try { dispatchPointerClick(explicitChatTab); } catch (_) {}
+      }, 0);
+      return {
+        ok: true,
+        chatSelected: true,
+        dispatchOnly: true,
+        nativeClickRecommended: true,
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+        selectedLabel: labelsFor(explicitChatTab)[0] || 'chat',
+        surface,
+        modeControls
+      };
+    }
     const currentChatGPTMode = candidates().find(candidate =>
       labelsFor(candidate).some(label =>
         label.includes('current mode: chatgpt')
@@ -1326,7 +1556,8 @@ func clickChatJS() -> String {
     // Selecting ChatGPT can replace the renderer immediately. Dispatch the
     // click after this evaluation returns so a destroyed execution context is
     // not mistaken for a failed mode selection. The caller independently
-    // waits for and validates the resulting hidden Chat surface.
+    // waits for and validates the resulting plugin-owned Chat surface; it may
+    // be visible or hidden.
     const rect = button.getBoundingClientRect();
     setTimeout(() => {
       try { dispatchPointerClick(button); } catch (_) {}
@@ -1662,6 +1893,46 @@ func detectDedicatedAuthorizationJS() -> String {
       }
       return '';
     };
+    const hasApprovalMetadata = element => {
+      let domNode = element;
+      for (let ancestorIndex = 0; ancestorIndex < 15 && domNode; ancestorIndex += 1) {
+        const structuralAttributes = [...(domNode.attributes || [])].some(attribute =>
+          /^(?:data-|aria-|role$)/i.test(attribute.name)
+            && /(?:approval|authorize|authorization|permission|consent|access|tool)/i.test(
+              attribute.name === 'role' ? attribute.value : `${attribute.name} ${attribute.value}`
+            )
+        );
+        if (structuralAttributes || domNode.getAttribute?.('aria-modal') === 'true') return true;
+        const reactKeys = Object.keys(domNode).filter(key =>
+          key.startsWith('__reactFiber$') || key.startsWith('__reactProps$')
+        );
+        for (const reactKey of reactKeys) {
+          let reactNode = domNode[reactKey];
+          for (let fiberIndex = 0; fiberIndex < 20 && reactNode; fiberIndex += 1) {
+            const props = reactNode.memoizedProps || reactNode.pendingProps
+              || reactNode.props || reactNode;
+            if (props?.jit_plugin_data || props?.pluginData || props?.allow_once
+                || props?.allowOnce || props?.target_message_id || props?.targetMessageId
+                || props?.requiresApproval || props?.authorization || props?.permission
+                || props?.consent || props?.approval) return true;
+            reactNode = reactNode.return;
+          }
+        }
+        domNode = domNode.parentElement;
+      }
+      return false;
+    };
+    const hasDialogSemantics = element => {
+      const role = normalize(element?.getAttribute?.('role'));
+      if (role === 'dialog' || role === 'alertdialog'
+          || element?.getAttribute?.('aria-modal') === 'true') return true;
+      return [...(element?.attributes || [])].some(attribute =>
+        /^(?:data-testid|data-test|data-state|class|id)$/i.test(attribute.name)
+          && /(?:approval|authorize|authorization|permission|consent|access|tool-?call)/i.test(
+            attribute.value || ''
+          )
+      );
+    };
     const visible = element => !!(element
       && !element.disabled
       && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
@@ -1671,12 +1942,13 @@ func detectDedicatedAuthorizationJS() -> String {
     );
     const allowLabels = new Set([
       'allow', 'allow once', 'approve', 'approve once', 'confirm', 'confirm once',
-      '允许', '允许一次', '同意', '同意一次', '确认', '确认一次',
-      'full access', '完全访问'
+      'allow this time', 'authorize', 'authorize once', 'grant', 'grant once',
+      '允许', '允许一次', '同意', '同意一次', '确认', '确认一次', '授权', '授权一次',
+      'full access', 'complete access', '完全访问', '完整访问'
     ]);
     const rejectLabels = new Set([
-      'deny', 'reject', 'cancel', 'deny once', 'reject once',
-      '拒绝', '拒绝一次', '不允许', '不允许一次', '取消'
+      'deny', 'reject', 'cancel', 'deny once', 'reject once', 'not now',
+      '拒绝', '拒绝一次', '不允许', '不允许一次', '取消', '暂不'
     ]);
     const sessionHints = [
       'this chat', 'this conversation', 'for this chat', 'for this conversation',
@@ -1684,6 +1956,39 @@ func detectDedicatedAuthorizationJS() -> String {
       '本次会话', '这次会话', '此会话', '当前会话', '在此聊天中', '本次聊天',
       '始终允许', '会话期间'
     ];
+    const isSessionScope = value => !!value && (
+      sessionHints.some(hint => value.includes(hint))
+        || /(?:allow|approve|confirm|允许|同意|确认).*(?:this (?:chat|conversation|session)|本次(?:会话|聊天)|当前会话)/i.test(value)
+    );
+    const isMenuTrigger = button => {
+      if (!button || button.disabled) return false;
+      const attributes = [
+        button.getAttribute('aria-label') || '',
+        button.getAttribute('title') || '',
+        button.getAttribute('data-testid') || '',
+        button.getAttribute('data-slot') || '',
+        button.getAttribute('class') || ''
+      ].join(' ');
+      return button.getAttribute('aria-haspopup') === 'menu'
+        || button.getAttribute('aria-haspopup') === 'listbox'
+        || button.getAttribute('aria-expanded') !== null
+        || button.getAttribute('data-state') !== null
+        || /menu|dropdown|chevron|caret|arrow|下拉|箭头|更多|选项/i.test(normalize(attributes));
+    };
+    const isAdjacentSplitControl = (allowButton, control) => {
+      if (!allowButton || !control || control === allowButton || !isMenuTrigger(control)) return false;
+      const allowRect = allowButton.getBoundingClientRect?.();
+      const controlRect = control.getBoundingClientRect?.();
+      if (!allowRect || !controlRect) return false;
+      const verticalOverlap = Math.min(allowRect.bottom, controlRect.bottom)
+        - Math.max(allowRect.top, controlRect.top);
+      const horizontalGap = Math.max(
+        allowRect.left - controlRect.right,
+        controlRect.left - allowRect.right,
+        0
+      );
+      return verticalOverlap > 0 && horizontalGap <= 12;
+    };
     const buttons = [...document.querySelectorAll('button, a, [role="button"]')]
       .filter(visible);
     const candidates = buttons
@@ -1711,23 +2016,22 @@ func detectDedicatedAuthorizationJS() -> String {
         .filter(visible);
       const cardLabels = cardButtons.map(label);
       const hasReject = cardLabels.some(value => rejectLabels.has(value));
-      const cardText = normalize(container.innerText || container.textContent || '');
-      if (hasReject || cardText.includes('allow chatgpt to use') || cardText.includes('允许 chatgpt 使用')) {
+      const compact = cardButtons.length > 0 && cardButtons.length <= 16;
+      const structuralCard = hasDialogSemantics(container)
+        || hasApprovalMetadata(candidate.button)
+        || hasApprovalMetadata(container);
+      if (compact && (hasReject || structuralCard)) {
         const nonDecisionControls = cardButtons.filter(button => {
           const value = label(button);
           return !allowLabels.has(value) && !rejectLabels.has(value);
         });
         const menuTriggers = nonDecisionControls.filter(button =>
-          button.getAttribute('aria-haspopup') === 'menu'
-            || button.getAttribute('aria-expanded') !== null
-            || normalize(button.getAttribute('data-state')) === 'open'
-            || /menu|dropdown|chevron|more/.test(normalize(
-              button.getAttribute('data-testid') || button.getAttribute('data-slot')
-                || button.getAttribute('class') || ''
-            ))
+          isSessionScope(label(button))
+            || isMenuTrigger(button)
+            || isAdjacentSplitControl(candidate.button, button)
         );
         const sessionScopeLabels = cardLabels.filter(value =>
-          value && sessionHints.some(hint => value.includes(hint))
+          isSessionScope(value)
         );
         const requestIdentity = approvalRequestIdentity(candidate.button);
         return {
@@ -1740,9 +2044,10 @@ func detectDedicatedAuthorizationJS() -> String {
           sessionScopeLabels,
           menuTriggerLabels: menuTriggers.map(label).filter(Boolean),
           menuTriggerCount: menuTriggers.length,
+          sessionScopeAvailable: sessionScopeLabels.length > 0 || menuTriggers.length > 0,
           cardFingerprint: fingerprint(requestIdentity
             ? `request:${requestIdentity}`
-            : `card:${cardText}`),
+            : `card:${cardLabels.join('|')}:${container.getAttribute('id') || ''}`),
           requestIdentityAvailable: !!requestIdentity,
           unlabeledControlCount: nonDecisionControls.filter(button => !label(button)).length
         };
@@ -1752,7 +2057,7 @@ func detectDedicatedAuthorizationJS() -> String {
 
     return {
       ok: true,
-      found: true,
+      found: false,
       candidates: candidates.length,
       candidateLabels: candidates.map(item => item.label),
       selectedLabel: candidate.label,
@@ -1760,7 +2065,8 @@ func detectDedicatedAuthorizationJS() -> String {
       sessionScopeLabels: [],
       menuTriggerLabels: [],
       menuTriggerCount: 0,
-      cardFingerprint: fingerprint(`label:${candidate.label}`),
+      sessionScopeAvailable: false,
+      cardFingerprint: '',
       requestIdentityAvailable: false,
       unlabeledControlCount: 0
     };
@@ -1786,14 +2092,16 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     const visible = element => rendered(element) && !element.disabled;
     const allowed = new Set([
       '\u5b8c\u5168\u8bbf\u95ee', 'full access', 'allow', 'allow once',
+      'allow this time', 'authorize', 'authorize once', 'grant', 'grant once',
       '\u5141\u8bb8', '\u5141\u8bb8\u4e00\u6b21', 'approve', 'approve once',
       'confirm', 'confirm once', '\u786e\u8ba4', '\u786e\u8ba4\u4e00\u6b21',
-      '\u540c\u610f', '\u540c\u610f\u4e00\u6b21'
+      '\u540c\u610f', '\u540c\u610f\u4e00\u6b21', '\u6388\u6743', '\u6388\u6743\u4e00\u6b21',
+      'complete access', '\u5b8c\u6574\u8bbf\u95ee'
     ]);
     const rejectLabels = new Set([
-      'deny', 'reject', 'cancel', 'deny once', 'reject once',
+      'deny', 'reject', 'cancel', 'deny once', 'reject once', 'not now',
       '\u62d2\u7edd', '\u62d2\u7edd\u4e00\u6b21', '\u4e0d\u5141\u8bb8',
-      '\u4e0d\u5141\u8bb8\u4e00\u6b21', '\u53d6\u6d88'
+      '\u4e0d\u5141\u8bb8\u4e00\u6b21', '\u53d6\u6d88', '\u6682\u4e0d'
     ]);
     const sessionHints = [
       'this chat', 'this conversation', 'for this chat', 'for this conversation',
@@ -1807,8 +2115,49 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       button.innerText || button.textContent
         || button.getAttribute('aria-label') || button.getAttribute('title')
     );
-    const isSessionScope = value => !!value
-      && sessionHints.some(hint => value.includes(hint));
+    const isSessionScope = value => !!value && (
+      sessionHints.some(hint => value.includes(hint))
+        || /(?:allow|approve|confirm|\u5141\u8bb8|\u540c\u610f|\u786e\u8ba4).*(?:this (?:chat|conversation|session)|\u672c\u6b21(?:\u4f1a\u8bdd|\u804a\u5929)|\u5f53\u524d\u4f1a\u8bdd)/i.test(value)
+    );
+    const isMenuTrigger = button => {
+      if (!button || button.disabled) return false;
+      const attributes = [
+        button.getAttribute('aria-label') || '',
+        button.getAttribute('title') || '',
+        button.getAttribute('data-testid') || '',
+        button.getAttribute('data-slot') || '',
+        button.getAttribute('class') || ''
+      ].join(' ');
+      return button.getAttribute('aria-haspopup') === 'menu'
+        || button.getAttribute('aria-haspopup') === 'listbox'
+        || button.getAttribute('aria-expanded') !== null
+        || button.getAttribute('data-state') !== null
+        || /menu|dropdown|chevron|caret|arrow|\u4e0b\u62c9|\u7bad\u5934|\u66f4\u591a|\u9009\u9879/i.test(normalize(attributes));
+    };
+    const isAdjacentSplitControl = (allowButton, control) => {
+      if (!allowButton || !control || control === allowButton || !isMenuTrigger(control)) return false;
+      const allowRect = allowButton.getBoundingClientRect?.();
+      const controlRect = control.getBoundingClientRect?.();
+      if (!allowRect || !controlRect) return false;
+      const verticalOverlap = Math.min(allowRect.bottom, controlRect.bottom)
+        - Math.max(allowRect.top, controlRect.top);
+      const horizontalGap = Math.max(
+        allowRect.left - controlRect.right,
+        controlRect.left - allowRect.right,
+        0
+      );
+      return verticalOverlap > 0 && horizontalGap <= 12;
+    };
+    const findSessionControl = (allowButton, controls) => {
+      const direct = controls.find(button => button !== allowButton
+        && isSessionScope(label(button)));
+      if (direct) return direct;
+      const menuTrigger = controls.find(button => button !== allowButton
+        && isMenuTrigger(button)
+        && isAdjacentSplitControl(allowButton, button));
+      if (menuTrigger) return menuTrigger;
+      return controls.find(button => button !== allowButton && isMenuTrigger(button)) || null;
+    };
     const approvalRequestIdentity = element => {
       let domNode = element;
       for (let ancestorIndex = 0; ancestorIndex < 15 && domNode; ancestorIndex += 1) {
@@ -1833,42 +2182,106 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       }
       return '';
     };
-    const approvalCardFingerprint = button => {
+    const hasApprovalMetadata = element => {
+      let domNode = element;
+      for (let ancestorIndex = 0; ancestorIndex < 15 && domNode; ancestorIndex += 1) {
+        const structuralAttributes = [...(domNode.attributes || [])].some(attribute =>
+          /^(?:data-|aria-|role$)/i.test(attribute.name)
+            && /(?:approval|authorize|authorization|permission|consent|access|tool)/i.test(
+              attribute.name === 'role' ? attribute.value : `${attribute.name} ${attribute.value}`
+            )
+        );
+        if (structuralAttributes || domNode.getAttribute?.('aria-modal') === 'true') return true;
+        const reactKeys = Object.keys(domNode).filter(key =>
+          key.startsWith('__reactFiber$') || key.startsWith('__reactProps$')
+        );
+        for (const reactKey of reactKeys) {
+          let reactNode = domNode[reactKey];
+          for (let fiberIndex = 0; fiberIndex < 20 && reactNode; fiberIndex += 1) {
+            const props = reactNode.memoizedProps || reactNode.pendingProps
+              || reactNode.props || reactNode;
+            if (props?.jit_plugin_data || props?.pluginData || props?.allow_once
+                || props?.allowOnce || props?.target_message_id || props?.targetMessageId
+                || props?.requiresApproval || props?.authorization || props?.permission
+                || props?.consent || props?.approval) return true;
+            reactNode = reactNode.return;
+          }
+        }
+        domNode = domNode.parentElement;
+      }
+      return false;
+    };
+    const hasDialogSemantics = element => {
+      const role = normalize(element?.getAttribute?.('role'));
+      if (role === 'dialog' || role === 'alertdialog'
+          || element?.getAttribute?.('aria-modal') === 'true') return true;
+      return [...(element?.attributes || [])].some(attribute =>
+        /^(?:data-testid|data-test|data-state|class|id)$/i.test(attribute.name)
+          && /(?:approval|authorize|authorization|permission|consent|access|tool-?call)/i.test(
+            attribute.value || ''
+          )
+      );
+    };
+    const approvalCardShape = button => {
       let card = button?.parentElement;
-      for (let index = 0; index < 15 && card; index += 1) {
+      for (let index = 0; index < 15 && card && card !== document.body; index += 1) {
         const cardButtons = [...card.querySelectorAll('button, a, [role="button"]')]
           .filter(visible);
         const cardLabels = cardButtons.map(label);
-        const cardText = normalize(card.innerText || card.textContent || '');
-        if (cardLabels.some(value => rejectLabels.has(value))
-            || cardText.includes('allow chatgpt to use')
-            || cardText.includes('\u5141\u8bb8 chatgpt \u4f7f\u7528')) {
-          const requestIdentity = approvalRequestIdentity(button);
-          return fingerprint(requestIdentity
-            ? `request:${requestIdentity}`
-            : `card:${cardText}`);
+        const compact = cardButtons.length > 0 && cardButtons.length <= 16;
+        const hasReject = cardLabels.some(value => rejectLabels.has(value));
+        const structuralCard = hasDialogSemantics(card)
+          || hasApprovalMetadata(button)
+          || hasApprovalMetadata(card);
+        if (compact && (hasReject || structuralCard)) {
+          return { container: card, buttons: cardButtons, labels: cardLabels };
         }
         card = card.parentElement;
       }
-      return '';
+      return null;
+    };
+    const approvalCardFingerprint = button => {
+      const shape = approvalCardShape(button);
+      if (!shape) return '';
+      const requestIdentity = approvalRequestIdentity(button);
+      return fingerprint(requestIdentity
+        ? `request:${requestIdentity}`
+        : `card:${shape.labels.join('|')}:${shape.container.getAttribute('id') || ''}`);
     };
     const dispatchPointerClick = candidate => {
-      const rect = candidate.getBoundingClientRect?.();
-      const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
-      const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
-      const pressed = {
-        bubbles: true, cancelable: true, composed: true,
-        button: 0, buttons: 1, clientX, clientY
-      };
-      candidate.dispatchEvent(new PointerEvent('pointerdown', {
-        ...pressed, pointerId: 1, pointerType: 'mouse', isPrimary: true
-      }));
-      candidate.dispatchEvent(new MouseEvent('mousedown', pressed));
-      candidate.dispatchEvent(new PointerEvent('pointerup', {
-        ...pressed, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true
-      }));
-      candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
-      candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+      try {
+        if (typeof PointerEvent !== 'function' || typeof MouseEvent !== 'function') {
+          throw new Error('pointer_events_unavailable');
+        }
+        const rect = candidate.getBoundingClientRect?.();
+        const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
+        const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
+        const pressed = {
+          bubbles: true, cancelable: true, composed: true,
+          button: 0, buttons: 1, clientX, clientY
+        };
+        candidate.dispatchEvent(new PointerEvent('pointerdown', {
+          ...pressed, pointerId: 1, pointerType: 'mouse', isPrimary: true
+        }));
+        candidate.dispatchEvent(new MouseEvent('mousedown', pressed));
+        candidate.dispatchEvent(new PointerEvent('pointerup', {
+          ...pressed, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true
+        }));
+        candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+        candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+      } catch (_) {
+        // The in-app Browser's isolated page context may expose DOM nodes but
+        // not constructible PointerEvent/MouseEvent classes. Native click()
+        // still reaches the page's React/Radix handler and remains scoped to
+        // the already selected authorization-card control.
+        if (typeof candidate.click === 'function') {
+          candidate.click();
+        } else {
+          candidate.dispatchEvent(new Event('click', {
+            bubbles: true, cancelable: true, composed: true
+          }));
+        }
+      }
     };
     const confirmCardClosed = async candidate => {
       const expectedFingerprint = approvalCardFingerprint(candidate);
@@ -1899,7 +2312,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     const candidates = [...document.querySelectorAll('button')]
       .filter(visible)
       .map((button, index) => ({ button, index, label: label(button) }))
-      .filter(candidate => allowed.has(candidate.label))
+      .filter(candidate => allowed.has(candidate.label) && approvalCardShape(candidate.button))
       .sort((left, right) =>
         (priority.get(left.label) ?? 10) - (priority.get(right.label) ?? 10)
           || left.index - right.index
@@ -1910,36 +2323,11 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       return { ok: true, clicked: false, confirmed: false, candidateLabels };
     }
 
-    let card = candidate.button.parentElement;
-    let cardButtons = [];
-    for (let index = 0; index < 15 && card; index += 1) {
-      cardButtons = [...card.querySelectorAll('button, a, [role="button"]')]
-        .filter(visible);
-      const cardLabels = cardButtons.map(label);
-      const cardText = normalize(card.innerText || card.textContent || '');
-      if (cardLabels.some(value => rejectLabels.has(value))
-          || cardText.includes('allow chatgpt to use')
-          || cardText.includes('\u5141\u8bb8 chatgpt \u4f7f\u7528')) {
-        break;
-      }
-      card = card.parentElement;
-      cardButtons = [];
-    }
+    const cardShape = approvalCardShape(candidate.button);
+    const card = cardShape?.container || null;
+    const cardButtons = cardShape?.buttons || [];
 
-    const sessionControl = cardButtons.find(button =>
-      button !== candidate.button && isSessionScope(label(button))
-    ) || cardButtons.find(button => {
-      if (button === candidate.button) return false;
-      const value = label(button);
-      return !allowed.has(value) && !rejectLabels.has(value) && (
-        button.getAttribute('aria-haspopup') === 'menu'
-          || button.getAttribute('aria-expanded') !== null
-          || /menu|dropdown|chevron|more/.test(normalize(
-            button.getAttribute('data-testid') || button.getAttribute('data-slot')
-              || button.getAttribute('class') || ''
-          ))
-      );
-    });
+    const sessionControl = findSessionControl(candidate.button, cardButtons);
 
     if (sessionControl) {
       const menuTriggerLabel = label(sessionControl);
@@ -2147,6 +2535,13 @@ func prepareNewChatTarget(
       let blankConversation = allowBlankConversationReuse &&
         baselineWasBlank &&
         (prepared?["messageCount"] as? Int ?? 1) == 0
+      // Some desktop builds retain the portal id of an empty shell until the
+      // first outbound message. Because this path already verified an exact
+      // New Chat click and the old composer was blank, a stable blank composer
+      // is sufficient fresh-chat evidence without ever reusing a conversation
+      // that contains user or assistant content.
+      let blankAfterExplicitNewChat = baselineWasBlank &&
+        (prepared?["messageCount"] as? Int ?? 1) == 0
       // Current ChatGPT builds do not allocate a local conversation id until
       // the first message is dispatched. A verified New Chat click followed
       // by a stable, empty Chat composer is therefore a fresh conversation
@@ -2160,7 +2555,8 @@ func prepareNewChatTarget(
       // a correctly created blank Chat forever.
       let composerReady = (prepared?["inputTextLength"] as? Int ?? 1) == 0
       let candidateReady = composerReady &&
-        (changed || blankConversation || unmaterializedBlankConversation)
+        (changed || blankConversation || unmaterializedBlankConversation
+          || blankAfterExplicitNewChat)
       if candidateReady && stableConversationId == conversationId {
         stableSamples += 1
       } else if candidateReady {
@@ -2176,6 +2572,7 @@ func prepareNewChatTarget(
       if stableSamples >= 3 {
         var result = prepared ?? [:]
         result["newChatClicked"] = true
+        result["freshBlankAfterNewChat"] = blankAfterExplicitNewChat
         result["stableSamples"] = stableSamples
         return result
       }
@@ -2198,19 +2595,40 @@ func ensureHiddenChatTarget(
   conversationId: String? = nil
 ) -> [String: Any]? {
   let port = hiddenChatPort(state)
-  let profilePath = configuredHiddenChatProfilePath()
-    ?? state.backgroundProfilePath
-    ?? hiddenChatProfilePath()
+  let profilePath = canonicalPluginPath(
+    configuredHiddenChatProfilePath()
+      ?? state.backgroundProfilePath
+      ?? hiddenChatProfilePath()
+  )
   var targets = CDPClient.fetchTargets(portOverride: port)
   let allowTestWebTarget = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_ALLOW_TEST_WEB_TARGET"] == "1"
+  if port == CDPClient.port() && !allowTestWebTarget {
+    state.lastError = "background_port_matches_primary"
+    return [
+      "ok": false,
+      "errorCode": "background_port_matches_primary",
+      "message": "插件专用 ChatGPT 实例不能与用户主 ChatGPT 共用 CDP 端口。",
+      "backgroundOnly": false,
+      "runtimeState": "primary-rejected",
+      "workerUsed": false,
+      "port": port,
+    ]
+  }
   let assignedTargetId = state.backgroundChatTargetId
   func eligibleTarget(_ target: [String: Any]) -> Bool {
+    guard let targetId = target["id"] as? String else { return false }
+    if targetId == assignedTargetId {
+      guard allowTestWebTarget && port == CDPClient.port()
+        || pluginOwnedProfilePath(profilePath) else { return false }
+    } else if port == CDPClient.port() && !allowTestWebTarget {
+      return false
+    }
     if target["type"] as? String == "page"
         && (target["url"] as? String ?? "").hasPrefix("app://-/index.html")
         && !(target["url"] as? String ?? "").contains("/avatar-overlay") {
       return true
     }
-    if target["id"] as? String == assignedTargetId && isChatGptRendererTarget(target) {
+    if targetId == assignedTargetId && isChatGptRendererTarget(target) {
       return true
     }
     return allowTestWebTarget && isChatGptRendererTarget(target)
@@ -2248,7 +2666,8 @@ func ensureHiddenChatTarget(
         "ok": false,
         "errorCode": "background_chat_launch_failed",
         "message": error.localizedDescription,
-        "backgroundOnly": true,
+        "backgroundOnly": false,
+        "runtimeState": "unavailable",
         "workerUsed": false,
       ]
     }
@@ -2266,11 +2685,25 @@ func ensureHiddenChatTarget(
     return [
       "ok": false,
       "errorCode": "background_chat_target_unavailable",
-      "message": "隐藏 ChatGPT Chat 实例未能就绪；未使用当前 Work/worker 页面作为回退。",
-      "backgroundOnly": true,
+      "message": "插件自有 ChatGPT Chat 实例未能就绪；未使用当前 Work/worker 页面作为回退。",
+      "backgroundOnly": false,
       "workerUsed": false,
       "port": port,
     ]
+  }
+  if !allowTestWebTarget {
+    guard let activeProfile = pluginProfilePathForPort(port),
+          canonicalPluginPath(activeProfile) == canonicalPluginPath(profilePath) else {
+      state.lastError = "background_chat_profile_not_plugin_owned"
+      return [
+        "ok": false,
+        "errorCode": "background_chat_profile_not_plugin_owned",
+        "message": "调试端口上的 ChatGPT 实例不是插件创建的专用 profile；已拒绝接管。",
+        "backgroundOnly": false,
+        "workerUsed": false,
+        "port": port,
+      ]
+    }
   }
 
   func rebindAfterRendererReplacement() {
@@ -2335,8 +2768,8 @@ func ensureHiddenChatTarget(
       return selected ?? [
         "ok": false,
         "errorCode": "conversation_sidebar_selection_failed",
-        "message": "隐藏 Chat 无法从侧栏恢复指定会话。",
-        "backgroundOnly": true,
+        "message": "插件 Chat 无法从侧栏恢复指定会话。",
+        "backgroundOnly": false,
         "workerUsed": false,
       ]
     }
@@ -2410,50 +2843,41 @@ func ensureHiddenChatTarget(
     return prepared ?? [
       "ok": false,
       "errorCode": "background_chat_not_ready",
-      "message": "隐藏实例没有进入 Chat 页面；未向当前 Work/worker 页面发送。",
-      "backgroundOnly": true,
+      "message": "插件自有 ChatGPT 实例没有进入 Chat 页面；未向当前 Work/worker 页面发送。",
+      "backgroundOnly": false,
       "workerUsed": false,
       "port": port,
     ]
   }
 
-  // Switching the dedicated Electron instance from Codex to Chat can make its
-  // BrowserWindow visible again even when it was launched with `open -j`.
-  // Re-hide the process identified by this private debugging port, then wait
-  // for the renderer itself to report document.visibilityState == "hidden".
-  // This runs only after the Chat surface is confirmed and never targets the
-  // user's primary ChatGPT process.
-  if !runningOnGitHubActions(),
-     !allowTestWebTarget,
-     queueTargetRuntimeState(
-       port: port,
-       targetId: targetId,
-       refreshLifecycle: false
-     ) == .visible {
-    _ = hideDedicatedProcessForPort(port)
-    for _ in 0..<40 {
-      if queueTargetRuntimeState(
-        port: port,
-        targetId: targetId,
-        refreshLifecycle: false
-      ) == .hidden { break }
-      Thread.sleep(forTimeInterval: 0.05)
-    }
-  }
-
-  if !runningOnGitHubActions(),
-     !allowTestWebTarget,
-     queueTargetRuntimeState(
-       port: port,
-       targetId: targetId,
-       refreshLifecycle: false
-     ) != .hidden {
+  // Visibility is deliberately not a startup gate. A visible renderer is valid
+  // when it is the exact plugin-owned Chat surface; deployments that need the
+  // old policy can opt in through CHATGPT_AUTO_CONFIRM_REQUIRE_HIDDEN or
+  // CHATGPT_AUTO_CONFIRM_HEADLESS=0.
+  let runtimeState = queueTargetRuntimeState(
+    port: port,
+    targetId: targetId,
+    refreshLifecycle: false
+  )
+  if runtimeState == .visible && !queueAllowsVisibleDedicatedRenderer() {
     state.lastError = "background_chat_visibility_not_hidden"
     return [
       "ok": false,
       "errorCode": "background_chat_visibility_not_hidden",
-      "message": "专用 ChatGPT 页面未保持隐藏；已拒绝启动，避免影响当前可见页面。",
-      "backgroundOnly": true,
+      "message": "当前部署要求隐藏 ChatGPT 页面，但专用页面是可见的。",
+      "backgroundOnly": false,
+      "runtimeState": queueTargetRuntimeStateName(runtimeState),
+      "workerUsed": false,
+    ]
+  }
+  guard runtimeState == .hidden || runtimeState == .visible else {
+    state.lastError = "background_chat_runtime_unusable"
+    return [
+      "ok": false,
+      "errorCode": "background_chat_runtime_unusable",
+      "message": "插件自有 ChatGPT 页面未处于可用的 Chat renderer 状态。",
+      "backgroundOnly": false,
+      "runtimeState": queueTargetRuntimeStateName(runtimeState),
       "workerUsed": false,
     ]
   }
@@ -2466,6 +2890,8 @@ func ensureHiddenChatTarget(
   prepared["port"] = port
   prepared["targetId"] = targetId
   prepared["profilePath"] = profilePath
+  prepared["backgroundOnly"] = runtimeState == .hidden
+  prepared["runtimeState"] = queueTargetRuntimeStateName(runtimeState)
   return prepared
 }
 
@@ -2525,15 +2951,19 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
     }
 
     function isAllowTitle(text) {
-      const norm = (text || "").toLowerCase().trim();
-      return ["allow", "allow once", "approve", "approve once", "confirm", "confirm once",
-              "允许", "允许一次", "同意", "同意一次", "确认", "确认一次"].includes(norm);
+      const norm = (text || "").toLowerCase().replace(/[\\s\\u21b5\\u23ce]+/g, " ").trim()
+        .replace(/\\s*[\\(（\\[]?\\s*(?:esc|escape|enter|return|\\u21b5|\\u23ce|\\u238b|cmd\\s*enter|ctrl\\s*enter)\\s*[\\)）\\]]?\\s*$/i, "");
+      return ["allow", "allow once", "allow this time", "approve", "approve once",
+              "confirm", "confirm once", "authorize", "authorize once", "grant", "grant once",
+              "full access", "complete access", "允许", "允许一次", "同意", "同意一次",
+              "确认", "确认一次", "授权", "授权一次", "完全访问", "完整访问"].includes(norm);
     }
 
     function isRejectTitle(text) {
-      const norm = (text || "").toLowerCase().trim();
-      return ["deny", "reject", "cancel", "deny once", "reject once", "拒绝", "拒绝一次", "不允许",
-              "不允许一次", "取消"].includes(norm);
+      const norm = (text || "").toLowerCase().replace(/[\\s\\u21b5\\u23ce]+/g, " ").trim()
+        .replace(/\\s*[\\(（\\[]?\\s*(?:esc|escape|enter|return|\\u21b5|\\u23ce|\\u238b|cmd\\s*enter|ctrl\\s*enter)\\s*[\\)）\\]]?\\s*$/i, "");
+      return ["deny", "reject", "cancel", "deny once", "reject once", "not now", "拒绝", "拒绝一次",
+              "不允许", "不允许一次", "取消", "暂不"].includes(norm);
     }
 
     function isContinueInChatTitle(text) {
@@ -2591,6 +3021,133 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
       return 'dom_event';
     }
 
+    // Split approval buttons have a primary "Allow" action and a small
+    // adjacent arrow.  For the broad, always-on watcher, prefer the arrow's
+    // session menu too; otherwise the generic IPC path could consume the
+    // one-shot Allow action before the dedicated Chat watcher gets a chance
+    // to select "Allow for this conversation".
+    function normalizedLabel(button) {
+      return [
+        button?.innerText || '',
+        button?.getAttribute?.('aria-label') || '',
+        button?.getAttribute?.('title') || '',
+      ].join(' ').replace(/[\\s\\u21b5\\u23ce]+/g, ' ').trim().toLowerCase();
+    }
+    const sessionHints = [
+      'this chat', 'this conversation', 'for this chat', 'for this conversation',
+      'for this session', 'during this chat', 'always allow in this chat',
+      '本次会话', '这次会话', '此会话', '当前会话', '在此聊天中', '本次聊天',
+      '始终允许', '会话期间'
+    ];
+    function isSessionScopeLabel(value) {
+      const normalized = (value || '').toLowerCase();
+      return sessionHints.some(hint => normalized.includes(hint))
+        || /(?:allow|approve|confirm|允许|同意|确认).*(?:this (?:chat|conversation|session)|本次(?:会话|聊天)|当前会话)/i.test(normalized);
+    }
+    function isVisibleControl(button) {
+      return !!(button && !button.disabled
+        && (button.offsetWidth || button.offsetHeight || button.getClientRects?.().length));
+    }
+    function hasStructuralCardSemantics(element) {
+      if (!element) return false;
+      const role = (element.getAttribute?.('role') || '').toLowerCase();
+      if (role === 'dialog' || role === 'alertdialog'
+          || element.getAttribute?.('aria-modal') === 'true') return true;
+      return Array.from(element.attributes || []).some(attribute =>
+        /^(?:data-testid|data-test|data-state|class|id)$/i.test(attribute.name)
+          && /(?:approval|authorize|authorization|permission|consent|access|tool-?call)/i.test(
+            attribute.value || ''
+          )
+      );
+    }
+    function hasApprovalReactMetadata(element) {
+      let node = element;
+      for (let ancestorIndex = 0; ancestorIndex < 15 && node; ancestorIndex++) {
+        const keys = Object.keys(node).filter(key =>
+          key.startsWith('__reactFiber$') || key.startsWith('__reactProps$'));
+        for (const key of keys) {
+          let current = node[key];
+          for (let depth = 0; depth < 20 && current; depth++) {
+            const props = current.memoizedProps || current.pendingProps || current.props || current;
+            if (props?.jit_plugin_data || props?.pluginData || props?.allow_once
+                || props?.allowOnce || props?.target_message_id || props?.targetMessageId
+                || props?.requiresApproval || props?.authorization || props?.permission
+                || props?.consent || props?.approval) return true;
+            current = current.return;
+          }
+        }
+        node = node.parentElement;
+      }
+      return false;
+    }
+    function isMenuTrigger(button) {
+      if (!isVisibleControl(button)) return false;
+      const attributes = [
+        button.getAttribute?.('aria-label') || '',
+        button.getAttribute?.('title') || '',
+        button.getAttribute?.('data-testid') || '',
+        button.getAttribute?.('data-slot') || '',
+        button.getAttribute?.('class') || '',
+      ].join(' ');
+      return button.getAttribute?.('aria-haspopup') === 'menu'
+        || button.getAttribute?.('aria-haspopup') === 'listbox'
+        || button.getAttribute?.('aria-expanded') !== null
+        || button.getAttribute?.('data-state') !== null
+        || /menu|dropdown|chevron|caret|arrow|下拉|箭头|更多|选项/i.test(attributes.toLowerCase());
+    }
+    function isAdjacentSplitControl(allowButton, control) {
+      if (!allowButton || !control || control === allowButton || !isMenuTrigger(control)) return false;
+      const allowRect = allowButton.getBoundingClientRect?.();
+      const controlRect = control.getBoundingClientRect?.();
+      if (!allowRect || !controlRect) return false;
+      const verticalOverlap = Math.min(allowRect.bottom, controlRect.bottom)
+        - Math.max(allowRect.top, controlRect.top);
+      const horizontalGap = Math.max(
+        allowRect.left - controlRect.right,
+        controlRect.left - allowRect.right,
+        0
+      );
+      return verticalOverlap > 0 && horizontalGap <= 12;
+    }
+    function visibleMenuItems() {
+      return Array.from(document.querySelectorAll(
+        '[role="menuitem"], [role="menuitemradio"], [role="option"], '
+          + '[role="menu"] button, [role="listbox"] button, '
+          + '[data-radix-menu-content] button, '
+          + '[data-radix-popper-content-wrapper] button'
+      )).filter(isVisibleControl);
+    }
+    function findSessionScopeAction(allowButton, cardButtons) {
+      const sessionOption = visibleMenuItems().find(item =>
+        item !== allowButton && isSessionScopeLabel(normalizedLabel(item))
+      );
+      if (sessionOption) return { type: 'option', button: sessionOption };
+      const direct = cardButtons.find(button => button !== allowButton
+        && isSessionScopeLabel(normalizedLabel(button)));
+      if (direct) return { type: 'trigger', button: direct };
+      const adjacent = cardButtons.find(button => button !== allowButton
+        && isAdjacentSplitControl(allowButton, button));
+      if (adjacent) return { type: 'trigger', button: adjacent };
+      const fallback = cardButtons.find(button => button !== allowButton
+        && isMenuTrigger(button));
+      return fallback ? { type: 'trigger', button: fallback } : null;
+    }
+    function invokeSessionScopeAction(allowButton, cardButtons) {
+      const action = findSessionScopeAction(allowButton, cardButtons);
+      if (!action) return null;
+      if (action.type === 'option') {
+        invokeInternalApproval(action.button);
+        return 'session_scope_option';
+      }
+      const expanded = action.button.getAttribute?.('aria-expanded') === 'true'
+        || (action.button.getAttribute?.('data-state') || '').toLowerCase() === 'open';
+      if (!expanded) {
+        invokeInternalApproval(action.button);
+        return 'session_scope_menu_opened';
+      }
+      return 'session_scope_menu_pending';
+    }
+
     const buttons = [];
     collectButtons(document, buttons, new Set());
     const processedContainers = new Set();
@@ -2632,12 +3189,13 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
       let contextText = "";
       let targetMessageId = null;
       let metadataBody = "";
+      let cardButtons = [];
 
       for (let i = 0; i < 15 && container; i++) {
         if (processedContainers.has(container)) break;
         const cText = container.innerText || "";
-        const childBtns = Array.from(container.querySelectorAll('button, a, [role="button"]'));
-        const hasReject = childBtns.some(b => isRejectTitle(b.innerText || b.getAttribute('aria-label') || b.getAttribute('title') || ""));
+        cardButtons = Array.from(container.querySelectorAll('button, a, [role="button"]'));
+        const hasReject = cardButtons.some(b => isRejectTitle(b.innerText || b.getAttribute('aria-label') || b.getAttribute('title') || ""));
 
         let fiberKey = Object.keys(container).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactProps$'));
         if (fiberKey) {
@@ -2658,8 +3216,12 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
           }
         }
 
-        if (hasReject || cText.toLowerCase().includes('allow chatgpt to use') || cText.includes('允许') || targetMessageId || metadataBody) {
-          foundReject = hasReject || Boolean(targetMessageId || metadataBody);
+        const compact = cardButtons.length > 0 && cardButtons.length <= 16;
+        const structuralCard = hasReject || hasStructuralCardSemantics(container)
+          || hasApprovalReactMetadata(btn) || hasApprovalReactMetadata(container)
+          || Boolean(targetMessageId || metadataBody);
+        if (compact && structuralCard) {
+          foundReject = true;
           contextText = cText;
           processedContainers.add(container);
           break;
@@ -2674,7 +3236,27 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
 
         if (matchRes.match) {
           try {
-            const internalMode = invokeInternalApproval(btn);
+            const scopedMode = approveAll
+              ? invokeSessionScopeAction(btn, cardButtons)
+              : null;
+            if (scopedMode === 'session_scope_menu_opened'
+                || scopedMode === 'session_scope_menu_pending') {
+              results.pending++;
+              results.audits.push({
+                buttonTitle: title,
+                decision: 'session_scope_pending',
+                reason: scopedMode === 'session_scope_menu_opened'
+                  ? '已打开允许范围菜单，等待选择本次会话'
+                  : '允许范围菜单已打开，等待本次会话选项',
+                clicked: scopedMode === 'session_scope_menu_opened',
+                ruleId: matchRes.ruleId,
+                promptText: auditPrompt,
+              });
+              break;
+            }
+            const internalMode = scopedMode === 'session_scope_option'
+              ? scopedMode
+              : invokeInternalApproval(btn);
             if (internalMode === 'react_handler') results.internalActions++;
             else results.domEvents++;
             results.approved++;
@@ -2868,7 +3450,9 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
     return [
       "ok": true, "candidates": totalCandidates, "approved": totalApproved,
       "pending": totalPending, "blocked": totalBlocked, "unmatched": totalUnmatched,
-      "backgroundOnly": true, "pageChanged": false, "ipcPrimaryPath": true,
+      "backgroundOnly": pluginBackgroundRuntimeState(state) == .hidden,
+      "runtimeState": pluginBackgroundRuntimeState(state).map(queueTargetRuntimeStateName) as Any,
+      "pageChanged": false, "ipcPrimaryPath": true,
       "hiddenTargetCount": scannedTargetCount,
       "loadedRendererCount": scannedTargetCount, "scannedPorts": scannedPorts,
       "internalActions": totalInternalActions, "domEvents": totalDOMEvents
@@ -2878,7 +3462,9 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
     state.lastError = nil
     return [
       "ok": true, "candidates": 0, "approved": 0, "pending": 0,
-      "blocked": 0, "unmatched": 0, "backgroundOnly": true,
+      "blocked": 0, "unmatched": 0,
+      "backgroundOnly": pluginBackgroundRuntimeState(state) == .hidden,
+      "runtimeState": pluginBackgroundRuntimeState(state).map(queueTargetRuntimeStateName) as Any,
       "pageChanged": false, "ipcPrimaryPath": true,
       "hiddenTargetCount": scannedTargetCount,
       "loadedRendererCount": scannedTargetCount, "scannedPorts": scannedPorts,

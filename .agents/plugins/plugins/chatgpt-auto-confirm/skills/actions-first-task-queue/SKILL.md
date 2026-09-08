@@ -5,7 +5,7 @@ description: "Run long-lived coding, release, deployment, or plugin-marketplace 
 
 # Continuous Task Queue
 
-Use `chatgpt-auto-confirm` as the controller. Work only in queue-owned **Chat** conversations, never Work. An unchanged task continues from its previous Chat branch; an updated goal always starts a new Chat and a new project-email thread.
+Use `chatgpt-auto-confirm` as the controller. Work only in queue-owned **Chat** conversations, never the visible Work composer. Each execution round is a fresh work Chat; its natural result is handed to a fresh planner/acceptance Chat, which alone emits the report envelope and determines the next `next_task`. GitHub repository state is authoritative. An unchanged task continues from its persisted repository progress; an updated goal starts a fresh Chat with the updated repository project definition.
 
 ## What every round must do
 
@@ -13,13 +13,14 @@ Before the first, continuation, or review message is sent, select and verify GPT
 
 At the start of every round:
 
-1. Re-read this skill and every currently configured task file, if any. Task files may have changed since the previous Chat; zero task files is valid and must not block dispatch.
-2. Use the Gmail connector to search by task id and read any existing task-related thread from `1315518325@qq.com`. Apply new requirements to the current work and persist material goal changes into the task definition. Do not send an email during this read step.
-3. Inspect the existing checkout, changes already on disk, branch state, and any operation still running.
-4. Continue the remaining implementation. Do not restart, merely review results, rewrite plans, or stop after saying what should happen next.
-5. Keep working until all task files, acceptance checks, tests, releases, and required evidence are complete.
+1. Open the configured GitHub repository and locate the project by stable task id and configured project/document directory.
+2. If the matching project is missing, create a dedicated repository project directory and add goal/scope, architecture, executable task, acceptance, and evidence documents. Register those files in the repository task control entry before implementation.
+3. Re-read this skill and every current project file. Files may have changed since the previous Chat.
+4. Inspect the existing implementation, persisted changes, branch state, and any operation still running.
+5. Continue the remaining implementation. Do not restart, merely review results, rewrite plans, or stop after saying what should happen next.
+6. Keep working until all project files, acceptance checks, tests, releases, and required evidence are complete.
 
-The first Chat must receive the complete current goal, revision/digest, this skill path, and the email rule. Include task directory/file locations only when task files are configured. A continuation instruction is forbidden until that first Chat has actually established the task context. From the second unfinished round onward, the controller sends only a short instruction to continue; branch history supplies prior context.
+The first Chat must receive the complete current goal, revision/digest, this skill path, GitHub repository, project directory, and code directory. If the project directory is absent, the first Chat creates it and registers its documents. From the second unfinished round onward, the controller repeats the same repository-backed objective in a fresh Chat and requires inspection of persisted repository progress before continuing.
 
 The miniapp, not Chat, detects task updates. Before every dispatch it reads `tasks/actions-inbox.json` and all declared `specSources`, if any, then compares the current prompt and SHA-256 digest with the applied round. `specSources` may contain any number of files, including zero. Chat reads configured files to do the work, but it never decides whether a revision changed.
 
@@ -50,29 +51,19 @@ Do not repeat the same failed command or connector path. Diagnose the cause firs
 
 Do not stop merely because an operation is slow. Poll Actions, deployments, releases, and remote checks inside the same Chat whenever possible. Do not stop while useful work can continue.
 
-Whenever a Chat must end, use the single report envelope below for complete, incomplete, blocked, and cross-Chat waiting states (plain text, not a Markdown code block). `completed` records finished items and never means the whole task is complete. The queue stops only when `status=complete` and `all_tasks_complete=true`, with `remaining=[]`, `blockers=[]`, `wait_seconds=0`, and `next_task=""`.
+There is exactly one report envelope, and only a fresh planner/acceptance Chat may receive or emit it. A work Chat must return a natural-language result and must not receive a completion, incomplete, blocked, or next-step template. The planner receives the original goal and that natural result, inspects the repository state, and emits the envelope: it may set `status=complete` only when the entire repository project, all acceptance checks, required tests, releases, and evidence are complete; otherwise it writes the next executable arrangement into `next_task`. The queue stops only when `status=complete` and `all_tasks_complete=true`, with empty `remaining` and `blockers`.
 
 ```text
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","task_id":"current task id","applied_task_revision":1,"applied_spec_digest":"current spec digest","status":"incomplete","all_tasks_complete":false,"summary":"...","completed":["finished item"],"remaining":["unfinished item"],"blockers":[],"verification":["..."],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"specific work for the next round"}
+{"protocol":"mahayana.task-report.v1","task_id":"current task id","applied_task_revision":1,"applied_spec_digest":"current spec digest","status":"complete","all_tasks_complete":true,"summary":"entire project completed","completed":["completed project and release evidence"],"remaining":[],"blockers":[],"verification":["verifiable acceptance evidence"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":""}
 MAHAYANA_TASK_REPORT_V1_END
 ```
 
-When everything is genuinely complete, use the same envelope with `status=complete`, `all_tasks_complete=true`, empty `remaining`/`blockers`/`next_task`, and zero wait. For an external result that genuinely requires a long cross-Chat wait, use the same envelope with `all_tasks_complete=false`, a realistic `wait_seconds`, `wait_reason`, and non-empty `next_task`. The queue will re-read updated files and continue afterward. For human intervention, first send the exact requirement through the task's Gmail thread, then return the same envelope with `status=blocked` and `all_tasks_complete=false`.
-
-## Email: human intervention only
-
-The recipient is `1315518325@qq.com`. Never send project-initiation, progress, milestone, completion, routine wait, or status emails.
-
-- At the start of every first, continuation, and review Chat, use Gmail to search by task id and read any existing task-related thread from `1315518325@qq.com`. No matching thread is a valid state and must not cause an outbound email.
-- Send email only when useful work cannot continue without information, permission, credentials, or a decision that only the human can provide.
-- For that blocker, create or reply to a thread with subject `[需人工介入][task-id] task title`. State the exact input needed, why available alternatives cannot proceed, and how execution resumes afterward.
-- If a blocker thread exists and a task directory is configured, its thread/message identity may be stored in `.mahayana-project-email.json`. Do not create that record by sending a non-blocker email.
-- Do not send duplicate blocker mail for the same unresolved requirement. Code progress, tests, commits, PRs, releases, ordinary failures, and task completion are never email triggers.
+If the work Chat is unfinished, waiting, blocked, ends early, or omits a natural result, emit no report template. The plugin closes the exact old plugin-owned Chat when retrying, preserves the repository state, and sends the same goal to a fresh work Chat. If the planner is incomplete or blocked, the plugin sends only its raw `next_task` to a fresh work Chat. There is no separate incomplete, blocked, waiting, next-step, Gmail, project-email, countdown, or legacy timed-task protocol in a work prompt.
 
 ## Recover safely
 
-Treat a Chat that shows no assistant or tool activity shortly after a verified send as a renderer failure, not as a long-running build. Restart only the queue-owned hidden ChatGPT process and continue from the persisted checkout in a new Chat.
+Treat a Chat that shows no assistant or tool activity shortly after a verified send as a renderer failure, not as a long-running build. Close and restart only the exact queue-owned plugin ChatGPT target/profile/process (whether visible or hidden) and continue from the persisted checkout in a new Chat.
 
 Treat visible GitHub Actions or deployment progress as active work. Do not declare completion merely because a Chat stopped. A fast unfinished reply is backed off before another branch is sent so the queue cannot spin or trigger rate limits.
 
@@ -82,7 +73,7 @@ The task id is stable and the task definition is versioned state. Define `revisi
 
 - Increment `revision` whenever possible. If file content or the goal changes without a revision bump, the miniapp still creates an internal next revision from the changed digest.
 - Use `applyMode: "next_chat"` by default; the current Chat may finish its turn, but its result cannot complete the task after a newer revision exists.
-- Use `applyMode: "interrupt"` only for urgent safety or architecture corrections. The queue stops only its hidden task-owned response, preserves the checkout, and immediately creates a fresh Chat on the new revision.
+- Use `applyMode: "interrupt"` only for urgent safety or architecture corrections. The queue stops only its plugin-owned task response, preserves the checkout, and immediately creates a fresh Chat on the new revision.
 - Current prompts, directives, specification digests, sources, and the last 100 updates are versioned in queue state.
 - An unchanged second-or-later round stays on its branch and receives only the short continuation instruction.
 - A changed prompt or digest clears the old branch identity. The next Chat is a true first round containing the complete updated goal and configured task locations, if any. It must not create an email unless human intervention is required.
