@@ -1,47 +1,90 @@
 # M9-GLOBAL-DHARMA-003 desktop WebMCP / entitlement evidence
 
-State: `IMPLEMENTATION_IN_PROGRESS`
-Date: `2026-09-06`
+State: `DESKTOP_E2E_VERIFIED / OVERALL_IN_PROGRESS`
+Date: `2026-09-08`
 Intake main: `8f7e83902a616ecdb62fdaded65ea79227e745f3`
-Execution branch: `feat/tfi-global-dharma-desktop-webmcp-commerce-20260906`
+Feature merge main: `d7c8b45c3a7409d14d11bbf49107ff320b05ad84`
+Current canonical main at final readback: `77f72b13304b75a45530de03fb807f52c3624be1`
+Original execution branch: `feat/tfi-global-dharma-desktop-webmcp-commerce-20260906`
+Evidence synchronization branch: `docs/tfi-global-dharma-packaged-evidence-20260908`
 
-## Scope under verification
+## Scope verified on packaged desktop
 
-- Marketplace search/install of `global-dharma` and Messenger Bot projection.
+- Marketplace search/install of official `global-dharma` and Messenger Bot projection.
 - Bot natural-language route resolves the installed Mini App Tool Contract and executes through the same WebMCP host function used by the iframe.
 - Host-owned `fabushi.miniapp.execution.v1` durable revision is pushed to an open iframe and read back when the iframe is opened later or the app restarts.
-- Mini App receives a bounded authenticated session projection only; no access/refresh bearer credential is exposed.
-- Exact `local.prayer-wheel.start` entitlement is checked before a prayer-wheel start and again before accepting a returned hostRequest for that capability.
-- Lifetime CNY 1080.00 comes from canonical server purchase options. The Platform Router exposes only user create-intent/get-intent/checkout Pay routes; provider/admin routes remain outside the facade.
+- Mini App receives a bounded authenticated session projection only; no access/refresh bearer credential is exposed (`tokenExposed:false`).
+- Exact `local.prayer-wheel.start` entitlement is checked before prayer-wheel start and before accepting a returned hostRequest for that capability.
+- Lifetime CNY 1080.00 comes from canonical server purchase options (`108000` minor units). The Platform Router exposes only user create-intent/get-intent/checkout Pay routes; provider/admin routes remain outside the facade.
 - Explicit `FABUSHI_FEATURE_HOST_MODE=test` provides deterministic intent/callback/idempotency/restore semantics for packaged CI without becoming a production entitlement source.
+- Restart preserves Bot/UI revision, entitlement and CloudStorage state; logout clears the controlled Mini App session and durable execution projection.
 
-## Local light gate
+## Canonical implementation / merge evidence
 
-- `git diff --check`: PASS.
-- `node --test desktop/electron/edge-ipc.test.cjs desktop/electron/native-capability-handlers.test.cjs`: 35/35 PASS on Linux.
-- No local Electron build, Cargo build, package build or Playwright E2E was run.
+- Round A canonical entitlement PR: #2135, merged as `db287caa1b8495c94bf9ecafe7f064bca2ee57a0`.
+- Web/service shared-runtime PR: #2445, merged as `c82b29cd6404c2f19b93d8479b2e2cae45469249`.
+- Desktop Bot/WebMCP/commerce PR: #2448, merged to canonical `main` as `d7c8b45c3a7409d14d11bbf49107ff320b05ad84` on 2026-09-06.
+- Later unrelated changes advanced canonical main to `77f72b13304b75a45530de03fb807f52c3624be1`; #2448 remains an ancestor of main.
 
-## Planned protected evidence
+## Exact-main packaged Electron evidence
 
-The existing Electron workflow runs packaged E2E outside PR context and records `trace: on`, `video: on`; its `always()` artifact upload includes `desktop/playwright-report/**` and `desktop/test-results/**` for 90 days. The extended `desktop/e2e/miniapp-bot-parity.spec.ts` writes eleven named step screenshots into that artifact.
+Workflow: `Electron desktop quality gate`
+Run: `34052575208`
+Head branch: `main`
+Head SHA: `d7c8b45c3a7409d14d11bbf49107ff320b05ad84`
+Conclusion: `SUCCESS`
 
-Do not mark COMPLETE until real values replace every PENDING field:
+Jobs:
 
-- implementation commit: `8fa7e9dc31f6dc8d75242b28dfbe92eb1b106d59`
-- pull request: `#2448` (`feat(desktop): close Global Dharma WebMCP commerce loop`)
-- PR checks: `PENDING RERUN` — initial head run `34047027979` failed native TS/CJS parity and `34047028119` failed rustfmt; both root causes fixed in `6f094d3f`, then latest `main@8595a50196309c8ebb91c3f8077125d7dc9e3ffa` merged into the branch
-- protected merge SHA: `PENDING`
-- canonical-main Electron workflow run: `PENDING`
-- Linux/macOS/Windows packaged jobs: `PENDING`
-- diagnostics artifact IDs: `PENDING`
-- video file(s): `PENDING`
-- trace/report: `PENDING`
-- downloadable artifact/video link: `PENDING`
+- Electron macOS `101538691957`: SUCCESS; package + notarization + packaged user journey + diagnostics upload succeeded.
+- Electron Linux `101538692043`: SUCCESS; package + packaged user journey + diagnostics upload succeeded.
+- Electron Windows `101538692052`: SUCCESS; package + packaged user journey + diagnostics upload succeeded.
+- Aggregate `Electron desktop result` `101540495911`: SUCCESS.
 
-Missing packages, permissions, provider bindings, workflow gates or artifacts are blockers, never evidence of success.
+Artifacts tied to the exact feature merge SHA:
 
-## 2026-09-07 current evidence
+- macOS package `9995186046` (`fabushi-electron-mac`).
+- macOS diagnostics `9995176003` (`fabushi-electron-mac-e2e-diagnostics`), artifact digest `sha256:150b63f97b75217034c20289ab2bacdc71eb265edc52230676932e4223e26e56`.
+- Linux package `9995174215`; Linux diagnostics `9995167107`.
+- Windows package `9995164889`; Windows diagnostics `9995159094`.
+- Pre-package real-Rust-Host evidence `9995095838`.
 
-- Desktop pre-package run: `34051925481` SUCCESS on `1655ea8070e07ad7dd8ab8e9347fbcb43f6ddf8f`; artifact `9994834346` (`sha256:1bf06fa2d3a6dc308a118ea173a392ece92049dfb1053cf78fb9331445ea3e14`). Contains 12 named PNGs, `global-dharma-user-journey.webm` (`sha256:3afde68f3855faf4c7b3bf2e1e363866ab7f609ef8442037566f0f1cabb3c7b8`) and `trace.zip` (`sha256:b0f83cf852c19b3d8be72045c5c203dbd8d079d52c6f4e30d55780801f8971f0`).
-- Android 1.2.52 release: run `34050780156` SUCCESS; artifact `9994614114`; tag `android-v1.2.52-262491811` targets `380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab`.
-- Android interactive: run `34051316405` FAILURE; artifact `9994884584` (`sha256:dfad88db72093413f625963f1f9ff7898266e81a9211a09b41d99cc304d3d852`). `report.json` says `failed-timeout`; six semantic tool classes appear in trace, but two actions fail `stale_app_surface_generation` and the App-owned channel terminates with `connection-refresh-failed`, not `logged-out`. Full Android journey/video remains PENDING.
+macOS diagnostics contain:
+
+1. `01-authenticated-messenger.png`
+2. `02-marketplace-search-global-dharma.png`
+3. `03-marketplace-installed.png`
+4. `04-contact-bot-projection.png`
+5. `05-bot-natural-language-webmcp-complete.png`
+6. `06-open-app-same-revision-account-and-paywall.png`
+7. `07-cny1080-lifetime-entitlement-purchased.png`
+8. `08-entitlement-restored.png`
+9. `09-bot-starts-entitled-local-prayer-wheel.png`
+10. `10-open-app-follows-bot-prayer-wheel-revision.png`
+11. `11-restart-recovers-history-state-entitlement-cloud.png`
+12. `12-logout-clears-miniapp-session-and-execution.png`
+13. `global-dharma-user-journey.webm`
+14. `trace.zip` plus the Playwright HTML report.
+
+The packaged test asserts the full chain: search -> install -> Bot projection -> natural-language status request -> shared WebMCP execution revision -> `打开应用` -> same revision and logged-in bounded account projection -> exact `CNY 108000` lifetime purchase -> restore -> Bot starts entitled `local-prayer-wheel` -> reopen app at the same newer revision -> restart recovery -> logout cleanup.
+
+Locally extracted only for user delivery from the immutable GitHub artifact on 2026-09-08:
+
+- Original WebM SHA-256: `472260ee5da38dff970caeb3af97115e32a2b243d8d76b48b8101249c027f3ae`.
+- MP4 transcode SHA-256: `18648574b914f4ab524e880cb3374736b6db73bebf0d79ea7fea70b21315ef80`.
+- Video dimensions: 1280x800; packaged journey screencast duration: 6.44s.
+
+## Payment semantics and limitation
+
+No real provider charge occurred in this evidence. The packaged desktop journey uses the explicit deterministic `FABUSHI_FEATURE_HOST_MODE=test` provider so that PaymentIntent, callback deduplication, durable entitlement and restore can be exercised without charging money. Product identity, amount, entitlement capability and Host gate remain server-authoritative and match the production contract.
+
+This is valid simulated-user acceptance evidence for the requested desktop journey. It is not evidence that a production PSP account, KYC/KYB, real checkout URL or payout rail has been activated.
+
+## Remaining blockers / non-claims
+
+- Production web PSP/provider activation and real `FABUSHI_PAY_CHECKOUT_URL` / provider credentials are external and remain unverified; production purchase must fail closed until present.
+- App Store / Google Play product provisioning and provider bindings remain external mobile dependencies.
+- Android terminal journey remains not accepted: interactive run `34051316405` failed with timeout / stale surface generation / App-owned connection refresh failure; artifact `9994884584` preserves that failure evidence.
+- Round C production migrations, production health/smoke/reconciliation, and a fresh terminal mobile journey remain open.
+
+Therefore desktop Round B is `E2E_VERIFIED`, while the cross-platform/production M9 task stays `IN_PROGRESS`.
