@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const workflowPath = new URL('../../.github/workflows/macos-global-dharma-packaged-e2e.yml', import.meta.url);
+const publisherWorkflowPath = new URL('../../.github/workflows/global-dharma-exact-main-evidence-publish.yml', import.meta.url);
 const entryJourneyPath = new URL('../../desktop/e2e/miniapp-search-entry.spec.ts', import.meta.url);
 const journeyPath = new URL('../../desktop/e2e/miniapp-bot-parity.spec.ts', import.meta.url);
 const composerBridgePath = new URL('../../desktop/src/miniapp-composer-open-bridge.ts', import.meta.url);
@@ -14,6 +15,7 @@ async function sources() {
     readFile(entryJourneyPath, 'utf8'),
     readFile(journeyPath, 'utf8'),
     readFile(composerBridgePath, 'utf8'),
+    readFile(publisherWorkflowPath, 'utf8'),
   ]);
 }
 
@@ -81,6 +83,38 @@ test('exact-SHA service entitlement evidence self-starts on canonical main relea
   assert.match(serviceWorkflow, /CNY 1080 order\/webhook\/refund\/restore contract/u);
 });
 
+test('exact-main evidence publication is desktop-only, provenance-bound, direct-downloadable and fail-closed', async () => {
+  const [, , , , publisher] = await sources();
+  for (const needle of [
+    'workflow_run:',
+    'Electron desktop quality gate',
+    "github.event.workflow_run.event == 'push'",
+    "github.event.workflow_run.head_branch == 'main'",
+    "github.event.workflow_run.conclusion == 'success'",
+    'SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}',
+    'ELECTRON_RUN_ID: ${{ github.event.workflow_run.id }}',
+    'fabushi-electron-mac-e2e-diagnostics',
+    'actions/download-artifact@v8.0.1',
+    'digest-mismatch: error',
+    "require_one 'global-dharma-user-journey.webm'",
+    "require_one 'global-dharma-user-journey-restart-logout.webm'",
+    "require_one 'miniapp-search-entry-user-journey.webm'",
+    "require_one '03-global-dharma-bot-composer-open-app-adjacent.png'",
+    'sha256sum *.webm *.png *.zip',
+    'ORIGINAL_ARTIFACT_DIGEST',
+    'ORIGINAL_ARTIFACT_UI_URL',
+    'gh release create "$TAG"',
+    '--target "$SOURCE_SHA"',
+    '--prerelease',
+    'productionPspKycVerified: false',
+  ]) {
+    assert.ok(publisher.includes(needle), `missing exact-main evidence publication invariant: ${needle}`);
+  }
+  for (const forbidden of ['Native mobile', 'Android', 'iOS', 'native-mobile']) {
+    assert.equal(publisher.includes(forbidden), false, `${forbidden} must not gate desktop Global Dharma evidence publication`);
+  }
+});
+
 test('packaged user journey covers exact 小程序 discovery/install plus Bot/WebMCP parity, CNY 1080 purchase/restore and local prayer-wheel authorization', async () => {
   const [, entryJourney, journey, composerBridge] = await sources();
   for (const needle of [
@@ -109,7 +143,7 @@ test('packaged user journey covers exact 小程序 discovery/install plus Bot/We
     "const SOURCE_TEST_ID = 'miniapp-bot-open-source'",
     "const OPEN_TEST_ID = 'miniapp-bot-open'",
     "bridge.className = 'fabushi-miniapp-composer-open'",
-    "source.hidden = true",
+    'source.hidden = true',
     "input.insertAdjacentElement('afterend', bridge)",
   ]) {
     assert.ok(composerBridge.includes(needle), `missing composer bridge contract: ${needle}`);
