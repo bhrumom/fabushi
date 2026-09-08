@@ -3,13 +3,15 @@ const SOURCE_TEST_ID = 'miniapp-bot-open-source';
 const INPUT_TEST_ID = 'messenger-input';
 const BRIDGE_ATTR = 'data-miniapp-composer-bridge';
 
-function currentSource(root: ParentNode): HTMLButtonElement | null {
+type BridgeRoot = HTMLElement | Document;
+
+function currentSource(root: BridgeRoot): HTMLButtonElement | null {
   return root.querySelector<HTMLButtonElement>(
     `button[data-testid="${SOURCE_TEST_ID}"], button[data-testid="${OPEN_TEST_ID}"]:not([${BRIDGE_ATTR}="true"])`,
   );
 }
 
-function currentBridge(root: ParentNode): HTMLButtonElement | null {
+function currentBridge(root: BridgeRoot): HTMLButtonElement | null {
   return root.querySelector<HTMLButtonElement>(`button[${BRIDGE_ATTR}="true"]`);
 }
 
@@ -18,7 +20,7 @@ function normalizeLabel(source: HTMLButtonElement): string {
   return label === '打开应用' ? label : '打开应用';
 }
 
-function syncComposerOpenAction(root: ParentNode): void {
+function syncComposerOpenAction(root: BridgeRoot): void {
   const source = currentSource(root);
   const input = root.querySelector<HTMLTextAreaElement>(`textarea[data-testid="${INPUT_TEST_ID}"]`);
   const composer = input?.closest('form');
@@ -61,7 +63,7 @@ function syncComposerOpenAction(root: ParentNode): void {
  * The hidden source stays in its React-managed parent; the composer bridge is a
  * small delegated control that is safe to create/remove outside React.
  */
-export function installMiniAppComposerOpenBridge(root: ParentNode = document): () => void {
+export function installMiniAppComposerOpenBridge(root: BridgeRoot = document): () => void {
   let scheduled = false;
   const scheduleSync = () => {
     if (scheduled) return;
