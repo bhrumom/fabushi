@@ -95,6 +95,10 @@ jobs:
         working-directory: desktop
         run: npm ci --prefer-offline
 
+      - name: Verify Bot conversation component contracts
+        working-directory: desktop
+        run: node scripts/test-bot-conversation.cjs
+
       - name: Install embedded Computer Use dependencies
         if: github.event_name != 'pull_request'
         working-directory: chatgpt-vps-control

@@ -30,6 +30,7 @@ struct MobileChatMessage: Identifiable, Equatable {
     var actionTitle: String?
     var actionDetail: String?
     var actionStatus: String?
+    var streaming = false
     var createdAt = Date()
 }
 

@@ -147,8 +147,8 @@ private struct MobileBotChat: View {
     let appAgentSurface: FabushiAppAgentSurface
     let onClose: () -> Void
 
-    @State private var draft = ""
-    @State private var entries: [MobileChatMessage] = []
+    @Binding var draft: String
+    @Binding var entries: [MobileChatMessage]
     @State private var busy = false
     @State private var activeOperationId: String?
     @State private var errorText: String?
@@ -316,6 +316,11 @@ private struct MobileBotChat: View {
                 HStack(alignment: .bottom, spacing: 7) {
                     ClothGhostAvatar(botId: bot.id, size: 20)
                     Text(entry.text)
+                        .overlay(alignment: .trailing) {
+                            if entry.streaming {
+                                Text("▌").foregroundStyle(.black.opacity(0.65))
+                            }
+                        }
                         .font(.system(size: 16))
                         .foregroundStyle(.black)
                         .padding(.horizontal, 15).padding(.vertical, 10)
@@ -373,10 +378,10 @@ private struct MobileBotChat: View {
                 case "chat.message":
                     guard (event["role"] as? String) != "user" else { continue }
                     removeThinking(operationId)
-                    upsertAssistant(operationId, text: event["text"] as? String ?? "", append: false)
+                    upsertAssistant(operationId, text: event["text"] as? String ?? "", append: false, streaming: false)
                 case "chat.delta":
                     removeThinking(operationId)
-                    upsertAssistant(operationId, text: event["delta"] as? String ?? "", append: true)
+                    upsertAssistant(operationId, text: event["delta"] as? String ?? "", append: true, streaming: true)
                 case "agent.step":
                     let id = "action:\(operationId):\((event["stepId"] as? String) ?? UUID().uuidString)"
                     let row = MobileChatMessage(id: id, role: .assistant, text: "", kind: .action, operationId: operationId, actionTitle: event["title"] as? String ?? "Working", actionDetail: event["detail"] as? String, actionStatus: event["status"] as? String ?? "completed")
@@ -388,9 +393,12 @@ private struct MobileBotChat: View {
                     let row = MobileChatMessage(id: id, role: .assistant, text: "", kind: .action, operationId: operationId, actionTitle: "Model", actionDetail: [provider, model].filter { !$0.isEmpty }.joined(separator: " · "), actionStatus: "completed")
                     if let index = entries.firstIndex(where: { $0.id == id }) { entries[index] = row } else { entries.append(row) }
                 case "operation.completed", "operation.interrupted":
-                    removeThinking(operationId); return
+                    removeThinking(operationId)
+                    finishAssistant(operationId)
+                    return
                 case "operation.failed":
                     removeThinking(operationId)
+                    finishAssistant(operationId)
                     errorText = event["message"] as? String ?? "Bot run failed"
                     return
                 default:
@@ -408,12 +416,19 @@ private struct MobileBotChat: View {
         entries.removeAll { $0.kind == .thinking && $0.operationId == operationId }
     }
 
-    private func upsertAssistant(_ operationId: String, text: String, append: Bool) {
+    private func upsertAssistant(_ operationId: String, text: String, append: Bool, streaming: Bool) {
         guard !text.isEmpty else { return }
         if let index = entries.lastIndex(where: { $0.kind == .message && $0.role == .assistant && $0.operationId == operationId }) {
             entries[index].text = append ? entries[index].text + text : text
+            entries[index].streaming = streaming
         } else {
-            entries.append(MobileChatMessage(id: "assistant:\(operationId)", role: .assistant, text: text, operationId: operationId))
+            entries.append(MobileChatMessage(id: "assistant:\(operationId)", role: .assistant, text: text, operationId: operationId, streaming: streaming))
+        }
+    }
+
+    private func finishAssistant(_ operationId: String) {
+        for index in entries.indices where entries[index].operationId == operationId && entries[index].role == .assistant {
+            entries[index].streaming = false
         }
     }
 }
@@ -434,13 +449,27 @@ internal struct GrokMobileShell: View {
     @State private var botError: String?
     @State private var bots: [MobileBotSummary] = []
     @State private var selectedBot: MobileBotSummary?
+    @State private var botDrafts: [String: String] = [:]
+    @State private var botTranscripts: [String: [MobileChatMessage]] = [:]
     @State private var legacyOpen = false
 
     var body: some View {
         if model.onboardingStep < 3 || !model.authResolved || !model.loggedIn {
             ContentView(model: model, messaging: messaging, appAgentSurface: appAgentSurface)
         } else if let selectedBot {
-            MobileBotChat(bot: selectedBot, host: host, appAgentSurface: appAgentSurface) { self.selectedBot = nil }
+            MobileBotChat(
+                bot: selectedBot,
+                host: host,
+                appAgentSurface: appAgentSurface,
+                draft: Binding(
+                    get: { botDrafts[selectedBot.id] ?? "" },
+                    set: { botDrafts[selectedBot.id] = $0 }
+                ),
+                entries: Binding(
+                    get: { botTranscripts[selectedBot.id] ?? [] },
+                    set: { botTranscripts[selectedBot.id] = $0 }
+                )
+            ) { self.selectedBot = nil }
         } else if legacyOpen {
             VStack(spacing: 0) {
                 HStack {
