@@ -4,6 +4,22 @@ internal struct MobileBotSummary: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let description: String
+    let miniAppId: String?
+    let menuButtonText: String?
+
+    init(
+        id: String,
+        name: String,
+        description: String,
+        miniAppId: String? = nil,
+        menuButtonText: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.miniAppId = miniAppId
+        self.menuButtonText = menuButtonText
+    }
 }
 
 private enum MobileGhostPalette {
@@ -144,6 +160,7 @@ internal struct ClothGhostAvatar: View {
 private struct MobileBotChat: View {
     let bot: MobileBotSummary
     let host: MahayanaHost
+    let model: MarketplaceModel
     let appAgentSurface: FabushiAppAgentSurface
     let onClose: () -> Void
 
@@ -152,6 +169,7 @@ private struct MobileBotChat: View {
     @State private var busy = false
     @State private var activeOperationId: String?
     @State private var errorText: String?
+    @State private var openedMiniApp = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -202,6 +220,7 @@ private struct MobileBotChat: View {
                         }
                         if let errorText {
                             Text(errorText).font(.caption).foregroundStyle(.red).padding(.top, 4)
+                                .accessibilityIdentifier("mobile-bot-error")
                         }
                     }
                     .padding(.horizontal, 16).padding(.vertical, 18)
@@ -219,6 +238,23 @@ private struct MobileBotChat: View {
                     .background(Color.black.opacity(0.055), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .onSubmit { if !busy { Task { await send() } } }
                     .accessibilityIdentifier("mobile-bot-draft")
+
+                if bot.miniAppId == GlobalDharmaMiniAppBridge.globalDharmaId {
+                    Button {
+                        openedMiniApp = true
+                    } label: {
+                        Text(bot.menuButtonText ?? "打开应用")
+                            .font(.caption.bold())
+                            .lineLimit(1)
+                            .padding(.horizontal, 10)
+                            .frame(height: 39)
+                            .background(Color.black.opacity(0.075), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(bot.menuButtonText ?? "打开应用")
+                    .accessibilityIdentifier("mobile-bot-open-miniapp")
+                }
+
                 Button {
                     if busy { Task { await stop() } } else { Task { await send() } }
                 } label: {
@@ -237,13 +273,19 @@ private struct MobileBotChat: View {
         .background(Color(red: 0.985, green: 0.985, blue: 0.975))
         .accessibilityIdentifier("mobile-bot-chat")
         .task(id: semanticFingerprint) { publishAppAgentSurface() }
+        .fullScreenCover(isPresented: $openedMiniApp) {
+            GlobalDharmaMiniAppView(model: model, host: host)
+        }
     }
 
     private var semanticFingerprint: String {
         [
             bot.id,
+            bot.miniAppId ?? "",
+            bot.menuButtonText ?? "",
             draft,
             String(busy),
+            String(openedMiniApp),
             activeOperationId ?? "",
             errorText ?? "",
             entries.map { "\($0.id):\($0.kind.rawValue):\($0.role.rawValue)" }.joined(separator: ","),
@@ -264,6 +306,17 @@ private struct MobileBotChat: View {
             name: busy ? "停止 Bot" : "发送 Bot 消息",
             enabled: busy || !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         ))
+        if bot.miniAppId == GlobalDharmaMiniAppBridge.globalDharmaId {
+            elements.append(.init(
+                agentId: "mobile-bot-open-miniapp",
+                role: "button",
+                name: bot.menuButtonText ?? "打开应用",
+                enabled: !openedMiniApp
+            ))
+        }
+        if errorText != nil {
+            elements.append(.init(agentId: "mobile-bot-error", role: "status", name: "Bot 或 Mini App 调用失败"))
+        }
         for entry in entries.suffix(50) {
             let id = Self.semanticId("mobile-bot-entry-\(entry.id)")
             let roleName = entry.role == .user ? "用户消息" : entry.kind == .action ? "Bot 动作" : entry.kind == .thinking ? "Bot 思考" : "Bot 消息"
@@ -275,6 +328,9 @@ private struct MobileBotChat: View {
         ]
         actions[sendId] = .init(allowed: ["invoke"]) { _ in
             if busy { Task { await stop() } } else { Task { await send() } }
+        }
+        if bot.miniAppId == GlobalDharmaMiniAppBridge.globalDharmaId {
+            actions["mobile-bot-open-miniapp"] = .init(allowed: ["invoke"]) { _ in openedMiniApp = true }
         }
         try? appAgentSurface.publish(screen: "bot-chat", elements: elements, actions: actions)
     }
@@ -335,6 +391,14 @@ private struct MobileBotChat: View {
         errorText = nil
         let requestId = "ios-mobile-bot-chat-\(UUID().uuidString.lowercased())"
         entries.append(MobileChatMessage(id: requestId, role: .user, text: text))
+
+        if let miniAppId = bot.miniAppId {
+            await sendMiniApp(pluginId: miniAppId, text: text, operationId: requestId)
+            activeOperationId = nil
+            busy = false
+            return
+        }
+
         do {
             let result = try await host.request(
                 method: "feature.execute",
@@ -353,8 +417,73 @@ private struct MobileBotChat: View {
     }
 
     @MainActor
+    private func sendMiniApp(pluginId: String, text: String, operationId: String) async {
+        activeOperationId = operationId
+        entries.append(MobileChatMessage(
+            id: "thinking:\(operationId)",
+            role: .assistant,
+            text: "",
+            kind: .thinking,
+            operationId: operationId,
+            actionTitle: "正在通过 WebMCP 理解并执行",
+            actionStatus: "running"
+        ))
+        do {
+            let bridge = GlobalDharmaMiniAppBridge(host: host)
+            let routed = try await bridge.routeInput(pluginId: pluginId, input: text)
+            guard let execution = routed["execution"] as? [String: Any] else {
+                removeThinking(operationId)
+                let reply = (routed["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                entries.append(MobileChatMessage(
+                    id: "assistant:\(operationId)",
+                    role: .assistant,
+                    text: reply?.isEmpty == false ? reply! : "全球法布施没有把这条输入解析成可执行命令。",
+                    operationId: operationId
+                ))
+                return
+            }
+            let command = routed["command"] as? [String: Any]
+            let slash = command?["slash"] as? String ?? ""
+            if routed["requiresApproval"] as? Bool == true {
+                removeThinking(operationId)
+                entries.append(MobileChatMessage(
+                    id: "assistant:\(operationId)",
+                    role: .assistant,
+                    text: "已通过统一 Mini App 路由解析\(slash.isEmpty ? "" : "为 \(slash)")。该 Tool 需要宿主明确批准；iOS 不会静默执行写入或破坏性调用。",
+                    operationId: operationId
+                ))
+                return
+            }
+            guard (execution["kind"] as? String) == "mcp-http",
+                  let tool = execution["tool"] as? String,
+                  !tool.isEmpty
+            else {
+                throw MahayanaHost.HostError.requestFailed("iOS Mini App Bot only accepts governed mcp-http execution")
+            }
+            let arguments = routed["arguments"] as? [String: Any] ?? [:]
+            let result = try await bridge.callOfficialMcpTool(pluginId: pluginId, name: tool, arguments: arguments)
+            removeThinking(operationId)
+            entries.append(MobileChatMessage(
+                id: "assistant:\(operationId)",
+                role: .assistant,
+                text: GlobalDharmaMiniAppBridge.resultText(result),
+                operationId: operationId
+            ))
+        } catch {
+            removeThinking(operationId)
+            errorText = error.localizedDescription
+            entries.append(MobileChatMessage(
+                id: "assistant:\(operationId):error",
+                role: .assistant,
+                text: "Mini App 调用失败：\(error.localizedDescription)",
+                operationId: operationId
+            ))
+        }
+    }
+
+    @MainActor
     private func stop() async {
-        guard let activeOperationId else { return }
+        guard bot.miniAppId == nil, let activeOperationId else { return }
         _ = try? await host.request(method: "feature.interrupt", params: ["operationId": activeOperationId])
     }
 
@@ -440,7 +569,7 @@ internal struct GrokMobileShell: View {
         if model.onboardingStep < 3 || !model.authResolved || !model.loggedIn {
             ContentView(model: model, messaging: messaging, appAgentSurface: appAgentSurface)
         } else if let selectedBot {
-            MobileBotChat(bot: selectedBot, host: host, appAgentSurface: appAgentSurface) { self.selectedBot = nil }
+            MobileBotChat(bot: selectedBot, host: host, model: model, appAgentSurface: appAgentSurface) { self.selectedBot = nil }
         } else if legacyOpen {
             VStack(spacing: 0) {
                 HStack {
@@ -477,7 +606,7 @@ internal struct GrokMobileShell: View {
             botDescription,
             String(botBusy),
             botError ?? "",
-            bots.map { "\($0.id):\($0.name)" }.joined(separator: ","),
+            bots.map { "\($0.id):\($0.name):\($0.miniAppId ?? "")" }.joined(separator: ","),
             messaging.conversations.map { "\($0.id):\($0.unreadCount):\($0.isArchived)" }.joined(separator: ","),
         ].joined(separator: "|")
     }
@@ -614,7 +743,7 @@ internal struct GrokMobileShell: View {
 
                     if !bots.isEmpty {
                         sectionTitle("Bots  \(bots.count)")
-                        ForEach(filteredBots) { bot in botRow(bot, subtitle: bot.description.isEmpty ? "Ready" : bot.description, badge: "Bot") }
+                        ForEach(filteredBots) { bot in botRow(bot, subtitle: bot.description.isEmpty ? "Ready" : bot.description, badge: bot.miniAppId == nil ? "Bot" : "Mini App Bot") }
                     }
 
                     let projects = filteredConversations.filter { $0.kind == .group || $0.kind == .direct }
@@ -719,6 +848,16 @@ internal struct GrokMobileShell: View {
 
     @MainActor
     private func loadBots() async {
+        let canonical = (try? await GlobalDharmaMiniAppBridge(host: host).installedMiniAppBots()) ?? []
+        let installedBots = canonical.map {
+            MobileBotSummary(
+                id: $0.id,
+                name: $0.name,
+                description: $0.description,
+                miniAppId: $0.miniAppId,
+                menuButtonText: $0.menuButtonText
+            )
+        }
         let requestId = "ios-mobile-bot-list-\(UUID().uuidString.lowercased())"
         do {
             _ = try await host.request(method: "feature.execute", params: ["command": ["type": "bot.list", "requestId": requestId]])
@@ -726,12 +865,14 @@ internal struct GrokMobileShell: View {
                 let result = try await host.request(method: "feature.receive", params: ["timeoutMs": 80])
                 guard let event = result.value as? [String: Any], let type = event["type"] as? String else { continue }
                 if type == "bot.listed", let rows = event["bots"] as? [[String: Any]] {
-                    bots = rows.compactMap(Self.parseBot).filter { $0.id != "mahayana-assistant" }
+                    let surfaceBots = rows.compactMap(Self.parseBot).filter { $0.id != "mahayana-assistant" }
+                    bots = Self.mergeBots(installedBots, surfaceBots)
                     return
                 }
             }
+            bots = installedBots
         } catch {
-            // Bot discovery is additive; messaging remains usable if runtime discovery is unavailable.
+            bots = installedBots
         }
     }
 
@@ -755,12 +896,29 @@ internal struct GrokMobileShell: View {
         botBusy = false
     }
 
+    private static func mergeBots(_ installed: [MobileBotSummary], _ surface: [MobileBotSummary]) -> [MobileBotSummary] {
+        var byId: [String: MobileBotSummary] = [:]
+        for bot in surface { byId[bot.id] = bot }
+        for bot in installed { byId[bot.id] = bot }
+        return byId.values.sorted {
+            if ($0.miniAppId != nil) != ($1.miniAppId != nil) { return $0.miniAppId != nil }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
     private static func parseBot(_ row: [String: Any]) -> MobileBotSummary? {
         guard let id = row["id"] as? String, !id.isEmpty else { return nil }
+        let explicitMiniAppId = (row["miniAppId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let miniAppId = explicitMiniAppId?.isEmpty == false
+            ? explicitMiniAppId
+            : (id == "global-dharma-bot" ? GlobalDharmaMiniAppBridge.globalDharmaId : nil)
+        let menuText = (row["menuButtonText"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return MobileBotSummary(
             id: id,
             name: (row["name"] as? String) ?? (row["displayName"] as? String) ?? id,
-            description: row["description"] as? String ?? ""
+            description: row["description"] as? String ?? "",
+            miniAppId: miniAppId,
+            menuButtonText: menuText?.isEmpty == false ? menuText : (miniAppId == nil ? nil : "打开应用")
         )
     }
 }
