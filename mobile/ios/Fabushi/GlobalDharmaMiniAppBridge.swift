@@ -224,7 +224,7 @@ final class GlobalDharmaMiniAppBridge {
         )
     }
 
-    static func resultText(_ result: [String: Any]) -> String {
+    nonisolated static func resultText(_ result: [String: Any]) -> String {
         if let content = result["content"] as? [[String: Any]] {
             let text = content.compactMap { item -> String? in
                 guard (item["type"] as? String) == "text" else { return nil }
@@ -345,27 +345,27 @@ final class GlobalDharmaMiniAppBridge {
         _ = try await session.data(for: request)
     }
 
-    private static func ensureNoMcpError(_ body: [String: Any]?, phase: String) throws {
+    private nonisolated static func ensureNoMcpError(_ body: [String: Any]?, phase: String) throws {
         guard let error = body?["error"] as? [String: Any] else { return }
         let message = error["message"] as? String ?? String(describing: error)
         throw MahayanaHost.HostError.requestFailed("Mini App MCP \(phase) failed: \(message)")
     }
 
-    private static func requirePluginId(_ pluginId: String) throws {
+    private nonisolated static func requirePluginId(_ pluginId: String) throws {
         guard validPluginId(pluginId) else {
             throw MahayanaHost.HostError.requestFailed("Invalid Mini App id")
         }
     }
 
-    private static func validPluginId(_ value: String) -> Bool {
+    private nonisolated static func validPluginId(_ value: String) -> Bool {
         value.range(of: #"^[a-z0-9][a-z0-9-]{1,63}$"#, options: .regularExpression) != nil
     }
 
-    private static func validToolName(_ value: String) -> Bool {
+    private nonisolated static func validToolName(_ value: String) -> Bool {
         value.range(of: #"^[A-Za-z0-9_.-]{1,120}$"#, options: .regularExpression) != nil
     }
 
-    private static func int64(_ value: Any?) -> Int64 {
+    private nonisolated static func int64(_ value: Any?) -> Int64 {
         if let value = value as? Int64 { return value }
         if let value = value as? Int { return Int64(value) }
         if let value = value as? NSNumber { return value.int64Value }
