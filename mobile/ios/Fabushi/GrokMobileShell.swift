@@ -591,6 +591,7 @@ internal struct GrokMobileShell: View {
                 host: host,
                 model: model,
                 appAgentSurface: appAgentSurface,
+                onClose: { self.selectedBot = nil },
                 draft: Binding(
                     get: { botDrafts[selectedBot.id] ?? "" },
                     set: { botDrafts[selectedBot.id] = $0 }
@@ -599,7 +600,7 @@ internal struct GrokMobileShell: View {
                     get: { botTranscripts[selectedBot.id] ?? [] },
                     set: { botTranscripts[selectedBot.id] = $0 }
                 )
-            ) { self.selectedBot = nil }
+            )
         } else if legacyOpen {
             VStack(spacing: 0) {
                 HStack {
