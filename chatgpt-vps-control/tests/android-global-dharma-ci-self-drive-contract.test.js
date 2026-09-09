@@ -28,6 +28,17 @@ test("Android interactive runner self-drives over public MCP without a ChatGPT p
   assert.match(workflow, /journey-complete/u);
 });
 
+test("Android self-drive retries only transient MCP dynamic-registration 5xx failures", async () => {
+  const runner = await read("chatgpt-vps-control/scripts/run-android-interactive-app-e2e.sh");
+
+  assert.match(runner, /driver_max_attempts=4/u);
+  assert.match(runner, /dynamic client registration failed: HTTP 5\[0-9\]\[0-9\]/u);
+  assert.match(runner, /retry_delay=\$\(\(driver_attempt \* 5\)\)/u);
+  assert.match(runner, /if \[ "\$driver_attempt" -ge "\$driver_max_attempts" \] \|\| ! grep -Eq/u);
+  assert.match(runner, /exit "\$driver_status"/u);
+  assert.doesNotMatch(runner, /dynamic client registration failed: HTTP 4/u);
+});
+
 test("Android Global Dharma journey requires terminal Bot WebMCP evidence before opening synchronized Web UI", async () => {
   const driver = await read("chatgpt-vps-control/scripts/android-global-dharma-public-mcp-e2e.mjs");
   const shell = await read("mobile/android/app/src/main/java/com/ombhrum/fabushi/GlobalDharmaHostShell.kt");
