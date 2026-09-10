@@ -9,6 +9,11 @@ type NativeBridge = {
 type DeveloperProfile = { developerId?: string; developer_id?: string; displayName?: string; display_name?: string; status?: string };
 type MiniApp = { miniAppId?: string; mini_app_id?: string; displayName?: string; display_name?: string; role?: string; status?: string };
 type ProviderBinding = { provider: string; syncState?: string; sync_state?: string; externalProductRef?: string; external_product_ref?: string };
+type ProductSaveResult = {
+  productId?: string;
+  product_id?: string;
+  googleSync?: { ok?: boolean; error?: string; status?: number };
+};
 type Product = {
   productId?: string; product_id?: string; sku: string; displayName?: string; display_name?: string;
   description?: string; productKind?: string; product_kind?: string; entitlementCapability?: string; entitlement_capability?: string;
@@ -141,26 +146,22 @@ export default function BotFatherCommercePanel() {
         amount: toMinorUnits(price, currency), taxCode: taxCode || undefined,
         subscriptionPeriodSeconds: kind === "subscription" ? 2_592_000 : undefined, rails,
       };
-      const saved = await run<{ productId?: string; product_id?: string }>(
+      const saved = await run<ProductSaveResult>(
         editingProductId ? "updateDeveloperCommerceProduct" : "createDeveloperCommerceProduct",
         payload,
       );
-      const productId = saved?.productId ?? saved?.product_id ?? editingProductId;
       const googleEligible = ["digital_durable", "digital_consumable", "subscription"].includes(kind);
-      let googleSyncError = "";
-      if (productId && googleEligible && rails.includes("google_play")) {
-        try {
-          await run("syncDeveloperCommerceGoogleProduct", { miniAppId: selectedApp, productId });
-        } catch (reason) {
-          googleSyncError = reason instanceof Error ? reason.message : String(reason);
-          setError("");
-        }
-      }
       setEditingProductId(""); setSku(""); setDisplayName(""); setDescription(""); setCapability(""); setPrice("");
       await refreshProducts(selectedApp);
-      setMessage(googleSyncError
-        ? `${editingProductId ? "新价格版本已创建" : "商品已创建"}，但 Google Play 尚未同步：${googleSyncError}。可在下方重试。`
-        : `${editingProductId ? "新价格版本已创建" : "商品已创建"}${googleEligible && rails.includes("google_play") ? "，Google Play 已自动同步。" : "。"}`);
+      const googleRequested = googleEligible && rails.includes("google_play");
+      const googleMessage = !googleRequested
+        ? "。"
+        : saved?.googleSync?.ok === true
+          ? "，Google Play 已自动同步。"
+          : saved?.googleSync?.ok === false
+            ? `，但 Google Play 尚未同步：${saved.googleSync.error || "请在下方重试"}。`
+            : "，Google Play 等待同步，可在下方重试。";
+      setMessage(`${editingProductId ? "新价格版本已创建" : "商品已创建"}${googleMessage}`);
     } finally { setBusy(false); }
   }
 
