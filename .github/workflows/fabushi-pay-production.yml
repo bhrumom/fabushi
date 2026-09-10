@@ -182,6 +182,10 @@ jobs:
           bash ../../../../.github/scripts/run-wrangler-d1-migrations.sh
           PLATFORM_DB production --config wrangler.toml
 
+      - name: Deploy production Fabushi Pay Worker
+        shell: bash
+        run: npx --yes wrangler@latest deploy --env production --config wrangler.toml
+
       - name: Sync Fabushi Pay secrets
         shell: bash
         run: |
@@ -211,10 +215,6 @@ jobs:
           put_secret FABUSHI_PAY_ADMIN_TOKEN "${FABUSHI_PAY_ADMIN_TOKEN:-}"
           put_secret FABUSHI_PAY_WEBHOOK_SECRET "${FABUSHI_PAY_WEBHOOK_SECRET:-}"
           put_secret FABUSHI_PAY_CHECKOUT_URL "${FABUSHI_PAY_CHECKOUT_URL:-}"
-
-      - name: Deploy production Fabushi Pay Worker
-        shell: bash
-        run: npx --yes wrangler@latest deploy --env production --config wrangler.toml
 
       - name: Smoke production payment service
         shell: bash
