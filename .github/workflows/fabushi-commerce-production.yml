@@ -176,6 +176,10 @@ jobs:
           bash ../../../../.github/scripts/run-wrangler-d1-migrations.sh
           PLATFORM_DB production --config wrangler.toml
 
+      - name: Deploy production Developer Commerce Worker
+        shell: bash
+        run: npx --yes wrangler@latest deploy --env production --config wrangler.toml
+
       - name: Sync Developer Commerce secrets
         shell: bash
         run: |
@@ -199,10 +203,6 @@ jobs:
           put_secret APPLE_IAP_KEY_ID "${APPLE_IAP_KEY_ID:-}"
           put_secret APPLE_IAP_PRIVATE_KEY_PEM "${APPLE_IAP_PRIVATE_KEY_PEM:-}"
           put_secret FABUSHI_PAY_ADMIN_TOKEN "${FABUSHI_PAY_ADMIN_TOKEN:-}"
-
-      - name: Deploy production Developer Commerce Worker
-        shell: bash
-        run: npx --yes wrangler@latest deploy --env production --config wrangler.toml
 
       - name: Smoke production Developer Commerce service
         shell: bash
