@@ -45,3 +45,11 @@
 ## 外部资格门禁
 
 工程实现与 canonical-main 验收已完成；这不等于第三方支付渠道已经取得生产资格。Apple Mini Apps Partner Program / Advanced Commerce entitlement、generic product IDs、IAP signing key，以及 Google Play service-account 权限仍属于外部平台激活条件。缺失批准/凭据时 provider 必须保持 fail closed，不得报告为生产可用。
+
+## 2026-09-10 — Dynamic web-provider bridge follow-up
+
+- 在最新 canonical `main` 的独立分支 `codex/payment-live-integration-20260910` 上补齐 Web Provider gateway：Stripe Checkout 使用服务端 `price_data` 动态金额；支付宝使用同一 PaymentIntent 的 CNY 金额和 RSA2 网页支付。
+- Stripe `checkout.session.*` 与支付宝异步通知都验证 provider 签名、PaymentIntent、金额/币种，再转为 canonical Pay normalized webhook；未配置密钥或回调密钥时保持 fail closed。
+- Pay Worker 为 Web/Merchant checkout 生成 15 分钟、绑定 `paymentId + userId` 的 HMAC token；动态 Web/支付宝 rail 不再要求预先创建 provider 商品 ID。
+- 轻量验证已通过：Web Worker 新增 gateway contract tests、既有 profile tests、Node syntax check、`git diff --check` 与共享 Rust `rustfmt --check`。未在本机运行重型 Rust/移动端构建，等待 GitHub CI。
+- 本轮仍不声称生产已开通：Stripe live secret/webhook endpoint、Pay Worker shared webhook secret、Alipay private key、Cloudflare/GitHub secret synchronization 和真实支付 smoke 仍需外部配置与客观证据。

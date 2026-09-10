@@ -193,6 +193,17 @@ Web 与 Merchant Provider 不直接信任浏览器回调。Provider gateway 向�
 
 标准事件覆盖 payment success/failure/cancel、refund、chargeback open/won/lost、payout paid/failed。
 
+当前 Web Provider 的最小生产桥接位于 `fabushi/web`：
+
+- `GET /api/pay/checkout` 使用服务端 Payment Intent 的整数金额创建 Stripe Checkout Session；使用 `price_data` 动态传价，不要求开发者在 Stripe Dashboard 为每次改价创建 Product/Price。
+- `GET /api/pay/alipay/checkout` 使用同一 Payment Intent 的 CNY 金额生成支付宝 RSA2 网页支付请求。
+- Checkout Action 默认返回 Stripe，并在配置了 `FABUSHI_PAY_ALIPAY_CHECKOUT_URL` 时同时返回支付宝备用跳转地址。
+- `POST /api/pay/stripe/webhook` 验证 Stripe `Stripe-Signature` 后，`checkout.session.*` 事件归一化到 Fabushi Pay。
+- `POST /api/pay/alipay/webhook` 验证支付宝 RSA2 回调、订单金额和 app id 后，归一化到 Fabushi Pay。
+- Pay Worker 给 checkout URL 附加 15 分钟、绑定 `paymentId + userId` 的 HMAC token；网关没有该 token 时拒绝创建外部订单。
+
+Stripe 网关不提交 `payment_method_types`，由 Stripe 根据账户、币种和支付能力动态展示可用方式；个人 Stripe 账户只能作为平台自身的收款账户使用，开发者分账/提现仍需另行通过 Connect/KYC/KYB。Stripe 与支付宝密钥只允许放在 Worker secrets，不能写入仓库。
+
 ## 开发者 Revenue 与提现
 
 销售收入先进入 `developer-pending`；超过 hold period 后根据 reserve bps 释放到 `developer-available`。同一 payment 可以在降低 reserve 后分阶段继续释放，但每次 release 都有唯一 idempotency key。
@@ -230,6 +241,15 @@ Electron / Mini App 使用同一 Payment Intent / Checkout contract；只有具�
 - `FABUSHI_PAY_ADMIN_TOKEN`
 - `FABUSHI_PAY_WEBHOOK_SECRET`
 - `FABUSHI_PAY_CHECKOUT_URL`
+
+生产 Web Worker（`api.ombhrum.com`）还需要按需配置：
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- 与 Pay Worker 相同的 `FABUSHI_PAY_WEBHOOK_SECRET`
+- 已有的 `ALIPAY_PRIVATE_KEY`（以及现有 `ALIPAY_PUBLIC_KEY` / `ALIPAY_APP_ID` 配置）
+
+启用 Stripe 时将 `STRIPE_LIVEMODE=true` 固定为 live-only；测试环境应显式设置为 `false` 并使用 test webhook secret。生产密钥缺失时网关保持 fail closed，不创建外部订单。
 
 GitHub 部署 workflow 可从现有 App Store Connect 与 Google Play release secrets 派生对应服务端凭证；secret 不写入仓库。
 
