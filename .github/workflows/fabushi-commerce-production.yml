@@ -111,7 +111,10 @@ jobs:
       GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
       APPLE_IAP_ISSUER_ID: ${{ secrets.APPLE_IAP_ISSUER_ID || secrets.APPLE_ISSUER_ID || secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
       APPLE_IAP_KEY_ID: ${{ secrets.APPLE_IAP_KEY_ID || secrets.APPLE_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
-      APPLE_IAP_PRIVATE_KEY_PEM: ${{ secrets.APPLE_IAP_PRIVATE_KEY_PEM }}
+      # Reuse the App Store Connect private key when the dedicated IAP alias
+      # has not been created yet. The deployment step still fails closed when
+      # the resulting value is empty or invalid.
+      APPLE_IAP_PRIVATE_KEY_PEM: ${{ secrets.APPLE_IAP_PRIVATE_KEY_PEM || secrets.APPLE_PRIVATE_KEY }}
     steps:
       - name: Checkout exact validated source
         uses: actions/checkout@v5
