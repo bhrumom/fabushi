@@ -31,7 +31,9 @@ worker = { path = "worker-compat" }
 codegen-units = 1
 lto = "thin"
 opt-level = "z"
-strip = "symbols"
+# wasm-bindgen requires the externref table in release Wasm output; stripping
+# symbols removes it. Keep debug info stripped while preserving Wasm metadata.
+strip = "debuginfo"
 
 # This service is intentionally its own small workspace so payment CI/deploys
 # do not resolve or build the much larger Mahayana/Codex desktop graph.
