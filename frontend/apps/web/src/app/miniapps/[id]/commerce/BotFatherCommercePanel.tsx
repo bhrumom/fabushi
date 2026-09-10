@@ -141,10 +141,26 @@ export default function BotFatherCommercePanel() {
         amount: toMinorUnits(price, currency), taxCode: taxCode || undefined,
         subscriptionPeriodSeconds: kind === "subscription" ? 2_592_000 : undefined, rails,
       };
-      await run(editingProductId ? "updateDeveloperCommerceProduct" : "createDeveloperCommerceProduct", payload);
-      setMessage(editingProductId ? "新价格版本已创建。" : "商品已创建。");
+      const saved = await run<{ productId?: string; product_id?: string }>(
+        editingProductId ? "updateDeveloperCommerceProduct" : "createDeveloperCommerceProduct",
+        payload,
+      );
+      const productId = saved?.productId ?? saved?.product_id ?? editingProductId;
+      const googleEligible = ["digital_durable", "digital_consumable", "subscription"].includes(kind);
+      let googleSyncError = "";
+      if (productId && googleEligible && rails.includes("google_play")) {
+        try {
+          await run("syncDeveloperCommerceGoogleProduct", { miniAppId: selectedApp, productId });
+        } catch (reason) {
+          googleSyncError = reason instanceof Error ? reason.message : String(reason);
+          setError("");
+        }
+      }
       setEditingProductId(""); setSku(""); setDisplayName(""); setDescription(""); setCapability(""); setPrice("");
       await refreshProducts(selectedApp);
+      setMessage(googleSyncError
+        ? `${editingProductId ? "新价格版本已创建" : "商品已创建"}，但 Google Play 尚未同步：${googleSyncError}。可在下方重试。`
+        : `${editingProductId ? "新价格版本已创建" : "商品已创建"}${googleEligible && rails.includes("google_play") ? "，Google Play 已自动同步。" : "。"}`);
     } finally { setBusy(false); }
   }
 
@@ -161,7 +177,7 @@ export default function BotFatherCommercePanel() {
     const productId = product.productId ?? product.product_id;
     if (!productId || !selectedApp) return;
     setBusy(true);
-    try { await run("syncDeveloperCommerceGoogleProduct", { miniAppId: selectedApp, productId }); setMessage("Google Play 商品同步完成。"); await refreshProducts(selectedApp); }
+    try { await run("syncDeveloperCommerceGoogleProduct", { miniAppId: selectedApp, productId }); await refreshProducts(selectedApp); setMessage("Google Play 商品同步完成。"); }
     finally { setBusy(false); }
   }
 
