@@ -126,6 +126,7 @@ jobs:
             /.github/scripts/run-wrangler-d1-migrations.sh
             /third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/**
             /third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**
+            /third_party/mahayana/mahayana-rs/mahayana-pay-worker/worker-compat/**
 
       - name: Set up Rust and wasm32
         uses: dtolnay/rust-toolchain@stable
