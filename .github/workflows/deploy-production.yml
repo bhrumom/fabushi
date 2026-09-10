@@ -333,6 +333,7 @@ jobs:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           FABUSHI_PAY_WEBHOOK_SECRET: ${{ secrets.FABUSHI_PAY_WEBHOOK_SECRET }}
+          ALIPAY_PRIVATE_KEY: ${{ secrets.ALIPAY_PRIVATE_KEY }}
         shell: bash
         run: |
           set -euo pipefail
@@ -346,6 +347,7 @@ jobs:
           put_secret STRIPE_SECRET_KEY "${STRIPE_SECRET_KEY:-}"
           put_secret STRIPE_WEBHOOK_SECRET "${STRIPE_WEBHOOK_SECRET:-}"
           put_secret FABUSHI_PAY_WEBHOOK_SECRET "${FABUSHI_PAY_WEBHOOK_SECRET:-}"
+          put_secret ALIPAY_PRIVATE_KEY "${ALIPAY_PRIVATE_KEY:-}"
       - name: Deploy production Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
