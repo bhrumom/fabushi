@@ -107,3 +107,8 @@ This section supersedes the stale desktop `PENDING` wording above; it does not c
 - The packaged current-main desktop journey therefore objectively covers: `小程序` search -> install 全球法布施 -> Messenger Bot projection -> natural-language WebMCP -> 打开应用 same shared revision -> bounded Fabushi account session -> server-authoritative CNY `108000` lifetime test purchase -> restore -> entitled `local.prayer-wheel.start` -> restart recovery -> logout cleanup.
 - No real-money payment was made in CI. Desktop acceptance exercises the deterministic test provider while preserving canonical Fabushi Pay product/intent/entitlement authority; production PSP/KYC/provider activation remains a fail-closed external dependency.
 - Status interpretation: the requested **desktop** Global Dharma loop is current-main packaged-E2E accepted. `M9-GLOBAL-DHARMA-003` remains `IN_PROGRESS` only because native-mobile terminal acceptance and production payment/provider deployment are broader project gates and are not claimed by this desktop reconciliation.
+
+## 2026-09-10 — Web Provider activation implementation
+
+- Latest-main follow-up adds the canonical dynamic Stripe/Alipay web-provider bridge used by the Global Dharma CNY 1080 PaymentIntent.
+- The implementation is fail-closed until production secrets, webhook configuration and provider account approval are present; no real-money charge has been performed in this worktree.

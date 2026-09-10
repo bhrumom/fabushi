@@ -1,4 +1,4 @@
-name: Fabushi Pay production deploy
+name: Fabushi Developer Commerce production deploy
 
 on:
   workflow_run:
@@ -16,7 +16,7 @@ on:
         type: string
 
 concurrency:
-  group: fabushi-pay-production-main
+  group: fabushi-commerce-production-main
   cancel-in-progress: false
 
 permissions:
@@ -27,7 +27,7 @@ env:
 
 jobs:
   resolve-source:
-    name: Resolve Fabushi Pay source and deployment impact
+    name: Resolve Developer Commerce source
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
@@ -53,7 +53,7 @@ jobs:
           fi
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
       - id: impact
-        name: Check whether Fabushi Pay deployment inputs changed
+        name: Check Developer Commerce deployment impact
         uses: actions/github-script@v7
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
@@ -62,7 +62,7 @@ jobs:
           script: |
             if (process.env.FORCE_DEPLOY === 'true') {
               core.setOutput('should_deploy', 'true');
-              core.info('Manual dispatch explicitly requests a Fabushi Pay deployment.');
+              core.info('Manual dispatch explicitly requests a Developer Commerce deployment.');
               return;
             }
 
@@ -75,14 +75,15 @@ jobs:
             const files = (commit.files || []).map((file) => file.filename);
             const safetyLimitReached = files.length >= 300;
             const relevant = files.some((filename) =>
-              filename.startsWith('third_party/mahayana/mahayana-rs/mahayana-pay-worker/') ||
+              filename.startsWith('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/') ||
               filename.startsWith('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/') ||
-              filename === 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs',
+              filename === 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs' ||
+              filename === '.github/workflows/fabushi-commerce-production.yml',
             );
             const shouldDeploy = safetyLimitReached || relevant;
             core.setOutput('should_deploy', shouldDeploy ? 'true' : 'false');
             await core.summary
-              .addHeading('Fabushi Pay deployment impact')
+              .addHeading('Developer Commerce deployment impact')
               .addRaw(`source=${process.env.SOURCE_SHA}\n`)
               .addRaw(`changed_files=${files.length}\n`)
               .addRaw(`should_deploy=${shouldDeploy}\n`)
@@ -90,29 +91,30 @@ jobs:
               .write();
 
   deploy-production:
-    name: Migrate and deploy Fabushi Pay
+    name: Deploy Developer Commerce control plane
     needs: resolve-source
     if: needs.resolve-source.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
       name: production
-      url: https://pay.ombhrum.com
+      url: https://commerce.ombhrum.com
     defaults:
       run:
-        working-directory: third_party/mahayana/mahayana-rs/mahayana-pay-worker
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
       ACCESS_TOKEN_PUBLIC_KEY_PEM: ${{ secrets.ACCESS_TOKEN_PUBLIC_KEY_PEM }}
       FABUSHI_PAY_ADMIN_TOKEN: ${{ secrets.FABUSHI_PAY_ADMIN_TOKEN }}
-      FABUSHI_PAY_WEBHOOK_SECRET: ${{ secrets.FABUSHI_PAY_WEBHOOK_SECRET }}
-      FABUSHI_PAY_CHECKOUT_URL: ${{ secrets.FABUSHI_PAY_CHECKOUT_URL || vars.FABUSHI_PAY_CHECKOUT_URL }}
-      APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID || secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-      APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
-      APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
-      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      FABUSHI_PAY_INTERNAL_URL: ${{ secrets.FABUSHI_PAY_INTERNAL_URL || vars.FABUSHI_PAY_INTERNAL_URL || 'https://pay.ombhrum.com' }}
       GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+      APPLE_IAP_ISSUER_ID: ${{ secrets.APPLE_IAP_ISSUER_ID || secrets.APPLE_ISSUER_ID || secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APPLE_IAP_KEY_ID: ${{ secrets.APPLE_IAP_KEY_ID || secrets.APPLE_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      # Reuse the App Store Connect private key when the dedicated IAP alias
+      # has not been created yet. The deployment step still fails closed when
+      # the resulting value is empty or invalid.
+      APPLE_IAP_PRIVATE_KEY_PEM: ${{ secrets.APPLE_IAP_PRIVATE_KEY_PEM || secrets.APPLE_PRIVATE_KEY }}
     steps:
       - name: Checkout exact validated source
         uses: actions/checkout@v5
@@ -123,35 +125,7 @@ jobs:
           sparse-checkout: |
             /.github/scripts/run-wrangler-d1-migrations.sh
             /third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/**
-            /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs
-            /third_party/mahayana/mahayana-rs/mahayana-pay-worker/**
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-
-      - name: Require production payment configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          missing=()
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID APPLE_ISSUER_ID APPLE_KEY_ID GOOGLE_PLAY_SERVICE_ACCOUNT_JSON FABUSHI_PAY_ADMIN_TOKEN FABUSHI_PAY_WEBHOOK_SECRET; do
-            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
-          done
-          if [ -z "${APPLE_PRIVATE_KEY:-}" ] && [ -z "${APP_STORE_CONNECT_API_KEY_BASE64:-}" ]; then
-            missing+=("APPLE_PRIVATE_KEY or APP_STORE_CONNECT_API_KEY_BASE64")
-          fi
-          if [ -z "${ACCESS_TOKEN_PUBLIC_KEY_PEM:-}" ]; then
-            existing_secret_names="$(npx --yes wrangler@latest secret list --env production --config wrangler.toml --format json | jq -r '.[].name' | sort -u)"
-            if ! grep -Fxq ACCESS_TOKEN_PUBLIC_KEY_PEM <<<"$existing_secret_names"; then
-              missing+=("ACCESS_TOKEN_PUBLIC_KEY_PEM (GitHub or existing production Worker secret)")
-            fi
-          fi
-          if [ "${#missing[@]}" -ne 0 ]; then
-            printf 'Missing Fabushi Pay production configuration: %s\n' "${missing[*]}" >&2
-            exit 2
-          fi
+            /third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**
 
       - name: Set up Rust and wasm32
         uses: dtolnay/rust-toolchain@stable
@@ -159,14 +133,11 @@ jobs:
           targets: wasm32-unknown-unknown
           components: clippy,rustfmt
 
-      - name: Restore payment compiler cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: third_party/mahayana/mahayana-rs/mahayana-pay-worker -> target
-          shared-key: fabushi-pay-production-v1
-          cache-all-crates: true
+      - name: Install Cloudflare Worker build tool
+        shell: bash
+        run: cargo install -q --locked 'worker-build@^0.8'
 
-      - name: Re-verify payment Worker before deployment
+      - name: Verify Developer Commerce before deployment
         shell: bash
         run: |
           set -euo pipefail
@@ -174,15 +145,38 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo check --target wasm32-unknown-unknown
           cargo fmt -- --check
-          rustfmt --edition 2024 --check ../mahayana-platform-worker/src/payment_api.rs
 
-      - name: Apply production payment ledger migration
+      - name: Require production configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID GOOGLE_PLAY_SERVICE_ACCOUNT_JSON FABUSHI_PAY_ADMIN_TOKEN; do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ -z "${ACCESS_TOKEN_PUBLIC_KEY_PEM:-}" ]; then
+            if [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+              existing_secret_names="$(npx --yes wrangler@latest secret list --env production --config wrangler.toml --format json | jq -r '.[].name' | sort -u)"
+            else
+              existing_secret_names=""
+            fi
+            if ! grep -Fxq ACCESS_TOKEN_PUBLIC_KEY_PEM <<<"$existing_secret_names"; then
+              missing+=("ACCESS_TOKEN_PUBLIC_KEY_PEM (GitHub or existing production Worker secret)")
+            fi
+          fi
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf 'Missing Developer Commerce production configuration: %s\n' "${missing[*]}" >&2
+            exit 2
+          fi
+          printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" | jq -e '.client_email and .private_key' >/dev/null
+
+      - name: Apply production platform migrations
         shell: bash
         run: >-
           bash ../../../../.github/scripts/run-wrangler-d1-migrations.sh
           PLATFORM_DB production --config wrangler.toml
 
-      - name: Sync Fabushi Pay secrets
+      - name: Sync Developer Commerce secrets
         shell: bash
         run: |
           set -euo pipefail
@@ -194,37 +188,31 @@ jobs:
             fi
           }
 
-          apple_private_key="${APPLE_PRIVATE_KEY:-}"
-          if [ -z "$apple_private_key" ]; then
-            apple_private_key="$(printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode)"
-          fi
           google_email="$(printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" | jq -r '.client_email // empty')"
           google_private_key="$(printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" | jq -r '.private_key // empty')"
           test -n "$google_email" && test -n "$google_private_key"
 
-          put_secret ACCESS_TOKEN_PUBLIC_KEY_PEM "$ACCESS_TOKEN_PUBLIC_KEY_PEM"
-          put_secret APPLE_ISSUER_ID "$APPLE_ISSUER_ID"
-          put_secret APPLE_KEY_ID "$APPLE_KEY_ID"
-          put_secret APPLE_PRIVATE_KEY "$apple_private_key"
+          put_secret ACCESS_TOKEN_PUBLIC_KEY_PEM "${ACCESS_TOKEN_PUBLIC_KEY_PEM:-}"
           put_secret GOOGLE_PLAY_SERVICE_ACCOUNT_EMAIL "$google_email"
           put_secret GOOGLE_PLAY_PRIVATE_KEY "$google_private_key"
+          put_secret APPLE_IAP_ISSUER_ID "${APPLE_IAP_ISSUER_ID:-}"
+          put_secret APPLE_IAP_KEY_ID "${APPLE_IAP_KEY_ID:-}"
+          put_secret APPLE_IAP_PRIVATE_KEY_PEM "${APPLE_IAP_PRIVATE_KEY_PEM:-}"
           put_secret FABUSHI_PAY_ADMIN_TOKEN "${FABUSHI_PAY_ADMIN_TOKEN:-}"
-          put_secret FABUSHI_PAY_WEBHOOK_SECRET "${FABUSHI_PAY_WEBHOOK_SECRET:-}"
-          put_secret FABUSHI_PAY_CHECKOUT_URL "${FABUSHI_PAY_CHECKOUT_URL:-}"
 
-      - name: Deploy production Fabushi Pay Worker
+      - name: Deploy production Developer Commerce Worker
         shell: bash
         run: npx --yes wrangler@latest deploy --env production --config wrangler.toml
 
-      - name: Smoke production payment service
+      - name: Smoke production Developer Commerce service
         shell: bash
         run: |
           set -euo pipefail
           for attempt in 1 2 3 4 5; do
-            if curl -fsS https://pay.ombhrum.com/health | tee /tmp/fabushi-pay-health.json | grep -q '"service":"fabushi-pay"'; then
+            if curl -fsS https://commerce.ombhrum.com/health | tee /tmp/fabushi-commerce-health.json | grep -q '"service":"fabushi-commerce-control"'; then
               exit 0
             fi
             sleep $((attempt * 3))
           done
-          echo 'Fabushi Pay production health check did not converge.' >&2
+          echo 'Developer Commerce production health check did not converge.' >&2
           exit 1

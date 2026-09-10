@@ -9,6 +9,11 @@ type NativeBridge = {
 type DeveloperProfile = { developerId?: string; developer_id?: string; displayName?: string; display_name?: string; status?: string };
 type MiniApp = { miniAppId?: string; mini_app_id?: string; displayName?: string; display_name?: string; role?: string; status?: string };
 type ProviderBinding = { provider: string; syncState?: string; sync_state?: string; externalProductRef?: string; external_product_ref?: string };
+type ProductSaveResult = {
+  productId?: string;
+  product_id?: string;
+  googleSync?: { ok?: boolean; error?: string; status?: number };
+};
 type Product = {
   productId?: string; product_id?: string; sku: string; displayName?: string; display_name?: string;
   description?: string; productKind?: string; product_kind?: string; entitlementCapability?: string; entitlement_capability?: string;
@@ -141,10 +146,22 @@ export default function BotFatherCommercePanel() {
         amount: toMinorUnits(price, currency), taxCode: taxCode || undefined,
         subscriptionPeriodSeconds: kind === "subscription" ? 2_592_000 : undefined, rails,
       };
-      await run(editingProductId ? "updateDeveloperCommerceProduct" : "createDeveloperCommerceProduct", payload);
-      setMessage(editingProductId ? "新价格版本已创建。" : "商品已创建。");
+      const saved = await run<ProductSaveResult>(
+        editingProductId ? "updateDeveloperCommerceProduct" : "createDeveloperCommerceProduct",
+        payload,
+      );
+      const googleEligible = ["digital_durable", "digital_consumable", "subscription"].includes(kind);
       setEditingProductId(""); setSku(""); setDisplayName(""); setDescription(""); setCapability(""); setPrice("");
       await refreshProducts(selectedApp);
+      const googleRequested = googleEligible && rails.includes("google_play");
+      const googleMessage = !googleRequested
+        ? "。"
+        : saved?.googleSync?.ok === true
+          ? "，Google Play 已自动同步。"
+          : saved?.googleSync?.ok === false
+            ? `，但 Google Play 尚未同步：${saved.googleSync.error || "请在下方重试"}。`
+            : "，Google Play 等待同步，可在下方重试。";
+      setMessage(`${editingProductId ? "新价格版本已创建" : "商品已创建"}${googleMessage}`);
     } finally { setBusy(false); }
   }
 
@@ -161,7 +178,7 @@ export default function BotFatherCommercePanel() {
     const productId = product.productId ?? product.product_id;
     if (!productId || !selectedApp) return;
     setBusy(true);
-    try { await run("syncDeveloperCommerceGoogleProduct", { miniAppId: selectedApp, productId }); setMessage("Google Play 商品同步完成。"); await refreshProducts(selectedApp); }
+    try { await run("syncDeveloperCommerceGoogleProduct", { miniAppId: selectedApp, productId }); await refreshProducts(selectedApp); setMessage("Google Play 商品同步完成。"); }
     finally { setBusy(false); }
   }
 

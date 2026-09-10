@@ -124,6 +124,7 @@ jobs:
           set -euo pipefail
           printf '{"type":"module"}\n' > package.json
           node tests/profile.test.js
+          node tests/payment-gateways.test.js
           python3 ../../.github/scripts/prepare-development-wrangler.py --self-test
           bash -n ../../.github/scripts/bootstrap-development-account-d1.sh
       - name: Resolve isolated development D1 bindings
@@ -325,6 +326,45 @@ jobs:
           printf '%s' "$AUTH_SYSTEM_MAIL_TOKEN" | npx --yes wrangler@latest secret put AUTH_SYSTEM_MAIL_TOKEN --env production
           # URL + token are required immediately above, so keep registration email enabled on every deployment.
           printf '%s' 'true' | npx --yes wrangler@latest secret put AUTH_SYSTEM_MAIL_ENABLED --env production
+      - name: Require live payment gateway configuration
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          ALIPAY_PRIVATE_KEY: ${{ secrets.ALIPAY_PRIVATE_KEY }}
+          FABUSHI_PAY_WEBHOOK_SECRET: ${{ secrets.FABUSHI_PAY_WEBHOOK_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET ALIPAY_PRIVATE_KEY FABUSHI_PAY_WEBHOOK_SECRET; do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf 'Missing live payment configuration: %s\n' "${missing[*]}" >&2
+            exit 2
+          fi
+      - name: Sync payment gateway secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          FABUSHI_PAY_WEBHOOK_SECRET: ${{ secrets.FABUSHI_PAY_WEBHOOK_SECRET }}
+          ALIPAY_PRIVATE_KEY: ${{ secrets.ALIPAY_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -n "$value" ]; then
+              printf '%s' "$value" | npx --yes wrangler@latest secret put "$name" --env production >/dev/null
+            fi
+          }
+          put_secret STRIPE_SECRET_KEY "${STRIPE_SECRET_KEY:-}"
+          put_secret STRIPE_WEBHOOK_SECRET "${STRIPE_WEBHOOK_SECRET:-}"
+          put_secret FABUSHI_PAY_WEBHOOK_SECRET "${FABUSHI_PAY_WEBHOOK_SECRET:-}"
+          put_secret ALIPAY_PRIVATE_KEY "${ALIPAY_PRIVATE_KEY:-}"
       - name: Deploy production Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
