@@ -35,6 +35,12 @@ opt-level = "z"
 # symbols removes it. Keep debug info stripped while preserving Wasm metadata.
 strip = "debuginfo"
 
+# Cloudflare's build image does not need the optional wasm-opt download for
+# this worker. Keeping the bindgen output unoptimized also avoids making a
+# production deploy depend on an external binary mirror.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 # This service is intentionally its own small workspace so payment CI/deploys
 # do not resolve or build the much larger Mahayana/Codex desktop graph.
 [workspace]
