@@ -107,7 +107,7 @@ async function loadCheckout(request, env) {
   if (payment.rail !== 'web_provider') {
     return { response: jsonResponse({ error: 'payment_rail_not_supported' }, 409) };
   }
-  return { payment };
+  return { payment, checkoutToken: url.searchParams.get('checkoutToken') };
 }
 
 function redirectResponse(url, provider) {
@@ -134,7 +134,7 @@ export async function handleStripeCheckout(request, env) {
   try {
     const loaded = await loadCheckout(request, env);
     if (loaded.response) return loaded.response;
-    const { payment } = loaded;
+    const { payment, checkoutToken } = loaded;
     if (SUCCESS_STATUSES.has(String(payment.status))) {
       return Response.redirect(safeFrontendURL(env, payment.payment_id, { alreadyPaid: '1' }), 303);
     }
@@ -161,8 +161,8 @@ export async function handleStripeCheckout(request, env) {
     form.set('metadata[miniAppId]', String(payment.mini_app_id));
     form.set('metadata[sku]', String(payment.sku));
     form.set('payment_intent_data[metadata][paymentId]', String(payment.payment_id));
-    form.set('success_url', safeFrontendURL(env, payment.payment_id));
-    form.set('cancel_url', safeFrontendURL(env, payment.payment_id, { cancelled: '1' }));
+    form.set('success_url', safeFrontendURL(env, payment.payment_id, { checkoutToken }));
+    form.set('cancel_url', safeFrontendURL(env, payment.payment_id, { cancelled: '1', checkoutToken }));
 
     const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
       method: 'POST',
@@ -344,7 +344,7 @@ export async function handleAlipayCheckout(request, env) {
   try {
     const loaded = await loadCheckout(request, env);
     if (loaded.response) return loaded.response;
-    const { payment } = loaded;
+    const { payment, checkoutToken } = loaded;
     if (SUCCESS_STATUSES.has(String(payment.status))) {
       return Response.redirect(safeFrontendURL(env, payment.payment_id, { alreadyPaid: '1' }), 303);
     }
@@ -361,7 +361,7 @@ export async function handleAlipayCheckout(request, env) {
       timestamp: timestampText(),
       version: '1.0',
       notify_url: notifyURL,
-      return_url: safeFrontendURL(env, payment.payment_id),
+      return_url: safeFrontendURL(env, payment.payment_id, { checkoutToken }),
       method: 'alipay.trade.page.pay',
       biz_content: JSON.stringify({
         out_trade_no: String(payment.payment_id),
@@ -378,6 +378,23 @@ export async function handleAlipayCheckout(request, env) {
     console.error('Alipay checkout gateway failed:', error?.message || error);
     return jsonResponse({ error: 'alipay_checkout_unavailable' }, 500);
   }
+}
+
+export async function handlePaymentStatus(request, env) {
+  const url = new URL(request.url);
+  const paymentId = String(url.searchParams.get('paymentId') || '').trim();
+  if (!isSafeIdentifier(paymentId)) return jsonResponse({ error: 'payment_id_invalid' }, 400);
+  const payment = await getPayment(paymentId, env);
+  if (!payment) return jsonResponse({ error: 'payment_not_found' }, 404);
+  if (!(await verifyCheckoutToken(url.searchParams.get('checkoutToken'), payment, env))) {
+    return jsonResponse({ error: 'checkout_token_invalid' }, 401);
+  }
+  return jsonResponse({
+    paymentId: payment.payment_id,
+    status: payment.status,
+    currency: payment.currency,
+    amount: payment.amount,
+  });
 }
 
 export async function handleAlipayWebhook(request, env) {

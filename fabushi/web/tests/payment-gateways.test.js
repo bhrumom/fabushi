@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 
-import { handleStripeCheckout, handleStripeWebhook } from '../src/handlers/payment-gateways.js';
+import { handlePaymentStatus, handleStripeCheckout, handleStripeWebhook } from '../src/handlers/payment-gateways.js';
 
 const SECRET = 'fabushi-payment-webhook-secret-for-tests';
 const PAYMENT = {
@@ -69,6 +69,21 @@ test('Stripe checkout uses canonical server amount as dynamic price_data', async
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('payment status endpoint verifies the short-lived checkout token', async () => {
+  const request = new Request(`https://api.ombhrum.com/api/pay/status?paymentId=${PAYMENT.payment_id}&checkoutToken=${checkoutToken()}`);
+  const response = await handlePaymentStatus(request, {
+    PLATFORM_DB: mockDatabase(),
+    FABUSHI_PAY_WEBHOOK_SECRET: SECRET,
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    paymentId: PAYMENT.payment_id,
+    status: PAYMENT.status,
+    currency: PAYMENT.currency,
+    amount: PAYMENT.amount,
+  });
 });
 
 test('Stripe webhook forwards a verified paid session to canonical Pay', async () => {
