@@ -132,11 +132,11 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
         install.result["receipt"]["version"]
     );
     assert_eq!(
-        install.result["marketplaceSource"]["marketplaceHostsPackage"],
-        false
+        install.result["marketplaceSource"]["provider"],
+        "fabushi-official"
     );
     assert!(
-        install.result["marketplaceSource"]["sourceRef"]
+        install.result["marketplaceSource"]["commit"]
             .as_str()
             .is_some_and(|value| !value.is_empty())
     );
