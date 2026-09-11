@@ -10,6 +10,7 @@ on:
       - 'frontend/apps/web/src/lib/**'
       - 'frontend/apps/web/src/app/host/**'
       - 'frontend/packages/**'
+      - '.github/workflows/automerge.yml'
       - '.github/workflows/fcm-fast-feedback.yml'
   merge_group:
     types: [checks_requested]
@@ -23,6 +24,7 @@ on:
       - 'frontend/apps/web/src/lib/**'
       - 'frontend/apps/web/src/app/host/**'
       - 'frontend/packages/**'
+      - '.github/workflows/automerge.yml'
       - '.github/workflows/fcm-fast-feedback.yml'
   workflow_dispatch:
 
