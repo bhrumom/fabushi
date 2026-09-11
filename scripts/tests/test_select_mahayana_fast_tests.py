@@ -44,6 +44,16 @@ class SelectMahayanaFastTests(unittest.TestCase):
         self.assertFalse(selected.full_suite)
         self.assertEqual(("protocol_bridge", "host_ffi"), selected.groups)
 
+    def test_feature_host_direct_harness_dependencies_include_host_consumer(self):
+        for crate in ("mahayana-harness", "mahayana-harness-services"):
+            with self.subTest(crate=crate):
+                selected = selector.select(
+                    "pull_request",
+                    [f"third_party/mahayana/mahayana-rs/{crate}/src/lib.rs"],
+                )
+                self.assertFalse(selected.full_suite)
+                self.assertEqual(("harness", "host_ffi"), selected.groups)
+
     def test_multiple_modeled_paths_union_groups_in_stable_order(self):
         selected = selector.select(
             "pull_request",
