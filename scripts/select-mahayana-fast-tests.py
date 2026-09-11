@@ -50,13 +50,19 @@ SAFE_PREFIX_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         f"{MAHAYANA_ROOT}mahayana-agent-kernel-bridge/",
         ("kernel_engine", "host_ffi"),
     ),
-    (f"{MAHAYANA_ROOT}mahayana-orchestrator/", ("kernel_engine", "host_ffi")),
+    (
+        f"{MAHAYANA_ROOT}mahayana-orchestrator/",
+        ("kernel_engine", "mcp_agent", "host_ffi"),
+    ),
     (
         f"{MAHAYANA_ROOT}mahayana-workspace-engine/",
-        ("kernel_engine", "host_ffi"),
+        ("kernel_engine", "mcp_agent", "host_ffi"),
     ),
-    (f"{MAHAYANA_ROOT}mahayana-model/", ("kernel_engine", "host_ffi")),
-    (f"{MAHAYANA_ROOT}mahayana-native-engine/", ("kernel_engine", "host_ffi")),
+    (f"{MAHAYANA_ROOT}mahayana-model/", ("kernel_engine", "mcp_agent", "host_ffi")),
+    (
+        f"{MAHAYANA_ROOT}mahayana-native-engine/",
+        ("kernel_engine", "mcp_agent", "host_ffi"),
+    ),
     (f"{MAHAYANA_ROOT}mahayana-mcp-runtime/", ("mcp_agent", "host_ffi")),
     (f"{MAHAYANA_ROOT}mahayana-native-agent/", ("mcp_agent", "host_ffi")),
     (
