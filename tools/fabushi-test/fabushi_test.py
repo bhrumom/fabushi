@@ -106,8 +106,18 @@ def make_plan(suites: list[dict[str, Any]], layer: str, selected: list[str]) -> 
             "full_product_acceptance": False}
 
 
+def generated_roots(root: Path, plan: dict[str, Any]) -> list[Path]:
+    """Return narrowly owned build roots that cannot act as product source inputs."""
+    if not any(suite.get("layer") == "core" for suite in plan.get("suites", [])):
+        return []
+    return [
+        (root / "third_party/mahayana/mahayana-rs/target").resolve(),
+        (root / "native/mahayana-messaging/target").resolve(),
+    ]
+
+
 def untracked_paths(root: Path, allowed_roots: list[Path] | tuple[Path, ...] = ()) -> list[str]:
-    """Return non-ignored untracked paths outside explicitly owned evidence roots."""
+    """Return non-ignored untracked paths outside explicitly owned generated roots."""
     repo = root.resolve()
     allowed: list[Path] = []
     for candidate in allowed_roots:
@@ -285,12 +295,13 @@ def main(argv: list[str] | None = None) -> int:
         result_root = (root / ".fast-test-results").resolve()
         if output != result_root and not output.is_relative_to(result_root):
             raise ValueError("test result output must stay under .fast-test-results")
-        source = verify_ci(root, args.expect_sha)
+        owned_untracked = generated_roots(root, plan)
+        source = verify_ci(root, args.expect_sha, owned_untracked)
         if output.exists() and any(output.iterdir()):
             raise ValueError("results directory must be empty; never overwrite previous evidence")
         output.mkdir(parents=True, exist_ok=True)
-        owned_untracked = [output]
-        if args.layer == "ui":
+        owned_untracked.append(output)
+        if any(suite.get("layer") == "ui" for suite in plan["suites"]):
             owned_untracked.append((root / ".fast-ui-evidence").resolve())
         report = {**plan, "source_sha": source, "run_id": os.environ.get("GITHUB_RUN_ID"),
                   "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
