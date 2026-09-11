@@ -127,6 +127,6 @@
 - [x] `TFI-USR-AR-004` 验证四次有限重试、新会话原样重发和全部误判保护；67/67 PASS。
 - [x] `TFI-USR-AR-005` source PR #2、PR CI `34599085499`、`main@db663373e88b603350c24a73aedb991835509b2a`、exact-main CI `34599239366` 与 Release `v2.9.4`。
 - [ ] `TFI-USR-AR-006` 真实 Chrome 异常结束→新会话→重发视觉/诊断证据。
-- [ ] `TFI-USR-AR-007` 父仓库治理记录 protected merge/main readback。
+- [x] `TFI-USR-AR-007` 父仓库 PR #2511 经 merge queue 合并，回读 `main@2e5151ed38a29130f6f1165639430a825dc2f2ab`。
 
 当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_E2E_PENDING`。

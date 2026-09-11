@@ -15,10 +15,11 @@ Status: `IN_PROGRESS`
 - Exact-main CI: run `34599239366`, job `103262227420`, PASS.
 - Release: `v2.9.4`, release ID `387022144`, target `db663373e88b603350c24a73aedb991835509b2a`; attached `chatgpt-auto-confirm.user.js` (95,716 bytes).
 - Live pre-acceptance observation: the original screenshot route later moved to a fresh route with the same task prompt and an active Stop control. This proves the legacy long fallback eventually retried, but does not prove the new 15-second 2.9.4 path.
+- Live root version readback: `2.9.3`; the published 2.9.4 path is not installed yet.
+- Parent records: PR #2511, five PR checks PASS, merge-group run `34599706374` PASS, canonical `main@2e5151ed38a29130f6f1165639430a825dc2f2ab` read back.
 
 ## Pending closure evidence
 
 - Live Chrome screenshots, complete video and diagnostics for abnormal end → fresh Chat → original prompt resend.
-- Parent project-record PR, merge queue and canonical-main readback.
 
 No Fabushi application/native build or E2E was run locally.
