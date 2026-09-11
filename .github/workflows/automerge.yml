@@ -100,9 +100,11 @@ jobs:
               'native/mahayana-messaging/',
               'desktop/src/messaging-',
               'desktop/src/selfhosted-messaging-',
-              'third_party/mahayana/mahayana-rs/mahayana-host-protocol/',
-              'third_party/mahayana/mahayana-rs/mahayana-feature-host/',
-              'third_party/mahayana/mahayana-rs/mahayana-social/',
+              // Messaging Product Gate compiles/tests Feature Host over a broad
+              // Mahayana workspace dependency graph. Keep protected enqueue
+              // coupled to that gate for any workspace source/manifest change;
+              // the gate itself can still select only Host/desktop lanes.
+              'third_party/mahayana/mahayana-rs/',
             ];
             const messagingExactPaths = new Set([
               'desktop/src/main.tsx',
