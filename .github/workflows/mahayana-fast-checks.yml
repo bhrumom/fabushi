@@ -72,6 +72,19 @@ jobs:
           shared-key: mahayana-fast-v6
           cache-all-crates: true
 
+      - name: Test Mahayana CLI as the product logic entry point
+        run: >-
+          cargo test
+          -p mahayana-cli
+          --profile ci
+          --no-default-features
+
+      - name: Test deterministic CLI test-driver protocol
+        run: >-
+          cargo test
+          -p mahayana-test-driver-protocol
+          --profile ci
+
       - name: Test Mahayana-owned CLI compatibility surfaces
         run: >-
           cargo test

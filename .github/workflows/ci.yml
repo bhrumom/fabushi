@@ -34,5 +34,6 @@ jobs:
           node desktop/scripts/check-app-agent-stable-rebase-contract.mjs
           node --test desktop/electron/remote-device-agent-supervisor-packaged-helper.test.cjs
           node --test chatgpt-vps-control/tests/ios-interactive-app-e2e-contract.test.js
+          node --test chatgpt-vps-control/tests/mahayana-cli-fast-gate-contract.test.js
           git diff --check HEAD^ HEAD || true
-          echo 'Required CI result: fast release-control, canonical test-release source gate, macOS stable-target rebase, App-owned packaged native-helper binding, and iOS interactive hold contracts.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Required CI result: fast release-control, canonical test-release source gate, macOS stable-target rebase, App-owned packaged native-helper binding, iOS interactive hold, and Mahayana CLI-first fast-gate contracts.' >> "$GITHUB_STEP_SUMMARY"
