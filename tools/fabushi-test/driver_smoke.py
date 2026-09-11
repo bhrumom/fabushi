@@ -14,9 +14,11 @@ requests = [{'protocol': 'mahayana.test-driver.v1', 'requestId': f'fast-{i}',
              'params': {'afterSequence': 0} if method in {'logs.query', 'events.subscribe'} else {}}
             for i, method in enumerate(methods)]
 with tempfile.TemporaryDirectory(prefix='fabushi-driver-') as directory:
-    marker = Path(directory) / 'stale-state.txt'
+    profile = Path(directory) / 'mahayana-test-driver'
+    profile.mkdir()
+    marker = profile / 'stale-state.txt'
     marker.write_text('isolated test state')
-    env = {**os.environ, 'MAHAYANA_TEST_DRIVER_ROOT': directory, 'CARGO_PROFILE_CI_DEBUG_ASSERTIONS': 'true'}
+    env = {**os.environ, 'MAHAYANA_TEST_DRIVER_ROOT': str(profile), 'CARGO_PROFILE_CI_DEBUG_ASSERTIONS': 'true'}
     completed = subprocess.run(['cargo', 'run', '--locked', '--quiet', '--profile', 'ci', '-p', 'mahayana-cli',
                                 '--features', 'test-driver', '--bin', 'mahayana-test-driver'],
                                cwd=workspace, env=env, input=''.join(json.dumps(r) + '\n' for r in requests),
@@ -25,7 +27,8 @@ with tempfile.TemporaryDirectory(prefix='fabushi-driver-') as directory:
     if len(replies) != len(requests):
         raise RuntimeError('missing or extra JSONL replies')
     for request, reply in zip(requests, replies):
-        if reply.get('ok') is not True or reply.get('correlationId') != request['correlationId']:
+        if (reply.get('ok') is not True or reply.get('correlationId') != request['correlationId']
+                or reply.get('protocol') != request['protocol']):
             raise RuntimeError('failed or incorrectly correlated response')
     health = replies[1]['result']
     if health.get('backend') != 'mahayana-product-core' or health.get('debugOnly') is not True:

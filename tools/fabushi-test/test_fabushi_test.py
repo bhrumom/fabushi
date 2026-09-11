@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -63,6 +64,27 @@ class ControllerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             with self.assertRaises(ValueError):
                 m.contained(Path(d), '../outside')
+
+    def test_process_success_nonzero_missing_and_zero_test_proof(self):
+        cases = [
+            ([sys.executable, '-c', 'print("PROOF")'], 'PROOF', 'passed'),
+            ([sys.executable, '-c', 'raise SystemExit(7)'], 'PROOF', 'failed'),
+            ([sys.executable, '-c', 'print("zero tests")'], 'PROOF', 'failed'),
+            (['/definitely-missing-fcm-command'], 'PROOF', 'blocked'),
+        ]
+        for argv, pattern, expected in cases:
+            with self.subTest(argv=argv), tempfile.TemporaryDirectory() as d:
+                suite = {**self.suite, 'argv': argv, 'pass_pattern': pattern}
+                result = m.run_suite(suite, Path(d), Path(d))
+                self.assertEqual(result['status'], expected)
+                self.assertIn('log_sha256', result)
+
+    def test_process_timeout_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            suite = {**self.suite, 'argv': [sys.executable, '-c', 'import time; time.sleep(5)'], 'timeout_seconds': 1}
+            result = m.run_suite(suite, Path(d), Path(d))
+            self.assertEqual(result['status'], 'timeout')
+            self.assertLess(result['duration_seconds'], 4)
 
     def test_atomic_json_roundtrip(self):
         with tempfile.TemporaryDirectory() as d:

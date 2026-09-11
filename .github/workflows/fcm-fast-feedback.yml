@@ -28,6 +28,8 @@ on:
 
 permissions:
   contents: read
+  checks: read
+  pull-requests: read
 
 concurrency:
   group: fcm-fast-${{ github.event.pull_request.number || github.sha }}
@@ -98,6 +100,24 @@ jobs:
           --layer '${{ matrix.layer }}'
           --expect-sha "$EXPECTED_SHA"
           --output '.fast-test-results/${{ matrix.layer }}'
+      - name: Inspect open PRs without changing them
+        if: always() && matrix.layer == 'contract'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 tools/fabushi-test/pr_inventory.py --output .fast-test-results/contract/pr-inventory.json
+      - name: Preserve exact source drift and generated lock diagnostics
+        if: always() && matrix.layer == 'core'
+        run: |
+          mkdir -p .fast-test-results/core/source-drift
+          git diff --name-status HEAD -- > .fast-test-results/core/source-drift/changed-paths.txt
+          git diff HEAD -- native/mahayana-messaging/Cargo.lock third_party/mahayana/mahayana-rs/Cargo.lock > .fast-test-results/core/source-drift/Cargo.lock.patch
+          for item in native/mahayana-messaging/Cargo.lock third_party/mahayana/mahayana-rs/Cargo.lock; do
+            if test -f "$item"; then
+              target=".fast-test-results/core/source-drift/$item"
+              mkdir -p "$(dirname "$target")"
+              cp "$item" "$target"
+            fi
+          done
       - name: Publish explicit scope summary
         if: always()
         run: |
@@ -128,8 +148,7 @@ jobs:
           name: fcm-fast-${{ matrix.layer }}-${{ env.EXPECTED_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             .fast-test-results/${{ matrix.layer }}/
-            desktop/headless-results/
-            desktop/headless-report/
+            .fast-ui-evidence/
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 90
