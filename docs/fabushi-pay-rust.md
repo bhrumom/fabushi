@@ -1,6 +1,6 @@
 # Fabushi Pay Rust 支付基础设施
 
-更新日期：2026-08-22
+更新日期：2026-09-11
 
 ## 目标与许可证边界
 
@@ -18,7 +18,7 @@ Mini App / Electron / iOS / Android
 https://pay.ombhrum.com
 Fabushi Pay Rust Worker
         |
-        +-- Trusted Product Catalog
+        +-- Developer Commerce Catalog（按开发者 / Mini App 隔离）
         +-- Payment Intent / Idempotency
         +-- Apple App Store Server API
         +-- Google Play Developer API
@@ -49,7 +49,7 @@ Mini App 属于不可信执行环境。`pay.createIntent` 只允许提交：
 }
 ```
 
-价格、币种、开发者、商品类型、平台费率、允许的支付 rail、Apple/Google product id 均由服务端 Trusted Product Catalog 决定。客户端注入 `amount` / `currency` 等字段会被协议拒绝。
+价格、币种、开发者、商品类型、平台费率、允许的支付 rail、Apple/Google product id 均由服务端的 Developer Commerce Catalog 决定；目录的所有者是对应第三方开发者。客户端注入 `amount` / `currency` 等字段会被协议拒绝。
 
 Mini App Host 暴露：
 
@@ -58,6 +58,18 @@ Mini App Host 暴露：
 - `pay.getStatus`
 
 全部要求 `commerce.purchase`。Mini App 不获得退款、结算、提现、Provider secret 或平台管理权限。
+
+## 第三方开发者商品目录（唯一上架入口）
+
+商品不再通过 Fabushi 内置商品分支创建。开发者先绑定自己的开发者资料和 Mini App，再通过 Developer Commerce API 上架商品；SKU 是开发者在同一个 Mini App 内的稳定商品身份，重复提交同一 SKU 会更新价格版本，不会隐式创建第二个商品。
+
+规范接口：
+
+- `GET /v1/developer/commerce/miniapps/:mini_app_id/products`：读取目录及 Provider 状态。
+- `POST /v1/developer/commerce/miniapps/:mini_app_id/products/batch`：批量创建 / 更新 1–100 个商品；金额由开发者提交，Fabushi Pay 只负责权威存储、幂等和结算。
+- `POST /v1/developer/commerce/miniapps/:mini_app_id/google/sync`：批量同步或对账 Google Play，最多 50 个商品；省略商品 ID 时同步该 Mini App 的有效 Google 商品。
+
+Apple、Google、Web 的商品映射和 provider binding 都从这份开发者目录生成。历史迁移中的官方商品只为保留既有商品 ID、订单和权益而被迁入同一目录，并不构成新的内置上架路径；后续商品一律走上述开发者接口。旧的 `POST /v1/pay/admin/products` 管理入口已移除，结算、对账和提现管理接口仍保留在内部管理面。
 
 ## HTTP API
 
@@ -74,9 +86,8 @@ Provider 接口：
 
 - `POST /v1/pay/providers/:provider/webhook`
 
-平台管理接口（`FABUSHI_PAY_ADMIN_TOKEN`）：
+内部结算 / 资金管理接口（`FABUSHI_PAY_ADMIN_TOKEN`）：
 
-- `POST /v1/pay/admin/products`
 - `POST /v1/pay/admin/settlements/release`
 - `POST /v1/pay/admin/payout-accounts`
 - `POST /v1/pay/admin/payouts`
@@ -195,6 +206,7 @@ Web 与 Merchant Provider 不直接信任浏览器回调。Provider gateway 向�
 
 当前 Web Provider 的最小生产桥接位于 `fabushi/web`：
 
+- 原生客户端继续使用 `POST /api/alipay/create-order` 的 `platform=app` 分支；服务端生成 `alipay.trade.app.pay` / `QUICK_MSECURITY_PAY` 签名订单串，交给支付宝 SDK 调起支付宝 APP。
 - `GET /api/pay/checkout` 使用服务端 Payment Intent 的整数金额创建 Stripe Checkout Session；使用 `price_data` 动态传价，不要求开发者在 Stripe Dashboard 为每次改价创建 Product/Price。
 - `GET /api/pay/alipay/checkout` 使用同一 Payment Intent 的 CNY 金额生成支付宝 RSA2 网页支付请求。
 - Checkout Action 默认返回 Stripe，并在配置了 `FABUSHI_PAY_ALIPAY_CHECKOUT_URL` 时同时返回支付宝备用跳转地址。

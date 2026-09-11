@@ -53,3 +53,7 @@
 - Pay Worker 为 Web/Merchant checkout 生成 15 分钟、绑定 `paymentId + userId` 的 HMAC token；动态 Web/支付宝 rail 不再要求预先创建 provider 商品 ID。
 - 轻量验证已通过：Web Worker 新增 gateway contract tests、既有 profile tests、Node syntax check、`git diff --check` 与共享 Rust `rustfmt --check`。未在本机运行重型 Rust/移动端构建，等待 GitHub CI。
 - 本轮仍不声称生产已开通：Stripe live secret/webhook endpoint、Pay Worker shared webhook secret、Alipay private key、Cloudflare/GitHub secret synchronization 和真实支付 smoke 仍需外部配置与客观证据。
+
+## 2026-09-11 — Developer-owned catalog follow-up
+
+原任务已完成的 canonical dynamic-fiat 范围保持历史记录不变。本轮用户新增的“官方与所有第三方统一走第三方开发者批量目录 API”作为独立延续任务 `M9-PAY-002-CATALOG-API-001` 执行：`global-dharma` 不再走内置商品写入路径；批量 upsert、Google sync/reconciliation、历史 adoption 和支付宝 APP 支付约束均记录在该任务与 ADR-0015 中。该延续任务尚未通过 PR/CI/protected merge/post-main 交付门禁。

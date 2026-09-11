@@ -9,11 +9,12 @@ type NativeBridge = {
 type DeveloperProfile = { developerId?: string; developer_id?: string; displayName?: string; display_name?: string; status?: string };
 type MiniApp = { miniAppId?: string; mini_app_id?: string; displayName?: string; display_name?: string; role?: string; status?: string };
 type ProviderBinding = { provider: string; syncState?: string; sync_state?: string; externalProductRef?: string; external_product_ref?: string };
-type ProductSaveResult = {
+type ProductSaveItem = {
   productId?: string;
   product_id?: string;
   googleSync?: { ok?: boolean; error?: string; status?: number };
 };
+type ProductSaveResult = ProductSaveItem & { products?: ProductSaveItem[] };
 type Product = {
   productId?: string; product_id?: string; sku: string; displayName?: string; display_name?: string;
   description?: string; productKind?: string; product_kind?: string; entitlementCapability?: string; entitlement_capability?: string;
@@ -146,6 +147,7 @@ export default function BotFatherCommercePanel() {
         amount: toMinorUnits(price, currency), taxCode: taxCode || undefined,
         subscriptionPeriodSeconds: kind === "subscription" ? 2_592_000 : undefined, rails,
       };
+      const wasEditing = Boolean(editingProductId);
       const saved = await run<ProductSaveResult>(
         editingProductId ? "updateDeveloperCommerceProduct" : "createDeveloperCommerceProduct",
         payload,
@@ -153,15 +155,17 @@ export default function BotFatherCommercePanel() {
       const googleEligible = ["digital_durable", "digital_consumable", "subscription"].includes(kind);
       setEditingProductId(""); setSku(""); setDisplayName(""); setDescription(""); setCapability(""); setPrice("");
       await refreshProducts(selectedApp);
+      const savedItem = saved?.products?.[0] ?? saved;
+      const googleSync = savedItem?.googleSync;
       const googleRequested = googleEligible && rails.includes("google_play");
       const googleMessage = !googleRequested
         ? "。"
-        : saved?.googleSync?.ok === true
+        : googleSync?.ok === true
           ? "，Google Play 已自动同步。"
-          : saved?.googleSync?.ok === false
-            ? `，但 Google Play 尚未同步：${saved.googleSync.error || "请在下方重试"}。`
+          : googleSync?.ok === false
+            ? `，但 Google Play 尚未同步：${googleSync.error || "请在下方重试"}。`
             : "，Google Play 等待同步，可在下方重试。";
-      setMessage(`${editingProductId ? "新价格版本已创建" : "商品已创建"}${googleMessage}`);
+      setMessage(`${wasEditing ? "新价格版本已创建" : "商品已创建"}${googleMessage}`);
     } finally { setBusy(false); }
   }
 
@@ -182,12 +186,22 @@ export default function BotFatherCommercePanel() {
     finally { setBusy(false); }
   }
 
+  async function syncAllGoogle() {
+    if (!selectedApp) return;
+    setBusy(true);
+    try {
+      const result = await run<{ syncedCount?: number; failedCount?: number }>("syncDeveloperCommerceGoogleProducts", { miniAppId: selectedApp, productIds: [] });
+      await refreshProducts(selectedApp);
+      setMessage(`Google Play 批量对账完成：同步 ${result?.syncedCount ?? 0} 个，失败 ${result?.failedCount ?? 0} 个。`);
+    } finally { setBusy(false); }
+  }
+
   const railChoices = [
     ["apple_advanced_commerce", "iOS · Advanced Commerce"], ["google_play", "Android · Google Play"], ["web_provider", "Web / Desktop"],
   ] as const;
 
   return <main style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", color: "var(--foreground, #111827)" }}>
-    <header style={{ marginBottom: 28 }}><p style={{ opacity: .6, margin: 0 }}>Bot Father · Developer Commerce</p><h1 style={{ fontSize: 30, margin: "6px 0" }}>Mini App 法币商品管理</h1><p style={{ opacity: .7 }}>商品目录由 Fabushi 托管。开发者定义 SKU 与法币价格；Apple / Google / Web 的商店映射和结算由平台处理。</p></header>
+    <header style={{ marginBottom: 28 }}><p style={{ opacity: .6, margin: 0 }}>Bot Father · Developer Commerce</p><h1 style={{ fontSize: 30, margin: "6px 0" }}>Mini App 法币商品管理</h1><p style={{ opacity: .7 }}>商品目录属于当前第三方开发者。开发者定义 SKU 与法币价格，并通过开发者目录批量上架；Apple / Google / Web 的商店映射和结算由 Fabushi Pay 处理。</p></header>
     {error && <div role="alert" style={{ padding: 12, border: "1px solid #ef4444", borderRadius: 10, marginBottom: 16 }}>{error}</div>}
     {message && <div role="status" style={{ padding: 12, border: "1px solid #22c55e", borderRadius: 10, marginBottom: 16 }}>{message}</div>}
 
@@ -214,7 +228,7 @@ export default function BotFatherCommercePanel() {
       </form>
     </section>
 
-    <section style={{ padding:20, border:"1px solid #d1d5db", borderRadius:16 }}><h2>4. 商品与商店状态</h2>
+    <section style={{ padding:20, border:"1px solid #d1d5db", borderRadius:16 }}><div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}><h2 style={{margin:0}}>4. 商品与商店状态</h2><button type="button" disabled={busy||!selected} onClick={()=>void syncAllGoogle()}>批量同步 / 对账 Google Play</button></div>
       {products.length===0 ? <p style={{opacity:.6}}>当前 Mini App 还没有商品。</p> : <div style={{display:"grid",gap:12}}>{products.map((product)=>{const id=product.productId??product.product_id??product.sku;const bindings=product.providerBindings??product.provider_bindings??[];return <article key={id} style={{padding:14,border:"1px solid #e5e7eb",borderRadius:12}}><strong>{product.displayName??product.display_name??product.sku}</strong><div>{product.sku} · {product.currency} {fromMinorUnits(product.amount,product.currency)}</div><div style={{fontSize:13,opacity:.7,margin:"6px 0"}}>{bindings.length ? bindings.map((binding)=>`${binding.provider}: ${binding.syncState??binding.sync_state??"unknown"}`).join(" · ") : "商店状态将在同步后显示"}</div><div style={{display:"flex",gap:8}}><button type="button" onClick={()=>editProduct(product)}>改价/编辑</button><button type="button" disabled={busy} onClick={()=>void syncGoogle(product)}>同步 Google Play</button></div></article>})}</div>}
     </section>
   </main>;
