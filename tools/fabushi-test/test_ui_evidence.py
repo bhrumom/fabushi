@@ -27,13 +27,14 @@ def valid_png() -> bytes:
             png_chunk(b'IDAT', zlib.compress(raster)) + png_chunk(b'IEND', b''))
 
 
-def indexed_png(with_palette: bool) -> bytes:
+def indexed_png(with_palette: bool, *, pixel_index: int = 0, palette_entries: int = 1) -> bytes:
     ihdr = struct.pack('>IIBBBBB', 1, 1, 1, 3, 0, 0, 0)
     chunks = [evidence.PNG_SIGNATURE, png_chunk(b'IHDR', ihdr)]
     if with_palette:
-        chunks.append(png_chunk(b'PLTE', b'\x00\x00\x00'))
-    # One unfiltered scanline containing one 1-bit palette index.
-    chunks.append(png_chunk(b'IDAT', zlib.compress(b'\x00\x00')))
+        palette = b''.join(bytes((index, index, index)) for index in range(palette_entries))
+        chunks.append(png_chunk(b'PLTE', palette))
+    # One unfiltered scanline containing one 1-bit palette index in the high bit.
+    chunks.append(png_chunk(b'IDAT', zlib.compress(bytes((0, (pixel_index & 1) << 7)))))
     chunks.append(png_chunk(b'IEND', b''))
     return b''.join(chunks)
 
@@ -92,6 +93,11 @@ class EvidenceTests(unittest.TestCase):
         evidence.validate_png(indexed_png(True))
         with self.assertRaisesRegex(ValueError, 'PLTE'):
             evidence.validate_png(indexed_png(False))
+
+    def test_indexed_png_rejects_sample_outside_declared_palette(self):
+        evidence.validate_png(indexed_png(True, pixel_index=0, palette_entries=1))
+        with self.assertRaisesRegex(ValueError, 'sample exceeds declared palette'):
+            evidence.validate_png(indexed_png(True, pixel_index=1, palette_entries=1))
 
     def test_duplicate_attachment_name_never_passes(self):
         data = self.fixture()
