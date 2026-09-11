@@ -1,6 +1,6 @@
 # TFI-USERSCRIPT-RECOVERY-005 evidence index
 
-Status: `IN_PROGRESS`
+Status: `IN_PROGRESS` (`SOURCE_RELEASED / PARENT_READBACK_COMPLETE / LIVE_INSTALL_PENDING`)
 
 ## Current evidence
 
@@ -27,3 +27,10 @@ No Fabushi application build/package/E2E is applicable; this task is limited to 
 - Implemented behavior: page-level send-timeout recovery, persisted bounded abnormal-end backoff, legacy exhausted-record migration, idle terminal-state protection, and visible left-list recovery countdown.
 
 The live Chrome installation and full visual/diagnostic journey remain open; the source Release does not by itself prove installed-browser behavior.
+
+## Parent record closure evidence (2026-09-12)
+
+- Parent records PR [#2528](https://github.com/bhrumom/fabushi/pull/2528) entered the protected merge queue after all PR checks passed; merge-group `CI result` run `34633052569`, job `103374293154`, completed successfully.
+- Canonical parent `main@4c439ab385a6f4c753ccdbdde3726c63da6c45db` was read back and contains the task record, source requirement, evidence index, WBS, acceptance matrix, risk, dependency, action, status, and changelog updates.
+
+The only remaining acceptance gate is installation of 2.9.7 in authenticated Chrome and retention of the complete abnormal-session recovery visual/diagnostic journey.

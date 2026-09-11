@@ -160,7 +160,7 @@
 - [x] `TFI-USR-ST-002` 完成现有状态机与发送/异常重试路径的根因分析，并完成 Retry/backoff 开源方案调查。
 - [x] `TFI-USR-ST-003` 识别页面级发送超时并接入不重复点击的恢复路径（2.9.7）。
 - [x] `TFI-USR-ST-004` 将快速预算耗尽转换为持久化有界退避，避免自动转为 `blocked`/`paused`（2.9.7）。
-- [x] `TFI-USR-ST-005` 增加空闲调度器终态保护、轻量回归、source Release 和 parent-main 记录中的 source delivery 部分；父记录 protected merge 待完成。
+- [x] `TFI-USR-ST-005` 增加空闲调度器终态保护、轻量回归、source Release 和 parent-main 记录；父记录已通过 protected merge queue 并回读。
 - [ ] `TFI-USR-ST-006` 完成真实 Chrome 安装版本与异常 → 新会话 → 原样重发 → 新验收会话的完整视觉/诊断证据。
 
-当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_PARENT_RECORD_PENDING`；仅限独立油猴脚本。
+当前状态：`SOURCE_RELEASED / PARENT_READBACK_COMPLETE / LIVE_INSTALL_PENDING`；仅限独立油猴脚本。

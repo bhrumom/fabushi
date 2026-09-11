@@ -39,7 +39,7 @@
 - [x] `TFI-USR-ST-A05`: 调度器没有可运行任务时不再把终态阻塞任务二次标记为暂停；手动暂停仍保持原语义。
 - [x] `TFI-USR-ST-A06`: source syntax、全量轻量回归、PR/exact-main CI 和单调新 Release 通过。
 - [ ] `TFI-USR-ST-A07`: 真实 Chrome 安装新版本后，消息超时/异常结束能自动新开会话并继续 Work → 验收，留存截图、完整视频、trace/diagnostics。
-- [ ] `TFI-USR-ST-A08`: 父仓库记录经 protected main 合并并 canonical readback。
+- [x] `TFI-USR-ST-A08`: 父仓库记录经 protected main 合并并 canonical readback。
 
 ## Open-source-first survey
 
@@ -64,6 +64,7 @@
 - Release: `v2.9.7`, release ID `387246515`, target `adff78c5d6c7ddba88c360e693601de983601a78`; asset `chatgpt-auto-confirm.user.js`, asset ID `557757902`, 107701 bytes. Downloaded release asset SHA-256 matches the source file (`6f7d5e1b349082f1b3d371e98cb6c716f70a2166a5a72731672155df66b8de18`).
 - Local lightweight checks: `node --check chatgpt-auto-confirm.user.js`; `npm test` 76/76 passed.
 - Existing screenshot/CUA reproduction remains in `evidence/TFI-USERSCRIPT-RECOVERY-005/README.md`; live 2.9.7 browser evidence is still pending.
+- Parent records PR [#2528](https://github.com/bhrumom/fabushi/pull/2528) passed the protected merge queue (`CI result` run `34633052569`, job `103374293154`) and merged to canonical parent `main@4c439ab385a6f4c753ccdbdde3726c63da6c45db`; the task/source/evidence/WBS/matrix/risk/dependency/action/status/changelog files were read back at that SHA.
 
 ## Risks and blockers
 
@@ -73,4 +74,4 @@
 
 ## Next action
 
-在已登录 Chrome 中通过 Fabushi Marketplace 安装 `v2.9.7`，捕获版本/单根节点、页面发送超时或无最终回复后的自动新会话、原样重发与 Work → 验收的截图、完整视频、trace/diagnostics；之后提交并合并父仓库治理记录。任务在现场证据与父仓库 canonical readback 前保持 `IN_PROGRESS`。
+在已登录 Chrome 中通过 Fabushi Marketplace 安装 `v2.9.7`，捕获版本/单根节点、页面发送超时或无最终回复后的自动新会话、原样重发与 Work → 验收的截图、完整视频、trace/diagnostics。父仓库记录已 canonical readback；任务仅因现场安装与完整证据仍保持 `IN_PROGRESS`。
