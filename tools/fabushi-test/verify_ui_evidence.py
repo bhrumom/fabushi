@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""Fail closed unless each registered UI journey retains its own evidence."""
+"""Fail closed unless each registered UI journey retains usable evidence."""
 from __future__ import annotations
 
 import base64
 import binascii
+from datetime import datetime
 import hashlib
 import io
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import struct
 import subprocess
+import tempfile
 import zipfile
 import zlib
 
@@ -26,6 +29,10 @@ PNG_DEPTHS = {0: {1, 2, 4, 8, 16}, 2: {8, 16}, 3: {1, 2, 4, 8}, 4: {8, 16}, 6: {
 ADAM7 = ((0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4),
          (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2))
 MAX_DECODED_PNG = 256 * 1024 * 1024
+MAX_TRACE_MEMBER = 32 * 1024 * 1024
+MAX_TRACE_TOTAL = 128 * 1024 * 1024
+WEBM_SIGNATURE = b'\x1a\x45\xdf\xa3'
+TRACE_ACTION_TYPES = {'before', 'after', 'input'}
 
 
 def specs(suites):
@@ -139,8 +146,6 @@ def validate_png(data: bytes) -> None:
         else:
             if len(kind) != 4 or not all(65 <= byte <= 90 or 97 <= byte <= 122 for byte in kind):
                 raise ValueError('invalid PNG chunk type')
-            # A decoder may safely ignore unknown ancillary chunks only. Unknown
-            # critical chunks (uppercase first letter) make the image undecodable.
             if kind[0] & 0x20 == 0:
                 raise ValueError('unknown PNG critical chunk')
             if saw_idat:
@@ -222,7 +227,180 @@ def validate_png(data: bytes) -> None:
         raise ValueError('PNG raster length mismatch')
 
 
-def verify(report: dict, root: Path, required: dict | None = None) -> dict:
+def _require_bool(record: dict, name: str) -> None:
+    if type(record.get(name)) is not bool:
+        raise ValueError(f'invalid semantic snapshot boolean: {name}')
+
+
+def _require_string(record: dict, name: str, *, nonempty: bool = False) -> str:
+    value = record.get(name)
+    if not isinstance(value, str) or (nonempty and not value):
+        raise ValueError(f'invalid semantic snapshot string: {name}')
+    return value
+
+
+def validate_semantic_snapshot(data: bytes) -> dict:
+    """Require the JSON attachment to be an actual AppSnapshot, not arbitrary JSON."""
+    try:
+        snapshot = json.loads(data)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError('invalid semantic snapshot JSON') from error
+    if not isinstance(snapshot, dict):
+        raise ValueError('semantic snapshot must be an object')
+    if snapshot.get('version') != 1 or snapshot.get('available') is not True:
+        raise ValueError('invalid semantic snapshot version/availability')
+    _require_string(snapshot, 'appId', nonempty=True)
+    _require_string(snapshot, 'platform', nonempty=True)
+    _require_string(snapshot, 'title')
+    _require_string(snapshot, 'route', nonempty=True)
+    _require_string(snapshot, 'screen', nonempty=True)
+    captured_at = _require_string(snapshot, 'capturedAt', nonempty=True)
+    try:
+        datetime.fromisoformat(captured_at.replace('Z', '+00:00'))
+    except ValueError as error:
+        raise ValueError('invalid semantic snapshot capturedAt') from error
+    generation = snapshot.get('generation')
+    element_count = snapshot.get('elementCount')
+    if type(generation) is not int or generation <= 0:
+        raise ValueError('invalid semantic snapshot generation')
+    if type(element_count) is not int or element_count <= 0:
+        raise ValueError('semantic snapshot must contain elements')
+    _require_bool(snapshot, 'truncated')
+    elements = snapshot.get('elements')
+    if not isinstance(elements, list) or len(elements) != element_count:
+        raise ValueError('semantic snapshot elementCount mismatch')
+    for element in elements:
+        if not isinstance(element, dict):
+            raise ValueError('semantic snapshot element must be an object')
+        _require_string(element, 'ref', nonempty=True)
+        _require_string(element, 'role', nonempty=True)
+        _require_string(element, 'name')
+        _require_string(element, 'tag', nonempty=True)
+        for field in ('stable', 'visible', 'enabled', 'focused', 'sensitive'):
+            _require_bool(element, field)
+        if 'agentId' in element:
+            _require_string(element, 'agentId', nonempty=True)
+        for field in ('description', 'text', 'placeholder'):
+            if field in element:
+                _require_string(element, field)
+        for field in ('checked', 'selected', 'expanded', 'valuePresent'):
+            if field in element and type(element[field]) is not bool:
+                raise ValueError(f'invalid semantic snapshot element boolean: {field}')
+        if 'valueLength' in element and (type(element['valueLength']) is not int or element['valueLength'] < 0):
+            raise ValueError('invalid semantic snapshot valueLength')
+        if element['sensitive'] and any(field in element for field in ('valuePresent', 'valueLength', 'value')):
+            raise ValueError('semantic snapshot exposes sensitive value metadata')
+    return snapshot
+
+
+def validate_trace_archive(data: bytes) -> dict:
+    """Read Playwright trace JSONL and CRCs; a filename alone is not evidence."""
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        if archive.testzip() is not None:
+            raise ValueError('trace archive contains a corrupt member')
+        members = [item for item in archive.infolist() if item.filename.endswith('.trace') and not item.is_dir()]
+        if not members:
+            raise ValueError('trace archive has no action trace')
+        total = sum(item.file_size for item in archive.infolist())
+        if total <= 0 or total > MAX_TRACE_TOTAL:
+            raise ValueError('trace archive exceeds verification limit')
+        records = 0
+        action_records = 0
+        for member in members:
+            if member.file_size <= 0 or member.file_size > MAX_TRACE_MEMBER:
+                raise ValueError('trace member exceeds verification limit')
+            try:
+                payload = archive.read(member).decode('utf-8')
+            except (UnicodeDecodeError, RuntimeError, zipfile.BadZipFile) as error:
+                raise ValueError('trace member is unreadable') from error
+            for line in payload.splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as error:
+                    raise ValueError('trace member contains invalid JSONL') from error
+                if not isinstance(record, dict) or not isinstance(record.get('type'), str) or not record['type']:
+                    raise ValueError('trace member contains invalid event record')
+                records += 1
+                if record['type'] in TRACE_ACTION_TYPES:
+                    action_records += 1
+        if records < 2 or action_records < 1:
+            raise ValueError('trace archive contains no reconstructable action history')
+        return {'records': records, 'action_records': action_records}
+
+
+def _find_ffmpeg() -> Path:
+    system = shutil.which('ffmpeg')
+    if system:
+        return Path(system)
+    roots: list[Path] = []
+    configured = os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '')
+    if configured and configured not in {'0', '1'}:
+        roots.append(Path(configured).expanduser())
+    roots.append(Path.home() / '.cache' / 'ms-playwright')
+    patterns = ('ffmpeg-*/ffmpeg-linux', 'ffmpeg-*/ffmpeg-mac', 'ffmpeg-*/ffmpeg-win64.exe', 'ffmpeg-*/ffmpeg')
+    for root in roots:
+        for pattern in patterns:
+            for candidate in sorted(root.glob(pattern), reverse=True):
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    return candidate
+    raise ValueError('ffmpeg decoder unavailable for WebM evidence verification')
+
+
+def _timecode_ms(value: str) -> float:
+    match = re.fullmatch(r'(\d+):(\d{2}):(\d{2}(?:\.\d+)?)', value.strip())
+    if not match:
+        return 0.0
+    hours, minutes, seconds = match.groups()
+    return (int(hours) * 3600 + int(minutes) * 60 + float(seconds)) * 1000.0
+
+
+def probe_webm(data: bytes) -> dict:
+    """Decode the complete WebM with ffmpeg and return observed frame/duration proof."""
+    if len(data) < 64 or not data.startswith(WEBM_SIGNATURE):
+        raise ValueError('invalid WebM evidence')
+    ffmpeg = _find_ffmpeg()
+    path = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix='fabushi-evidence-', suffix='.webm', delete=False) as handle:
+            handle.write(data)
+            path = Path(handle.name)
+        completed = subprocess.run(
+            [str(ffmpeg), '-nostdin', '-v', 'error', '-progress', 'pipe:1', '-i', str(path),
+             '-map', '0:v:0', '-f', 'null', '-', '-nostats'],
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.strip().replace('\n', ' ')[-500:]
+            raise ValueError(f'WebM decode failed: {detail or "ffmpeg returned failure"}')
+        frames = 0
+        duration_ms = 0.0
+        for line in completed.stdout.splitlines():
+            key, separator, value = line.partition('=')
+            if not separator:
+                continue
+            if key == 'frame':
+                try:
+                    frames = max(frames, int(value))
+                except ValueError:
+                    pass
+            elif key == 'out_time':
+                duration_ms = max(duration_ms, _timecode_ms(value))
+        if frames <= 0 or duration_ms <= 0:
+            raise ValueError('WebM contains no decodable non-empty video duration')
+        return {'frames': frames, 'duration_ms': round(duration_ms, 3)}
+    except subprocess.TimeoutExpired as error:
+        raise ValueError('WebM decode exceeded evidence verification timeout') from error
+    finally:
+        if path is not None:
+            path.unlink(missing_ok=True)
+
+
+def verify(report: dict, root: Path, required: dict | None = None, *, video_probe=probe_webm) -> dict:
     required = CHECKPOINTS if required is None else required
     stats = report['stats']
     if report.get('errors') or any(stats.get(k) != 0 for k in ('unexpected', 'skipped', 'flaky')):
@@ -243,6 +421,9 @@ def verify(report: dict, root: Path, required: dict | None = None) -> dict:
         attempts = tests[0]['results']
         if len(attempts) != 1 or attempts[0].get('status') != 'passed' or attempts[0].get('retry') != 0:
             raise ValueError('not a first-attempt pass')
+        attempt_duration = attempts[0].get('duration')
+        if not isinstance(attempt_duration, (int, float)) or isinstance(attempt_duration, bool) or attempt_duration <= 0:
+            raise ValueError('invalid journey duration')
         attachments = attempts[0]['attachments']
         by_name: dict[str, dict] = {}
         for attachment in attachments:
@@ -260,18 +441,23 @@ def verify(report: dict, root: Path, required: dict | None = None) -> dict:
             data = attachment_bytes(attachment, root)
             kind = attachment['contentType']
             name = attachment['name']
+            metadata: dict[str, object] = {}
             if kind == 'image/png':
                 validate_png(data)
             if kind == 'application/json':
-                json.loads(data)
+                validate_semantic_snapshot(data)
             if name == 'trace':
-                with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                    if not any(n.endswith('.trace') for n in archive.namelist()):
-                        raise ValueError('trace archive has no action trace')
-            if name == 'video' and not data.startswith(b'\x1a\x45\xdf\xa3'):
-                raise ValueError('invalid WebM evidence')
-            digests.append({'name': name, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
-        result.append({'title': title, 'duration_ms': attempts[0]['duration'], 'attachments': digests})
+                metadata.update(validate_trace_archive(data))
+            if name == 'video':
+                video = video_probe(data)
+                duration_ms = float(video.get('duration_ms', 0))
+                frames = int(video.get('frames', 0))
+                coverage_tolerance = max(1000.0, float(attempt_duration) * 0.25)
+                if frames <= 0 or duration_ms <= 0 or duration_ms + coverage_tolerance < float(attempt_duration):
+                    raise ValueError('WebM duration does not cover the recorded journey')
+                metadata.update(video)
+            digests.append({'name': name, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(), **metadata})
+        result.append({'title': title, 'duration_ms': attempt_duration, 'attachments': digests})
     return {'schema': 'fabushi.ui-evidence.v1', 'status': 'passed', 'journeys': result,
             'scope': 'registered real-renderer presentation journeys only', 'full_product_acceptance': False}
 
