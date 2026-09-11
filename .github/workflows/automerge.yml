@@ -10,6 +10,7 @@ on:
   workflow_run:
     workflows:
       - CI
+      - Fabushi CLI-first fast feedback
       - Messaging Product Gate
       - Electron desktop quality gate
     types:
@@ -48,6 +49,7 @@ jobs:
             const autoMergeLabel = 'automerge';
             const requiredConclusion = 'success';
             const baseRequiredWorkflow = 'CI';
+            const fastFeedbackWorkflow = 'Fabushi CLI-first fast feedback';
             const messagingWorkflow = 'Messaging Product Gate';
             const electronWorkflow = 'Electron desktop quality gate';
             const sensitivePathPrefixes = [
@@ -66,6 +68,19 @@ jobs:
               /^fabushi\/web\/.*payment.*\.js$/,
               /^fabushi\/web\/.*alipay.*\.js$/,
             ];
+
+            const fastFeedbackPathPrefixes = [
+              'tools/fabushi-test/',
+              'desktop/',
+              'native/mahayana-messaging/',
+              'third_party/mahayana/mahayana-rs/',
+              'frontend/apps/web/src/lib/',
+              'frontend/apps/web/src/app/host/',
+              'frontend/packages/',
+            ];
+            const fastFeedbackExactPaths = new Set([
+              '.github/workflows/fcm-fast-feedback.yml',
+            ]);
 
             const electronPathPrefixes = [
               'desktop/',
@@ -180,6 +195,9 @@ jobs:
               const filenames = files.map((file) => file.filename);
               const required = [baseRequiredWorkflow];
 
+              if (filenames.some((filename) => pathMatches(filename, fastFeedbackPathPrefixes, fastFeedbackExactPaths))) {
+                required.push(fastFeedbackWorkflow);
+              }
               if (filenames.some((filename) => pathMatches(filename, messagingPathPrefixes, messagingExactPaths))) {
                 required.push(messagingWorkflow);
               }
