@@ -101,7 +101,7 @@ jobs:
           --expect-sha "$EXPECTED_SHA"
           --output '.fast-test-results/${{ matrix.layer }}'
       - name: Inspect open PRs without changing them
-        if: always() && matrix.layer == 'contract'
+        if: always() && matrix.layer == 'contract' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 tools/fabushi-test/pr_inventory.py --output .fast-test-results/contract/pr-inventory.json
