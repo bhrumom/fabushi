@@ -49,6 +49,7 @@ jobs:
       CARGO_INCREMENTAL: '1'
       CARGO_PROFILE_CI_DEBUG_ASSERTIONS: 'true'
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v5
         with:
