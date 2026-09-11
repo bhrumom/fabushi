@@ -75,7 +75,7 @@ SAFE_PREFIX_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     (
         f"{MAHAYANA_ROOT}mahayana-host-protocol/",
-        ("protocol_bridge", "host_ffi"),
+        ("auth_product", "protocol_bridge", "host_ffi"),
     ),
     (f"{MAHAYANA_ROOT}mahayana-harness/", ("harness", "host_ffi")),
     (f"{MAHAYANA_ROOT}mahayana-harness-services/", ("harness", "host_ffi")),
