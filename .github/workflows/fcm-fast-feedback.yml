@@ -86,11 +86,17 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: desktop/package-lock.json
+      - name: Restore Playwright Chromium
+        if: matrix.layer == 'ui'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('desktop/package-lock.json') }}
       - name: Install renderer tools without downloading Electron
         if: matrix.layer == 'ui'
         working-directory: desktop
-        run: npm ci --no-audit --no-fund
-      - name: Install headless Chromium in CI only
+        run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Ensure headless Chromium and system dependencies
         if: matrix.layer == 'ui'
         working-directory: desktop
         run: node node_modules/@playwright/test/cli.js install --with-deps chromium
