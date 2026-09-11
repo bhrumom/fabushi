@@ -31,13 +31,28 @@ class ControllerTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     m.registry(p, Path(d))
 
-    def test_registry_rejects_multi_package_cargo_test(self):
-        with tempfile.TemporaryDirectory() as d:
-            p = Path(d) / 'registry.json'
-            suite = {**self.suite, 'argv': ['cargo', 'test', '-p', 'alpha', '--package=beta']}
-            p.write_text(json.dumps({'version': 1, 'suites': [suite]}))
-            with self.assertRaisesRegex(ValueError, 'one package at a time'):
-                m.registry(p, Path(d))
+    def test_registry_rejects_ambiguous_cargo_package_selection(self):
+        commands = [
+            ['cargo', 'test', '-p', 'alpha', '--package=beta'],
+            ['cargo', 'test', '--workspace'],
+            ['cargo', 'test', '--all'],
+            ['cargo', 'test'],
+        ]
+        for command in commands:
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as d:
+                p = Path(d) / 'registry.json'
+                suite = {**self.suite, 'argv': command}
+                p.write_text(json.dumps({'version': 1, 'suites': [suite]}))
+                with self.assertRaisesRegex(ValueError, 'exactly one package'):
+                    m.registry(p, Path(d))
+
+    def test_registry_accepts_exact_single_cargo_package(self):
+        for command in [['cargo', 'test', '-p', 'alpha'], ['cargo', 'test', '--package=alpha']]:
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as d:
+                p = Path(d) / 'registry.json'
+                suite = {**self.suite, 'argv': command}
+                p.write_text(json.dumps({'version': 1, 'suites': [suite]}))
+                self.assertEqual(m.registry(p, Path(d))[0]['argv'], command)
 
     def test_unknown_or_empty_or_wrong_layer_selection_fails(self):
         for layer, selected in [('core', ['absent']), ('ui', []), ('ui', ['sample-test']), ('unknown', [])]:
