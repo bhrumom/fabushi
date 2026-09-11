@@ -76,8 +76,10 @@ def registry(path: Path, root: Path) -> list[dict[str, Any]]:
         argv = suite.get("argv")
         if not isinstance(argv, list) or not argv or any(not isinstance(a, str) or not a or "\0" in a for a in argv):
             raise ValueError("command must be a nonempty argument array")
-        if argv[0] == "cargo" and "test" in argv and len(cargo_selected_packages(argv)) > 1:
-            raise ValueError(f"cargo test suite must validate one package at a time: {name}")
+        if argv[0] == "cargo" and "test" in argv:
+            packages = cargo_selected_packages(argv)
+            if len(packages) != 1 or any(arg in {"--workspace", "--all"} for arg in argv):
+                raise ValueError(f"cargo test suite must select exactly one package: {name}")
         if type(suite.get("timeout_seconds")) is not int or not 1 <= suite["timeout_seconds"] <= 1800:
             raise ValueError("timeout must be between 1 and 1800 seconds")
         if not contained(root, suite.get("cwd", ".")).is_dir():
