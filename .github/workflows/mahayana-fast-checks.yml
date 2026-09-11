@@ -130,8 +130,12 @@ jobs:
         with:
           components: rustfmt
 
-      - name: Verify formatting before native package setup
-        if: needs.select.outputs.run_rust == 'true'
+      - name: Verify test-driver leaf formatting
+        if: needs.select.outputs.full_suite != 'true' && needs.select.outputs.selected_groups == 'test_driver'
+        run: cargo fmt --package mahayana-test-driver-protocol -- --check
+
+      - name: Verify workspace formatting before native package setup
+        if: needs.select.outputs.run_rust == 'true' && (needs.select.outputs.full_suite == 'true' || needs.select.outputs.selected_groups != 'test_driver')
         run: cargo fmt --all -- --check
 
       - name: Install Linux native capture/input dependencies
@@ -145,8 +149,15 @@ jobs:
             libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
             libegl1-mesa-dev libgbm-dev
 
-      - name: Restore targeted Cargo cache
-        if: needs.select.outputs.run_rust == 'true'
+      - name: Restore test-driver leaf Cargo cache
+        if: needs.select.outputs.full_suite != 'true' && needs.select.outputs.selected_groups == 'test_driver'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-fast-test-driver-v1
+
+      - name: Restore shared Mahayana Cargo cache
+        if: needs.select.outputs.run_rust == 'true' && (needs.select.outputs.full_suite == 'true' || needs.select.outputs.selected_groups != 'test_driver')
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
@@ -228,4 +239,11 @@ jobs:
             echo "- full suite: ${{ needs.select.outputs.full_suite }}"
             echo "- groups: ${{ needs.select.outputs.selected_groups }}"
             echo "- rust gate requested: ${{ needs.select.outputs.run_rust }}"
+            if [[ "${{ needs.select.outputs.full_suite }}" != "true" && "${{ needs.select.outputs.selected_groups }}" == "test_driver" ]]; then
+              echo "- formatting lane: package-only mahayana-test-driver-protocol"
+              echo "- cache lane: mahayana-fast-test-driver-v1"
+            else
+              echo "- formatting lane: workspace"
+              echo "- cache lane: mahayana-fast-v6"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
