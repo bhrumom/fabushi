@@ -75,3 +75,9 @@ Mini App 的 AI discovery 是 Marketplace 的公开投影，不是新 runtime �
 - crawlability：robots/sitemap/结构化数据与 Cloudflare production probe 共同构成可抓取证据。
 
 应用名称、版本、能力、权限、价格和内容必须继续只在 canonical Marketplace catalog 维护。
+
+## Developer Commerce Catalog（2026-09-11）
+
+商品目录的唯一写入口是经过 developer/app authorization 的 Developer Commerce API。第三方开发者通过批量 upsert 管理 `mini_app_id + sku`、法币 minor-unit 价格、订阅周期和本地化元数据；价格变化追加 price revision，不能覆盖历史支付事实。Google Play 同步和定时对账由服务端控制面执行，客户端不能持有商店凭据。
+
+官方 `global-dharma` 不使用独立内置商品路径，而以普通开发者 Mini App 身份走同一目录、provider binding、审计和 reconciliation 流程。历史官方商品只通过 forward-only adoption 保留原 product/order/entitlement 事实。
