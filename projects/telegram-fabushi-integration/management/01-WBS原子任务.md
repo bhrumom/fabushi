@@ -138,6 +138,6 @@
 - [x] `TFI-USR-DS-003` 把当前与可恢复工作区按标签页分组展示在左侧任务列表。
 - [x] `TFI-USR-DS-004` 每条任务展示状态、轮次和运行指示，并在可恢复组内提供恢复动作。
 - [ ] `TFI-USR-DS-005` 完成轻量回归、source PR/exact-main CI、单调版本 Release 与真实 Chrome 证据。
-- [ ] `TFI-USR-DS-006` 父仓库治理记录经 protected main 合并并回读。
+- [x] `TFI-USR-DS-006` 父仓库 PR #2514 经 merge queue run `34606606642` 合并，并回读 `main@6baf6f0d19686cefdf1b9dea570035c13f172b97`。
 
 当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_E2E_PENDING`；范围仅限油猴脚本，不涉及 Fabushi 应用构建。

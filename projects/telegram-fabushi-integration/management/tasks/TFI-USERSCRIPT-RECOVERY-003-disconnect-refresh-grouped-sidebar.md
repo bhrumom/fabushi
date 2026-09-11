@@ -5,7 +5,7 @@
 - Task ID: `TFI-USERSCRIPT-RECOVERY-003`
 - Status: `IN_PROGRESS`
 - Started: `2026-09-11T21:20:00+08:00`
-- Updated: `2026-09-11T21:46:00+08:00`
+- Updated: `2026-09-11T21:52:00+08:00`
 - Source: `source/2026-09-11-userscript-disconnect-refresh-grouped-sidebar.md`
 - Requirements: `TFI-USR-DS-R01`–`TFI-USR-DS-R06`
 - Source baseline: userscript `main@db663373e88b603350c24a73aedb991835509b2a` (`2.9.4`)
@@ -41,7 +41,7 @@ Detect ChatGPT's explicit interrupted-connection notice and safely refresh the b
 - [x] `TFI-USR-DS-A06`: Source syntax and complete lightweight regression suite pass on PR head and exact source main.
 - [x] `TFI-USR-DS-A07`: Monotonically newer userscript Release is published from accepted source main.
 - [ ] `TFI-USR-DS-A08`: Live Chrome evidence verifies disconnect refresh and grouped sidebar behavior.
-- [ ] `TFI-USR-DS-A09`: Parent governance records merge through protected main and are read back.
+- [x] `TFI-USR-DS-A09`: Parent governance records merge through protected main and are read back.
 
 ## Open-source-first survey
 
@@ -65,6 +65,9 @@ Detect ChatGPT's explicit interrupted-connection notice and safely refresh the b
 - Canonical source main: `3124c0aaa4e5cbd5b0fcbff663009289c18d5d49`.
 - Exact-source-main CI: run `34605867308`, job `103284014156`, PASS.
 - Release: `v2.9.5`, release ID `387070364`, target exact source main; attached `chatgpt-auto-confirm.user.js`, 101,151 bytes.
+- Parent records PR: `bhrumom/fabushi#2514`; all five PR-head checks PASS.
+- Parent merge queue: run `34606606642`, PASS.
+- Parent canonical main readback: `6baf6f0d19686cefdf1b9dea570035c13f172b97`.
 - Lightweight local syntax: PASS.
 - Lightweight regression: PASS, 69/69.
 - Detector walks visible page text and excludes `[data-message-author-role]` plus the plugin root.
@@ -85,5 +88,4 @@ Detect ChatGPT's explicit interrupted-connection notice and safely refresh the b
 
 ## Next action
 
-Install/update the live browser to 2.9.5, run the requested disconnect-refresh and grouped-sidebar journeys with complete visual/diagnostic evidence, then merge/read back this parent record stream.
-
+Install/update the live browser to 2.9.5 and run the requested disconnect-refresh and grouped-sidebar journeys with complete visual/diagnostic evidence.
