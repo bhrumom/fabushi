@@ -3,7 +3,7 @@
 - Project: `FAB-P0001 / TFI`
 - Project Key: `TFI`
 - Stage: `M9 支付`
-- Status: `IN_PROGRESS / MERGED_POST_MAIN_PENDING`
+- Status: `IN_PROGRESS / POST_MAIN_EVIDENCE_PENDING`
 - Started: `2026-09-11`
 - Updated: `2026-09-11`
 - Owner surface: Developer Commerce / Platform Control Plane / Fabushi Pay / Desktop BotFather
@@ -88,7 +88,8 @@
 - Canonical-main readback: `main@e218e602` contains the developer catalog migration and APP-pay configuration; push-triggered exact-main delivery runs remain in progress/queued at this update.
 - Records follow-up PR: `#2505`, head `4e43cd618a7a457cc52fb14f0729df7fdfbd338a`, merged as `eefc71fa0d548a9b44ba52c7c8689f3a3937fb7a` at `2026-09-11T07:54:57Z`.
 - Post-main blocker: Native mobile quality gate run `34575968339`, iOS job `103188374206` failed before tests because Swift 6 rejected non-`@MainActor` access in `GlobalDharmaMiniAppParityTests.swift`.
-- Follow-up fix PR: `#2507`, head `1e0d691545b9d05779a52bdc6a490eaf7c048d8f`, awaiting required checks and protected merge.
+- Follow-up fix PR: `#2507`, head `1acef58012f8fe58fd1b247c4f3e94558a86effa`, merged as `b284e4a939a8f160fe8b448fcae30ae2d654058a` at `2026-09-11T08:06:49Z`; Native mobile PR gate passed.
+- Current post-main runs for `main@b284e4a9`: Native mobile `34577583178`, Electron desktop `34577583164`, iOS interactive app `34577583180` are in progress; governance `34577583196` passed.
 
 ## Evidence plan
 
@@ -108,4 +109,4 @@
 
 ## Next action
 
-PR #2504 已合并到 canonical `main@e218e602`，记录跟进 PR #2505 已合并到 `main@eefc71fa` 并完成回读。exact-main Native mobile gate 暴露的 iOS 测试 actor 编译问题已由 PR #2507 修复，待其保护合并后重跑 exact-main packaged/E2E/视觉证据闭环；同时保持 Google/Apple/Stripe/支付宝的外部资格门禁 fail-closed。Keep this task `IN_PROGRESS` until the required post-main gates and external activation evidence are separately satisfied.
+PR #2504 已合并到 canonical `main@e218e602`，记录跟进 PR #2505 已合并到 `main@eefc71fa`，iOS 测试修复 PR #2507 已合并到 `main@b284e4a9` 并完成回读。当前等待 `b284e4a9` 的 packaged/E2E/视觉证据闭环；同时保持 Google/Apple/Stripe/支付宝的外部资格门禁 fail-closed。Keep this task `IN_PROGRESS` until the required post-main gates and external activation evidence are separately satisfied.
