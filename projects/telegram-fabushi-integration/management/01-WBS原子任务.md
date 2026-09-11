@@ -115,6 +115,6 @@
 - [x] `TFI-USR-006` source PR #1 review/CI/merge 与 `source main@9ace3f40858e0c8b56e87b39971f8b6741441200` readback；exact-main CI `34582579268` PASS。
 - [x] `TFI-USR-007` 发布 2.9.3 到官方 raw-main 更新源和 GitHub Release `v2.9.3`；用户浏览器安装仍待点击一次更新。
 - [ ] `TFI-USR-008` 在真实 Chrome/ChatGPT 记录 create → close → reopen → recover → open conversation 的截图、完整视频及 trace/diagnostics。
-- [ ] `TFI-USR-009` 父仓库 TFI 记录 PR protected merge 与 canonical-main readback。
+- [x] `TFI-USR-009` 父仓库 TFI 记录 PR #2509 经 merge queue 合并，并回读 `main@4363f07b186b9bee85004a3a2d6a5f0c5e9ef4f1`。
 
 当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_E2E_PENDING`，不得标记完成。

@@ -4,7 +4,7 @@
 - Project Key: `TFI`
 - Status: `IN_PROGRESS`
 - Started: `2026-09-11T17:00:00+08:00`
-- Updated: `2026-09-11T17:12:00+08:00`
+- Updated: `2026-09-11T17:19:00+08:00`
 - Source requirement: `source/2026-09-11-userscript-closed-tab-task-recovery.md`
 - Requirement IDs: `TFI-USR-R01`–`TFI-USR-R06`
 - Implementation repository: `bhrumom/fabushi-chatgpt-auto-confirm-userscript`
@@ -50,7 +50,7 @@ Make every persisted Fabushi task record discoverable and safely recoverable aft
 - [x] `TFI-USR-A06`: Source PR is reviewed, CI-green and merged to userscript `main`.
 - [x] `TFI-USR-A07`: Version 2.9.3 is published through the supported Marketplace/userscript update path.
 - [ ] `TFI-USR-A08`: Live Chrome journey records step screenshots, complete video and diagnostic/action evidence for create → close tab → open new tab → recover record → open recorded conversation.
-- [ ] `TFI-USR-A09`: Parent TFI records merge through protected canonical `bhrumom/fabushi` main and are read back.
+- [x] `TFI-USR-A09`: Parent TFI records merge through protected canonical `bhrumom/fabushi` main and are read back.
 
 ## Verification method and current result
 
@@ -63,7 +63,7 @@ Make every persisted Fabushi task record discoverable and safely recoverable aft
 | Source PR/CI/merge | PASS | PR #1; source `main@9ace3f40858e0c8b56e87b39971f8b6741441200`; PR run `34582472715`; exact-main run `34582579268` |
 | Marketplace publication | PASS | official raw-main endpoint reads 2.9.3; GitHub Release `v2.9.3`, release `386908798`, source + installable `.user.js` asset |
 | Live simulated-user visual evidence | PENDING | must run after published version is installed |
-| Parent protected-main merge/readback | PENDING | task records still on task branch |
+| Parent protected-main merge/readback | PASS | PR #2509; merge queue; canonical `main@4363f07b186b9bee85004a3a2d6a5f0c5e9ef4f1`; all five PR checks PASS |
 
 Local checks are intentionally limited to the small userscript test suite. No Fabushi application build, native test, package build, emulator, simulator or Electron E2E was run locally.
 
@@ -90,7 +90,9 @@ Local checks are intentionally limited to the small userscript test suite. No Fa
 - Post-main CI: run `34582579268`, job `103209328563`, PASS
 - Release: `v2.9.3`, release ID `386908798`, target `9ace3f40858e0c8b56e87b39971f8b6741441200`
 - Parent record branch: `codex/tfi-userscript-workspace-recovery-20260911`
-- Parent record commit/PR: `TBD`
+- Parent record commit: `94fd704017cd6b779f464c41a50c3f5124222801`
+- Parent PR: `bhrumom/fabushi#2509`, merged through queue
+- Parent canonical main readback: `4363f07b186b9bee85004a3a2d6a5f0c5e9ef4f1`
 
 ## Post-main / release / E2E evidence
 
@@ -106,4 +108,4 @@ Required evidence bundle must bind userscript 2.9.3 source SHA, parent canonical
 
 ## Next action
 
-Ask the user to click “更新油猴脚本” for ChatGPT 自动确认 in the Fabushi extension. Then execute the live Chrome recovery journey with complete evidence, merge the synchronized TFI records through protected parent `main`, and re-read both canonical repositories.
+Ask the user to click “更新油猴脚本” for ChatGPT 自动确认 in the Fabushi extension. Then execute the live Chrome recovery journey with complete evidence and close the remaining installed-browser gate in a governed follow-up PR.
