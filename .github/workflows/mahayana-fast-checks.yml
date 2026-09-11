@@ -5,16 +5,20 @@ on:
     paths:
       - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
+      - tools/fabushi-test/suites.json
       - scripts/check-mahayana-source-boundary.py
       - scripts/select-mahayana-fast-tests.py
       - scripts/tests/test_select_mahayana_fast_tests.py
       - .github/workflows/mahayana-fast-checks.yml
+  merge_group:
+    types: [checks_requested]
   push:
     branches:
       - main
     paths:
       - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
+      - tools/fabushi-test/suites.json
       - scripts/check-mahayana-source-boundary.py
       - scripts/select-mahayana-fast-tests.py
       - scripts/tests/test_select_mahayana_fast_tests.py
@@ -22,8 +26,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: mahayana-fast-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: mahayana-fast-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
