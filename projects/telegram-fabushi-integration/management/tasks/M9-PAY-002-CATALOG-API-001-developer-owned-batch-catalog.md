@@ -3,7 +3,7 @@
 - Project: `FAB-P0001 / TFI`
 - Project Key: `TFI`
 - Stage: `M9 支付`
-- Status: `IN_PROGRESS / PR_PREPARATION`
+- Status: `IN_PROGRESS / MERGED_POST_MAIN_PENDING`
 - Started: `2026-09-11`
 - Updated: `2026-09-11`
 - Owner surface: Developer Commerce / Platform Control Plane / Fabushi Pay / Desktop BotFather
@@ -44,7 +44,7 @@
 ## Dependencies and blockers
 
 - fresh canonical `main` base `e2d4eda0c449e461771b855aaeee416062512f09`；
-- GitHub Actions required CI、protected merge queue、canonical-main readback；
+- GitHub Actions required CI、protected merge queue、canonical-main readback；PR #2504 已合并，但 exact-main 打包/E2E/视觉证据仍待完成；
 - production Google/Apple/Stripe/支付宝资格和凭据是后续外部激活门禁；
 - migration/deploy 需要平台 D1/Worker 发布权限，未部署前不能声称线上已同步。
 
@@ -52,13 +52,13 @@
 
 | ID | Criterion | Verification / evidence | State |
 |---|---|---|---|
-| A1 | 所有商品写入均为 developer/app authorized API，不能由客户端指定 owner、developer、platform fee 或 provider secret | Rust worker contracts + platform proxy + desktop bridge tests | IMPLEMENTED / CI_PENDING |
-| A2 | 批量 upsert 支持新增/更新、重复 SKU 拒绝、价格变化追加 revision，已有 product ID 保持不变 | commerce-control tests + schema/migration inspection | IMPLEMENTED / CI_PENDING |
-| A3 | Google sync 一批只取得一次 Publisher token，执行 region price conversion、商品/订阅同步、base-plan 激活并返回逐项结果 | Google adapter contracts + GitHub Actions | IMPLEMENTED / CI_PENDING |
+| A1 | 所有商品写入均为 developer/app authorized API，不能由客户端指定 owner、developer、platform fee 或 provider secret | Rust worker contracts + platform proxy + desktop bridge tests | IMPLEMENTED / MERGE_GROUP_GREEN; exact-main follow-up |
+| A2 | 批量 upsert 支持新增/更新、重复 SKU 拒绝、价格变化追加 revision，已有 product ID 保持不变 | commerce-control tests + schema/migration inspection | IMPLEMENTED / MERGE_GROUP_GREEN; exact-main follow-up |
+| A3 | Google sync 一批只取得一次 Publisher token，执行 region price conversion、商品/订阅同步、base-plan 激活并返回逐项结果 | Google adapter contracts + GitHub Actions | IMPLEMENTED / MERGE_GROUP_GREEN; runtime sync pending |
 | A4 | scheduled reconciliation 能发现 Google catalog 缺失或过期 binding，并保持 fail-closed 状态 | Rust control-plane tests + exact-main scheduled/runtime evidence | IMPLEMENTED / POST_MAIN_PENDING |
-| A5 | `global-dharma` 只通过同一 developer API；adoption migration 保留历史 product/order/entitlement | migration contract + D1 migration evidence | IMPLEMENTED / CI_PENDING |
-| A6 | 支付宝配置/文档/测试明确为 APP 支付，不存在当面付调用 | Node contract tests + source inspection | IMPLEMENTED / CI_PENDING |
-| A7 | 必要 CI、protected merge、canonical main readback、打包用户旅程和证据闭环 | GitHub Actions / PR / post-main artifacts | PENDING |
+| A5 | `global-dharma` 只通过同一 developer API；adoption migration 保留历史 product/order/entitlement | migration contract + D1 migration evidence | IMPLEMENTED / CANONICAL_READBACK |
+| A6 | 支付宝配置/文档/测试明确为 APP 支付，不存在当面付调用 | Node contract tests + source inspection | IMPLEMENTED / CANONICAL_READBACK |
+| A7 | 必要 CI、protected merge、canonical main readback、打包用户旅程和证据闭环 | GitHub Actions / PR / post-main artifacts | IN_PROGRESS / POST_MAIN_PENDING |
 
 ## Verification policy
 
@@ -80,9 +80,12 @@
 ## Branch / commit / PR
 
 - Branch: `codex/m9-pay-002-catalog-api-20260911`
-- Implementation commit: to be recorded after commit creation
-- Pull request: to be created against `main`
-- Merge SHA: pending protected merge
+- Local preparation commit: `505697475`
+- Remote PR head: `b0489a9a9820eb0f600123d6468bc64e405a804a`
+- Pull request: `#2504` against `main`
+- Merge SHA: `e218e602130ed9a1e927f55c89faa175cdb368f0`
+- Merged at: `2026-09-11T07:46:30Z`; merge-group CI run `34575923650` passed.
+- Canonical-main readback: `main@e218e602` contains the developer catalog migration and APP-pay configuration; push-triggered exact-main delivery runs remain in progress/queued at this update.
 
 ## Evidence plan
 
@@ -101,4 +104,4 @@
 
 ## Next action
 
-Create the governed PR from this branch, wait for exact-head required checks and review/merge-queue gates, merge to canonical `main`, re-read the merged SHA, then run the required post-main package/E2E/Release loop. Keep this task `IN_PROGRESS` until those gates and external activation evidence are separately satisfied.
+PR #2504 已合并到 canonical `main@e218e602` 并完成初步文件回读。下一步是等待/检查该 SHA 的 exact-main 控制面、打包应用、模拟用户 E2E 及视觉/调试证据，并在必要时发布可追溯 Release；同时保持 Google/Apple/Stripe/支付宝的外部资格门禁 fail-closed。Keep this task `IN_PROGRESS` until the required post-main gates and external activation evidence are separately satisfied.
