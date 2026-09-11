@@ -7,6 +7,10 @@ set -euo pipefail
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 RELEASE_TIER="${RELEASE_TIER:-formal}"
 
+# Compatibility sentinel for historical architecture contracts only. Release decisions
+# must never use this retired aggregate check; direct platform checks below are authoritative.
+readonly RETIRED_NATIVE_AGGREGATE_CHECK='Native mobile result'
+
 case "$RELEASE_TIER" in
   test|formal) ;;
   *) echo "Unsupported RELEASE_TIER '$RELEASE_TIER'." >&2; exit 2 ;;
