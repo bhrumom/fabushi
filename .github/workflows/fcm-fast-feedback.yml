@@ -105,16 +105,20 @@ jobs:
           import json, os
           from pathlib import Path
           path = Path('.fast-test-results/${{ matrix.layer }}/results.json')
+          if not path.exists():
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(json.dumps({
+                  'schema': 'fabushi.test-results.v1', 'source_sha': os.environ['EXPECTED_SHA'],
+                  'status': 'blocked', 'results': [], 'full_product_acceptance': False,
+                  'reason': 'test result missing; inspect setup/job failure; not a test pass'
+              }, indent=2) + '\n')
+          data = json.loads(path.read_text())
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
               out.write('## CLI-first ${{ matrix.layer }}\n')
               out.write('Source: `' + os.environ['EXPECTED_SHA'] + '`\n\n')
-              if not path.exists():
-                  out.write('BLOCKED: test result missing; setup may have failed.\n')
-              else:
-                  data = json.loads(path.read_text())
-                  out.write('Selected lane: **' + data['status'] + '**\n\n')
-                  for result in data['results']:
-                      out.write('- ' + result['id'] + ': ' + result['status'] + ' (' + str(result['duration_seconds']) + 's)\n')
+              out.write('Selected lane: **' + data['status'] + '**\n\n')
+              for result in data['results']:
+                  out.write('- ' + result['id'] + ': ' + result['status'] + ' (' + str(result['duration_seconds']) + 's)\n')
               out.write('\nThis is not full-product or native/package/release acceptance. UI uses the actual renderer with existing browser fixtures.\n')
           PY
       - name: Upload pass and failure evidence
@@ -126,6 +130,7 @@ jobs:
             .fast-test-results/${{ matrix.layer }}/
             desktop/headless-results/
             desktop/headless-report/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 90
       - name: Preserve tracked policy context for independent readback
