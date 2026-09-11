@@ -99,10 +99,15 @@ jobs:
         if: matrix.layer == 'ui'
         working-directory: desktop
         run: npm ci --prefer-offline --no-audit --no-fund
-      - name: Ensure headless Chromium and system dependencies
+      - name: Ensure headless Chromium, system dependencies, and media verifier
         if: matrix.layer == 'ui'
         working-directory: desktop
-        run: node node_modules/@playwright/test/cli.js install --with-deps chromium
+        run: |
+          node node_modules/@playwright/test/cli.js install --with-deps chromium
+          if ! test -x /usr/bin/ffmpeg; then
+            sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg
+          fi
+          /usr/bin/ffmpeg -version | head -1
       - name: Run isolated layer and retain structured failures
         run: >-
           python3 tools/fabushi-test/fabushi_test.py run
