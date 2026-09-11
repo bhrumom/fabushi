@@ -13,8 +13,8 @@ async function read(url) {
 test('native workflow has no second runner whose only job is aggregating platform status', async () => {
   const source = await read(nativeWorkflowPath);
   assert.match(source, /name:\s*\$\{\{ matrix\.check_name \}\}/u);
-  assert.match(source, /check_name\":\"Native Android\"/u);
-  assert.match(source, /check_name\":\"Native iOS\"/u);
+  assert.match(source, /check_name":"Native Android"/u);
+  assert.match(source, /check_name":"Native iOS"/u);
   assert.doesNotMatch(source, /\n  result:\s*\n/u);
   assert.doesNotMatch(source, /name:\s*Native mobile result/u);
   assert.doesNotMatch(source, /Require every native mobile matrix job/u);
