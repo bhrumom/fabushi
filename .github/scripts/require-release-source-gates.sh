@@ -7,6 +7,9 @@ set -euo pipefail
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 RELEASE_TIER="${RELEASE_TIER:-formal}"
 
+# Historical compatibility marker only. No release decision may read this value.
+readonly RETIRED_NATIVE_AGGREGATE_CHECK='Native mobile result'
+
 case "$RELEASE_TIER" in
   test|formal) ;;
   *) echo "Unsupported RELEASE_TIER '$RELEASE_TIER'." >&2; exit 2 ;;

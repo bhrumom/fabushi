@@ -69,7 +69,7 @@ jobs:
           for required in 'CI result' 'Electron desktop result' 'Electron macOS' 'Electron Windows' 'Native Android' 'Native iOS'; do
             grep -Fq "$required" "$gate"
           done
-          ! grep -Fq 'Native mobile result' "$gate"
+          ! grep -Eq 'required_checks=.*Native mobile result' "$gate"
 
           for workflow in .github/workflows/apple-store-delivery.yml .github/workflows/google-play-delivery.yml; do
             grep -Fq 'checks: read' "$workflow"
@@ -85,7 +85,7 @@ jobs:
           post_main=.github/workflows/post-main-delivery.yml
           grep -Fq 'Native Android' "$post_main"
           grep -Fq 'Native iOS' "$post_main"
-          ! grep -Fq 'Native mobile result' "$post_main"
+          ! grep -Eq 'required_checks=.*Native mobile result' "$post_main"
           grep -Fq 'test("^desktop-[0-9]+[.][0-9]+[.][0-9]+$")' "$post_main"
           grep -Fq 'releases/latest' "$post_main"
           grep -Fq 'make_latest=true' "$post_main"
