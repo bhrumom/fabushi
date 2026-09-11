@@ -18,3 +18,11 @@ Canonical project record: `bhrumom/fabushi` `main` → `projects/fabushi-cicd-me
 6. Conversation memory.
 
 No workflow is considered optimized merely because a document says so; objective GitHub Actions, required packaged user-E2E, Release evidence and protected-main facts are required. Old-client updater journey evidence is optional unless the specific task explicitly promotes it to a required risk gate. A cache hit is acceleration evidence, not release provenance.
+
+## 2026-09-11 CLI-first continuation
+
+`source/2026-09-11-cli-first-decoupled-test-loop.md` is the latest explicit requirement for decoupled functional/UI testing, rapid headless feedback, bounded automated repair, existing-PR integration and verified full-platform test delivery. Its durable task is `management/tasks/FCM-FAST-20260911.md`. The existing packaged safety gates remain intact; the fast inner loop is additional evidence, not a replacement for native/platform acceptance.
+
+The WeChat article is a requested reference whose contents could not be retrieved. Do not attribute an unverified design or claim implementation parity to it. The implementation follows the explicit user request and inspected repository/upstream sources.
+
+Reports must distinguish implementation, selected-suite verification, per-journey evidence completeness, protected-main integration, unattended AI executor operation, and full-platform release. None implies the others. Dated round records under `evidence/FCM-FAST-20260911/` preserve failures and exact-source results without retroactively upgrading earlier runs.
