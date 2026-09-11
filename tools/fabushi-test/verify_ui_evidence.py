@@ -3,20 +3,29 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import io
 import json
 import os
 from pathlib import Path
 import re
+import struct
 import subprocess
 import zipfile
+import zlib
 
 CHECKPOINTS = {
     'real renderer hydrates and exposes masked semantic state without an App package': ['01-hydrated-real-renderer'],
     'semantic actions reach the actual profile UI and stale actions fail closed': ['01-before-profile', '02-profile-open'],
     'missing semantic targets and unmet conditions never report success': ['01-negative-semantics'],
 }
+PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
+PNG_CHANNELS = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
+PNG_DEPTHS = {0: {1, 2, 4, 8, 16}, 2: {8, 16}, 3: {1, 2, 4, 8}, 4: {8, 16}, 6: {8, 16}}
+ADAM7 = ((0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4),
+         (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2))
+MAX_DECODED_PNG = 256 * 1024 * 1024
 
 
 def specs(suites):
@@ -50,6 +59,128 @@ def require_attachment(by_name: dict[str, dict], name: str, content_type: str) -
     if attachment.get('contentType') != content_type:
         raise ValueError(f'invalid content type for {name}: expected {content_type}')
     return attachment
+
+
+def _pass_size(total: int, start: int, step: int) -> int:
+    return 0 if total <= start else (total - start + step - 1) // step
+
+
+def _paeth(a: int, b: int, c: int) -> int:
+    p = a + b - c
+    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+    return a if pa <= pb and pa <= pc else b if pb <= pc else c
+
+
+def validate_png(data: bytes) -> None:
+    """Parse PNG chunks, CRCs and zlib raster data using only the stdlib."""
+    if not data.startswith(PNG_SIGNATURE):
+        raise ValueError('invalid PNG signature')
+    offset = len(PNG_SIGNATURE)
+    ihdr = None
+    idat_parts: list[bytes] = []
+    saw_idat = False
+    idat_ended = False
+    saw_iend = False
+    while offset < len(data):
+        if offset + 12 > len(data):
+            raise ValueError('truncated PNG chunk')
+        length = struct.unpack('>I', data[offset:offset + 4])[0]
+        kind = data[offset + 4:offset + 8]
+        payload_start = offset + 8
+        payload_end = payload_start + length
+        chunk_end = payload_end + 4
+        if chunk_end > len(data):
+            raise ValueError('truncated PNG payload')
+        payload = data[payload_start:payload_end]
+        expected_crc = struct.unpack('>I', data[payload_end:chunk_end])[0]
+        actual_crc = binascii.crc32(kind)
+        actual_crc = binascii.crc32(payload, actual_crc) & 0xffffffff
+        if actual_crc != expected_crc:
+            raise ValueError('invalid PNG chunk CRC')
+        if ihdr is None and kind != b'IHDR':
+            raise ValueError('PNG must start with IHDR')
+        if kind == b'IHDR':
+            if ihdr is not None or length != 13 or offset != len(PNG_SIGNATURE):
+                raise ValueError('invalid PNG IHDR')
+            ihdr = struct.unpack('>IIBBBBB', payload)
+        elif kind == b'IDAT':
+            if ihdr is None or idat_ended:
+                raise ValueError('invalid PNG IDAT ordering')
+            saw_idat = True
+            idat_parts.append(payload)
+        else:
+            if saw_idat:
+                idat_ended = True
+            if kind == b'IEND':
+                if length != 0 or not saw_idat:
+                    raise ValueError('invalid PNG IEND')
+                saw_iend = True
+                offset = chunk_end
+                break
+        offset = chunk_end
+    if ihdr is None or not saw_iend or offset != len(data):
+        raise ValueError('incomplete PNG image')
+
+    width, height, bit_depth, color_type, compression, filter_method, interlace = ihdr
+    if not 0 < width <= 32768 or not 0 < height <= 32768:
+        raise ValueError('invalid PNG dimensions')
+    if color_type not in PNG_CHANNELS or bit_depth not in PNG_DEPTHS[color_type]:
+        raise ValueError('unsupported PNG color/depth combination')
+    if compression != 0 or filter_method != 0 or interlace not in (0, 1):
+        raise ValueError('unsupported PNG encoding')
+
+    channels = PNG_CHANNELS[color_type]
+    passes = [(width, height)] if interlace == 0 else [
+        (_pass_size(width, x, dx), _pass_size(height, y, dy)) for x, y, dx, dy in ADAM7
+    ]
+    raster_layout: list[tuple[int, int]] = []
+    decoded_size = 0
+    for pass_width, pass_height in passes:
+        if pass_width == 0 or pass_height == 0:
+            continue
+        row_bytes = (pass_width * channels * bit_depth + 7) // 8
+        raster_layout.append((row_bytes, pass_height))
+        decoded_size += (row_bytes + 1) * pass_height
+    if decoded_size <= 0 or decoded_size > MAX_DECODED_PNG:
+        raise ValueError('PNG decoded raster exceeds verification limit')
+
+    inflater = zlib.decompressobj()
+    raw = inflater.decompress(b''.join(idat_parts), decoded_size + 1)
+    if inflater.unconsumed_tail or len(raw) > decoded_size:
+        raise ValueError('PNG raster exceeds declared dimensions')
+    raw += inflater.flush()
+    if not inflater.eof or inflater.unused_data or len(raw) != decoded_size:
+        raise ValueError('corrupt or truncated PNG raster')
+
+    position = 0
+    bytes_per_pixel = max(1, (channels * bit_depth + 7) // 8)
+    for row_bytes, pass_height in raster_layout:
+        previous = bytearray(row_bytes)
+        for _ in range(pass_height):
+            filter_type = raw[position]
+            position += 1
+            if filter_type > 4:
+                raise ValueError('invalid PNG row filter')
+            encoded = raw[position:position + row_bytes]
+            position += row_bytes
+            decoded = bytearray(row_bytes)
+            for index, value in enumerate(encoded):
+                left = decoded[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+                above = previous[index]
+                upper_left = previous[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+                if filter_type == 0:
+                    decoded[index] = value
+                elif filter_type == 1:
+                    decoded[index] = (value + left) & 0xff
+                elif filter_type == 2:
+                    decoded[index] = (value + above) & 0xff
+                elif filter_type == 3:
+                    decoded[index] = (value + ((left + above) // 2)) & 0xff
+                else:
+                    decoded[index] = (value + _paeth(left, above, upper_left)) & 0xff
+            previous = decoded
+    if position != len(raw):
+        raise ValueError('PNG raster length mismatch')
 
 
 def verify(report: dict, root: Path, required: dict | None = None) -> dict:
@@ -90,8 +221,8 @@ def verify(report: dict, root: Path, required: dict | None = None) -> dict:
             data = attachment_bytes(attachment, root)
             kind = attachment['contentType']
             name = attachment['name']
-            if kind == 'image/png' and not data.startswith(b'\x89PNG\r\n\x1a\n'):
-                raise ValueError('invalid PNG evidence')
+            if kind == 'image/png':
+                validate_png(data)
             if kind == 'application/json':
                 json.loads(data)
             if name == 'trace':
@@ -121,7 +252,7 @@ def main() -> int:
         (evidence / 'evidence-manifest.json').write_text(json.dumps(result, indent=2) + '\n')
         print('FABUSHI_UI_EVIDENCE_VERIFIED', len(result['journeys']))
         return 0
-    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile, zlib.error, subprocess.SubprocessError) as error:
         print('UI evidence incomplete:', type(error).__name__, str(error))
         return 1
 
