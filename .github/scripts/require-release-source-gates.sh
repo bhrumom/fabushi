@@ -20,10 +20,10 @@ case "$RELEASE_TARGET" in
     if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Native iOS'); fi
     ;;
   android)
-    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Native mobile result'); fi
+    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Native Android'); fi
     ;;
   both)
-    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Electron desktop result' 'Electron macOS' 'Electron Windows' 'Native mobile result' 'Native iOS'); fi
+    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Electron desktop result' 'Electron macOS' 'Electron Windows' 'Native Android' 'Native iOS'); fi
     ;;
   *)
     echo "Unsupported RELEASE_TARGET '$RELEASE_TARGET'." >&2

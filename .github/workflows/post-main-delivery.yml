@@ -52,8 +52,9 @@ jobs:
           grep -F 'run-name: Post-main source=' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'actions/runs/$ELECTRON_RUN_ID' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'post-main-source-binding.json' .github/workflows/post-main-delivery.yml >/dev/null
-          grep -F 'Native mobile result' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'Native Android' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'Native iOS' .github/workflows/post-main-delivery.yml >/dev/null
+          ! grep -F 'Native mobile result' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F -- '--paginate --slurp' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'map(.check_runs) | add' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'run-id:' .github/workflows/post-main-delivery.yml >/dev/null
@@ -153,7 +154,7 @@ jobs:
           set -euo pipefail
           deadline=$((SECONDS + 7200))
           native_run_id=''
-          required_checks=('Native mobile result' 'Native iOS')
+          required_checks=('Native Android' 'Native iOS')
           while [ "$SECONDS" -lt "$deadline" ]; do
             # A busy main SHA can have more than 100 check-runs. Fetch every page so
             # release gating cannot miss successful native checks outside page one.
@@ -178,7 +179,7 @@ jobs:
             done
             if [ "$all_done" = true ]; then
               echo "native_run_id=$native_run_id" >> "$GITHUB_OUTPUT"
-              echo "- Native mobile result: success" >> "$GITHUB_STEP_SUMMARY"
+              echo "- Native Android: success" >> "$GITHUB_STEP_SUMMARY"
               echo "- Native iOS: success" >> "$GITHUB_STEP_SUMMARY"
               echo "- Native workflow run: ${native_run_id:-unknown}" >> "$GITHUB_STEP_SUMMARY"
               exit 0
