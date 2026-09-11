@@ -43,6 +43,15 @@ def attachment_bytes(attachment: dict, root: Path) -> bytes:
     return value
 
 
+def require_attachment(by_name: dict[str, dict], name: str, content_type: str) -> dict:
+    attachment = by_name.get(name)
+    if attachment is None:
+        raise ValueError(f'missing required attachment: {name}')
+    if attachment.get('contentType') != content_type:
+        raise ValueError(f'invalid content type for {name}: expected {content_type}')
+    return attachment
+
+
 def verify(report: dict, root: Path, required: dict | None = None) -> dict:
     required = CHECKPOINTS if required is None else required
     stats = report['stats']
@@ -65,27 +74,33 @@ def verify(report: dict, root: Path, required: dict | None = None) -> dict:
         if len(attempts) != 1 or attempts[0].get('status') != 'passed' or attempts[0].get('retry') != 0:
             raise ValueError('not a first-attempt pass')
         attachments = attempts[0]['attachments']
-        names = {a['name'] for a in attachments}
+        by_name: dict[str, dict] = {}
+        for attachment in attachments:
+            name = attachment.get('name')
+            if not isinstance(name, str) or not name or name in by_name:
+                raise ValueError('invalid or duplicate attachment name')
+            by_name[name] = attachment
         for checkpoint in required[title]:
-            if not {checkpoint + '.png', checkpoint + '.json'} <= names:
-                raise ValueError('step screenshot or semantic snapshot is missing')
-        if not {'video', 'trace'} <= names:
-            raise ValueError('whole-journey video or trace is missing')
+            require_attachment(by_name, checkpoint + '.png', 'image/png')
+            require_attachment(by_name, checkpoint + '.json', 'application/json')
+        require_attachment(by_name, 'video', 'video/webm')
+        require_attachment(by_name, 'trace', 'application/zip')
         digests = []
         for attachment in attachments:
             data = attachment_bytes(attachment, root)
             kind = attachment['contentType']
+            name = attachment['name']
             if kind == 'image/png' and not data.startswith(b'\x89PNG\r\n\x1a\n'):
                 raise ValueError('invalid PNG evidence')
             if kind == 'application/json':
                 json.loads(data)
-            if attachment['name'] == 'trace':
+            if name == 'trace':
                 with zipfile.ZipFile(io.BytesIO(data)) as archive:
                     if not any(n.endswith('.trace') for n in archive.namelist()):
                         raise ValueError('trace archive has no action trace')
-            if attachment['name'] == 'video' and not data.startswith(b'\x1a\x45\xdf\xa3'):
+            if name == 'video' and not data.startswith(b'\x1a\x45\xdf\xa3'):
                 raise ValueError('invalid WebM evidence')
-            digests.append({'name': attachment['name'], 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+            digests.append({'name': name, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
         result.append({'title': title, 'duration_ms': attempts[0]['duration'], 'attachments': digests})
     return {'schema': 'fabushi.ui-evidence.v1', 'status': 'passed', 'journeys': result,
             'scope': 'registered real-renderer presentation journeys only', 'full_product_acceptance': False}
