@@ -46,15 +46,23 @@ Status: `implemented-on-branch`
 Acceptance:
 - selector consumes changed paths and emits stable test groups;
 - canonical push/manual always select full suite;
+- merge-queue revalidation always selects full suite;
 - workspace/shared/native/unknown inputs fall back to full suite;
 - modeled leaf changes select only required consumer groups;
 - selector has deterministic unit tests;
-- selection reason/groups are written to GitHub Step Summary.
+- selection reason/groups are written to GitHub Step Summary;
+- changes to the shared `tools/fabushi-test/suites.json` registry fail safe to full selection;
+- main/merge-group runs use exact-SHA concurrency and cannot be cancelled by a later accepted SHA.
 
 Implementation:
 - `scripts/select-mahayana-fast-tests.py`
 - `scripts/tests/test_select_mahayana_fast_tests.py`
 - `.github/workflows/mahayana-fast-checks.yml`
+
+Continuation evidence (2026-09-11):
+- implementation commit `b4da137b509d0da921038b40cd5aca1a4fa2cd0a` adds `merge_group: checks_requested`, exact-SHA concurrency for non-PR events, and registry-triggered full fallback;
+- selector unit coverage is now 13 deterministic cases, including merge-group full fallback and shared-suite-registry full fallback;
+- GitHub Actions evidence for the new head is still required; absence of a surfaced run is not treated as success.
 
 ### FCM-019.3 — Preserve Core/UI separation
 
@@ -107,6 +115,12 @@ Acceptance:
 ## Current branch
 
 - `ci/fcm-019-shopify-fast-automation-20260911`
+
+## Current dependency / blocker
+
+- PR #2513 is intentionally stacked behind PR #2503 (`codex/fcm-cli-first-test-loop-20260911`).
+- PR #2503 current exact head `d1019ccc7bbc393a9d26061572ece3d43df939f5` has green CI/product gates, but a fresh independent review of that exact head is still required before protected enqueue; older-head review results are not sufficient.
+- #2513 must be synchronized onto the eventual accepted canonical main from #2503 before it can be marked ready or merged.
 
 ## Safety / fail-closed rules
 
