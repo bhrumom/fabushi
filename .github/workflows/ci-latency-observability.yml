@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Query recent CI runs and calculate SLOs
+      - name: Query real validation surfaces and calculate SLOs
         uses: actions/github-script@v7
         with:
           script: |
@@ -32,25 +32,62 @@ jobs:
             const path = require('path');
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const sampleLimit = 50;
+            const sampleLimitPerSurface = 30;
             const windowMs = 14 * 24 * 60 * 60 * 1000;
             const cutoff = Date.now() - windowMs;
 
-            const canonicalJobs = new Set([
-              'Frontend checks',
-              'Worker checks',
-              'MCP plugin contracts',
-              'Canonical architecture guardrails',
-              'Electron Feature Host contract',
-            ]);
-
-            const budgets = {
-              'fast-path': 30,
-              'workflow-governance': 120,
-              'single-domain': 900,
-              'multi-domain': 1200,
-              'full-canonical': 1800,
-            };
+            const surfaces = [
+              {
+                key: 'required-pr-ci',
+                workflow: 'ci.yml',
+                events: ['pull_request'],
+                budget_seconds: 180,
+              },
+              {
+                key: 'required-merge-queue',
+                workflow: 'ci.yml',
+                events: ['merge_group'],
+                budget_seconds: 180,
+              },
+              {
+                key: 'mahayana-pr-fast',
+                workflow: 'mahayana-fast-checks.yml',
+                events: ['pull_request'],
+                budget_seconds: 600,
+              },
+              {
+                key: 'electron-pr-fast',
+                workflow: 'electron-desktop.yml',
+                events: ['pull_request'],
+                budget_seconds: 600,
+              },
+              {
+                key: 'native-pr-fast',
+                workflow: 'native-mobile.yml',
+                events: ['pull_request'],
+                budget_seconds: 600,
+              },
+              {
+                key: 'canonical-desktop',
+                workflow: 'electron-desktop.yml',
+                events: ['push'],
+                branch: 'main',
+                budget_seconds: 1800,
+              },
+              {
+                key: 'canonical-mobile',
+                workflow: 'native-mobile.yml',
+                events: ['push'],
+                branch: 'main',
+                budget_seconds: 1800,
+              },
+              {
+                key: 'macos-packaged-interactive',
+                workflow: 'macos-interactive-app-e2e.yml',
+                events: ['release', 'workflow_dispatch'],
+                budget_seconds: 1800,
+              },
+            ];
 
             const percentile = (values, p) => {
               if (!values.length) return null;
@@ -59,65 +96,56 @@ jobs:
               return sorted[index];
             };
 
-            const bucketFor = (selected) => {
-              if (selected.length === 0) return 'fast-path';
-              if (selected.length === 1 && selected[0] === 'Canonical architecture guardrails') {
-                return 'workflow-governance';
-              }
-              if (selected.length >= canonicalJobs.size) return 'full-canonical';
-              if (selected.length === 1) return 'single-domain';
-              return 'multi-domain';
-            };
-
-            const { data } = await github.rest.actions.listWorkflowRuns({
-              owner,
-              repo,
-              workflow_id: 'ci.yml',
-              status: 'completed',
-              per_page: 100,
-            });
-
-            const candidates = data.workflow_runs
-              .filter((run) => new Date(run.created_at).getTime() >= cutoff)
-              .filter((run) => run.run_started_at && run.updated_at)
-              .filter((run) => !['cancelled', 'skipped'].includes(run.conclusion || ''))
-              .slice(0, sampleLimit);
-
-            const samples = [];
-            for (const run of candidates) {
-              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+            const allRunsByWorkflow = new Map();
+            const loadWorkflowRuns = async (workflow) => {
+              if (allRunsByWorkflow.has(workflow)) return allRunsByWorkflow.get(workflow);
+              const { data } = await github.rest.actions.listWorkflowRuns({
                 owner,
                 repo,
-                run_id: run.id,
+                workflow_id: workflow,
+                status: 'completed',
                 per_page: 100,
               });
-              const selected = jobs
-                .filter((job) => canonicalJobs.has(job.name) && job.conclusion !== 'skipped')
-                .map((job) => job.name)
-                .sort();
-              const started = new Date(run.run_started_at).getTime();
-              const created = new Date(run.created_at).getTime();
-              const completed = new Date(run.updated_at).getTime();
-              if (![started, created, completed].every(Number.isFinite)) continue;
-              samples.push({
-                run_id: run.id,
-                run_number: run.run_number,
-                event: run.event,
-                conclusion: run.conclusion,
-                head_sha: run.head_sha,
-                html_url: run.html_url,
-                bucket: bucketFor(selected),
-                selected_jobs: selected,
-                queue_seconds: Math.max(0, Math.round((started - created) / 1000)),
-                duration_seconds: Math.max(0, Math.round((completed - started) / 1000)),
-                created_at: run.created_at,
-              });
+              allRunsByWorkflow.set(workflow, data.workflow_runs);
+              return data.workflow_runs;
+            };
+
+            const samples = [];
+            for (const surface of surfaces) {
+              const runs = await loadWorkflowRuns(surface.workflow);
+              const candidates = runs
+                .filter((run) => new Date(run.created_at).getTime() >= cutoff)
+                .filter((run) => run.run_started_at && run.updated_at)
+                .filter((run) => !['cancelled', 'skipped'].includes(run.conclusion || ''))
+                .filter((run) => surface.events.includes(run.event))
+                .filter((run) => !surface.branch || run.head_branch === surface.branch)
+                .slice(0, sampleLimitPerSurface);
+
+              for (const run of candidates) {
+                const started = new Date(run.run_started_at).getTime();
+                const created = new Date(run.created_at).getTime();
+                const completed = new Date(run.updated_at).getTime();
+                if (![started, created, completed].every(Number.isFinite)) continue;
+                samples.push({
+                  surface: surface.key,
+                  workflow: surface.workflow,
+                  run_id: run.id,
+                  run_number: run.run_number,
+                  event: run.event,
+                  conclusion: run.conclusion,
+                  head_branch: run.head_branch,
+                  head_sha: run.head_sha,
+                  html_url: run.html_url,
+                  queue_seconds: Math.max(0, Math.round((started - created) / 1000)),
+                  duration_seconds: Math.max(0, Math.round((completed - started) / 1000)),
+                  created_at: run.created_at,
+                });
+              }
             }
 
-            const bucketNames = ['fast-path', 'workflow-governance', 'single-domain', 'multi-domain', 'full-canonical'];
             const groups = {};
-            for (const bucket of bucketNames) {
-              const rows = samples.filter((sample) => sample.bucket === bucket);
+            for (const surface of surfaces) {
+              const rows = samples.filter((sample) => sample.surface === surface.key);
               const durations = rows.map((sample) => sample.duration_seconds);
               const queues = rows.map((sample) => sample.queue_seconds);
               const p50 = percentile(durations, 50);
@@ -125,26 +153,36 @@ jobs:
               const queueP50 = percentile(queues, 50);
               const queueP95 = percentile(queues, 95);
               const minSamples = 5;
-              groups[bucket] = {
+              groups[surface.key] = {
+                workflow: surface.workflow,
+                events: surface.events,
+                branch: surface.branch || null,
                 samples: rows.length,
                 p50_seconds: p50,
                 p95_seconds: p95,
                 queue_p50_seconds: queueP50,
                 queue_p95_seconds: queueP95,
-                slo_budget_seconds: budgets[bucket],
-                slo_state: rows.length < minSamples ? 'insufficient-samples' : (p95 <= budgets[bucket] ? 'within-budget' : 'over-budget'),
+                slo_budget_seconds: surface.budget_seconds,
+                slo_state: rows.length < minSamples
+                  ? 'insufficient-samples'
+                  : (p95 <= surface.budget_seconds ? 'within-budget' : 'over-budget'),
               };
             }
 
+            const slowest = [...samples]
+              .sort((a, b) => b.duration_seconds - a.duration_seconds)
+              .slice(0, 20);
+
             const report = {
-              schema_version: 1,
+              schema_version: 2,
               generated_at: new Date().toISOString(),
               repository: `${owner}/${repo}`,
-              source_workflow: '.github/workflows/ci.yml',
               lookback_days: 14,
-              sample_limit: sampleLimit,
+              sample_limit_per_surface: sampleLimitPerSurface,
+              source_workflows: [...new Set(surfaces.map((surface) => surface.workflow))],
               observed_samples: samples.length,
               groups,
+              slowest_samples: slowest,
               samples,
             };
 
@@ -152,31 +190,28 @@ jobs:
             fs.mkdirSync(outDir, { recursive: true });
             fs.writeFileSync(path.join(outDir, 'ci-latency-report.json'), JSON.stringify(report, null, 2) + '\n');
 
-            const csvEscape = (value) => {
-              const text = Array.isArray(value) ? value.join('|') : String(value ?? '');
-              return `"${text.replaceAll('"', '""')}"`;
-            };
-            const header = ['run_id','run_number','event','conclusion','bucket','duration_seconds','queue_seconds','selected_jobs','head_sha','created_at','html_url'];
+            const csvEscape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+            const header = ['surface','workflow','run_id','run_number','event','conclusion','duration_seconds','queue_seconds','head_branch','head_sha','created_at','html_url'];
             const csv = [header.join(',')]
               .concat(samples.map((sample) => header.map((key) => csvEscape(sample[key])).join(',')))
               .join('\n') + '\n';
             fs.writeFileSync(path.join(outDir, 'ci-latency-samples.csv'), csv);
 
-            const table = [
-              [
-                { data: 'Validation surface', header: true },
-                { data: 'N', header: true },
-                { data: 'P50', header: true },
-                { data: 'P95', header: true },
-                { data: 'Queue P95', header: true },
-                { data: 'Budget', header: true },
-                { data: 'SLO', header: true },
-              ],
-            ];
-            for (const bucket of bucketNames) {
-              const group = groups[bucket];
+            const table = [[
+              { data: 'Validation surface', header: true },
+              { data: 'Workflow', header: true },
+              { data: 'N', header: true },
+              { data: 'P50', header: true },
+              { data: 'P95', header: true },
+              { data: 'Queue P95', header: true },
+              { data: 'Budget', header: true },
+              { data: 'SLO', header: true },
+            ]];
+            for (const surface of surfaces) {
+              const group = groups[surface.key];
               table.push([
-                bucket,
+                surface.key,
+                surface.workflow,
                 String(group.samples),
                 group.p50_seconds == null ? 'n/a' : `${group.p50_seconds}s`,
                 group.p95_seconds == null ? 'n/a' : `${group.p95_seconds}s`,
@@ -187,10 +222,10 @@ jobs:
             }
 
             await core.summary
-              .addHeading('FAB-P0003 CI latency SLO')
-              .addRaw(`Measured ${samples.length} completed CI runs from the last 14 days (limit ${sampleLimit}).\n\n`)
+              .addHeading('FAB-P0003 real validation-surface latency SLO')
+              .addRaw(`Measured ${samples.length} completed workflow runs from the last 14 days, up to ${sampleLimitPerSurface} samples per validation surface.\n\n`)
               .addTable(table)
-              .addRaw('\nSLO evaluation is intentionally soft: latency telemetry never bypasses or replaces required CI checks.\n')
+              .addRaw('\nLatency telemetry is intentionally soft: an SLO miss highlights a bottleneck but never bypasses or replaces correctness, security, packaged E2E, or release gates.\n')
               .write();
 
             core.setOutput('report_dir', outDir);
