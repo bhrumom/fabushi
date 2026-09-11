@@ -23,6 +23,7 @@ SELF_PATHS = {
     "scripts/check-mahayana-source-boundary.py",
     "scripts/select-mahayana-fast-tests.py",
     "scripts/tests/test_select_mahayana_fast_tests.py",
+    "tools/fabushi-test/suites.json",
 }
 
 GROUPS = (
