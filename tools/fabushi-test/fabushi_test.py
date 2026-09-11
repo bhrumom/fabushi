@@ -106,7 +106,35 @@ def make_plan(suites: list[dict[str, Any]], layer: str, selected: list[str]) -> 
             "full_product_acceptance": False}
 
 
-def verify_ci(root: Path, expected: str) -> str:
+def untracked_paths(root: Path, allowed_roots: list[Path] | tuple[Path, ...] = ()) -> list[str]:
+    """Return non-ignored untracked paths outside explicitly owned evidence roots."""
+    repo = root.resolve()
+    allowed: list[Path] = []
+    for candidate in allowed_roots:
+        resolved = candidate.resolve()
+        if not resolved.is_relative_to(repo) or resolved == repo:
+            raise ValueError("allowed untracked root must be a repository subdirectory")
+        allowed.append(resolved)
+    raw = subprocess.check_output(
+        ["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=repo
+    )
+    unexpected: list[str] = []
+    for item in raw.split(b"\0"):
+        if not item:
+            continue
+        relative = item.decode("utf-8", errors="surrogateescape")
+        resolved = (repo / relative).resolve()
+        if not resolved.is_relative_to(repo):
+            unexpected.append(relative)
+            continue
+        if any(resolved == owned or resolved.is_relative_to(owned) for owned in allowed):
+            continue
+        unexpected.append(relative)
+    return unexpected
+
+
+def verify_ci(root: Path, expected: str,
+              allowed_untracked: list[Path] | tuple[Path, ...] = ()) -> str:
     if os.environ.get("GITHUB_ACTIONS") != "true":
         raise ValueError("product tests must run in GitHub Actions; local plan/self-tests only")
     if not re.fullmatch(r"[0-9a-f]{40}", expected):
@@ -116,6 +144,10 @@ def verify_ci(root: Path, expected: str) -> str:
         raise ValueError("checked-out SHA does not match requested test source")
     subprocess.run(["git", "diff", "--exit-code", "HEAD", "--"], cwd=root,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    unexpected = untracked_paths(root, allowed_untracked)
+    if unexpected:
+        preview = ", ".join(unexpected[:20])
+        raise ValueError(f"untracked files invalidate exact-source provenance: {preview}")
     return actual
 
 
@@ -250,10 +282,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "plan":
             print(json.dumps(plan, ensure_ascii=False, indent=2))
             return 0
+        result_root = (root / ".fast-test-results").resolve()
+        if output != result_root and not output.is_relative_to(result_root):
+            raise ValueError("test result output must stay under .fast-test-results")
         source = verify_ci(root, args.expect_sha)
         if output.exists() and any(output.iterdir()):
             raise ValueError("results directory must be empty; never overwrite previous evidence")
         output.mkdir(parents=True, exist_ok=True)
+        owned_untracked = [output]
+        if args.layer == "ui":
+            owned_untracked.append((root / ".fast-ui-evidence").resolve())
         report = {**plan, "source_sha": source, "run_id": os.environ.get("GITHUB_RUN_ID"),
                   "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
                   "status": "running", "results": []}
@@ -262,12 +300,24 @@ def main(argv: list[str] | None = None) -> int:
         for suite in plan["suites"]:
             result = run_suite(suite, root, output)
             report["results"].append(result)
+            try:
+                verify_ci(root, source, owned_untracked)
+            except (ValueError, subprocess.SubprocessError) as error:
+                result["status"] = "failed"
+                prior = result.get("reason")
+                provenance = redact(str(error))
+                result["reason"] = (prior + "; " if prior else "") + provenance
+                report["provenance_error"] = provenance
+                print(f"{suite['id']}: failed provenance ({result['duration_seconds']}s)", flush=True)
+                atomic_json(output / "results.json", report)
+                break
             print(f"{suite['id']}: {result['status']} ({result['duration_seconds']}s)", flush=True)
             atomic_json(output / "results.json", report)
-        passed = all(r["status"] == "passed" for r in report["results"])
-        # A test that changes tracked source or a generated lockfile invalidates provenance.
+        passed = len(report["results"]) == len(plan["suites"]) and all(
+            r["status"] == "passed" for r in report["results"]
+        )
         try:
-            verify_ci(root, source)
+            verify_ci(root, source, owned_untracked)
         except (ValueError, subprocess.SubprocessError) as error:
             passed = False
             report["provenance_error"] = redact(str(error))
