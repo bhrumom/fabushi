@@ -47,3 +47,17 @@
 | FCM-014 | Release Fabushi 1.2.2 across canonical desktop/mobile/web/backend channels | yes | protected merge + exact-main platform gates + immutable releases + store delivery evidence + runtime verification | in-progress |
 | FCM-015 | Release Fabushi 1.2.6 from canonical main and repair false Linux AppImage blockmap gate | yes | all intake PRs dispositioned; protected merge; exact-main required gates; v1.2.6 five-platform assets; supported delivery channels; install/upgrade/runtime verification | in-progress |
 | FCM-016 | Release Fabushi 1.2.7 with canonical automatic store delivery | yes | all intake PRs dispositioned; protected merge; exact-main required gates; immutable five-platform Release; Android GitHub/Google Play + Apple Store delivery; production deploy; install/upgrade/runtime verification | in-progress |
+
+## 2026-09-11 CLI-first decoupled continuation
+
+Authority: `tasks/FCM-FAST-20260911.md`; PR #2503. Historical task states above are not silently closed by these new selected-suite results.
+
+| Task ID | Atomic task | Required | Acceptance / evidence | Status |
+|---|---|---:|---|---|
+| FCM-FAST-20260911/FAST-01 | Fail-closed test controller and registry | yes | exact source, nonempty known selection, bounded execution, retained failures; 11 controller tests in run 34560343187 | branch-verified; delivery pending |
+| FCM-FAST-20260911/FAST-02 | Actual Rust core and Debug CLI suites independent of UI | yes | seven named suites pass; 180 Cargo test cases plus real driver lifecycle; clean --locked source in 34560343187 | branch-verified subset; exhaustive coverage pending |
+| FCM-FAST-20260911/FAST-03 | Actual-renderer headless semantics with complete per-journey evidence | yes | three UI journeys pass; standalone JSON retention repair and strict checkpoint/media/trace validator awaiting fresh CI | in-progress |
+| FCM-FAST-20260911/FAST-04 | Bounded authorized AI repair execution | yes | actual executor, retained regression and durable retry state; current JSON is handoff only | pending executor integration |
+| FCM-FAST-20260911/FAST-05 | Executable Agent/runbook and factual records | yes | root AGENTS append, runbook, source/ADR/current task and evidence on PR branch; canonical readback still required | implemented |
+| FCM-FAST-20260911/FAST-06 | Current PR intake reconciliation | yes | 41 open PRs inventoried; exact diff/review/rules/queue and no-lost-change disposition still required | in-progress |
+| FCM-FAST-20260911/FAST-07 | Verified strictly newer full-platform test release | yes | protected main, exact-source native/package/web/extension gates and complete evidence | pending |

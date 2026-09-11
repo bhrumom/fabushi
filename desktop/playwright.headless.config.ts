@@ -13,7 +13,8 @@ export default defineConfig({
   retries: 0,
   workers: 2,
   outputDir: '../.fast-ui-evidence/results',
-  reporter: [['list'], ['json', { outputFile: '../.fast-ui-evidence/report/results.json' }],
+  // HTML reporter recreates its directory: keep machine JSON outside it.
+  reporter: [['list'], ['json', { outputFile: '../.fast-ui-evidence/results.json' }],
     ['html', { outputFolder: '../.fast-ui-evidence/report', open: 'never' }]],
   use: {
     browserName: 'chromium',
