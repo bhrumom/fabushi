@@ -44,6 +44,14 @@ class SelectMahayanaFastTests(unittest.TestCase):
         self.assertFalse(selected.full_suite)
         self.assertEqual(("protocol_bridge", "host_ffi"), selected.groups)
 
+    def test_product_client_dependency_on_host_protocol_is_selected(self):
+        selected = selector.select(
+            "pull_request",
+            ["third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs"],
+        )
+        self.assertFalse(selected.full_suite)
+        self.assertEqual(("auth_product", "protocol_bridge", "host_ffi"), selected.groups)
+
     def test_feature_host_direct_harness_dependencies_include_host_consumer(self):
         for crate in ("mahayana-harness", "mahayana-harness-services"):
             with self.subTest(crate=crate):
