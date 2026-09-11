@@ -86,6 +86,7 @@
 - Merge SHA: `e218e602130ed9a1e927f55c89faa175cdb368f0`
 - Merged at: `2026-09-11T07:46:30Z`; merge-group CI run `34575923650` passed.
 - Canonical-main readback: `main@e218e602` contains the developer catalog migration and APP-pay configuration; push-triggered exact-main delivery runs remain in progress/queued at this update.
+- Records follow-up PR: `#2505`, head `4e43cd618a7a457cc52fb14f0729df7fdfbd338a`, merged as `eefc71fa0d548a9b44ba52c7c8689f3a3937fb7a` at `2026-09-11T07:54:57Z`.
 
 ## Evidence plan
 
@@ -104,4 +105,4 @@
 
 ## Next action
 
-PR #2504 已合并到 canonical `main@e218e602` 并完成初步文件回读。下一步是等待/检查该 SHA 的 exact-main 控制面、打包应用、模拟用户 E2E 及视觉/调试证据，并在必要时发布可追溯 Release；同时保持 Google/Apple/Stripe/支付宝的外部资格门禁 fail-closed。Keep this task `IN_PROGRESS` until the required post-main gates and external activation evidence are separately satisfied.
+PR #2504 已合并到 canonical `main@e218e602`，记录跟进 PR #2505 已合并到 `main@eefc71fa` 并完成回读。下一步是等待/检查产品合并 SHA 的 exact-main 控制面、打包应用、模拟用户 E2E 及视觉/调试证据，并在必要时发布可追溯 Release；同时保持 Google/Apple/Stripe/支付宝的外部资格门禁 fail-closed。Keep this task `IN_PROGRESS` until the required post-main gates and external activation evidence are separately satisfied.
