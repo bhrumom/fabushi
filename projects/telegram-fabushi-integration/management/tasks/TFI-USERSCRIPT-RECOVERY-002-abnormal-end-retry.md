@@ -5,7 +5,7 @@
 - Task ID: `TFI-USERSCRIPT-RECOVERY-002`
 - Status: `IN_PROGRESS`
 - Started: `2026-09-11T20:25:00+08:00`
-- Updated: `2026-09-11T20:34:00+08:00`
+- Updated: `2026-09-11T20:37:00+08:00`
 - Source: `source/2026-09-11-userscript-abnormal-end-retry.md`
 - Requirements: `TFI-USR-AR-R01`–`TFI-USR-AR-R05`
 - Source baseline: userscript `main@9ace3f40858e0c8b56e87b39971f8b6741441200` (`2.9.3`)
@@ -38,7 +38,7 @@ Reliably detect a bound ChatGPT conversation that has stably stopped without a f
 - [x] `TFI-USR-AR-A05`: Source syntax and full regression CI pass on PR head and exact canonical source main.
 - [x] `TFI-USR-AR-A06`: Monotonically newer release is published from the accepted source SHA.
 - [ ] `TFI-USR-AR-A07`: Live Chrome evidence proves missing Stop/final/card → automatic fresh Chat → original prompt resend, with screenshots/video/diagnostics.
-- [ ] `TFI-USR-AR-A08`: Parent records merge through the protected queue and are read back from canonical main.
+- [x] `TFI-USR-AR-A08`: Parent records merge through the protected queue and are read back from canonical main.
 
 ## Open-source-first survey
 
@@ -61,6 +61,10 @@ Reliably detect a bound ChatGPT conversation that has stably stopped without a f
 - Canonical source main: `db663373e88b603350c24a73aedb991835509b2a`
 - Exact-main CI: run `34599239366`, job `103262227420`, PASS
 - Release: `v2.9.4`, release ID `387022144`, target `db663373e88b603350c24a73aedb991835509b2a`, `.user.js` asset 95,716 bytes
+- Parent record commit: `4bed810c80ec63499ade4db5c4ebb67273ee2ae2`
+- Parent PR: `bhrumom/fabushi#2511`; all five PR checks PASS; merge-group run `34599706374` PASS
+- Parent canonical main readback: `2e5151ed38a29130f6f1165639430a825dc2f2ab`
+- Live installed-version readback: `2.9.3`; update to 2.9.4 remains required before A07 can run
 - Local lightweight syntax: PASS
 - Local regression: PASS, 67/67
 - Added `abnormalEndSince`: first eligible clear observation starts the clock; stable text retains it; changed text restarts it; ownership/Stop/card/final/blocker/rate-limit cancel it.
