@@ -71,6 +71,21 @@ def _paeth(a: int, b: int, c: int) -> int:
     return a if pa <= pb and pa <= pc else b if pb <= pc else c
 
 
+def _validate_indexed_row(decoded: bytearray, width: int, bit_depth: int, palette_entries: int) -> None:
+    """Reject indexed-color samples that do not resolve to a declared PLTE entry."""
+    mask = (1 << bit_depth) - 1
+    samples_per_byte = 8 // bit_depth
+    for pixel in range(width):
+        if bit_depth == 8:
+            sample = decoded[pixel]
+        else:
+            byte = decoded[pixel // samples_per_byte]
+            shift = 8 - bit_depth * ((pixel % samples_per_byte) + 1)
+            sample = (byte >> shift) & mask
+        if sample >= palette_entries:
+            raise ValueError('indexed PNG sample exceeds declared palette')
+
+
 def validate_png(data: bytes) -> None:
     """Parse PNG critical chunks, CRCs and zlib raster data using only the stdlib."""
     if not data.startswith(PNG_SIGNATURE):
@@ -141,10 +156,12 @@ def validate_png(data: bytes) -> None:
         raise ValueError('unsupported PNG color/depth combination')
     if compression != 0 or filter_method != 0 or interlace not in (0, 1):
         raise ValueError('unsupported PNG encoding')
+    palette_entries = 0
     if color_type == 3:
         if plte is None:
             raise ValueError('indexed PNG requires PLTE')
-        if len(plte) // 3 > 2 ** bit_depth:
+        palette_entries = len(plte) // 3
+        if palette_entries > 2 ** bit_depth:
             raise ValueError('indexed PNG palette exceeds bit-depth capacity')
     elif color_type in (0, 4) and plte is not None:
         raise ValueError('grayscale PNG must not contain PLTE')
@@ -153,13 +170,13 @@ def validate_png(data: bytes) -> None:
     passes = [(width, height)] if interlace == 0 else [
         (_pass_size(width, x, dx), _pass_size(height, y, dy)) for x, y, dx, dy in ADAM7
     ]
-    raster_layout: list[tuple[int, int]] = []
+    raster_layout: list[tuple[int, int, int]] = []
     decoded_size = 0
     for pass_width, pass_height in passes:
         if pass_width == 0 or pass_height == 0:
             continue
         row_bytes = (pass_width * channels * bit_depth + 7) // 8
-        raster_layout.append((row_bytes, pass_height))
+        raster_layout.append((pass_width, row_bytes, pass_height))
         decoded_size += (row_bytes + 1) * pass_height
     if decoded_size <= 0 or decoded_size > MAX_DECODED_PNG:
         raise ValueError('PNG decoded raster exceeds verification limit')
@@ -174,7 +191,7 @@ def validate_png(data: bytes) -> None:
 
     position = 0
     bytes_per_pixel = max(1, (channels * bit_depth + 7) // 8)
-    for row_bytes, pass_height in raster_layout:
+    for pass_width, row_bytes, pass_height in raster_layout:
         previous = bytearray(row_bytes)
         for _ in range(pass_height):
             filter_type = raw[position]
@@ -198,6 +215,8 @@ def validate_png(data: bytes) -> None:
                     decoded[index] = (value + ((left + above) // 2)) & 0xff
                 else:
                     decoded[index] = (value + _paeth(left, above, upper_left)) & 0xff
+            if color_type == 3:
+                _validate_indexed_row(decoded, pass_width, bit_depth, palette_entries)
             previous = decoded
     if position != len(raw):
         raise ValueError('PNG raster length mismatch')
