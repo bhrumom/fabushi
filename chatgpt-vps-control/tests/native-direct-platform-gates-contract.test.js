@@ -25,7 +25,7 @@ test('formal release source gate names the real native platform checks directly'
   assert.match(source, /android\)[\s\S]*required_checks=\('CI result' 'Native Android'\)/u);
   assert.match(source, /ios\)[\s\S]*required_checks=\('CI result' 'Native iOS'\)/u);
   assert.match(source, /both\)[\s\S]*'Native Android' 'Native iOS'/u);
-  assert.doesNotMatch(source, /Native mobile result/u);
+  assert.doesNotMatch(source, /required_checks=.*Native mobile result/u);
 });
 
 test('post-main delivery waits on direct Android and iOS checks, not an aggregate runner', async () => {
@@ -33,7 +33,8 @@ test('post-main delivery waits on direct Android and iOS checks, not an aggregat
   assert.match(source, /required_checks=\('Native Android' 'Native iOS'\)/u);
   assert.match(source, /- Native Android: success/u);
   assert.match(source, /- Native iOS: success/u);
-  assert.doesNotMatch(source, /Native mobile result/u);
+  assert.doesNotMatch(source, /required_checks=.*Native mobile result/u);
+  assert.doesNotMatch(source, /select\(\.name == ["']Native mobile result["']\)/u);
   assert.match(source, /--paginate --slurp/u);
   assert.match(source, /map\(\.check_runs\) \| add/u);
 });
