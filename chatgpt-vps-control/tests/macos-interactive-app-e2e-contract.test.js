@@ -48,6 +48,21 @@ test('macOS interactive E2E keeps the installed app as the only device-registrat
   assert.doesNotMatch(source, /run:\s*[^\n]*(?:KRIS|interactive-runner)/iu);
 });
 
+test('Action-owned semantic smoke runs after App registration and before the external full journey', async () => {
+  const source = await workflow();
+  const launch = source.indexOf('Launch installed Fabushi app and wait for App-owned registration');
+  const smoke = source.indexOf('Run Action-owned packaged App Agent semantic smoke');
+  const hold = source.indexOf('Hold for @fabushi test complete macOS journey');
+  assert.ok(launch >= 0 && smoke > launch && hold > smoke);
+  assert.match(source, /run-app-agent-ci-smoke\.mjs/u);
+  assert.match(source, /action-owned-app-agent-smoke\.json/u);
+  assert.match(source, /fabushi\.app-agent-ci-smoke\.v1/u);
+  assert.match(source, /ACTION_SMOKE_OUTCOME/u);
+  assert.match(source, /test "\$ACTION_SMOKE_OUTCOME" = success/u);
+  assert.match(source, /index\("action"\)/u);
+  assert.match(source, /index\("assert"\)/u);
+});
+
 test('macOS release resolver waits for and accepts only the exact workflow source SHA', async () => {
   const source = await workflow();
   assert.match(source, /deadline=\$\(\(SECONDS \+ 1200\)\)/u);
@@ -129,6 +144,7 @@ test('evidence upload allowlist excludes private account sessions and includes r
   assert.doesNotMatch(upload, /FABUSHI_CI_ACCOUNT_SESSION_FILE/u);
 
   assert.match(source, /macos-session\.mov/u);
+  assert.match(source, /action-owned-app-agent-smoke\.json/u);
   const collection = stepBlock(
     source,
     'Collect macOS App, device-call, Playwright, and release evidence',
@@ -138,5 +154,6 @@ test('evidence upload allowlist excludes private account sessions and includes r
   assert.match(collection, /device-calls\.jsonl/u);
   assert.match(collection, /fabushi-system\.log/u);
   assert.match(collection, /releaseTag/u);
+  assert.match(collection, /actionSmokeStatus/u);
   assert.match(collection, /report\.json/u);
 });
