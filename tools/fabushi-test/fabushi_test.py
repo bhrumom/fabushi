@@ -41,6 +41,26 @@ def contained(root: Path, value: str) -> Path:
     return path
 
 
+def cargo_selected_packages(argv: list[str]) -> list[str]:
+    packages: list[str] = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg in {"-p", "--package"}:
+            if index + 1 >= len(argv):
+                raise ValueError("cargo package selector is missing a value")
+            packages.append(argv[index + 1])
+            index += 2
+            continue
+        if arg.startswith("--package="):
+            value = arg.partition("=")[2]
+            if not value:
+                raise ValueError("cargo package selector is missing a value")
+            packages.append(value)
+        index += 1
+    return packages
+
+
 def registry(path: Path, root: Path) -> list[dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if data.get("version") != 1 or not isinstance(data.get("suites"), list) or not data["suites"]:
@@ -56,6 +76,8 @@ def registry(path: Path, root: Path) -> list[dict[str, Any]]:
         argv = suite.get("argv")
         if not isinstance(argv, list) or not argv or any(not isinstance(a, str) or not a or "\0" in a for a in argv):
             raise ValueError("command must be a nonempty argument array")
+        if argv[0] == "cargo" and "test" in argv and len(cargo_selected_packages(argv)) > 1:
+            raise ValueError(f"cargo test suite must validate one package at a time: {name}")
         if type(suite.get("timeout_seconds")) is not int or not 1 <= suite["timeout_seconds"] <= 1800:
             raise ValueError("timeout must be between 1 and 1800 seconds")
         if not contained(root, suite.get("cwd", ".")).is_dir():
