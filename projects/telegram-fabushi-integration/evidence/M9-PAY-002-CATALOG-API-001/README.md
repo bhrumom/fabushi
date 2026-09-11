@@ -11,6 +11,8 @@
 - Merged at: `2026-09-11T07:46:30Z`
 - Protected merge-group CI: run `34575923650` — success
 - Records follow-up PR: `#2505`, head `4e43cd618a7a457cc52fb14f0729df7fdfbd338a`, merged as `eefc71fa0d548a9b44ba52c7c8689f3a3937fb7a` at `2026-09-11T07:54:57Z`
+- Exact-main Native mobile blocker: run `34575968339`, iOS job `103188374206` — Swift 6 actor-isolation compile failure in an existing parity test.
+- Fix PR: `#2507`, head `1e0d691545b9d05779a52bdc6a490eaf7c048d8f` — pending protected merge and rerun.
 
 ## Planned evidence
 
@@ -20,6 +22,6 @@
 - post-main packaged application screenshots, complete video, trace, report and logs;
 - exact-main Google sync/reconciliation and deployment evidence when the Worker is published.
 
-Canonical-main readback at `main@eefc71fa` confirmed the `0021_developer_commerce_catalog_api.sql` migration, APP-pay configuration, and these task/evidence records. Push-triggered exact-main delivery runs for the product merge SHA `e218e602` are still being monitored; packaged/E2E visual evidence and Release evidence are not yet attached.
+Canonical-main readback at `main@eefc71fa` confirmed the `0021_developer_commerce_catalog_api.sql` migration, APP-pay configuration, and these task/evidence records. Push-triggered exact-main delivery for product merge SHA `e218e602` has one iOS compile blocker captured above; packaged/E2E visual evidence and Release evidence are not yet attached.
 
 No external provider approval, production credential, real charge, or completed packaged journey is claimed by this index before the corresponding live evidence is attached.
