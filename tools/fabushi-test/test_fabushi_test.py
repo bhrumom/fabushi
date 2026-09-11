@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -68,6 +69,29 @@ class ControllerTests(unittest.TestCase):
         with patch.dict(m.os.environ, {'GITHUB_ACTIONS': 'false'}):
             with self.assertRaisesRegex(ValueError, 'GitHub Actions'):
                 m.verify_ci(Path('.'), 'a' * 40)
+
+    def test_verify_ci_rejects_untracked_source_but_allows_owned_evidence(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+            (root / 'tracked.txt').write_text('base\n')
+            subprocess.run(['git', 'add', 'tracked.txt'], cwd=root, check=True)
+            subprocess.run([
+                'git', '-c', 'user.name=Fabushi Test', '-c', 'user.email=test@example.invalid',
+                'commit', '-qm', 'base'
+            ], cwd=root, check=True)
+            sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
+            with patch.dict(m.os.environ, {'GITHUB_ACTIONS': 'true'}):
+                self.assertEqual(m.verify_ci(root, sha), sha)
+                generated = root / 'generated.rs'
+                generated.write_text('// should invalidate provenance\n')
+                with self.assertRaisesRegex(ValueError, 'untracked files'):
+                    m.verify_ci(root, sha)
+                generated.unlink()
+                evidence_root = root / '.fast-test-results' / 'core'
+                evidence_root.mkdir(parents=True)
+                (evidence_root / 'results.json').write_text('{}\n')
+                self.assertEqual(m.verify_ci(root, sha, [evidence_root]), sha)
 
     def test_repair_repeat_and_budget_are_bounded(self):
         report = {'source_sha': 'a' * 40, 'results': [{'id': 'sample-test', 'status': 'failed', 'exit_code': 1}]}
