@@ -1,14 +1,30 @@
 import base64
+import binascii
 import importlib.util
 import io
 from pathlib import Path
+import struct
 import tempfile
 import unittest
 import zipfile
+import zlib
 
 spec = importlib.util.spec_from_file_location('evidence', Path(__file__).with_name('verify_ui_evidence.py'))
 evidence = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(evidence)
+
+
+def png_chunk(kind: bytes, payload: bytes) -> bytes:
+    crc = binascii.crc32(kind)
+    crc = binascii.crc32(payload, crc) & 0xffffffff
+    return struct.pack('>I', len(payload)) + kind + payload + struct.pack('>I', crc)
+
+
+def valid_png() -> bytes:
+    ihdr = struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0)
+    raster = b'\x00\x11\x22\x33\x44'
+    return (evidence.PNG_SIGNATURE + png_chunk(b'IHDR', ihdr) +
+            png_chunk(b'IDAT', zlib.compress(raster)) + png_chunk(b'IEND', b''))
 
 
 class EvidenceTests(unittest.TestCase):
@@ -16,7 +32,7 @@ class EvidenceTests(unittest.TestCase):
         archive = io.BytesIO()
         with zipfile.ZipFile(archive, 'w') as z:
             z.writestr('test.trace', '{}\n')
-        items = [('step.png', 'image/png', b'\x89PNG\r\n\x1a\nunit-fixture'),
+        items = [('step.png', 'image/png', valid_png()),
                  ('step.json', 'application/json', b'{}'),
                  ('video', 'video/webm', b'\x1a\x45\xdf\xa3unit-fixture'),
                  ('trace', 'application/zip', archive.getvalue())]
@@ -47,6 +63,19 @@ class EvidenceTests(unittest.TestCase):
             attachment['contentType'] = 'text/plain'
             with self.subTest(index=index, expected=expected), self.assertRaisesRegex(ValueError, 'invalid content type'):
                 evidence.verify(data, Path('.'), {'fixture': ['step']})
+
+    def test_truncated_png_never_passes(self):
+        data = self.fixture()
+        png = data['suites'][0]['specs'][0]['tests'][0]['results'][0]['attachments'][0]
+        png['body'] = base64.b64encode(evidence.PNG_SIGNATURE + b'unit-fixture').decode()
+        with self.assertRaises(ValueError):
+            evidence.verify(data, Path('.'), {'fixture': ['step']})
+
+    def test_corrupt_png_raster_never_passes(self):
+        image = bytearray(valid_png())
+        image[-8] ^= 1
+        with self.assertRaises(ValueError):
+            evidence.validate_png(bytes(image))
 
     def test_duplicate_attachment_name_never_passes(self):
         data = self.fixture()
