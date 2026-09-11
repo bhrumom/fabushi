@@ -5,7 +5,7 @@
 - Task ID: `TFI-USERSCRIPT-RECOVERY-004`
 - Status: `IN_PROGRESS`
 - Started: `2026-09-11T23:00:00+08:00`
-- Updated: `2026-09-11T23:30:00+08:00`
+- Updated: `2026-09-11T23:45:00+08:00`
 - Source: `source/2026-09-11-userscript-hot-reload-workspace-handoff.md`
 - Requirements: `TFI-USR-HR-R01`–`TFI-USR-HR-R05`
 - Source baseline: userscript `main@3124c0aaa4e5cbd5b0fcbff663009289c18d5d49` (`2.9.5`)
@@ -39,7 +39,7 @@ Make same-document userscript replacement atomically hand the tab workspace from
 - [x] `TFI-USR-HR-A05`: Source syntax and full lightweight regression pass on PR head and exact source main.
 - [x] `TFI-USR-HR-A06`: Monotonically newer userscript Release is published from accepted source main.
 - [ ] `TFI-USR-HR-A07`: Live Chrome readback shows one workbench instance and continuous Work → review operation.
-- [ ] `TFI-USR-HR-A08`: Parent records merge/readback through protected main.
+- [x] `TFI-USR-HR-A08`: Parent records merge/readback through protected main.
 
 ## Open-source-first survey
 
@@ -64,6 +64,8 @@ Make same-document userscript replacement atomically hand the tab workspace from
 - Exact-source-main CI: run `34614827011`, job `103314015767`, PASS.
 - Release: `v2.9.6`, release ID `387136022`, target exact source main; asset ID `557478855`, 102,370 bytes.
 - Lightweight local syntax: PASS; regression: PASS, 70/70.
+- Parent records PR: `bhrumom/fabushi#2518`, PR-head checks run `34615906329` (five required checks PASS), squash-merged.
+- Canonical parent main readback: `9548f44514ef63e23a812c9645cdf9bc048b700d`; task/source/evidence/WBS/acceptance/risk/dependency/action/status/changelog records present.
 - Bootstrap captures the prior same-window instance, awaits its shutdown, tracks the Web Lock request's released promise and only boundedly retries the original owner when replacement was proven in the same `window`.
 - Existing duplicate-tab test continues to prove a different live tab gets a distinct workspace.
 - New hot-replacement regression proves original `tabId`/task ownership, exactly one root/style, and Work final → `phase=review`, `state=queued`, old URL cleared.
@@ -77,4 +79,4 @@ Make same-document userscript replacement atomically hand the tab workspace from
 
 ## Next action
 
-Update the live browser from 2.9.3 to 2.9.6, verify exactly one workbench instance and run a continuous Work → fresh review journey; then close parent protected-main evidence.
+Update the live browser from 2.9.3 to 2.9.6, verify exactly one workbench instance and run a continuous Work → fresh review journey; keep the task `IN_PROGRESS` until the complete visual/diagnostic bundle is captured.
