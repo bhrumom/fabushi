@@ -54,6 +54,21 @@ class SelectMahayanaFastTests(unittest.TestCase):
                 self.assertFalse(selected.full_suite)
                 self.assertEqual(("harness", "host_ffi"), selected.groups)
 
+    def test_native_agent_engine_dependency_chain_includes_mcp_agent(self):
+        for crate in (
+            "mahayana-orchestrator",
+            "mahayana-workspace-engine",
+            "mahayana-model",
+            "mahayana-native-engine",
+        ):
+            with self.subTest(crate=crate):
+                selected = selector.select(
+                    "pull_request",
+                    [f"third_party/mahayana/mahayana-rs/{crate}/src/lib.rs"],
+                )
+                self.assertFalse(selected.full_suite)
+                self.assertEqual(("kernel_engine", "mcp_agent", "host_ffi"), selected.groups)
+
     def test_multiple_modeled_paths_union_groups_in_stable_order(self):
         selected = selector.select(
             "pull_request",
