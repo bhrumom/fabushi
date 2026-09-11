@@ -18,9 +18,7 @@ on:
       - 'desktop/src/edge/contracts/native-capabilities.ts'
       - 'frontend/apps/web/src/lib/fabushi-runtime/native-desktop.ts'
       - 'desktop/e2e/messenger.spec.ts'
-      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
-      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
-      - 'third_party/mahayana/mahayana-rs/mahayana-social/**'
+      - 'third_party/mahayana/mahayana-rs/**'
       - '.github/scripts/assert-electron-feature-host-bridge.sh'
       - '.github/scripts/assert-native-desktop-edge-parity.py'
       - '.github/workflows/messaging-product-gate.yml'
@@ -41,9 +39,7 @@ on:
       - 'desktop/src/edge/contracts/native-capabilities.ts'
       - 'frontend/apps/web/src/lib/fabushi-runtime/native-desktop.ts'
       - 'desktop/e2e/messenger.spec.ts'
-      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
-      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
-      - 'third_party/mahayana/mahayana-rs/mahayana-social/**'
+      - 'third_party/mahayana/mahayana-rs/**'
       - '.github/scripts/assert-electron-feature-host-bridge.sh'
       - '.github/scripts/assert-native-desktop-edge-parity.py'
       - '.github/workflows/messaging-product-gate.yml'
@@ -115,6 +111,7 @@ jobs:
 
           selected = {'messaging': False, 'media': False, 'host': False, 'desktop': False}
           workflow_path = '.github/workflows/messaging-product-gate.yml'
+          mahayana_workspace = 'third_party/mahayana/mahayana-rs/'
 
           def starts(path, *prefixes):
               return any(path.startswith(prefix) for prefix in prefixes)
@@ -146,13 +143,17 @@ jobs:
               if starts(path, 'native/telegram-media/'):
                   selected.update(messaging=True, media=True, host=True, desktop=True)
                   continue
-              if starts(path, 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/',
-                        'third_party/mahayana/mahayana-rs/mahayana-feature-host/'):
+              if starts(path, mahayana_workspace + 'mahayana-social/'):
+                  selected['messaging'] = True
                   selected['host'] = True
                   selected['desktop'] = True
                   continue
-              if starts(path, 'third_party/mahayana/mahayana-rs/mahayana-social/'):
-                  selected['messaging'] = True
+              if starts(path, mahayana_workspace):
+                  # Feature Host compiles a broad Mahayana workspace dependency graph.
+                  # Conservatively run Host + desktop contracts for every workspace
+                  # source/manifest change so dependency changes cannot bypass this gate.
+                  # A future metadata-derived closure may narrow this only if it preserves
+                  # the same fail-closed behavior.
                   selected['host'] = True
                   selected['desktop'] = True
                   continue
