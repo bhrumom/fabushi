@@ -80,8 +80,9 @@
 ## Branch / commit / PR
 
 - Branch: `codex/m9-pay-002-catalog-api-20260911`
-- Implementation commit: to be recorded after commit creation
-- Pull request: to be created against `main`
+- Local preparation commit: `505697475`
+- Remote PR head: `b0489a9a9820eb0f600123d6468bc64e405a804a`
+- Pull request: `#2504` against `main`
 - Merge SHA: pending protected merge
 
 ## Evidence plan

@@ -4,7 +4,9 @@
 - Task: `M9-PAY-002-CATALOG-API-001`
 - Branch: `codex/m9-pay-002-catalog-api-20260911`
 - Base: `main@e2d4eda0c449e461771b855aaeee416062512f09`
-- Status: `IN_PROGRESS / PR_PREPARATION`
+- Remote PR: `#2504`
+- Remote head: `b0489a9a9820eb0f600123d6468bc64e405a804a`
+- Status: `IN_PROGRESS / PR_CI_PENDING`
 
 ## Planned evidence
 
