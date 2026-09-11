@@ -70,6 +70,13 @@ class SelectMahayanaFastTests(unittest.TestCase):
         self.assertTrue(selected.full_suite)
         self.assertIn("shared native messaging", selected.reason)
 
+    def test_source_boundary_change_fails_safe_to_full(self):
+        selected = selector.select(
+            "pull_request", ["scripts/check-mahayana-source-boundary.py"]
+        )
+        self.assertTrue(selected.full_suite)
+        self.assertIn("selector/workflow", selected.reason)
+
     def test_selector_change_fails_safe_to_full(self):
         selected = selector.select(
             "pull_request", ["scripts/select-mahayana-fast-tests.py"]
