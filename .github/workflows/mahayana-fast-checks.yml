@@ -6,6 +6,8 @@ on:
       - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
       - scripts/check-mahayana-source-boundary.py
+      - scripts/select-mahayana-fast-tests.py
+      - scripts/tests/test_select_mahayana_fast_tests.py
       - .github/workflows/mahayana-fast-checks.yml
   push:
     branches:
@@ -14,6 +16,8 @@ on:
       - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
       - scripts/check-mahayana-source-boundary.py
+      - scripts/select-mahayana-fast-tests.py
+      - scripts/tests/test_select_mahayana_fast_tests.py
       - .github/workflows/mahayana-fast-checks.yml
   workflow_dispatch:
 
@@ -25,8 +29,70 @@ permissions:
   contents: read
 
 jobs:
+  select:
+    name: Select affected Mahayana tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      full_suite: ${{ steps.classify.outputs.full_suite }}
+      run_rust: ${{ steps.classify.outputs.run_rust }}
+      selected_groups: ${{ steps.classify.outputs.selected_groups }}
+      auth_product: ${{ steps.classify.outputs.auth_product }}
+      kernel_engine: ${{ steps.classify.outputs.kernel_engine }}
+      mcp_agent: ${{ steps.classify.outputs.mcp_agent }}
+      protocol_bridge: ${{ steps.classify.outputs.protocol_bridge }}
+      harness: ${{ steps.classify.outputs.harness }}
+      host_ffi: ${{ steps.classify.outputs.host_ffi }}
+      test_driver: ${{ steps.classify.outputs.test_driver }}
+    steps:
+      - name: Checkout selector and Git metadata
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/select-mahayana-fast-tests.py
+            /scripts/tests/test_select_mahayana_fast_tests.py
+
+      - name: Unit test affected-test selector
+        run: python3 -m unittest -v scripts/tests/test_select_mahayana_fast_tests.py
+
+      - name: Resolve pull-request changed paths
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          fi
+          if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "pull/${PR_NUMBER}/head"
+          fi
+          git diff --no-renames --name-only "$BASE_SHA" "$HEAD_SHA" > /tmp/mahayana-changed-files.txt
+          cat /tmp/mahayana-changed-files.txt
+
+      - name: Prepare canonical full-suite selection
+        if: github.event_name != 'pull_request'
+        run: : > /tmp/mahayana-changed-files.txt
+
+      - id: classify
+        name: Select smallest safe test surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/select-mahayana-fast-tests.py \
+            --event "${{ github.event_name }}" \
+            --github-output "$GITHUB_OUTPUT" \
+            --github-step-summary "$GITHUB_STEP_SUMMARY" \
+            < /tmp/mahayana-changed-files.txt
+
   protocol-and-bridge:
     name: Rust protocol, Host, and bridge fast gate
+    needs: select
     runs-on: ubuntu-latest
     timeout-minutes: 18
     env:
@@ -35,7 +101,13 @@ jobs:
       run:
         working-directory: third_party/mahayana/mahayana-rs
     steps:
+      - name: Report selector-only success
+        if: needs.select.outputs.run_rust != 'true'
+        working-directory: ${{ github.workspace }}
+        run: echo "No Mahayana Rust fast-test group is required for this change." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout Mahayana sources
+        if: needs.select.outputs.run_rust == 'true'
         uses: actions/checkout@v5
         with:
           sparse-checkout-cone-mode: false
@@ -45,17 +117,21 @@ jobs:
             /scripts/check-mahayana-source-boundary.py
 
       - name: Verify Mahayana source ownership boundary
+        if: needs.select.outputs.run_rust == 'true'
         run: python3 ../../../scripts/check-mahayana-source-boundary.py
 
       - name: Set up Rust
+        if: needs.select.outputs.run_rust == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
 
       - name: Verify formatting before native package setup
+        if: needs.select.outputs.run_rust == 'true'
         run: cargo fmt --all -- --check
 
       - name: Install Linux native capture/input dependencies
+        if: needs.select.outputs.run_rust == 'true' && needs.select.outputs.selected_groups != 'test_driver'
         shell: bash
         working-directory: ${{ github.workspace }}
         run: |
@@ -66,6 +142,7 @@ jobs:
             libegl1-mesa-dev libgbm-dev
 
       - name: Restore targeted Cargo cache
+        if: needs.select.outputs.run_rust == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
@@ -73,47 +150,31 @@ jobs:
           cache-all-crates: true
 
       - name: Test Mahayana-owned CLI compatibility surfaces
+        if: needs.select.outputs.full_suite == 'true'
         run: >-
           cargo test
           -p mahayana-tui-compat
           -p mahayana-plugin-archive-compat
           --profile ci
 
-      - name: Test Mahayana-owned authentication and encrypted secrets
+      - name: Test Mahayana-owned authentication, secrets, and product client
+        if: needs.select.outputs.auth_product == 'true'
         run: >-
           cargo test
           -p mahayana-auth
           -p mahayana-secrets
-          --profile ci
-
-      - name: Compile product client against Mahayana-owned auth and secrets
-        run: >-
-          cargo test
           -p mahayana-platform-client
           --profile ci
 
-      - name: Test sovereign kernel, supervision, and legacy bridge
-        run: >-
-          cargo test
-          -p mahayana-kernel
-          -p mahayana-agent-kernel-bridge
-          --profile ci
-
-      - name: Test native orchestration and workspace engines
-        run: >-
-          cargo test
-          -p mahayana-orchestrator
-          -p mahayana-workspace-engine
-          --profile ci
-
-      - name: Test native model and coding agent engine
-        run: >-
-          cargo test
-          -p mahayana-model
-          -p mahayana-native-engine
-          --profile ci
+      - name: Test sovereign kernel and native engines
+        if: needs.select.outputs.kernel_engine == 'true'
+        run: |
+          cargo test -p mahayana-kernel -p mahayana-agent-kernel-bridge --profile ci
+          cargo test -p mahayana-orchestrator -p mahayana-workspace-engine --profile ci
+          cargo test -p mahayana-model -p mahayana-native-engine --profile ci
 
       - name: Test native MCP transport and Agent adapter
+        if: needs.select.outputs.mcp_agent == 'true'
         run: >-
           cargo test
           -p mahayana-mcp-runtime
@@ -121,6 +182,7 @@ jobs:
           --profile ci
 
       - name: Test protocol and MiniApp bridge
+        if: needs.select.outputs.protocol_bridge == 'true'
         run: >-
           cargo test
           -p mahayana-miniapp-protocol
@@ -129,6 +191,7 @@ jobs:
           --profile ci
 
       - name: Test Rust-native Mahayana Harness
+        if: needs.select.outputs.harness == 'true'
         run: >-
           cargo test
           -p mahayana-harness
@@ -140,34 +203,25 @@ jobs:
           -p mahayana-unified-app-host
           --profile ci
 
-      - name: Test direct Mahayana Host
-        run: >-
-          cargo test
-          -p mahayana-host
-          --profile ci
-          --no-default-features
-          --features local-only
+      - name: Test direct and deterministic Mahayana Host plus FFI
+        if: needs.select.outputs.host_ffi == 'true'
+        run: |
+          cargo test -p mahayana-host --profile ci --no-default-features --features local-only
+          cargo test -p mahayana-feature-host --profile ci --no-default-features
+          cargo test -p mahayana-feature-host --profile ci --no-default-features --features local-only production_uses_the_real_runtime_and_rust_owned_session_store
+          cargo check -p mahayana-ffi --profile ci --no-default-features --features local-only
 
-      - name: Test deterministic feature Host without the production dependency graph
-        run: >-
-          cargo test
-          -p mahayana-feature-host
-          --profile ci
-          --no-default-features
+      - name: Test presentation-neutral test-driver protocol
+        if: needs.select.outputs.test_driver == 'true'
+        run: cargo test -p mahayana-test-driver-protocol --profile ci
 
-      - name: Test production feature adapters over the cached direct Host
-        run: >-
-          cargo test
-          -p mahayana-feature-host
-          --profile ci
-          --no-default-features
-          --features local-only
-          production_uses_the_real_runtime_and_rust_owned_session_store
-
-      - name: Check minimal embedded FFI boundary
-        run: >-
-          cargo check
-          -p mahayana-ffi
-          --profile ci
-          --no-default-features
-          --features local-only
+      - name: Record fast-gate selection
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: |
+          {
+            echo "## Mahayana Rust fast gate"
+            echo "- full suite: ${{ needs.select.outputs.full_suite }}"
+            echo "- groups: ${{ needs.select.outputs.selected_groups }}"
+            echo "- rust gate requested: ${{ needs.select.outputs.run_rust }}"
+          } >> "$GITHUB_STEP_SUMMARY"
