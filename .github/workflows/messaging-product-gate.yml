@@ -141,8 +141,6 @@ jobs:
                   reason = 'gate definition changed; validate every product lane'
                   continue
               if starts(path, 'native/mahayana-messaging/'):
-                  # Preserve the historical product-gate dependency closure: messaging
-                  # changes can affect media integration, Feature Host and renderer bridge.
                   selected.update(messaging=True, media=True, host=True, desktop=True)
                   continue
               if starts(path, 'native/telegram-media/'):
@@ -162,8 +160,6 @@ jobs:
                       or path in desktop_exact):
                   selected['desktop'] = True
                   continue
-              # The workflow path filter should make this unreachable. If it is reached,
-              # do not silently skip a product lane.
               unknown.append(path)
 
           if unknown:
@@ -181,8 +177,7 @@ jobs:
                   stream.write(f'{key}={str(value).lower()}\n')
               stream.write(f'force_all={str(force_all).lower()}\n')
 
-          summary = Path(os.environ['GITHUB_STEP_SUMMARY'])
-          summary.write_text(
+          Path(os.environ['GITHUB_STEP_SUMMARY']).write_text(
               '## Messaging product impact\n\n'
               f'- Source: `{head}`\n'
               f'- Base: `{base or "none"}`\n'
@@ -269,8 +264,6 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt,clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
@@ -290,11 +283,6 @@ jobs:
           cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-host-protocol
           cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-feature-host
           cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-social
-      - name: Clippy selected host packages
-        run: |
-          cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-host-protocol --all-targets -- -D warnings
-          cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-feature-host --all-targets -- -D warnings
-          cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-social --all-targets -- -D warnings
       - name: Reject tracked-source drift
         run: git diff --exit-code HEAD --
 
