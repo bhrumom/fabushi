@@ -113,6 +113,7 @@ jobs:
 
             const messagingPathPrefixes = [
               'native/mahayana-messaging/',
+              'native/telegram-media/',
               'desktop/src/messaging-',
               'desktop/src/selfhosted-messaging-',
               // Messaging Product Gate compiles/tests Feature Host over a broad
@@ -208,7 +209,7 @@ jobs:
             }
 
             async function hasSensitiveChanges(pull_number) {
-              const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number });
+              const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pr.number });
               if (pr.title.includes('[automerge-force]')) {
                 core.info(`Bypassing sensitive changes check for PR #${pull_number} due to [automerge-force] in title.`);
                 return false;
