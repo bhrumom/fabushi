@@ -72,11 +72,12 @@ def _paeth(a: int, b: int, c: int) -> int:
 
 
 def validate_png(data: bytes) -> None:
-    """Parse PNG chunks, CRCs and zlib raster data using only the stdlib."""
+    """Parse PNG critical chunks, CRCs and zlib raster data using only the stdlib."""
     if not data.startswith(PNG_SIGNATURE):
         raise ValueError('invalid PNG signature')
     offset = len(PNG_SIGNATURE)
     ihdr = None
+    plte: bytes | None = None
     idat_parts: list[bytes] = []
     saw_idat = False
     idat_ended = False
@@ -103,20 +104,32 @@ def validate_png(data: bytes) -> None:
             if ihdr is not None or length != 13 or offset != len(PNG_SIGNATURE):
                 raise ValueError('invalid PNG IHDR')
             ihdr = struct.unpack('>IIBBBBB', payload)
+        elif kind == b'PLTE':
+            if ihdr is None or saw_idat or plte is not None:
+                raise ValueError('invalid PNG PLTE ordering')
+            if length < 3 or length > 768 or length % 3 != 0:
+                raise ValueError('invalid PNG PLTE size')
+            plte = payload
         elif kind == b'IDAT':
             if ihdr is None or idat_ended:
                 raise ValueError('invalid PNG IDAT ordering')
             saw_idat = True
             idat_parts.append(payload)
+        elif kind == b'IEND':
+            if length != 0 or not saw_idat:
+                raise ValueError('invalid PNG IEND')
+            saw_iend = True
+            offset = chunk_end
+            break
         else:
+            if len(kind) != 4 or not all(65 <= byte <= 90 or 97 <= byte <= 122 for byte in kind):
+                raise ValueError('invalid PNG chunk type')
+            # A decoder may safely ignore unknown ancillary chunks only. Unknown
+            # critical chunks (uppercase first letter) make the image undecodable.
+            if kind[0] & 0x20 == 0:
+                raise ValueError('unknown PNG critical chunk')
             if saw_idat:
                 idat_ended = True
-            if kind == b'IEND':
-                if length != 0 or not saw_idat:
-                    raise ValueError('invalid PNG IEND')
-                saw_iend = True
-                offset = chunk_end
-                break
         offset = chunk_end
     if ihdr is None or not saw_iend or offset != len(data):
         raise ValueError('incomplete PNG image')
@@ -128,6 +141,13 @@ def validate_png(data: bytes) -> None:
         raise ValueError('unsupported PNG color/depth combination')
     if compression != 0 or filter_method != 0 or interlace not in (0, 1):
         raise ValueError('unsupported PNG encoding')
+    if color_type == 3:
+        if plte is None:
+            raise ValueError('indexed PNG requires PLTE')
+        if len(plte) // 3 > 2 ** bit_depth:
+            raise ValueError('indexed PNG palette exceeds bit-depth capacity')
+    elif color_type in (0, 4) and plte is not None:
+        raise ValueError('grayscale PNG must not contain PLTE')
 
     channels = PNG_CHANNELS[color_type]
     passes = [(width, height)] if interlace == 0 else [
