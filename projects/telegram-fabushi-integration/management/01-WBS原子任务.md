@@ -130,3 +130,14 @@
 - [x] `TFI-USR-AR-007` 父仓库 PR #2511 经 merge queue 合并，回读 `main@2e5151ed38a29130f6f1165639430a825dc2f2ab`。
 
 当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_E2E_PENDING`。
+
+## 2026-09-11 — TFI-USERSCRIPT-RECOVERY-003 连接中断刷新与左侧任务分组
+
+- [x] `TFI-USR-DS-001` 识别页面级“连接已中断。正在等待完整回复。”，排除消息正文和插件面板自触发。
+- [x] `TFI-USR-DS-002` 保留任务/会话归属并有限刷新当前网页，不产生重复派发。
+- [x] `TFI-USR-DS-003` 把当前与可恢复工作区按标签页分组展示在左侧任务列表。
+- [x] `TFI-USR-DS-004` 每条任务展示状态、轮次和运行指示，并在可恢复组内提供恢复动作。
+- [ ] `TFI-USR-DS-005` 完成轻量回归、source PR/exact-main CI、单调版本 Release 与真实 Chrome 证据。
+- [ ] `TFI-USR-DS-006` 父仓库治理记录经 protected main 合并并回读。
+
+当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_E2E_PENDING`；范围仅限油猴脚本，不涉及 Fabushi 应用构建。
