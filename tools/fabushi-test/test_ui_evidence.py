@@ -27,6 +27,17 @@ def valid_png() -> bytes:
             png_chunk(b'IDAT', zlib.compress(raster)) + png_chunk(b'IEND', b''))
 
 
+def indexed_png(with_palette: bool) -> bytes:
+    ihdr = struct.pack('>IIBBBBB', 1, 1, 1, 3, 0, 0, 0)
+    chunks = [evidence.PNG_SIGNATURE, png_chunk(b'IHDR', ihdr)]
+    if with_palette:
+        chunks.append(png_chunk(b'PLTE', b'\x00\x00\x00'))
+    # One unfiltered scanline containing one 1-bit palette index.
+    chunks.append(png_chunk(b'IDAT', zlib.compress(b'\x00\x00')))
+    chunks.append(png_chunk(b'IEND', b''))
+    return b''.join(chunks)
+
+
 class EvidenceTests(unittest.TestCase):
     def fixture(self):
         archive = io.BytesIO()
@@ -76,6 +87,11 @@ class EvidenceTests(unittest.TestCase):
         image[-8] ^= 1
         with self.assertRaises(ValueError):
             evidence.validate_png(bytes(image))
+
+    def test_indexed_png_requires_palette(self):
+        evidence.validate_png(indexed_png(True))
+        with self.assertRaisesRegex(ValueError, 'PLTE'):
+            evidence.validate_png(indexed_png(False))
 
     def test_duplicate_attachment_name_never_passes(self):
         data = self.fixture()
