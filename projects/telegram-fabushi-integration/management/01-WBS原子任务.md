@@ -141,3 +141,13 @@
 - [ ] `TFI-USR-DS-006` 父仓库治理记录经 protected main 合并并回读。
 
 当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_E2E_PENDING`；范围仅限油猴脚本，不涉及 Fabushi 应用构建。
+
+## 2026-09-11 — TFI-USERSCRIPT-RECOVERY-004 热更新工作区交接
+
+- [x] `TFI-USR-HR-001` 固化真实 Work 已完成但新实例丢失 owner、未进入验收的现场证据。
+- [x] `TFI-USR-HR-002` 让同文档旧实例 shutdown/lock release 可等待，新实例继承原 tab identity。
+- [x] `TFI-USR-HR-003` 保持真实复制标签页隔离，并清理全部重复 root/style。
+- [x] `TFI-USR-HR-004` 覆盖热更新后持续目标自动恢复并进入 review 的回归。
+- [ ] `TFI-USR-HR-005` 完成 source CI/merge/release、live Chrome 和父记录 protected-main 证据。
+
+当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_E2E_PENDING`；仅限独立油猴脚本。
