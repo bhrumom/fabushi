@@ -93,6 +93,20 @@ class ControllerTests(unittest.TestCase):
                 (evidence_root / 'results.json').write_text('{}\n')
                 self.assertEqual(m.verify_ci(root, sha, [evidence_root]), sha)
 
+    def test_automerge_requires_fast_and_product_gates_for_affected_paths(self):
+        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/automerge.yml').read_text()
+        messaging = workflow.split('const messagingPathPrefixes = [', 1)[1].split('];', 1)[0]
+        self.assertIn("'native/telegram-media/'", messaging)
+        self.assertIn("'third_party/mahayana/mahayana-rs/'", messaging)
+        required = workflow.split('async function requiredWorkflowsForPull', 1)[1].split(
+            'async function hasSensitiveChanges', 1)[0]
+        self.assertIn('fastFeedbackWorkflow', required)
+        self.assertIn('messagingWorkflow', required)
+        sensitive = workflow.split('async function hasSensitiveChanges(pull_number)', 1)[1].split(
+            'async function getProtectedMergeState', 1)[0]
+        self.assertIn('pull_number });', sensitive)
+        self.assertNotIn('pull_number: pr.number', sensitive)
+
     def test_repair_repeat_and_budget_are_bounded(self):
         report = {'source_sha': 'a' * 40, 'results': [{'id': 'sample-test', 'status': 'failed', 'exit_code': 1}]}
         request = m.repair_request(report)
