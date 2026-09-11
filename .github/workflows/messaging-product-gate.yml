@@ -1,8 +1,371 @@
 name: Messaging Product Gate
+
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'native/mahayana-messaging/**'
+      - 'native/telegram-media/**'
+      - 'desktop/src/messaging-**'
+      - 'desktop/src/selfhosted-messaging-**'
+      - 'desktop/src/main.tsx'
+      - 'desktop/src/webrtc-call-controller.ts'
+      - 'desktop/electron/messaging-signaling-client.cjs'
+      - 'desktop/electron/messaging-signaling-client.test.cjs'
+      - 'desktop/electron/main.cjs'
+      - 'desktop/electron/preload.cjs'
+      - 'desktop/electron/native-edge.cjs'
+      - 'desktop/src/edge/contracts/native-capabilities.ts'
+      - 'frontend/apps/web/src/lib/fabushi-runtime/native-desktop.ts'
+      - 'desktop/e2e/messenger.spec.ts'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-social/**'
+      - '.github/scripts/assert-electron-feature-host-bridge.sh'
+      - '.github/scripts/assert-native-desktop-edge-parity.py'
+      - '.github/workflows/messaging-product-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'native/mahayana-messaging/**'
+      - 'native/telegram-media/**'
+      - 'desktop/src/messaging-**'
+      - 'desktop/src/selfhosted-messaging-**'
+      - 'desktop/src/main.tsx'
+      - 'desktop/src/webrtc-call-controller.ts'
+      - 'desktop/electron/messaging-signaling-client.cjs'
+      - 'desktop/electron/messaging-signaling-client.test.cjs'
+      - 'desktop/electron/main.cjs'
+      - 'desktop/electron/preload.cjs'
+      - 'desktop/electron/native-edge.cjs'
+      - 'desktop/src/edge/contracts/native-capabilities.ts'
+      - 'frontend/apps/web/src/lib/fabushi-runtime/native-desktop.ts'
+      - 'desktop/e2e/messenger.spec.ts'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-social/**'
+      - '.github/scripts/assert-electron-feature-host-bridge.sh'
+      - '.github/scripts/assert-native-desktop-edge-parity.py'
+      - '.github/workflows/messaging-product-gate.yml'
   workflow_dispatch:
+
+concurrency:
+  group: messaging-product-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
-  paused:
+  impact:
+    name: Select affected messaging product gates
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      messaging: ${{ steps.classify.outputs.messaging }}
+      media: ${{ steps.classify.outputs.media }}
+      host: ${{ steps.classify.outputs.host }}
+      desktop: ${{ steps.classify.outputs.desktop }}
+      force_all: ${{ steps.classify.outputs.force_all }}
+    env:
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
     steps:
-      - run: echo 'Automatic messaging gate paused for 2026-09-05 Mac test release.'
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - id: classify
+        name: Classify changed paths fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          head = os.environ['HEAD_SHA']
+          base = os.environ.get('BASE_SHA', '')
+          output = Path(os.environ['GITHUB_OUTPUT'])
+
+          def valid_sha(value):
+              return bool(re.fullmatch(r'[0-9a-f]{40}', value or '')) and value != '0' * 40
+
+          force_all = False
+          reason = ''
+          if not valid_sha(base):
+              force_all = True
+              reason = 'missing/zero base SHA or manual dispatch'
+              files = []
+          else:
+              try:
+                  subprocess.run(['git', 'cat-file', '-e', base + '^{commit}'], check=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                  raw = subprocess.check_output(['git', 'diff', '--name-only', base, head, '--'], text=True)
+                  files = [line for line in raw.splitlines() if line]
+              except subprocess.SubprocessError:
+                  force_all = True
+                  reason = 'base commit unavailable; fail closed'
+                  files = []
+
+          selected = {'messaging': False, 'media': False, 'host': False, 'desktop': False}
+          workflow_path = '.github/workflows/messaging-product-gate.yml'
+
+          def starts(path, *prefixes):
+              return any(path.startswith(prefix) for prefix in prefixes)
+
+          desktop_exact = {
+              'desktop/src/main.tsx',
+              'desktop/src/webrtc-call-controller.ts',
+              'desktop/electron/messaging-signaling-client.cjs',
+              'desktop/electron/messaging-signaling-client.test.cjs',
+              'desktop/electron/main.cjs',
+              'desktop/electron/preload.cjs',
+              'desktop/electron/native-edge.cjs',
+              'desktop/src/edge/contracts/native-capabilities.ts',
+              'frontend/apps/web/src/lib/fabushi-runtime/native-desktop.ts',
+              'desktop/e2e/messenger.spec.ts',
+              '.github/scripts/assert-electron-feature-host-bridge.sh',
+              '.github/scripts/assert-native-desktop-edge-parity.py',
+          }
+
+          unknown = []
+          for path in files:
+              if path == workflow_path:
+                  force_all = True
+                  reason = 'gate definition changed; validate every product lane'
+                  continue
+              if starts(path, 'native/mahayana-messaging/'):
+                  # Preserve the historical product-gate dependency closure: messaging
+                  # changes can affect media integration, Feature Host and renderer bridge.
+                  selected.update(messaging=True, media=True, host=True, desktop=True)
+                  continue
+              if starts(path, 'native/telegram-media/'):
+                  selected.update(messaging=True, media=True, host=True, desktop=True)
+                  continue
+              if starts(path, 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/',
+                        'third_party/mahayana/mahayana-rs/mahayana-feature-host/'):
+                  selected['host'] = True
+                  selected['desktop'] = True
+                  continue
+              if starts(path, 'third_party/mahayana/mahayana-rs/mahayana-social/'):
+                  selected['messaging'] = True
+                  selected['host'] = True
+                  selected['desktop'] = True
+                  continue
+              if (starts(path, 'desktop/src/messaging-', 'desktop/src/selfhosted-messaging-')
+                      or path in desktop_exact):
+                  selected['desktop'] = True
+                  continue
+              # The workflow path filter should make this unreachable. If it is reached,
+              # do not silently skip a product lane.
+              unknown.append(path)
+
+          if unknown:
+              force_all = True
+              reason = 'unclassified relevant path(s): ' + ', '.join(unknown[:20])
+          if force_all:
+              selected = {key: True for key in selected}
+          if not files and not force_all:
+              force_all = True
+              reason = 'empty diff; fail closed'
+              selected = {key: True for key in selected}
+
+          with output.open('a') as stream:
+              for key, value in selected.items():
+                  stream.write(f'{key}={str(value).lower()}\n')
+              stream.write(f'force_all={str(force_all).lower()}\n')
+
+          summary = Path(os.environ['GITHUB_STEP_SUMMARY'])
+          summary.write_text(
+              '## Messaging product impact\n\n'
+              f'- Source: `{head}`\n'
+              f'- Base: `{base or "none"}`\n'
+              f'- Changed files: {len(files)}\n'
+              f'- Force all: {force_all}\n'
+              f'- Reason: {reason or "dependency-aware exact-path selection"}\n'
+              + ''.join(f'- {key}: {value}\n' for key, value in selected.items())
+          )
+          PY
+
+  rust-messaging:
+    name: Rust messaging core
+    needs: impact
+    if: needs.impact.outputs.messaging == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/mahayana-messaging -> target
+          shared-key: messaging-product-core-v3
+      - name: Verify exact source
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Rustfmt self-hosted messaging
+        run: cargo fmt --manifest-path native/mahayana-messaging/Cargo.toml -- --check
+      - name: Test messaging library and server binaries
+        run: cargo test --locked --manifest-path native/mahayana-messaging/Cargo.toml --all-targets
+      - name: Clippy messaging library and server binaries
+        run: cargo clippy --locked --manifest-path native/mahayana-messaging/Cargo.toml --all-targets -- -D warnings
+      - name: Reject tracked-source drift
+        run: git diff --exit-code HEAD --
+
+  rust-media:
+    name: Telegram media transfer
+    needs: impact
+    if: needs.impact.outputs.media == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/telegram-media -> target
+          shared-key: messaging-product-media-v3
+      - name: Verify exact source
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Rustfmt deterministic media transfer queue
+        run: cargo fmt --manifest-path native/telegram-media/Cargo.toml -- --check
+      - name: Test deterministic media transfer queue
+        run: cargo test --locked --manifest-path native/telegram-media/Cargo.toml --all-targets
+      - name: Clippy deterministic media transfer queue
+        run: cargo clippy --locked --manifest-path native/telegram-media/Cargo.toml --all-targets -- -D warnings
+      - name: Reject tracked-source drift
+        run: git diff --exit-code HEAD --
+
+  rust-host:
+    name: Mahayana messaging host bridge
+    needs: impact
+    if: needs.impact.outputs.host == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: messaging-product-host-v3
+          cache-all-crates: true
+      - name: Install Mahayana Linux native dependencies
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
+      - name: Verify exact source
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Test production Feature Host bridge and contacts projection
+        run: |
+          cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-host-protocol
+          cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-feature-host
+          cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-social
+      - name: Clippy selected host packages
+        run: |
+          cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-host-protocol --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-feature-host --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-social --all-targets -- -D warnings
+      - name: Reject tracked-source drift
+        run: git diff --exit-code HEAD --
+
+  desktop-contract:
+    name: Electron Messenger contract
+    needs: impact
+    if: needs.impact.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Verify exact source
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Verify Electron Feature Host architecture
+        run: bash .github/scripts/assert-electron-feature-host-bridge.sh
+      - name: Test self-hosted call signaling endpoint policy
+        run: node --test desktop/electron/messaging-signaling-client.test.cjs
+      - name: Verify Native Edge parity
+        run: python3 .github/scripts/assert-native-desktop-edge-parity.py
+      - name: Typecheck Messenger V2
+        working-directory: desktop
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: Reject tracked-source drift
+        run: git diff --exit-code HEAD --
+
+  product-result:
+    name: Messaging product result
+    if: always()
+    needs: [impact, rust-messaging, rust-media, rust-host, desktop-contract]
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Require every selected product gate
+        env:
+          IMPACT: ${{ needs.impact.result }}
+          MESSAGING_SELECTED: ${{ needs.impact.outputs.messaging }}
+          MEDIA_SELECTED: ${{ needs.impact.outputs.media }}
+          HOST_SELECTED: ${{ needs.impact.outputs.host }}
+          DESKTOP_SELECTED: ${{ needs.impact.outputs.desktop }}
+          MESSAGING_RESULT: ${{ needs.rust-messaging.result }}
+          MEDIA_RESULT: ${{ needs.rust-media.result }}
+          HOST_RESULT: ${{ needs.rust-host.result }}
+          DESKTOP_RESULT: ${{ needs.desktop-contract.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$IMPACT" = success
+          check_selected() {
+            selected="$1"
+            result="$2"
+            if test "$selected" = true; then
+              test "$result" = success
+            else
+              test "$result" = skipped
+            fi
+          }
+          check_selected "$MESSAGING_SELECTED" "$MESSAGING_RESULT"
+          check_selected "$MEDIA_SELECTED" "$MEDIA_RESULT"
+          check_selected "$HOST_SELECTED" "$HOST_RESULT"
+          check_selected "$DESKTOP_SELECTED" "$DESKTOP_RESULT"
