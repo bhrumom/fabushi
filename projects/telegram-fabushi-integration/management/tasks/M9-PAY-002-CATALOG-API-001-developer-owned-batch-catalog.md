@@ -87,6 +87,8 @@
 - Merged at: `2026-09-11T07:46:30Z`; merge-group CI run `34575923650` passed.
 - Canonical-main readback: `main@e218e602` contains the developer catalog migration and APP-pay configuration; push-triggered exact-main delivery runs remain in progress/queued at this update.
 - Records follow-up PR: `#2505`, head `4e43cd618a7a457cc52fb14f0729df7fdfbd338a`, merged as `eefc71fa0d548a9b44ba52c7c8689f3a3937fb7a` at `2026-09-11T07:54:57Z`.
+- Post-main blocker: Native mobile quality gate run `34575968339`, iOS job `103188374206` failed before tests because Swift 6 rejected non-`@MainActor` access in `GlobalDharmaMiniAppParityTests.swift`.
+- Follow-up fix PR: `#2507`, head `1e0d691545b9d05779a52bdc6a490eaf7c048d8f`, awaiting required checks and protected merge.
 
 ## Evidence plan
 
@@ -95,6 +97,7 @@
 - merge-group / protected-main result;
 - canonical-main migration and exact-main control-plane/package/E2E evidence;
 - required screenshot/video/trace/report/log bundle for packaged application journeys.
+- Native iOS failure evidence: run `34575968339`, job `103188374206`; failure is isolated to the test actor annotation and is addressed by PR #2507.
 
 ## Risks
 
@@ -105,4 +108,4 @@
 
 ## Next action
 
-PR #2504 已合并到 canonical `main@e218e602`，记录跟进 PR #2505 已合并到 `main@eefc71fa` 并完成回读。下一步是等待/检查产品合并 SHA 的 exact-main 控制面、打包应用、模拟用户 E2E 及视觉/调试证据，并在必要时发布可追溯 Release；同时保持 Google/Apple/Stripe/支付宝的外部资格门禁 fail-closed。Keep this task `IN_PROGRESS` until the required post-main gates and external activation evidence are separately satisfied.
+PR #2504 已合并到 canonical `main@e218e602`，记录跟进 PR #2505 已合并到 `main@eefc71fa` 并完成回读。exact-main Native mobile gate 暴露的 iOS 测试 actor 编译问题已由 PR #2507 修复，待其保护合并后重跑 exact-main packaged/E2E/视觉证据闭环；同时保持 Google/Apple/Stripe/支付宝的外部资格门禁 fail-closed。Keep this task `IN_PROGRESS` until the required post-main gates and external activation evidence are separately satisfied.

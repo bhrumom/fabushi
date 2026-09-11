@@ -1,6 +1,7 @@
 import XCTest
 @testable import Fabushi
 
+@MainActor
 final class GlobalDharmaMiniAppParityTests: XCTestCase {
     func testGovernedLifetimeEntitlementConstantsMatchCrossPlatformContract() {
         XCTAssertEqual(GlobalDharmaMiniAppBridge.globalDharmaId, "global-dharma")
