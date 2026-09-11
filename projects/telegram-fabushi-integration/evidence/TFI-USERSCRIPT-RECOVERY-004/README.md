@@ -12,13 +12,13 @@ Status: `IN_PROGRESS`
 - Exact-main CI run `34614827011`, job `103314015767`, PASS.
 - Release `v2.9.6`, ID `387136022`, exact source SHA; asset ID `557478855`, 102,370 bytes.
 - Local lightweight syntax and 70/70 jsdom regressions PASS.
+- Parent records PR #2518 required checks (run `34615906329`) PASS and protected merge completed.
+- Canonical parent main readback: `9548f44514ef63e23a812c9645cdf9bc048b700d`.
 
 ## Pending closure evidence
 
 - Live installed-version readback for 2.9.6.
 - Live one-root/one-launch-control proof after replacement.
 - Complete Chrome video/screenshots/diagnostics for a continuous Work final → fresh validation conversation journey.
-- Parent record protected merge and canonical readback.
 
 No Fabushi application build/package/E2E is applicable.
-
