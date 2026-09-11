@@ -70,7 +70,19 @@ class ControllerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'GitHub Actions'):
                 m.verify_ci(Path('.'), 'a' * 40)
 
-    def test_verify_ci_rejects_untracked_source_but_allows_owned_evidence(self):
+    def test_core_generated_roots_are_narrow_and_ui_has_none(self):
+        root = Path('/tmp/fabushi-unit-root')
+        core = m.generated_roots(root, {'suites': [{'layer': 'core'}]})
+        self.assertEqual(
+            core,
+            [
+                (root / 'third_party/mahayana/mahayana-rs/target').resolve(),
+                (root / 'native/mahayana-messaging/target').resolve(),
+            ],
+        )
+        self.assertEqual(m.generated_roots(root, {'suites': [{'layer': 'ui'}]}), [])
+
+    def test_verify_ci_rejects_untracked_source_but_allows_owned_generated_roots(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
@@ -88,10 +100,19 @@ class ControllerTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'untracked files'):
                     m.verify_ci(root, sha)
                 generated.unlink()
+
                 evidence_root = root / '.fast-test-results' / 'core'
                 evidence_root.mkdir(parents=True)
                 (evidence_root / 'results.json').write_text('{}\n')
-                self.assertEqual(m.verify_ci(root, sha, [evidence_root]), sha)
+                cargo_target = root / 'native' / 'mahayana-messaging' / 'target'
+                cargo_target.mkdir(parents=True)
+                (cargo_target / 'CACHEDIR.TAG').write_text('Signature: test\n')
+                self.assertEqual(m.verify_ci(root, sha, [evidence_root, cargo_target]), sha)
+
+                suspicious_source = root / 'native' / 'mahayana-messaging' / 'generated.rs'
+                suspicious_source.write_text('// outside target must still fail\n')
+                with self.assertRaisesRegex(ValueError, 'generated.rs'):
+                    m.verify_ci(root, sha, [evidence_root, cargo_target])
 
     def test_automerge_requires_fast_and_product_gates_for_affected_paths(self):
         workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/automerge.yml').read_text()
