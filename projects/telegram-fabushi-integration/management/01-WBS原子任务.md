@@ -153,3 +153,14 @@
 - [ ] `TFI-USR-HR-007` 完成 live Chrome 安装版本、one-root 和 Work → 新验收会话的完整视觉/诊断证据。
 
 当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_E2E_PENDING`；仅限独立油猴脚本。
+
+## 2026-09-12 — TFI-USERSCRIPT-RECOVERY-005 发送超时后的自动恢复
+
+- [x] `TFI-USR-ST-001` 固化“自动重发次数用尽 → 自动暂停”与页面“消息发送超时，请重试”的现场证据。
+- [x] `TFI-USR-ST-002` 完成现有状态机与发送/异常重试路径的根因分析，并完成 Retry/backoff 开源方案调查。
+- [x] `TFI-USR-ST-003` 识别页面级发送超时并接入不重复点击的恢复路径（2.9.7）。
+- [x] `TFI-USR-ST-004` 将快速预算耗尽转换为持久化有界退避，避免自动转为 `blocked`/`paused`（2.9.7）。
+- [x] `TFI-USR-ST-005` 增加空闲调度器终态保护、轻量回归、source Release 和 parent-main 记录中的 source delivery 部分；父记录 protected merge 待完成。
+- [ ] `TFI-USR-ST-006` 完成真实 Chrome 安装版本与异常 → 新会话 → 原样重发 → 新验收会话的完整视觉/诊断证据。
+
+当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_PARENT_RECORD_PENDING`；仅限独立油猴脚本。
