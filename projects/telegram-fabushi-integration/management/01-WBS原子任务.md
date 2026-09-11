@@ -104,3 +104,17 @@
 ## 2026-09-07 — TFI-M3-SETTINGS-LOGOUT-001 General 顶部退出登录入口
 
 - `TFI-M3-SETTINGS-LOGOUT-001` — `IMPLEMENTED`: 将既有 `settings-logout` 从 General 底部移动到账户资料卡片之后、Theme 之前；保留原退出/缓存清理语义，新增真实 Messenger E2E 位置断言并将版本策略递增至 `1.2.56`。current-head CI、protected merge、exact-main delivery 与新版 Release 完成前不晋级 `RELEASED`。
+
+## 2026-09-11 — TFI-USERSCRIPT-RECOVERY-001 关闭标签页后的任务记录恢复
+
+- [x] `TFI-USR-001` 复现 2.9.2：任务数组仍在 `localStorage`，但新标签页因新的 session identity 看不到旧 `ownerTabId` 记录。
+- [x] `TFI-USR-002` 将“恢复任务记录”提升为工作台顶部的一等入口。
+- [x] `TFI-USR-003` 空白新标签页在 Web Lock 互斥确认后原地接管已关闭工作区。
+- [x] `TFI-USR-004` 将已完成/已取消/已暂停/进行中记录纳入恢复范围，保留显式删除语义。
+- [x] `TFI-USR-005` 增加当前标签页恢复、终态历史恢复和原标签页仍存活拒绝的回归覆盖；本地轻量检查 66/66 PASS。
+- [x] `TFI-USR-006` source PR #1 review/CI/merge 与 `source main@9ace3f40858e0c8b56e87b39971f8b6741441200` readback；exact-main CI `34582579268` PASS。
+- [x] `TFI-USR-007` 发布 2.9.3 到官方 raw-main 更新源和 GitHub Release `v2.9.3`；用户浏览器安装仍待点击一次更新。
+- [ ] `TFI-USR-008` 在真实 Chrome/ChatGPT 记录 create → close → reopen → recover → open conversation 的截图、完整视频及 trace/diagnostics。
+- [ ] `TFI-USR-009` 父仓库 TFI 记录 PR protected merge 与 canonical-main readback。
+
+当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_E2E_PENDING`，不得标记完成。
