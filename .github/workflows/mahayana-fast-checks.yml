@@ -17,7 +17,7 @@ on:
       - third_party/mahayana/mahayana-rs/**
       - scripts/check-mahayana-source-boundary.py
       - scripts/select-mahayana-fast-tests.py
-      - scripts/tests/test_select_mahayana_fast_tests.py
+      - scripts/tests/test_select_mahayana_fast-tests.py
       - .github/workflows/mahayana-fast-checks.yml
   workflow_dispatch:
 
@@ -77,7 +77,7 @@ jobs:
 
       - name: Prepare canonical full-suite selection
         if: github.event_name != 'pull_request'
-        run: : > /tmp/mahayana-changed-files.txt
+        run: ': > /tmp/mahayana-changed-files.txt'
 
       - id: classify
         name: Select smallest safe test surface
