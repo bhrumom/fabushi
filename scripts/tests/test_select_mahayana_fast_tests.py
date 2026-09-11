@@ -20,6 +20,14 @@ class SelectMahayanaFastTests(unittest.TestCase):
         self.assertTrue(selected.full_suite)
         self.assertEqual(tuple(selector.GROUPS), selected.groups)
 
+    def test_merge_group_forces_full_suite(self):
+        selected = selector.select(
+            "merge_group",
+            ["third_party/mahayana/mahayana-rs/mahayana-test-driver-protocol/src/lib.rs"],
+        )
+        self.assertTrue(selected.full_suite)
+        self.assertEqual(tuple(selector.GROUPS), selected.groups)
+
     def test_test_driver_protocol_is_leaf_selected(self):
         selected = selector.select(
             "pull_request",
@@ -80,6 +88,13 @@ class SelectMahayanaFastTests(unittest.TestCase):
     def test_selector_change_fails_safe_to_full(self):
         selected = selector.select(
             "pull_request", ["scripts/select-mahayana-fast-tests.py"]
+        )
+        self.assertTrue(selected.full_suite)
+        self.assertIn("selector/workflow", selected.reason)
+
+    def test_fast_suite_registry_change_fails_safe_to_full(self):
+        selected = selector.select(
+            "pull_request", ["tools/fabushi-test/suites.json"]
         )
         self.assertTrue(selected.full_suite)
         self.assertIn("selector/workflow", selected.reason)
