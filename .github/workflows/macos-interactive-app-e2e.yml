@@ -304,6 +304,17 @@ jobs:
             echo '- On any failure, write a `TFI_MACOS_FULL_JOURNEY FAIL ...` note and call `ci_session_finish`; never delete an assertion to force green.'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - id: action_smoke
+        name: Run Action-owned packaged App Agent semantic smoke
+        if: steps.launch.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FABUSHI_APP_AGENT_SMOKE_REPORT="$EVIDENCE_DIR/action-owned-app-agent-smoke.json"
+          node chatgpt-vps-control/scripts/run-app-agent-ci-smoke.mjs
+          jq -e '.schema == "fabushi.app-agent-ci-smoke.v1" and .ok == true' "$FABUSHI_APP_AGENT_SMOKE_REPORT" >/dev/null
+          /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/005-action-owned-app-agent-smoke.png" || true
+
       - id: control
         name: Hold for @fabushi test complete macOS journey
         if: steps.launch.outcome == 'success'
@@ -450,6 +461,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
             > "$EVIDENCE_DIR/workflow-jobs.json" 2>/dev/null || true
           control_status="$(cat "$EVIDENCE_DIR/remote-control-status.txt" 2>/dev/null || echo not-run)"
+          action_smoke_status="$(jq -r '.ok // false' "$EVIDENCE_DIR/action-owned-app-agent-smoke.json" 2>/dev/null || echo false)"
           completed_tools="$(jq -r 'select(.phase == "completed" and .ok == true) | (.toolName // empty)' "$EVIDENCE_DIR/device-calls.jsonl" 2>/dev/null | sort -u | jq -R -s 'split("\n") | map(select(length > 0))')"
           [ -n "$completed_tools" ] || completed_tools='[]'
           journey_note="$(jq -r 'select(.note | contains("TFI_MACOS_FULL_JOURNEY")) | .note' "$EVIDENCE_DIR/remote-notes.jsonl" 2>/dev/null | tail -n 1)"
@@ -467,11 +479,12 @@ jobs:
             --arg runUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --arg deviceId "$DEVICE_ID" \
             --arg controlStatus "$control_status" \
+            --arg actionSmokeStatus "$action_smoke_status" \
             --arg playwrightOutcome "${PLAYWRIGHT_OUTCOME:-unknown}" \
             --arg journeyNote "$journey_note" \
             --arg completedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --argjson completedTools "$completed_tools" \
-            '{schema:$schema,workflowSourceSha:$workflowSourceSha,releaseTag:$releaseTag,releaseTargetSha:$releaseTargetSha,releaseAssetId:$releaseAssetId,installedVersion:$installedVersion,installedBuild:$installedBuild,runId:$runId,runAttempt:$runAttempt,job:$job,runUrl:$runUrl,deviceId:$deviceId,controlStatus:$controlStatus,playwrightOutcome:$playwrightOutcome,journeyNote:$journeyNote,completedTools:$completedTools,completedAt:$completedAt}' \
+            '{schema:$schema,workflowSourceSha:$workflowSourceSha,releaseTag:$releaseTag,releaseTargetSha:$releaseTargetSha,releaseAssetId:$releaseAssetId,installedVersion:$installedVersion,installedBuild:$installedBuild,runId:$runId,runAttempt:$runAttempt,job:$job,runUrl:$runUrl,deviceId:$deviceId,controlStatus:$controlStatus,actionSmokeStatus:$actionSmokeStatus,playwrightOutcome:$playwrightOutcome,journeyNote:$journeyNote,completedTools:$completedTools,completedAt:$completedAt}' \
             > "$EVIDENCE_DIR/report.json"
           {
             echo '# Fabushi macOS interactive evidence'
@@ -481,6 +494,7 @@ jobs:
             echo "- Installed version/build: \`${INSTALLED_VERSION:-unknown}\` / \`${INSTALLED_BUILD:-unknown}\`"
             echo "- Run: \`$GITHUB_RUN_ID\` attempt \`$GITHUB_RUN_ATTEMPT\` / job \`$GITHUB_JOB\`"
             echo "- Device: \`$DEVICE_ID\`"
+            echo "- Action-owned App Agent smoke: \`$action_smoke_status\`"
             echo "- @fabushi test journey: \`$control_status\`"
             echo "- Playwright packaged App Surface: \`${PLAYWRIGHT_OUTCOME:-unknown}\`"
             echo "- Journey note: ${journey_note:-missing}"
@@ -514,10 +528,14 @@ jobs:
         if: always()
         shell: bash
         env:
+          ACTION_SMOKE_OUTCOME: ${{ steps.action_smoke.outcome }}
           CONTROL_OUTCOME: ${{ steps.control.outcome }}
           PLAYWRIGHT_OUTCOME: ${{ steps.playwright.outcome }}
         run: |
           set -euo pipefail
+          test "$ACTION_SMOKE_OUTCOME" = success
+          jq -e '.schema == "fabushi.app-agent-ci-smoke.v1" and .ok == true and (.operations | index("action") != null) and (.operations | index("assert") != null)' \
+            "$EVIDENCE_DIR/action-owned-app-agent-smoke.json" >/dev/null
           test "$CONTROL_OUTCOME" = success
           test "$(cat "$EVIDENCE_DIR/remote-control-status.txt")" = passed
           note="$(jq -r 'select(.note | startswith("TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=")) | .note' "$EVIDENCE_DIR/remote-notes.jsonl" | tail -n 1)"
