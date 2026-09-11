@@ -1,0 +1,151 @@
+name: Fabushi CLI-first fast feedback
+
+on:
+  pull_request:
+    paths:
+      - 'tools/fabushi-test/**'
+      - 'desktop/**'
+      - 'native/mahayana-messaging/**'
+      - 'third_party/mahayana/mahayana-rs/**'
+      - 'frontend/apps/web/src/lib/**'
+      - 'frontend/apps/web/src/app/host/**'
+      - 'frontend/packages/**'
+      - '.github/workflows/fcm-fast-feedback.yml'
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: [main]
+    paths:
+      - 'tools/fabushi-test/**'
+      - 'desktop/**'
+      - 'native/mahayana-messaging/**'
+      - 'third_party/mahayana/mahayana-rs/**'
+      - 'frontend/apps/web/src/lib/**'
+      - 'frontend/apps/web/src/app/host/**'
+      - 'frontend/packages/**'
+      - '.github/workflows/fcm-fast-feedback.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fcm-fast-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  fast:
+    name: Fast feedback (${{ matrix.layer }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        layer: [contract, core, ui]
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CARGO_INCREMENTAL: '1'
+      CARGO_PROFILE_CI_DEBUG_ASSERTIONS: 'true'
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Record exact source and plan
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python3 tools/fabushi-test/fabushi_test.py plan --layer '${{ matrix.layer }}'
+      - name: Set up Rust
+        if: matrix.layer == 'core'
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install existing Linux native dependencies
+        if: matrix.layer == 'core'
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
+      - name: Restore compatible Rust build state
+        if: matrix.layer == 'core'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            third_party/mahayana/mahayana-rs -> target
+            native/mahayana-messaging -> target
+          shared-key: fcm-cli-first-v1
+          cache-all-crates: true
+          cache-on-failure: true
+      - name: Set up Node
+        if: matrix.layer == 'ui'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install renderer tools without downloading Electron
+        if: matrix.layer == 'ui'
+        working-directory: desktop
+        run: npm ci --no-audit --no-fund
+      - name: Install headless Chromium in CI only
+        if: matrix.layer == 'ui'
+        working-directory: desktop
+        run: node node_modules/@playwright/test/cli.js install --with-deps chromium
+      - name: Run isolated layer and retain structured failures
+        run: >-
+          python3 tools/fabushi-test/fabushi_test.py run
+          --layer '${{ matrix.layer }}'
+          --expect-sha "$EXPECTED_SHA"
+          --output '.fast-test-results/${{ matrix.layer }}'
+      - name: Publish explicit scope summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path('.fast-test-results/${{ matrix.layer }}/results.json')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write('## CLI-first ${{ matrix.layer }}\n')
+              out.write('Source: `' + os.environ['EXPECTED_SHA'] + '`\n\n')
+              if not path.exists():
+                  out.write('BLOCKED: test result missing; setup may have failed.\n')
+              else:
+                  data = json.loads(path.read_text())
+                  out.write('Selected lane: **' + data['status'] + '**\n\n')
+                  for result in data['results']:
+                      out.write('- ' + result['id'] + ': ' + result['status'] + ' (' + str(result['duration_seconds']) + 's)\n')
+              out.write('\nThis is not full-product or native/package/release acceptance. UI uses the actual renderer with existing browser fixtures.\n')
+          PY
+      - name: Upload pass and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fcm-fast-${{ matrix.layer }}-${{ env.EXPECTED_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .fast-test-results/${{ matrix.layer }}/
+            desktop/headless-results/
+            desktop/headless-report/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Preserve tracked policy context for independent readback
+        if: always() && matrix.layer == 'contract'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fcm-policy-context-${{ env.EXPECTED_SHA }}-${{ github.run_id }}
+          path: |
+            AGENTS.md
+            projects/fabushi-cicd-merge-governance/
+          if-no-files-found: error
+          retention-days: 90
+
+  result:
+    name: CLI-first feedback result
+    if: always()
+    needs: [fast]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every selected layer to execute successfully
+        env:
+          RESULT: ${{ needs.fast.result }}
+        run: test "$RESULT" = success
