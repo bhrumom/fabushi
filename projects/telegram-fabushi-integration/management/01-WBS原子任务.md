@@ -118,3 +118,15 @@
 - [x] `TFI-USR-009` 父仓库 TFI 记录 PR #2509 经 merge queue 合并，并回读 `main@4363f07b186b9bee85004a3a2d6a5f0c5e9ef4f1`。
 
 当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_E2E_PENDING`，不得标记完成。
+
+## 2026-09-11 — TFI-USERSCRIPT-RECOVERY-002 会话异常结束自动重发
+
+- [x] `TFI-USR-AR-001` 持久化用户截图与“无 Stop、无最终回复、无授权卡即为异常结束”的恢复要求。
+- [x] `TFI-USR-AR-002` 定位 2.9.3 只在亲眼观察 `Stop -> no Stop` 时启动 15 秒倒计时的晚观察缺口。
+- [x] `TFI-USR-AR-003` 先增加晚观察回归，再修复稳定 clear 状态的短倒计时起点。
+- [x] `TFI-USR-AR-004` 验证四次有限重试、新会话原样重发和全部误判保护；67/67 PASS。
+- [x] `TFI-USR-AR-005` source PR #2、PR CI `34599085499`、`main@db663373e88b603350c24a73aedb991835509b2a`、exact-main CI `34599239366` 与 Release `v2.9.4`。
+- [ ] `TFI-USR-AR-006` 真实 Chrome 异常结束→新会话→重发视觉/诊断证据。
+- [x] `TFI-USR-AR-007` 父仓库 PR #2511 经 merge queue 合并，回读 `main@2e5151ed38a29130f6f1165639430a825dc2f2ab`。
+
+当前状态：`SOURCE_RELEASED / LIVE_INSTALL_AND_E2E_PENDING`。
