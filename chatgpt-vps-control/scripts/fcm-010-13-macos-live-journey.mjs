@@ -29,7 +29,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     });
   }
   async function snapshot() { return callDevice("fabushi.app.snapshot", { maxElements: 500, includeText: true }); }
-  async function find(query) { return callDevice("fabushi.app.find", { ...query, limit: query.limit || 100 }); }
+  async function find(query) { return callDevice("fabushi.app.find", query); }
   async function waitFor(query, timeoutMs = 30_000) {
     const result = await callDevice("fabushi.app.wait", { ...query, timeoutMs });
     if (result.passed !== true) throw new Error(`wait failed: ${JSON.stringify(query)} :: ${JSON.stringify(result.failures || [])}`);
@@ -75,7 +75,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
       invokeDeviceCall,
       args,
       resolveLatestTarget: async () => {
-        const refreshed = await invokeDeviceCall("fabushi.app.find", { ...query, limit: query.limit || 100 });
+        const refreshed = await invokeDeviceCall("fabushi.app.find", query);
         return { generation: refreshed.generation, target: chooseUniqueMatch(refreshed, query, predicate) };
       },
       onRetry: ({ attempt, resolver, agentId, previousGeneration, findGeneration, refreshedGeneration }) => {
@@ -183,7 +183,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await waitFor({ agentId: "test:messenger-input", state: "visible" });
   }
   async function messageRowIds() {
-    const found = await find({ role: "article", limit: 200 });
+    const found = await find({ role: "article", limit: 100 });
     return new Set((found.matches || []).map((item) => String(item?.agentId || "")).filter((id) => id.startsWith("message-actions:")));
   }
   async function waitForAssistantUnread(previousPeerText) {
@@ -197,7 +197,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   }
   async function waitForIncomingMessage(beforeIds, ownText) {
     return poll("new incoming assistant message", async () => {
-      const found = await find({ role: "article", limit: 200 });
+      const found = await find({ role: "article", limit: 100 });
       const candidate = (found.matches || []).find((item) => {
         const id = String(item?.agentId || "");
         const text = String(item?.text || item?.name || "");
@@ -328,7 +328,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await openMessageMenu(source);
     await invokeTest("message-action-forward");
     await waitFor({ agentId: "test:forward-message-dialog", state: "visible" });
-    const peers = await find({ role: "button", limit: 200 });
+    const peers = await find({ role: "button", limit: 100 });
     const target = chooseMatch(peers, { role: "button", name: `${base} B` }, (item) => String(item?.agentId || "").startsWith("forward-message-peer:") && String(item?.text || item?.name || "").includes(`${base} B`));
     await callDevice("fabushi.app.action", { generation: peers.generation, agentId: target.agentId, action: "invoke" });
     await waitFor({ agentId: "test:forward-message-dialog", state: "absent" }, 30_000);
