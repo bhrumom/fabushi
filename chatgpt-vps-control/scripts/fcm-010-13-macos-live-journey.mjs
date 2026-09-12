@@ -15,8 +15,8 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     return callGenerationSensitiveAction({
       invokeDeviceCall,
       args,
-      onRetry: ({ attempt, agentId, previousGeneration, findGeneration, refreshedGeneration }) => {
-        record("generation-retry", { attempt, agentId, previousGeneration, findGeneration, refreshedGeneration });
+      onRetry: ({ attempt, resolver, agentId, previousGeneration, findGeneration, refreshedGeneration }) => {
+        record("generation-retry", { attempt, resolver, agentId, previousGeneration, findGeneration, refreshedGeneration });
       },
     });
   }
@@ -32,21 +32,48 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     if (result.passed !== true) throw new Error(`assert failed: ${JSON.stringify(query)} :: ${JSON.stringify(result.failures || [])}`);
     return result;
   }
-  function chooseMatch(found, query, predicate) {
+  function matchingTargets(found, query, predicate) {
     const matches = Array.isArray(found?.matches) ? found.matches : [];
-    const selected = predicate ? matches.find(predicate) : matches.find((item) => {
-      if (query.agentId) return item?.agentId === query.agentId;
-      if (query.name) return item?.name === query.name;
-      return true;
-    }) || matches[0];
+    return matches.filter((item) => {
+      if (query.agentId && item?.agentId !== query.agentId) return false;
+      if (query.role && item?.role !== query.role) return false;
+      if (query.name && item?.name !== query.name) return false;
+      if (query.text) {
+        const haystack = String(item?.text || item?.name || "");
+        if (!haystack.includes(query.text)) return false;
+      }
+      return predicate ? Boolean(predicate(item)) : true;
+    });
+  }
+  function chooseMatch(found, query, predicate) {
+    const selected = matchingTargets(found, query, predicate)[0];
     if (!selected) throw new Error(`semantic target not found: ${JSON.stringify(query)}`);
     return selected;
+  }
+  function chooseUniqueMatch(found, query, predicate) {
+    const matches = matchingTargets(found, query, predicate);
+    if (matches.length !== 1) {
+      throw new Error(`semantic target not uniquely resolvable: ${JSON.stringify(query)} count=${matches.length}`);
+    }
+    return matches[0];
   }
   async function act(query, action, value, predicate) {
     const found = await find(query);
     const target = chooseMatch(found, query, predicate);
     const args = { generation: found.generation, action, ...(target.agentId ? { agentId: target.agentId } : { ref: target.ref }), ...(value === undefined ? {} : { value }) };
-    return callDevice("fabushi.app.action", args);
+    if (target.agentId) return callDevice("fabushi.app.action", args);
+    if (!target.ref) throw new Error(`semantic target has neither stable agentId nor generation-bound ref: ${JSON.stringify(query)}`);
+    return callGenerationSensitiveAction({
+      invokeDeviceCall,
+      args,
+      resolveLatestTarget: async () => {
+        const refreshed = await invokeDeviceCall("fabushi.app.find", { ...query, limit: query.limit || 100 });
+        return { generation: refreshed.generation, target: chooseUniqueMatch(refreshed, query, predicate) };
+      },
+      onRetry: ({ attempt, resolver, agentId, previousGeneration, findGeneration, refreshedGeneration }) => {
+        record("generation-retry", { attempt, resolver, agentId, previousGeneration, findGeneration, refreshedGeneration, query });
+      },
+    });
   }
   async function poll(description, probe, timeoutMs = 60_000, intervalMs = 600) {
     const deadline = Date.now() + timeoutMs;
