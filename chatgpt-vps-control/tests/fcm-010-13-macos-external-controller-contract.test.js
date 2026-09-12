@@ -38,8 +38,10 @@ test("controller executes every frozen macOS full-journey category and preserves
   const ready = controller.indexOf("TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
   const finish = controller.indexOf('callDevice("ci_session_finish"', ready);
   const logout = controller.indexOf('agentId: "settings-logout", action: "invoke"', finish);
-  assert.ok(ready >= 0 && finish > ready && logout > finish, "READY -> ci_session_finish -> exact settings-logout order must be preserved");
-  assert.equal(controller.indexOf('callDevice("', logout + 1), -1, "no remote device call may occur after exact settings-logout in the pass path");
+  const catchBoundary = controller.indexOf("} catch (error) {", logout);
+  assert.ok(ready >= 0 && finish > ready && logout > finish && catchBoundary > logout, "READY -> ci_session_finish -> exact settings-logout order must be preserved");
+  const remainingPassPath = controller.slice(logout + 1, catchBoundary);
+  assert.equal(remainingPassPath.indexOf('callDevice("'), -1, "no remote device call may occur after exact settings-logout in the successful pass path");
 });
 
 test("orchestrator gates dispatch on account preflight and dispatches only the immutable frozen tag", () => {
