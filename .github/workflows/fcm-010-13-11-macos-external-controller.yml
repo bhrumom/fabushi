@@ -12,6 +12,7 @@ on:
       - 'chatgpt-vps-control/scripts/fcm-010-13-macos-live-journey.mjs'
       - 'chatgpt-vps-control/tests/fcm-010-13-find-contract.test.js'
       - 'chatgpt-vps-control/tests/fcm-010-13-macos-external-controller-contract.test.js'
+      - 'chatgpt-vps-control/tests/fcm-010-13-unread-baseline-surface-contract.test.js'
   release:
     types: [published]
   workflow_dispatch:
@@ -53,7 +54,8 @@ jobs:
           node --check chatgpt-vps-control/scripts/fcm-010-13-macos-live-journey.mjs
           node --test \
             chatgpt-vps-control/tests/fcm-010-13-find-contract.test.js \
-            chatgpt-vps-control/tests/fcm-010-13-macos-external-controller-contract.test.js
+            chatgpt-vps-control/tests/fcm-010-13-macos-external-controller-contract.test.js \
+            chatgpt-vps-control/tests/fcm-010-13-unread-baseline-surface-contract.test.js
 
   protected-account-preflight:
     name: Protected account production MCP preflight
