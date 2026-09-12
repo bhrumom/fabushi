@@ -11,6 +11,11 @@ import {
   matchingTargets,
   newestMessageRowsFromSnapshot,
 } from "../scripts/fcm-010-13-macos-live-journey.mjs";
+import {
+  isTransientNetworkError,
+  retryTransientNetwork,
+  transientNetworkCode,
+} from "../scripts/fcm-010-13-transient-retry.mjs";
 
 const controller = await readFile(new URL("../scripts/fcm-010-13-macos-external-controller-v2.mjs", import.meta.url), "utf8");
 const journey = await readFile(new URL("../scripts/fcm-010-13-macos-live-journey.mjs", import.meta.url), "utf8");
@@ -32,6 +37,13 @@ function messageSnapshot(rows, { includeComposer = true } = {}) {
   const elements = [...rows];
   if (includeComposer) elements.push({ role: "textbox", agentId: "test:messenger-input", name: "Message" });
   return { elements };
+}
+
+function fetchFailure(code) {
+  const cause = Object.assign(new Error(code), { code });
+  const error = new TypeError("fetch failed");
+  error.cause = cause;
+  return error;
 }
 
 test("production controller serializes every fabushi.app.find through the shared <=100 boundary", () => {
@@ -56,6 +68,59 @@ test("production controller serializes every fabushi.app.find through the shared
 
   const unrelated = { timeoutMs: 30_000, limit: 200 };
   assert.equal(normalizeDeviceCallArguments("fabushi.app.wait", unrelated), unrelated);
+});
+
+test("OAuth bootstrap retries only bounded transient transport failures and restarts a fresh authorization flow", async () => {
+  assert.match(controller, /retryTransientNetwork/u);
+  assert.match(controller, /async function authorizeMcpOnce\(\)/u);
+  assert.match(controller, /maxAttempts: 3/u);
+  assert.match(controller, /baseDelayMs: 250/u);
+  assert.match(controller, /oauth-transient-retry/u);
+
+  assert.equal(transientNetworkCode(fetchFailure("ECONNRESET")), "ECONNRESET");
+  assert.equal(isTransientNetworkError(fetchFailure("ETIMEDOUT")), true);
+  assert.equal(isTransientNetworkError(new Error("MCP token exchange failed: HTTP 401")), false);
+
+  let attempts = 0;
+  const delays = [];
+  const retries = [];
+  const result = await retryTransientNetwork(async () => {
+    attempts += 1;
+    if (attempts < 3) throw fetchFailure("ECONNRESET");
+    return "fresh-access-token";
+  }, {
+    maxAttempts: 3,
+    baseDelayMs: 250,
+    sleepFn: async (delayMs) => { delays.push(delayMs); },
+    onRetry: (event) => retries.push(event),
+  });
+  assert.equal(result, "fresh-access-token");
+  assert.equal(attempts, 3);
+  assert.deepEqual(delays, [250, 500]);
+  assert.deepEqual(retries.map(({ attempt, nextAttempt, code }) => [attempt, nextAttempt, code]), [
+    [1, 2, "ECONNRESET"],
+    [2, 3, "ECONNRESET"],
+  ]);
+
+  let semanticAttempts = 0;
+  await assert.rejects(
+    retryTransientNetwork(async () => {
+      semanticAttempts += 1;
+      throw new Error("dynamic client registration failed: HTTP 401");
+    }, { maxAttempts: 3, sleepFn: async () => {} }),
+    /HTTP 401/u,
+  );
+  assert.equal(semanticAttempts, 1, "semantic/authentication HTTP failures must remain fail-closed without retry");
+
+  let exhaustedAttempts = 0;
+  await assert.rejects(
+    retryTransientNetwork(async () => {
+      exhaustedAttempts += 1;
+      throw fetchFailure("EAI_AGAIN");
+    }, { maxAttempts: 3, baseDelayMs: 0, sleepFn: async () => {} }),
+    /fetch failed/u,
+  );
+  assert.equal(exhaustedAttempts, 3, "persistent transport failure must stop at the bounded retry budget");
 });
 
 test("production find selection trusts server text/name filtering after returned labels are redacted", () => {
