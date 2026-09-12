@@ -19,13 +19,17 @@ function contains(text, literal, label = literal) {
 }
 
 test("FCM-010.13.11 controller v2 is exact-source, production-account and run-owned-device only", () => {
-  contains(controller, "7ee12b790e18049d2b9509b0c29128dd2ace690b");
-  contains(controller, "desktop-1.2.56-7ee12b790e18");
+  contains(controller, 'process.env.FROZEN_SOURCE_SHA');
+  contains(controller, 'process.env.IMMUTABLE_RELEASE_TAG');
+  contains(controller, 'FROZEN_SOURCE_SHA must be an exact commit SHA');
+  contains(controller, 'IMMUTABLE_RELEASE_TAG must be an immutable desktop source tag');
   contains(controller, 'expectedDeviceId !== `gha-${runId}-${runAttempt}-macos-app`');
   contains(controller, '/^gha-[0-9]+-[0-9]+-macos-app$/u');
   contains(controller, 'name: "list_devices"');
   contains(controller, 'name: "device_call"');
   contains(controller, "https://fabushi-mcp.ombhrum.com");
+  assert.equal(controller.includes("7ee12b790e18049d2b9509b0c29128dd2ace690b"), false);
+  assert.equal(controller.includes("desktop-1.2.56-7ee12b790e18"), false);
   for (const forbidden of ["gloria-macbook-air", "KRIS", "runner-owned"]) {
     assert.equal(`${controller}\n${journey}`.includes(forbidden), false);
   }
@@ -233,19 +237,27 @@ test("live journey executes every required semantic category and preserves readi
   assert.equal(journey.slice(logout + 1, returned).includes('callDevice("'), false, "no remote device call may occur after exact settings-logout in the successful pass path");
 });
 
-test("orchestrator gates dispatch on preflight, invokes controller v2, and still requires target green evidence", () => {
+test("orchestrator auto-binds the published immutable Release, dispatches its exact source, and still requires target green evidence", () => {
   for (const token of [
     "needs: protected-account-preflight",
     "actions: write",
     "TARGET_WORKFLOW_ID: '350936009'",
-    "FROZEN_SOURCE_SHA: 7ee12b790e18049d2b9509b0c29128dd2ace690b",
-    "IMMUTABLE_RELEASE_TAG: desktop-1.2.56-7ee12b790e18",
+    "release:\n    types: [published]",
+    "Resolve immutable exact-source macOS Release binding",
+    "test \"$(jq -r '.immutable' <<<\"$release\")\" = true",
+    "tag_sha=\"$(gh api \"repos/$GITHUB_REPOSITORY/git/ref/tags/$release_tag\" --jq '.object.sha')\"",
+    '[[ "$release_tag" == *"-$short_source" ]]',
     'actions/workflows/$TARGET_WORKFLOW_ID/dispatches',
     '-f ref="$IMMUTABLE_RELEASE_TAG"',
     'expected_device_id="gha-${target_run_id}-${target_run_attempt}-macos-app"',
+    "FROZEN_SOURCE_SHA: ${{ steps.binding.outputs.source_sha }}",
+    "IMMUTABLE_RELEASE_TAG: ${{ steps.binding.outputs.release_tag }}",
     "fcm-010-13-macos-external-controller-v2.mjs",
     'fcm-010.13.11.external-controller.v2',
     'test "$(jq -r \'.conclusion\' <<<"$final")" = success',
     'fabushi-macos-interactive-evidence-${TARGET_RUN_ID}-${TARGET_RUN_ATTEMPT}',
+    '(.digest | startswith("sha256:"))',
   ]) contains(workflow, token);
+  assert.equal(workflow.includes("FROZEN_SOURCE_SHA: 7ee12b790e18049d2b9509b0c29128dd2ace690b"), false);
+  assert.equal(workflow.includes("IMMUTABLE_RELEASE_TAG: desktop-1.2.56-7ee12b790e18"), false);
 });
