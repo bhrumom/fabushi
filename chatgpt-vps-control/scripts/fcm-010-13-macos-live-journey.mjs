@@ -33,6 +33,38 @@ export function newestMessageRowsFromSnapshot(snapshotValue, limit = 100) {
     .slice(-limit);
 }
 
+export function peerHasUnreadBadgeFromSnapshot(snapshotValue, peerAgentId) {
+  if (!String(peerAgentId || "").startsWith("test:peer-")) {
+    throw new Error(`peer unread snapshot requires a stable test:peer-* id; received ${String(peerAgentId || "<empty>")}`);
+  }
+  const elements = Array.isArray(snapshotValue?.elements) ? snapshotValue.elements : [];
+  const peerIndex = elements.findIndex((item) => item?.agentId === peerAgentId);
+  if (peerIndex < 0) return false;
+  let endIndex = elements.length;
+  for (let index = peerIndex + 1; index < elements.length; index += 1) {
+    const agentId = String(elements[index]?.agentId || "");
+    if (agentId.startsWith("test:peer-") && agentId !== peerAgentId) {
+      endIndex = index;
+      break;
+    }
+  }
+  return elements
+    .slice(peerIndex + 1, endIndex)
+    .some((item) => item?.tag === "b" && item?.visible !== false);
+}
+
+export function matchingTargets(found, query, predicate) {
+  const matches = Array.isArray(found?.matches) ? found.matches : [];
+  return matches.filter((item) => {
+    if (query.agentId && item?.agentId !== query.agentId) return false;
+    if (query.role && item?.role !== query.role) return false;
+    // fabushi.app.find owns text/name matching against the unredacted App Surface.
+    // Production responses intentionally redact returned text/name, so re-reading
+    // those fields here would turn a genuine server-side match into a false miss.
+    return predicate ? Boolean(predicate(item)) : true;
+  });
+}
+
 export function createMessageReceiveTracker({
   callDevice,
   sleepFn = sleep,
@@ -114,19 +146,6 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     if (result.passed !== true) throw new Error(`assert failed: ${JSON.stringify(query)} :: ${JSON.stringify(result.failures || [])}`);
     return result;
   }
-  function matchingTargets(found, query, predicate) {
-    const matches = Array.isArray(found?.matches) ? found.matches : [];
-    return matches.filter((item) => {
-      if (query.agentId && item?.agentId !== query.agentId) return false;
-      if (query.role && item?.role !== query.role) return false;
-      if (query.name && item?.name !== query.name) return false;
-      if (query.text) {
-        const haystack = String(item?.text || item?.name || "");
-        if (!haystack.includes(query.text)) return false;
-      }
-      return predicate ? Boolean(predicate(item)) : true;
-    });
-  }
   function chooseMatch(found, query, predicate) {
     const selected = matchingTargets(found, query, predicate)[0];
     if (!selected) throw new Error(`semantic target not found: ${JSON.stringify(query)}`);
@@ -201,7 +220,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   }
   async function openMessageMenu(text) {
     const found = await find({ text, limit: 100 });
-    const match = chooseMatch(found, { text }, (item) => String(item?.agentId || "").startsWith("message-actions:") && String(item?.text || item?.name || "").includes(text));
+    const match = chooseMatch(found, { text }, (item) => item?.role === "article" && String(item?.agentId || "").startsWith(MESSAGE_ROW_PREFIX));
     await callDevice("fabushi.app.action", { generation: found.generation, agentId: match.agentId, action: "invoke" });
     await waitFor({ agentId: "test:message-context-menu", state: "visible" });
   }
@@ -248,7 +267,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await waitFor({ agentId: "test:messenger-input", state: "visible" }, 30_000);
     await waitFor({ text: name, state: "present" }, 30_000);
     const found = await find({ text: name, limit: 100 });
-    const peer = chooseMatch(found, { text: name }, (item) => String(item?.agentId || "").startsWith("test:peer-selfhosted:channel:") && String(item?.text || item?.name || "").includes(name));
+    const peer = chooseMatch(found, { text: name }, (item) => String(item?.agentId || "").startsWith("test:peer-selfhosted:channel:"));
     record("selfhosted-channel-created", { name, agentId: peer.agentId });
     return peer.agentId;
   }
@@ -256,13 +275,11 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await invokeTest(agentId.startsWith("test:") ? agentId.slice(5) : agentId);
     await waitFor({ agentId: "test:messenger-input", state: "visible" });
   }
-  async function waitForAssistantUnread(previousPeerText) {
+  async function waitForAssistantUnread() {
     return poll("assistant peer unread badge", async () => {
-      const found = await find({ agentId: ASSISTANT_PEER_ID, limit: 1 });
-      const peer = found.matches?.[0];
-      const text = String(peer?.text || peer?.name || "").trim();
-      const unreadMatch = text.match(/([1-9][0-9]*)\s*$/u);
-      return { ok: Boolean(peer && text !== previousPeerText && unreadMatch), value: { text, unread: unreadMatch ? Number(unreadMatch[1]) : 0 } };
+      const fresh = await snapshot();
+      const unread = peerHasUnreadBadgeFromSnapshot(fresh, ASSISTANT_PEER_ID);
+      return { ok: unread, value: { unread, generation: fresh.generation } };
     }, 90_000, 800);
   }
   async function waitForIncomingMessage(beforeIds, sentMessageRowId) {
@@ -316,8 +333,6 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   });
 
   const sendProbe = `${base} receive-unread-probe`;
-  const assistantBefore = await find({ agentId: ASSISTANT_PEER_ID, limit: 1 });
-  const assistantPeerTextBefore = String(assistantBefore.matches?.[0]?.text || assistantBefore.matches?.[0]?.name || "");
   let messageIdsBeforeSend = new Set();
   let sentMessageRowId = "";
   await category("send", async () => {
@@ -326,8 +341,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
       await sendText(sendProbe);
       const own = await find({ text: sendProbe, limit: 100 });
       const sent = chooseUniqueMatch(own, { text: sendProbe }, (item) => (
-        String(item?.agentId || "").startsWith(MESSAGE_ROW_PREFIX)
-        && String(item?.text || item?.name || "").trim() === sendProbe
+        item?.role === "article" && String(item?.agentId || "").startsWith(MESSAGE_ROW_PREFIX)
       ));
       return String(sent.agentId || "");
     });
@@ -339,8 +353,8 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await navigateSection("聊天");
   });
   await category("unread", async () => {
-    const unread = await waitForAssistantUnread(assistantPeerTextBefore);
-    if (!(unread.unread > 0)) throw new Error(`assistant unread badge was not positive: ${JSON.stringify(unread)}`);
+    const unread = await waitForAssistantUnread();
+    if (unread.unread !== true) throw new Error(`assistant unread badge was not positive: ${JSON.stringify(unread)}`);
     record("unread-observed", unread);
   });
   await category("receive", async () => {
@@ -400,7 +414,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await invokeTest("message-action-forward");
     await waitFor({ agentId: "test:forward-message-dialog", state: "visible" });
     const peers = await find({ role: "button", name: `${base} B`, limit: 100 });
-    const target = chooseMatch(peers, { role: "button", name: `${base} B` }, (item) => String(item?.agentId || "").startsWith("forward-message-peer:") && String(item?.text || item?.name || "").includes(`${base} B`));
+    const target = chooseMatch(peers, { role: "button", name: `${base} B` }, (item) => String(item?.agentId || "").startsWith("forward-message-peer:"));
     await callDevice("fabushi.app.action", { generation: peers.generation, agentId: target.agentId, action: "invoke" });
     await waitFor({ agentId: "test:forward-message-dialog", state: "absent" }, 30_000);
     await navigateSection("频道");
