@@ -8,3 +8,5 @@
 | CWA-004 | Integrate Electron dual native hosts/runtime staging | CWA-003 | host/server tests | PR-passed | Electron/post-main delivery |
 | CWA-005 | Add command parity/generation/Marketplace catalog | CWA-003/004 | contract/security tests | PR-passed | canonical CI |
 | CWA-006 | Package, release and migrate Chrome profiles | CWA-005 + protected main | exact SHA CI/E2E/Release/profile evidence | in-progress | protected PR checks |
+
+| CWA-007 | Official Chrome login and same-account MCP browser control | CWA-006/AAC/gateway | CWA-R009..R012; exact-SHA CI/release | in-progress | Review auth transport and implement |

@@ -9,6 +9,7 @@ For the production deployment described here:
 - MCP connector: `https://fabushi-mcp.ombhrum.com/mcp`
 - OAuth issuer: `https://fabushi-mcp.ombhrum.com`
 - Device agent: `wss://fabushi-mcp.ombhrum.com/agent`
+- Signed-in Fabushi Chrome agent: `wss://fabushi-mcp.ombhrum.com/browser-agent`
 - Health check: `https://fabushi-mcp.ombhrum.com/health`
 
 The Node service binds only to `127.0.0.1:8792`; the existing authenticated Cloudflare Tunnel supplies HTTPS and WebSocket transport. The origin service is not opened on a public interface.
@@ -21,6 +22,14 @@ The Node service binds only to `127.0.0.1:8792`; the existing authenticated Clou
 4. The MCP service issues its own scoped access/refresh tokens containing only the stable Fabushi account id, display label, client id, resource and scopes. It does not persist the original Fabushi access token.
 5. A desktop or temporary Runner connects to `/agent` with an ordinary Fabushi access token. The gateway resolves that token to the same account id.
 6. Device registry keys are `accountId + deviceId`; listing and calls require the MCP token's account to match.
+
+Fabushi Chrome uses the same account browser-login endpoints, keeps only the
+short-lived access credential in extension session storage, and authenticates
+as the first WebSocket frame on `/browser-agent`. The gateway accepts this route
+only from the configured, published `chrome-extension://` origin and verifies
+the credential before accepting device registration. Logout closes the socket,
+discards the session and revokes tab claims/debugger attachments. Browser leases
+force periodic server-side token revalidation rather than trusting one long-lived socket.
 
 The service applies bounded client, authorization, code, token, device and pending-call registries, short authorization/code lifetimes, device leases, heartbeat expiry, exact socket-generation binding and audit events with hashed account references.
 

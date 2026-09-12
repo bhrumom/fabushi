@@ -91,7 +91,7 @@ jobs:
           test -n "$zip_path" && test -n "$manifest_path" && test -n "$checksums_path"
           test "$(jq -r '.sourceSha' "$manifest_path")" = "$SOURCE_SHA"
           version="$(jq -r '.version' "$manifest_path")"
-          test "$version" = "0.5.0"
+          test "$version" = "0.6.0"
           archive_sha="$(sha256sum "$zip_path" | awk '{print $1}')"
           test "$(jq -r '.archive.sha256' "$manifest_path")" = "$archive_sha"
           (cd "$(dirname "$checksums_path")" && sha256sum -c "$(basename "$checksums_path")")

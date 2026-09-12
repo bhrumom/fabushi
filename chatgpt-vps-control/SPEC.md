@@ -6,6 +6,13 @@ Fabushi exposes a public remote MCP endpoint that any Fabushi user can add to Ch
 
 The MCP is a product capability for all users, not a CI-only or GitHub-only integration.
 
+The official Fabushi Chrome extension is also a first-class device. It completes the
+existing Fabushi browser-login flow, stores only a short-lived session in trusted extension
+storage, and registers through `wss://fabushi-mcp.ombhrum.com/browser-agent`. The gateway
+requires the published extension origin and verifies the account before exposing the
+browser's fused Computer Control Bridge tools. This gives an MCP client controlling account
+A access to account A's Chrome only; logout, token expiry and lease expiry remove presence.
+
 **Core actions**
 1. Sign in to the Fabushi MCP with a normal Fabushi account.
 2. List online devices belonging to that Fabushi `userId`.
