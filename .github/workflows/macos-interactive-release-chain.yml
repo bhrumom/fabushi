@@ -4,51 +4,114 @@ on:
   workflow_run:
     workflows:
       - Native Electron macOS test release
+      - Post-main E2E Release delivery
     types: [completed]
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/macos-interactive-release-chain.yml'
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact protected-main source SHA whose published macOS release should be tested
+        required: true
+        type: string
 
 permissions:
   actions: write
   contents: read
 
 concurrency:
-  group: macos-interactive-release-chain
+  group: macos-interactive-release-chain-${{ github.event.workflow_run.head_sha || inputs.source_sha || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   dispatch-interactive:
-    name: Dispatch App-owned macOS interactive lane
+    name: Dispatch exact-source App-owned macOS interactive lane
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Record upstream release identity
+      - id: release
+        name: Resolve exact-source published macOS release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISPATCH_SOURCE_SHA: ${{ inputs.source_sha }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
+            source_sha='${{ github.event.workflow_run.head_sha }}'
+            upstream_name='${{ github.event.workflow_run.name }}'
+            upstream_id='${{ github.event.workflow_run.id }}'
+            upstream_conclusion='${{ github.event.workflow_run.conclusion }}'
+            case "$upstream_name" in
+              'Native Electron macOS test release'|'Post-main E2E Release delivery') ;;
+              *) echo "Unexpected upstream workflow: $upstream_name" >&2; exit 1 ;;
+            esac
+            test "$upstream_conclusion" = success
+          else
+            source_sha="$DISPATCH_SOURCE_SHA"
+            upstream_name='manual exact-source replay'
+            upstream_id="$GITHUB_RUN_ID"
+          fi
+          test -n "$source_sha"
+          test "${#source_sha}" = 40
+
+          releases="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[]')"
+          release_tag="$(jq -sr --arg sha "$source_sha" '
+            [ .[]
+              | select(.draft == false and .target_commitish == $sha)
+              | select(any(.assets[]?; .name | test("macos-.*[.]zip$")))
+            ]
+            | sort_by(.published_at // .created_at)
+            | last
+            | .tag_name // empty
+          ' <<<"$releases")"
+          if [ -z "$release_tag" ]; then
+            echo "No published macOS release with an installable ZIP is bound to exact source $source_sha" >&2
+            exit 1
+          fi
+
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$release_tag" --jq '.sha')"
+          test "$tag_sha" = "$source_sha"
+
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/macos-interactive-app-e2e.yml/runs?head_sha=$source_sha&per_page=100")"
+          existing_run="$(jq -r '
+            [ .workflow_runs[]
+              | select(.event == "workflow_dispatch" or .event == "release")
+              | select(.status != "completed" or .conclusion == "success")
+            ]
+            | sort_by(.created_at)
+            | last
+            | .id // empty
+          ' <<<"$existing")"
+          skip=false
+          if [ -n "$existing_run" ]; then
+            skip=true
+          fi
+
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
           {
             echo '## macOS release -> interactive App E2E chain'
             echo
             echo "- Trigger event: $GITHUB_EVENT_NAME"
-            echo "- Dispatch ref: main"
-            if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
-              echo "- Upstream release run: ${{ github.event.workflow_run.id }}"
-              echo "- Upstream conclusion: ${{ github.event.workflow_run.conclusion }}"
-              test "${{ github.event.workflow_run.name }}" = 'Native Electron macOS test release'
-              test "${{ github.event.workflow_run.conclusion }}" = success
+            echo "- Upstream: $upstream_name / $upstream_id"
+            echo "- Exact source SHA: \`$source_sha\`"
+            echo "- Exact release tag/ref: \`$release_tag\`"
+            if [ "$skip" = true ]; then
+              echo "- Existing active/successful exact-source interactive run: \`$existing_run\`; duplicate dispatch suppressed."
             else
-              echo '- Bootstrap dispatch after this chain workflow lands on protected main.'
+              echo '- No active/successful exact-source interactive run exists; dispatch is required.'
             fi
-            echo '- This workflow only dispatches the existing interactive lane; it never registers a device or starts a runner-owned gateway.'
+            echo '- The installed App remains the only device-registration owner; this bridge only selects exact-source provenance and dispatches the existing lane.'
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Dispatch existing App-owned macOS interactive workflow
+
+      - name: Dispatch existing App-owned macOS interactive workflow from exact release tag
+        if: steps.release.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
         shell: bash
         run: |
           set -euo pipefail
-          gh workflow run macos-interactive-app-e2e.yml --repo "$GITHUB_REPOSITORY" --ref main
+          test -n "$RELEASE_TAG"
+          gh workflow run macos-interactive-app-e2e.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_TAG"
