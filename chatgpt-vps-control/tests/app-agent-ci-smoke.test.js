@@ -33,7 +33,10 @@ function fakeClient(options = {}) {
       }
       if (operation === "wait") {
         if (input.agentId === "test:profile-navigation-trigger") return { passed: true };
-        if (input.agentId === "test:profile-navigation-menu") return { passed: !menuVisible };
+        if (input.agentId === "test:profile-navigation-menu") {
+          assert.equal(input.state, "absent");
+          return { passed: !menuVisible };
+        }
       }
       if (operation === "find") return { generation, count: 1, matches: [{ agentId: input.agentId }] };
       if (operation === "action") {
@@ -62,6 +65,7 @@ test("Action-owned App Agent smoke drives the existing semantic bridge without c
   assert.deepEqual(calls.map(([operation]) => operation), result.operations);
   assert.equal(calls.some(([operation, input]) => operation === "action" && Object.hasOwn(input, "x")), false);
   assert.equal(calls.some(([operation, input]) => operation === "action" && Object.hasOwn(input, "y")), false);
+  assert.equal(calls.some(([operation, input]) => operation === "wait" && input.agentId === "test:profile-navigation-menu" && input.state === "absent"), true);
 });
 
 test("Action-owned App Agent smoke fails closed when a semantic assertion fails", async () => {
