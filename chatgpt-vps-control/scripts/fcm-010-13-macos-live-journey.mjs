@@ -53,12 +53,19 @@ export function createMessageReceiveTracker({
   async function captureBeforeSend(send) {
     if (typeof send !== "function") throw new Error("message receive tracker requires a send callback");
     const beforeIds = new Set((await readNewestRows()).map((item) => String(item?.agentId || "")));
-    await send();
-    return beforeIds;
+    const sentMessageRowId = String(await send() || "");
+    if (!sentMessageRowId.startsWith(MESSAGE_ROW_PREFIX)) {
+      throw new Error(`sent_message_identity_missing: ${sentMessageRowId || "<empty>"}`);
+    }
+    if (beforeIds.has(sentMessageRowId)) {
+      throw new Error(`sent_message_identity_not_new: ${sentMessageRowId}`);
+    }
+    return { beforeIds, sentMessageRowId };
   }
 
-  async function waitForIncoming(beforeIds, ownText) {
+  async function waitForIncoming(beforeIds, sentMessageRowId) {
     if (!(beforeIds instanceof Set)) throw new Error("message receive tracker requires a Set baseline");
+    if (!String(sentMessageRowId || "").startsWith(MESSAGE_ROW_PREFIX)) throw new Error("message receive tracker requires the exact sent message row identity");
     const deadline = Date.now() + timeoutMs;
     let attempt = 0;
     let last = null;
@@ -68,7 +75,7 @@ export function createMessageReceiveTracker({
       const candidate = rows.find((item) => {
         const id = String(item?.agentId || "");
         const text = String(item?.text || item?.name || "");
-        return !beforeIds.has(id) && text && !text.includes(ownText);
+        return !beforeIds.has(id) && id !== sentMessageRowId && Boolean(text);
       });
       if (candidate) {
         return { agentId: candidate.agentId, text: String(candidate.text || candidate.name || "").slice(0, 240) };
@@ -258,8 +265,8 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
       return { ok: Boolean(peer && text !== previousPeerText && unreadMatch), value: { text, unread: unreadMatch ? Number(unreadMatch[1]) : 0 } };
     }, 90_000, 800);
   }
-  async function waitForIncomingMessage(beforeIds, ownText) {
-    return messageReceiveTracker.waitForIncoming(beforeIds, ownText);
+  async function waitForIncomingMessage(beforeIds, sentMessageRowId) {
+    return messageReceiveTracker.waitForIncoming(beforeIds, sentMessageRowId);
   }
   async function ensureGlobalDharmaInstalled() {
     await closeGlobalSearchIfOpen();
@@ -312,11 +319,21 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   const assistantBefore = await find({ agentId: ASSISTANT_PEER_ID, limit: 1 });
   const assistantPeerTextBefore = String(assistantBefore.matches?.[0]?.text || assistantBefore.matches?.[0]?.name || "");
   let messageIdsBeforeSend = new Set();
+  let sentMessageRowId = "";
   await category("send", async () => {
     await openAssistantConversation();
-    messageIdsBeforeSend = await messageReceiveTracker.captureBeforeSend(() => sendText(sendProbe));
-    const own = await find({ text: sendProbe, limit: 100 });
-    if (!(own.matches || []).some((item) => String(item?.agentId || "").startsWith("message-actions:"))) throw new Error("sent probe did not resolve to a real semantic message row");
+    const tracking = await messageReceiveTracker.captureBeforeSend(async () => {
+      await sendText(sendProbe);
+      const own = await find({ text: sendProbe, limit: 100 });
+      const sent = chooseUniqueMatch(own, { text: sendProbe }, (item) => (
+        String(item?.agentId || "").startsWith(MESSAGE_ROW_PREFIX)
+        && String(item?.text || item?.name || "").trim() === sendProbe
+      ));
+      return String(sent.agentId || "");
+    });
+    messageIdsBeforeSend = tracking.beforeIds;
+    sentMessageRowId = tracking.sentMessageRowId;
+    record("sent-message-row-resolved", { agentId: sentMessageRowId });
     await navigateSection("频道");
     await openPeer(channelAId);
     await navigateSection("聊天");
@@ -328,7 +345,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   });
   await category("receive", async () => {
     await openAssistantConversation();
-    const received = await waitForIncomingMessage(messageIdsBeforeSend, sendProbe);
+    const received = await waitForIncomingMessage(messageIdsBeforeSend, sentMessageRowId);
     record("incoming-message-observed", received);
   });
 
