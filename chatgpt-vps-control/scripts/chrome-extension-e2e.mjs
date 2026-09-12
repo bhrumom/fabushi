@@ -83,6 +83,15 @@ function record(type, detail = {}) {
   events.push({ type, at: new Date().toISOString(), ...detail });
   try { fs.writeFileSync(resultPath, JSON.stringify({ journeyId: ${JSON.stringify(journeyId)}, sourceSha: ${JSON.stringify(sourceSha)}, runId: ${JSON.stringify(runId)}, events }, null, 2) + "\\n"); } catch {}
 }
+record("host-started", { pid: process.pid });
+process.on("uncaughtException", (error) => {
+  record("failure", { message: "uncaughtException: " + (error?.stack || error?.message || String(error)) });
+  process.exitCode = 1;
+});
+process.on("unhandledRejection", (error) => {
+  record("failure", { message: "unhandledRejection: " + (error?.stack || error?.message || String(error)) });
+  process.exitCode = 1;
+});
 function send(message) {
   const body = Buffer.from(JSON.stringify(message), "utf8");
   const header = Buffer.alloc(4);
@@ -213,6 +222,7 @@ let server = null;
 let appPage = null;
 let fixturePage = null;
 let journeyError = null;
+const nativeManifestPaths = [];
 const steps = [];
 const report = {
   schemaVersion: 1,
@@ -253,10 +263,18 @@ try {
     allowed_origins: [`chrome-extension://${extensionId}/`],
   };
   const home = homedir();
-  await Promise.all([
-    writeNativeHostManifest(join(home, ".config", "google-chrome", "NativeMessagingHosts"), nativeHost),
-    writeNativeHostManifest(join(home, ".config", "chromium", "NativeMessagingHosts"), nativeHost),
-  ]);
+  for (const directory of [
+    join(home, ".config", "google-chrome", "NativeMessagingHosts"),
+    join(home, ".config", "chromium", "NativeMessagingHosts"),
+    // Chrome for Testing uses a product-specific profile root on some Linux
+    // runners. Keep these exact test-only manifests scoped to the ephemeral
+    // host and remove them in finally below.
+    join(home, ".config", "google-chrome-for-testing", "NativeMessagingHosts"),
+    join(home, ".config", "chrome-for-testing", "NativeMessagingHosts"),
+  ]) {
+    await writeNativeHostManifest(directory, nativeHost);
+    nativeManifestPaths.push(join(directory, `${nativeHost.name}.json`));
+  }
 
   server = createServer((request, response) => {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -281,15 +299,31 @@ try {
       "--disable-background-networking",
     ],
   });
+  context.on("serviceworker", (worker) => {
+    step("service-worker-start", { url: worker.url() });
+    worker.on("console", (message) => step("service-worker-console", { type: message.type(), text: message.text() }));
+    worker.on("pageerror", (error) => step("service-worker-pageerror", { error: error?.message || String(error) }));
+  });
   await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
   fixturePage = context.pages()[0] || await context.newPage();
+  fixturePage.on("console", (message) => step("fixture-console", { type: message.type(), text: message.text() }));
+  fixturePage.on("pageerror", (error) => step("fixture-pageerror", { error: error?.message || String(error) }));
   await fixturePage.goto(fixtureUrl, { waitUntil: "domcontentloaded" });
   await captureCheckpoint(fixturePage, join(evidenceRoot, "01-startup-fixture.png"));
   step("startup", { url: fixtureUrl });
 
-  const serviceWorker = await waitFor(() => context.serviceWorkers().find((worker) => worker.url().startsWith("chrome-extension://")));
-  const extensionOrigin = new URL(serviceWorker.url()).origin;
+  // The generated manifest key gives us the extension origin before the
+  // worker is first woken. Playwright only reports currently-running workers,
+  // so waiting for that transient object would make a healthy MV3 extension
+  // look broken after an idle/awake transition. Keep a short diagnostic wait,
+  // then navigate using the deterministic origin and let app traffic wake it.
+  await waitFor(() => context.serviceWorkers().find((worker) => worker.url().startsWith("chrome-extension://")), 10_000)
+    .then(() => step("service-worker-ready"))
+    .catch((error) => step("service-worker-not-observed", { error: error?.message || String(error) }));
+  const extensionOrigin = `chrome-extension://${extensionId}`;
   appPage = await context.newPage();
+  appPage.on("console", (message) => step("app-console", { type: message.type(), text: message.text() }));
+  appPage.on("pageerror", (error) => step("app-pageerror", { error: error?.message || String(error) }));
   await appPage.goto(`${extensionOrigin}/app.html`, { waitUntil: "domcontentloaded" });
   await appPage.getByText("Marketplace", { exact: true }).first().waitFor({ state: "visible", timeout: 10_000 });
   await captureCheckpoint(appPage, join(evidenceRoot, "02-fabushi-shell.png"));
@@ -325,6 +359,7 @@ try {
     const pid = Number((await readFile(pidPath, "utf8")).trim());
     if (Number.isInteger(pid) && pid > 1) process.kill(pid, "SIGTERM");
   } catch {}
+  for (const manifestPath of nativeManifestPaths) await rm(manifestPath, { force: true }).catch(() => {});
   report.finishedAt = new Date().toISOString();
   await writeFile(join(evidenceRoot, "journey-report.json"), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
   const html = `<!doctype html><meta charset="utf-8"><title>${journeyId}</title><h1>${journeyId}</h1><p>source=${sourceSha} run=${runId} version=0.5.0</p><p>status=${journeyError ? "failed" : "passed"}</p><pre>${JSON.stringify(report, null, 2).replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</pre>`;

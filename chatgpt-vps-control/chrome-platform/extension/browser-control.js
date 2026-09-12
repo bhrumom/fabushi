@@ -450,4 +450,9 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 connectNative();
 chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
-void saveState(await state());
+// Keep service-worker startup synchronous. Chrome extension service workers
+// must register listeners before any asynchronous initialization; a
+// top-level await would leave the module in an unstarted state on Chrome.
+void state().then((current) => saveState(current)).catch((error) => {
+  nativeError = error?.message || String(error);
+});
