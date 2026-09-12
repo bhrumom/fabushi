@@ -308,8 +308,9 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
   }, [botId, label]);
 
   const semanticLabel = peerUnreadSemantic
-    ? `${label ?? botId} ${peerUnreadSemantic.positive ? "unread-positive" : "unread-none"}`
+    ? (peerUnreadSemantic.positive ? "unread-positive" : "unread-none")
     : label;
+  const semanticDescription = peerUnreadSemantic ? label : undefined;
 
   return (
     <span
@@ -327,6 +328,7 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
       data-renderer="fabushi-owned-svg-runtime"
       style={style}
       aria-label={semanticLabel}
+      aria-description={semanticDescription}
       aria-hidden={semanticLabel ? undefined : true}
       role={semanticLabel ? "img" : undefined}
     >

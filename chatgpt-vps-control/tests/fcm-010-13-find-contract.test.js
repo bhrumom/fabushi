@@ -86,13 +86,17 @@ test("production find selection trusts server text/name filtering after returned
   assert.equal(journey.includes(".includes(text)"), false);
 });
 
-test("assistant unread contract exposes stable semantics and requires a post-send false-to-true transition", () => {
+test("assistant unread contract exposes an exact semantic name and requires a post-send false-to-true transition", () => {
   assert.match(botMark, /closest<HTMLElement>\('button\[data-testid\^="peer-"\]'\)/u);
   assert.match(botMark, /const agentId = `peer-unread:\$\{testId\.slice\("peer-"\.length\)\}`/u);
   assert.match(botMark, /peerButton\.querySelector\("b"\) != null/u);
   assert.match(botMark, /new MutationObserver\(update\)/u);
   assert.match(botMark, /data-agent-id=\{peerUnreadSemantic\?\.agentId\}/u);
-  assert.match(botMark, /"unread-positive" : "unread-none"/u);
+  assert.match(botMark, /peerUnreadSemantic\.positive \? "unread-positive" : "unread-none"/u);
+  assert.match(botMark, /aria-label=\{semanticLabel\}/u);
+  assert.match(botMark, /aria-description=\{semanticDescription\}/u);
+  assert.equal(botMark.includes('`${label ?? botId} ${peerUnreadSemantic.positive ? "unread-positive" : "unread-none"}`'), false,
+    "the semantic App Surface name must be the exact unread marker, not a human-label-prefixed string");
 
   assert.match(journey, /const ASSISTANT_UNREAD_AGENT_ID = "peer-unread:legacy:conversation:mahayana-ai:agent:assistant"/u);
   assert.match(journey, /find\(\{ agentId: ASSISTANT_UNREAD_AGENT_ID, name: marker, limit: 1 \}\)/u);
