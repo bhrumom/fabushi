@@ -58,3 +58,4 @@
 | GBF-803 | M8 | 正式发布 | GBF-801,802 | release/post-release smoke 通过 | GitHub release/deploy evidence | evidence/GBF-803 | NOT_STARTED | GBF-802 | 发布目标版本 |
 | GBF-804 | M8 | 历史 Grok 分支归档决策 | GBF-703,803 | 分支不再是运行权威；ADR 完成 | branch/ref audit + ADR | evidence/GBF-804 | NOT_STARTED | GBF-803 | archive/retain policy |
 | GBF-805 | M8 | 0.18 reconstructed observable parity closure | GBF-106,307,308,408,506,801..804 | capability matrix 无未实现/未决项 | packaged cross-platform journeys + visual diff + Release | evidence/GBF-805 | NOT_STARTED | downstream tasks | 完成后逐项关闭 parity matrix |
+| GBF-806 | M5 | ChatGPT DMG Bot 单会话体验 clean-room 融合 | GBF-501,507,601,602 | Electron 与原生移动端按 Bot 保留 transcript/draft，流式、运行状态、停止、排队、消息操作与安全内容渲染 | renderer/native contract + CI + packaged/simulated-user E2E | evidence/GBF-806 | IN_PROGRESS | CI、iOS 工程、打包 E2E 与 Release pending | 触发三端门禁并根据视觉/恢复证据收口 |
