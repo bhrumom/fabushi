@@ -149,6 +149,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await act({ role: "textbox", name: "描述" }, "setValue", `FCM-010.13.11 external journey ${runId}.${runAttempt}`);
     await invokeNamed("创建频道");
     await waitFor({ agentId: "test:messenger-input", state: "visible" }, 30_000);
+    await waitFor({ text: name, state: "present" }, 30_000);
     const found = await find({ text: name, limit: 100 });
     const peer = chooseMatch(found, { text: name }, (item) => String(item?.agentId || "").startsWith("test:peer-selfhosted:channel:") && String(item?.text || item?.name || "").includes(name));
     record("selfhosted-channel-created", { name, agentId: peer.agentId });
