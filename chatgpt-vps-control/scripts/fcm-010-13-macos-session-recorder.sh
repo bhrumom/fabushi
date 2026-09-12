@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VIDEO_TOOL="$SCRIPT_DIR/fcm-010-13-macos-session-video.swift"
-ASSISTANT_DRIVER='AppleM2ScalerParavirtDriver'
+M2_SCALER_DRIVER='AppleM2ScalerParavirtDriver'
+CURRENT_PARAVIRT_DISPLAY='AppleParavirtDisplay'
 CAPTURE_INTERVAL_SECONDS="${FCM_MACOS_RECORDING_INTERVAL_SECONDS:-1}"
 MIN_VIDEO_BYTES="${FCM_MACOS_RECORDING_MIN_BYTES:-100000}"
 
@@ -36,23 +37,32 @@ frame_count() {
 validate_video() {
   local video="$1"
   local output="$2"
-  test -s "$video"
-  swift "$VIDEO_TOOL" validate "$video" > "$output" 2>&1
-  grep -Fq 'playable=true' "$output"
-  grep -Fq 'first_sample=decoded' "$output"
+  if ! test -s "$video"; then
+    echo 'video validation failed: movie is missing or empty' > "$output"
+    return 61
+  fi
+  if ! swift "$VIDEO_TOOL" validate "$video" > "$output" 2>&1; then
+    return 62
+  fi
+  if ! grep -Eq '^playable=true duration_seconds=[0-9]+([.][0-9]+)? video_tracks=[1-9][0-9]* first_sample=decoded$' "$output"; then
+    echo 'video validation failed: validator did not emit the exact success record' >> "$output"
+    return 63
+  fi
 }
 
 collect_display_environment() {
   local evidence="$1"
   local profiler="$evidence/recorder-system-profiler-display.txt"
-  local driver_ioreg="$evidence/recorder-ioreg-driver.txt"
+  local m2_ioreg="$evidence/recorder-ioreg-m2-scaler-driver.txt"
+  local paravirt_ioreg="$evidence/recorder-ioreg-paravirt-display.txt"
   local display_ioreg="$evidence/recorder-ioreg-display-lines.txt"
   local combined="$evidence/recorder-display-environment.txt"
 
   /usr/sbin/system_profiler SPDisplaysDataType > "$profiler" 2>&1 || true
-  /usr/sbin/ioreg -r -c "$ASSISTANT_DRIVER" -l > "$driver_ioreg" 2>&1 || true
+  /usr/sbin/ioreg -r -c "$M2_SCALER_DRIVER" -l > "$m2_ioreg" 2>&1 || true
+  /usr/sbin/ioreg -r -c "$CURRENT_PARAVIRT_DISPLAY" -l > "$paravirt_ioreg" 2>&1 || true
   /usr/sbin/ioreg -lw0 2>&1 \
-    | grep -E 'AppleM2ScalerParavirtDriver|AppleParavirt|IODisplay|DisplayVendorID|DisplayProductID|framebuffer|Framebuffer' \
+    | grep -E 'AppleM2ScalerParavirtDriver|AppleParavirtDisplay|AppleParavirtGPU|AppleParavirt|IODisplay|DisplayVendorID|DisplayProductID|framebuffer|Framebuffer' \
     > "$display_ioreg" || true
 
   {
@@ -64,8 +74,10 @@ collect_display_environment() {
     /usr/bin/sw_vers 2>&1 || true
     echo '--- system_profiler SPDisplaysDataType ---'
     cat "$profiler"
-    echo '--- ioreg exact driver class ---'
-    cat "$driver_ioreg"
+    echo '--- ioreg AppleM2ScalerParavirtDriver ---'
+    cat "$m2_ioreg"
+    echo '--- ioreg AppleParavirtDisplay ---'
+    cat "$paravirt_ioreg"
     echo '--- ioreg display-related lines ---'
     cat "$display_ioreg"
   } > "$combined"
@@ -123,11 +135,20 @@ fallback_probe() {
       echo "fallback screenshot capture failed at probe frame $index" >&2
       return 51
     fi
-    test -s "$frame"
+    if ! test -s "$frame"; then
+      echo "fallback screenshot probe frame $index is empty" >&2
+      return 52
+    fi
     sleep 0.2
   done
-  swift "$VIDEO_TOOL" encode "$frames" "$video" 1 > "$validation" 2>&1
-  validate_video "$video" "$evidence/fallback-recorder-probe-revalidation.txt"
+  if ! swift "$VIDEO_TOOL" encode "$frames" "$video" 1 > "$validation" 2>&1; then
+    cat "$validation" >&2
+    return 53
+  fi
+  if ! validate_video "$video" "$evidence/fallback-recorder-probe-revalidation.txt"; then
+    cat "$evidence/fallback-recorder-probe-revalidation.txt" >&2
+    return 54
+  fi
   printf '%s\n' true > "$evidence/fallback-recorder-probe-playable.txt"
   rm -rf "$frames"
 }
@@ -138,14 +159,22 @@ preflight() {
   mkdir -p "$evidence"
   collect_display_environment "$evidence"
 
-  local paravirt=false profiler_present=false
-  if grep -Fq "$ASSISTANT_DRIVER" "$evidence/recorder-display-environment.txt"; then
-    paravirt=true
+  local m2_scaler=false current_paravirt=false hosted_paravirt=false profiler_present=false
+  if grep -Fq "$M2_SCALER_DRIVER" "$evidence/recorder-ioreg-m2-scaler-driver.txt"; then
+    m2_scaler=true
+  fi
+  if grep -Fq "$CURRENT_PARAVIRT_DISPLAY" "$evidence/recorder-ioreg-paravirt-display.txt"; then
+    current_paravirt=true
+  fi
+  if test "$m2_scaler" = true || test "$current_paravirt" = true; then
+    hosted_paravirt=true
   fi
   if test -s "$evidence/recorder-system-profiler-display.txt"; then
     profiler_present=true
   fi
-  printf '%s\n' "$paravirt" > "$evidence/apple-m2-scaler-paravirt-driver.txt"
+  printf '%s\n' "$m2_scaler" > "$evidence/apple-m2-scaler-paravirt-driver.txt"
+  printf '%s\n' "$current_paravirt" > "$evidence/apple-paravirt-display.txt"
+  printf '%s\n' "$hosted_paravirt" > "$evidence/hosted-paravirt-display.txt"
 
   native_probe "$evidence"
   if ! fallback_probe "$evidence"; then
@@ -154,14 +183,15 @@ preflight() {
       --arg schema 'fabushi.macos-session-recorder-preflight.v1' \
       --arg runnerOs "${RUNNER_OS:-$(uname -s)}" \
       --arg runnerArch "${RUNNER_ARCH:-$(uname -m)}" \
-      --arg driver "$ASSISTANT_DRIVER" \
       --arg nativePlayable "$(cat "$evidence/native-recorder-probe-playable.txt")" \
-      --argjson paravirt "$paravirt" \
+      --argjson m2Scaler "$m2_scaler" \
+      --argjson currentParavirt "$current_paravirt" \
+      --argjson hostedParavirt "$hosted_paravirt" \
       --argjson profilerPresent "$profiler_present" \
-      '{schema:$schema,runnerOs:$runnerOs,runnerArch:$runnerArch,displayDriver:$driver,appleM2ScalerParavirtDriver:$paravirt,systemProfilerDisplayDataPresent:$profilerPresent,nativeRecorderPlayable:($nativePlayable == "true"),fallbackRecorderPlayable:false,selectedMode:"none",failClosed:true}' \
+      '{schema:$schema,runnerOs:$runnerOs,runnerArch:$runnerArch,appleM2ScalerParavirtDriver:$m2Scaler,appleParavirtDisplay:$currentParavirt,hostedParavirtDisplay:$hostedParavirt,systemProfilerDisplayDataPresent:$profilerPresent,nativeRecorderPlayable:($nativePlayable == "true"),fallbackRecorderPlayable:false,selectedMode:"none",failClosed:true}' \
       > "$evidence/recorder-preflight.json"
     echo 'No verified playable recording backend is available on this runner; refusing to continue.' >&2
-    return 52
+    return 55
   fi
 
   local native_playable fallback_playable
@@ -173,22 +203,23 @@ preflight() {
     --arg schema 'fabushi.macos-session-recorder-preflight.v1' \
     --arg runnerOs "${RUNNER_OS:-$(uname -s)}" \
     --arg runnerArch "${RUNNER_ARCH:-$(uname -m)}" \
-    --arg driver "$ASSISTANT_DRIVER" \
     --arg nativePlayable "$native_playable" \
     --arg fallbackPlayable "$fallback_playable" \
     --arg selectedMode 'frame-avassetwriter' \
-    --argjson paravirt "$paravirt" \
+    --argjson m2Scaler "$m2_scaler" \
+    --argjson currentParavirt "$current_paravirt" \
+    --argjson hostedParavirt "$hosted_paravirt" \
     --argjson profilerPresent "$profiler_present" \
-    '{schema:$schema,runnerOs:$runnerOs,runnerArch:$runnerArch,displayDriver:$driver,appleM2ScalerParavirtDriver:$paravirt,systemProfilerDisplayDataPresent:$profilerPresent,nativeRecorderPlayable:($nativePlayable == "true"),fallbackRecorderPlayable:($fallbackPlayable == "true"),selectedMode:$selectedMode,failClosed:true}' \
+    '{schema:$schema,runnerOs:$runnerOs,runnerArch:$runnerArch,appleM2ScalerParavirtDriver:$m2Scaler,appleParavirtDisplay:$currentParavirt,hostedParavirtDisplay:$hostedParavirt,systemProfilerDisplayDataPresent:$profilerPresent,nativeRecorderPlayable:($nativePlayable == "true"),fallbackRecorderPlayable:($fallbackPlayable == "true"),selectedMode:$selectedMode,failClosed:true}' \
     > "$evidence/recorder-preflight.json"
 
   jq -e '.failClosed == true and .selectedMode == "frame-avassetwriter" and .fallbackRecorderPlayable == true' \
     "$evidence/recorder-preflight.json" >/dev/null
-  if test "$paravirt" = true && test "$native_playable" != true; then
-    echo "$ASSISTANT_DRIVER detected; native whole-session video is not trusted, verified frame/AVAssetWriter recorder selected." \
+  if test "$hosted_paravirt" = true; then
+    echo "Hosted paravirtual display detected (AppleM2ScalerParavirtDriver=$m2_scaler, AppleParavirtDisplay=$current_paravirt); verified frame/AVAssetWriter recorder selected independently of native video probe result=$native_playable." \
       | tee "$evidence/recorder-selection.txt"
   else
-    echo 'Verified frame/AVAssetWriter recorder selected after bounded native recorder probe.' \
+    echo "No known hosted paravirtual display class detected; verified frame/AVAssetWriter recorder selected independently of native video probe result=$native_playable." \
       | tee "$evidence/recorder-selection.txt"
   fi
 }
@@ -279,14 +310,22 @@ stop() {
   duration=$((ended - started))
   if test "$duration" -lt 1; then duration=1; fi
 
-  swift "$VIDEO_TOOL" encode "$evidence/session-frames" "$evidence/macos-session.mov" "$duration" \
-    > "$evidence/macos-session-encode-validation.txt" 2>&1
-  validate_video "$evidence/macos-session.mov" "$evidence/macos-session-playability.txt"
+  if ! swift "$VIDEO_TOOL" encode "$evidence/session-frames" "$evidence/macos-session.mov" "$duration" \
+    > "$evidence/macos-session-encode-validation.txt" 2>&1; then
+    cat "$evidence/macos-session-encode-validation.txt" >&2
+    exit 44
+  fi
+  if ! validate_video "$evidence/macos-session.mov" "$evidence/macos-session-playability.txt"; then
+    cat "$evidence/macos-session-playability.txt" >&2
+    exit 45
+  fi
   movie_bytes="$(stat -f %z "$evidence/macos-session.mov")"
   test "$movie_bytes" -gt "$MIN_VIDEO_BYTES"
 
-  local paravirt native_playable
-  paravirt="$(cat "$evidence/apple-m2-scaler-paravirt-driver.txt")"
+  local m2_scaler current_paravirt hosted_paravirt native_playable
+  m2_scaler="$(cat "$evidence/apple-m2-scaler-paravirt-driver.txt")"
+  current_paravirt="$(cat "$evidence/apple-paravirt-display.txt")"
+  hosted_paravirt="$(cat "$evidence/hosted-paravirt-display.txt")"
   native_playable="$(cat "$evidence/native-recorder-probe-playable.txt")"
   jq -n \
     --arg schema 'fabushi.macos-session-recorder.v1' \
@@ -296,9 +335,11 @@ stop() {
     --argjson movieBytes "$movie_bytes" \
     --argjson minimumMovieBytes "$MIN_VIDEO_BYTES" \
     --arg nativePlayable "$native_playable" \
-    --argjson paravirt "$paravirt" \
+    --argjson m2Scaler "$m2_scaler" \
+    --argjson currentParavirt "$current_paravirt" \
+    --argjson hostedParavirt "$hosted_paravirt" \
     --arg movie 'macos-session.mov' \
-    '{schema:$schema,mode:$mode,frames:$frames,durationSeconds:$durationSeconds,movieBytes:$movieBytes,minimumMovieBytes:$minimumMovieBytes,appleM2ScalerParavirtDriver:$paravirt,nativeRecorderPlayable:($nativePlayable == "true"),movie:$movie,playable:true,firstSampleDecoded:true,failClosed:true}' \
+    '{schema:$schema,mode:$mode,frames:$frames,durationSeconds:$durationSeconds,movieBytes:$movieBytes,minimumMovieBytes:$minimumMovieBytes,appleM2ScalerParavirtDriver:$m2Scaler,appleParavirtDisplay:$currentParavirt,hostedParavirtDisplay:$hostedParavirt,nativeRecorderPlayable:($nativePlayable == "true"),movie:$movie,playable:true,firstSampleDecoded:true,failClosed:true}' \
     > "$evidence/recorder-final.json"
   rm -rf "$evidence/session-frames"
 }
@@ -314,7 +355,10 @@ verify() {
     "$evidence/recorder-final.json" >/dev/null
   test -s "$evidence/macos-session.mov"
   test "$(stat -f %z "$evidence/macos-session.mov")" -gt "$MIN_VIDEO_BYTES"
-  validate_video "$evidence/macos-session.mov" "$evidence/macos-session-final-validation.txt"
+  if ! validate_video "$evidence/macos-session.mov" "$evidence/macos-session-final-validation.txt"; then
+    cat "$evidence/macos-session-final-validation.txt" >&2
+    exit 46
+  fi
 }
 
 command="${1:-}"
