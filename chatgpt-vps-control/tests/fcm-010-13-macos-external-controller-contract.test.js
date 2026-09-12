@@ -224,6 +224,17 @@ test("live journey executes every required semantic category and preserves readi
   assert.equal(journey.includes('role: "textbox", name: "频道名称"'), false, "channel placeholder must not be used as an App Surface name selector");
   assert.equal(journey.includes('role: "textbox", name: "频道简介"'), false, "channel description placeholder must not be used as an App Surface name selector");
 
+  const assistantOpen = journey.indexOf('async function openAssistantConversation()');
+  const assistantChatProjection = journey.indexOf('await navigateSection("聊天");', assistantOpen);
+  const assistantFind = journey.indexOf('const found = await find({ agentId: ASSISTANT_PEER_ID, limit: 1 });', assistantChatProjection);
+  const assistantUnique = journey.indexOf('const peer = chooseUniqueMatch(found, { agentId: ASSISTANT_PEER_ID });', assistantFind);
+  const assistantEvidence = journey.indexOf('record("assistant-semantic-projection-resolved"', assistantUnique);
+  const assistantInvoke = journey.indexOf('agentId: ASSISTANT_PEER_ID, action: "invoke"', assistantEvidence);
+  assert.ok(
+    assistantOpen >= 0 && assistantChatProjection > assistantOpen && assistantFind > assistantChatProjection && assistantUnique > assistantFind && assistantEvidence > assistantUnique && assistantInvoke > assistantEvidence,
+    "assistant journey must return to 聊天, resolve the exact semantic projection uniquely, record it, then invoke the exact stable id",
+  );
+
   contains(journey, "TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
   const ready = journey.indexOf("TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
   const finish = journey.indexOf('callDevice("ci_session_finish"', ready);

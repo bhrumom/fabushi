@@ -74,7 +74,17 @@ async function findAssistant(client: ReturnType<typeof createAppAgentSurfaceClie
   }>;
 }
 
-test('FCM-010.13.11 real App Surface journey keeps the canonical assistant peer resolvable after two channel creations', async () => {
+async function navigateToChats(page: Page): Promise<void> {
+  const menu = page.getByTestId('profile-navigation-menu');
+  if (!(await menu.isVisible())) {
+    await page.getByTestId('profile-navigation-trigger').click();
+  }
+  await expect(menu).toBeVisible();
+  await page.getByRole('button', { name: '聊天', exact: true }).click();
+  await expect(page.getByRole('button', { name: '新建', exact: true })).toBeVisible();
+}
+
+test('FCM-010.13.11 real App Surface journey reprojects the canonical assistant after returning from two channel creations', async () => {
   const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-fcm-010-13-assistant-projection-'));
   const policyDir = path.join(appDataDir, 'feature-host', 'runtime');
   await mkdir(policyDir, { recursive: true });
@@ -109,6 +119,10 @@ test('FCM-010.13.11 real App Surface journey keeps the canonical assistant peer 
     await createChannel(page, 'FCM semantic projection A');
     await createChannel(page, 'FCM semantic projection B');
 
+    const hiddenOnChannelSurface = await findAssistant(client);
+    expect(hiddenOnChannelSurface.count).toBe(0);
+
+    await navigateToChats(page);
     const afterChannels = await findAssistant(client);
     expect(afterChannels.count).toBe(1);
     expect(afterChannels.matches[0]?.agentId).toBe(assistantAgentId);
