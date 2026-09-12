@@ -18,8 +18,9 @@ Fabushi 0.5.0 扩展同时承载产品 UI、桌面账户桥、现有 Chrome 的 
 
 The task branch contains the first-class MV3 package, two isolated native bridges,
 generation-bound tab claims, the legacy command/event contract tests, and the bundled Task
-Queue userscript. The next gate is PR CI plus canonical-main packaged Electron/Chrome E2E;
-release and local profile migration remain pending.
+Queue userscript. The PR Chrome packaged journey and static/security checks are green; the
+next gate is protected merge plus canonical-main packaged Electron/Chrome E2E. Release and
+local profile migration remain pending.
 
 ## Scope
 

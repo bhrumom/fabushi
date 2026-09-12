@@ -8,7 +8,7 @@
 - Source: source/2026-09-12-user-requirement.md and approved CWA plan.
 - Branch: codex/cwa-006-computer-control-bridge-fusion-20260912
 - Registry allocation baseline: canonical main `656d05e8d66bfed241f5b9d871a062abfbf2f952`
-- PR: pending creation/merge; status in-progress.
+- PR: https://github.com/bhrumom/fabushi/pull/2535 (open; head `70ec03371c315e324f514334d945f3bb6d0c526c`).
 - Started: 2026-09-12; updated: 2026-09-12; completed: null.
 
 ## Scope and dependencies
@@ -66,6 +66,16 @@ decision/risk/dependency/evidence/runbook records are in this change stream.
 
 Only lightweight node --check/static inspection and the dependency-free Chrome validator are
 run locally; application builds, package generation, Electron/mobile tests and E2E are deferred
-to GitHub Actions. No PR, CI, Release, Web Store review, local migration or old-extension
-uninstall is complete. Next action is finish static checks, push the governed PR and follow the
-canonical post-main loop before marking this record passed.
+to GitHub Actions. The PR Chrome workflow passed its full preflight and packaged journey on
+run `34667146375` (job `103481251591`), with source/content manifest and always-uploaded
+evidence; the same head also passed CI `34667146457`, project governance `34667146499`, GBF
+security `34667146429`, Global Dharma `34667146489`, and the completed portions of computer
+control security `34667146541`. Earlier Chrome journey failures were fixed in commits
+`ca2441c50` (synchronous MV3 worker startup), `906970b96` (custom-profile Native Messaging
+registration), `7bde588ae` (CommonJS test host), and `70ec03371` (serialized generation seed);
+the final journey records the stale-generation rejection and successful control path.
+Electron quality `34667146503`, Douyin validation `34667146501`, and remaining security jobs
+were still running when this record was updated. No Release, Web Store review, local migration,
+or old-extension uninstall is complete. Next action is drive the protected PR through all
+required checks, merge, then execute the exact canonical-main package/E2E/Release and profile
+migration gates before marking this record passed.

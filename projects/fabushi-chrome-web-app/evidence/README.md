@@ -7,4 +7,8 @@ reports, step screenshots, complete video, Playwright trace/HTML report and plat
 Target retention is 90 days subject to repository policy. Passing assertions without this
 bundle are insufficient.
 
-Current state: planned only; no post-main evidence exists on this task branch.
+PR evidence (not yet canonical-main): Chrome workflow `34667146375`, job `103481251591`,
+artifact `10289707648` ([artifact](https://github.com/bhrumom/fabushi/actions/runs/34667146375/artifacts/10289707648)).
+It contains the 0.5.0 ZIP, SHA/content manifests, labelled screenshots, complete WebM journey
+video, Playwright trace/HTML report, native event log and timestamped report. Canonical-main
+post-merge evidence is still required.
