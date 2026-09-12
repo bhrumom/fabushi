@@ -369,7 +369,10 @@ try {
       const parsed = JSON.parse(await readFile(resultPath, "utf8"));
       return parsed.events?.some((event) => event.type === "complete") ? parsed : null;
     } catch { return null; }
-  }, 45_000);
+  // Hosted Chromium may take a full cold-start interval before waking the
+  // service worker and native host. Keep the journey bounded, but allow the
+  // documented MV3 suspend/wake path enough time on a busy runner.
+  }, 90_000);
   if (nativeResult.events.some((event) => event.type === "failure")) throw new Error("Packaged native browser journey reported a failure.");
   await captureCheckpoint(fixturePage, join(evidenceRoot, "05-after-browser-control.png"));
   step("browser-control", { events: nativeResult.events.map((event) => event.type) });

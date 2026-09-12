@@ -83,6 +83,7 @@ jobs:
       electron_run_id: ${{ steps.meta.outputs.electron_run_id }}
       electron_conclusion: ${{ steps.meta.outputs.electron_conclusion }}
       native_run_id: ${{ steps.wait-native.outputs.native_run_id }}
+      chrome_run_id: ${{ steps.wait-chrome.outputs.chrome_run_id }}
     steps:
       - id: meta
         name: Bind delivery to the completed Electron main run
@@ -189,6 +190,39 @@ jobs:
           echo "Timed out waiting for Android and iOS native checks on $SOURCE_SHA" >&2
           exit 1
 
+      - id: wait-chrome
+        name: Wait for the exact-main Chrome package and journey
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 7200))
+          chrome_run_id=''
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/chrome-extension-web-store.yml/runs?head_sha=$SOURCE_SHA&per_page=20")"
+            chrome_run_id="$(jq -r --arg sha "$SOURCE_SHA" '[.workflow_runs[] | select(.head_sha == $sha and .event == "push" and .head_branch == "main")] | sort_by(.created_at) | last | .id // empty' <<<"$runs")"
+            if [ -z "$chrome_run_id" ]; then
+              echo "Waiting for Chrome Extension Web Store workflow on $SOURCE_SHA"
+              sleep 20
+              continue
+            fi
+            run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$chrome_run_id")"
+            status="$(jq -r '.status // "unknown"' <<<"$run")"
+            conclusion="$(jq -r '.conclusion // ""' <<<"$run")"
+            echo "Chrome package/journey: run=$chrome_run_id status=$status conclusion=${conclusion:-pending}"
+            if [ "$status" = completed ]; then
+              test "$conclusion" = success
+              echo "chrome_run_id=$chrome_run_id" >> "$GITHUB_OUTPUT"
+              echo "- Chrome package/journey run: \`$chrome_run_id\`" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "Timed out waiting for Chrome package/journey on $SOURCE_SHA" >&2
+          exit 1
+
   publish:
     name: Publish tested main artifacts to GitHub Release
     needs: gate
@@ -241,11 +275,20 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ needs.gate.outputs.electron_run_id }}
 
+      - name: Download tested Chrome package and journey evidence from exact run
+        uses: actions/download-artifact@v8
+        with:
+          name: fabushi-chrome-web-store-${{ needs.gate.outputs.source_sha }}
+          path: chrome-artifacts
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.gate.outputs.chrome_run_id }}
+
       - id: collect
         name: Validate exact-SHA manifests and updater assets
         shell: bash
         env:
           SOURCE_SHA: ${{ needs.gate.outputs.source_sha }}
+          CHROME_RUN_ID: ${{ needs.gate.outputs.chrome_run_id }}
         run: |
           set -euo pipefail
           mac_manifest="$(find electron-artifacts/mac -type f -name 'fabushi-delivery-mac.json' -print -quit)"
@@ -264,6 +307,13 @@ jobs:
             test "$(jq -r '.sha' "$manifest")" = "$SOURCE_SHA"
           done
 
+          chrome_zip="$(find chrome-artifacts -type f -name 'fabushi-chrome-*.zip' -print -quit)"
+          chrome_manifest="$(find chrome-artifacts -type f -name 'fabushi-chrome-*.content-manifest.json' -print -quit)"
+          chrome_checksums="$(find chrome-artifacts -type f -name 'SHA256SUMS.txt' -print -quit)"
+          test -n "$chrome_zip" && test -n "$chrome_manifest" && test -n "$chrome_checksums"
+          test "$(jq -r '.sourceSha' "$chrome_manifest")" = "$SOURCE_SHA"
+          test "$(jq -r '.version' "$chrome_manifest")" = "0.5.0"
+
           mkdir -p release-assets
           while IFS= read -r asset; do cp "$asset" release-assets/; done < <(
             find electron-artifacts -type f \( \
@@ -273,6 +323,9 @@ jobs:
               -name 'fabushi-delivery-*.json' \
             \) -print | sort
           )
+          cp "$chrome_zip" release-assets/
+          cp "$chrome_manifest" release-assets/
+          cp "$chrome_checksums" release-assets/fabushi-chrome-SHA256SUMS.txt
 
           test -n "$(find release-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)"
           test -n "$(find release-assets -maxdepth 1 -type f -name '*macos-*.zip' -print -quit)"
@@ -308,6 +361,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Validated exact-SHA updater assets for version $version / $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Validated Fabushi Chrome 0.5.0 package from workflow run $CHROME_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort >> "$GITHUB_STEP_SUMMARY"
 
       - id: release
@@ -319,6 +373,7 @@ jobs:
           VERSION: ${{ steps.collect.outputs.version }}
           ELECTRON_RUN_ID: ${{ needs.gate.outputs.electron_run_id }}
           NATIVE_RUN_ID: ${{ needs.gate.outputs.native_run_id }}
+          CHROME_RUN_ID: ${{ needs.gate.outputs.chrome_run_id }}
         run: |
           set -euo pipefail
           canonical_tag="desktop-$VERSION"
@@ -358,6 +413,7 @@ jobs:
           - Canonical desktop tag: \`$canonical_tag\`
           - Electron packaged-user E2E run: \`$ELECTRON_RUN_ID\`
           - Native mobile simulated-user run: \`${NATIVE_RUN_ID:-unknown}\`
+          - Chrome package/journey run: \`$CHROME_RUN_ID\`
           - Desktop version: \`$VERSION\`
           - Publication ordering: make_latest=$make_latest
 
@@ -457,5 +513,6 @@ jobs:
           name: post-main-delivery-${{ needs.gate.outputs.source_sha }}
           path: |
             release-assets/**
+            chrome-artifacts/evidence/**
           if-no-files-found: error
           retention-days: 30

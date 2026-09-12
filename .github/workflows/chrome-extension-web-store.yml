@@ -15,6 +15,7 @@ on:
       - ".github/scripts/verify-packaged-computer-control.mjs"
       - "ai-backend/src/miniapp_marketplace_catalog.js"
       - ".github/workflows/chrome-extension-web-store.yml"
+      - ".github/workflows/chrome-extension-web-store-publish.yml"
   push:
     branches:
       - main
@@ -37,6 +38,7 @@ on:
       - "desktop/electron/chrome-platform-server.cjs"
       - "desktop/electron/host-process.cjs"
       - ".github/workflows/chrome-extension-web-store.yml"
+      - ".github/workflows/chrome-extension-web-store-publish.yml"
   workflow_dispatch:
 
 permissions:

@@ -10,9 +10,14 @@ Open-source-first survey:
 - Chrome Debugger API: https://developer.chrome.com/docs/extensions/reference/api/debugger
 - GoogleChrome nativeMessaging sample: https://github.com/GoogleChrome/chrome-extensions-samples/tree/main/api-samples/nativeMessaging
 - GoogleChrome Debugger sample: https://github.com/GoogleChrome/chrome-extensions-samples/tree/main/api-samples/debugger
+- Chrome Web Store API v2 guide: https://developer.chrome.com/docs/webstore/using-api
+- Chrome Web Store API v2 upload/publish reference: https://developer.chrome.com/docs/webstore/api/reference/rest/v2
 
 Decision: adapt only the official public framing, lifecycle and API model. No third-party
 implementation is copied; no incompatible or unmaintained dependency is introduced.
+The Web Store workflow follows the official v2 upload, fetchStatus and publish model, keeps
+review enabled, and is manual/exact-SHA bound because listing creation and developer
+credentials are external account operations.
 
 0.4.1 compatibility source audit (2026-09-12): the installed unpacked Fabushi package at
 `/Users/gloriachan/Downloads/fabushi-0.3.0` was inspected read-only. Its service worker

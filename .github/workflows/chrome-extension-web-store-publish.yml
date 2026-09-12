@@ -1,0 +1,226 @@
+name: Chrome Extension Web Store publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact canonical-main SHA whose successful Chrome package/journey artifact should be submitted
+        required: true
+        type: string
+      dry_run:
+        description: Verify the exact artifact and identity without calling the Web Store API
+        required: true
+        default: true
+        type: boolean
+      wait_for_published:
+        description: Keep polling the Web Store until the submission is publicly published (may take hours)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  publish:
+    name: Submit exact-main Fabushi Chrome package
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    environment: chrome-web-store
+    permissions:
+      actions: read
+      contents: read
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      WAIT_FOR_PUBLISHED: ${{ inputs.wait_for_published }}
+      CHROME_WEBSTORE_PUBLISHER_ID: ${{ secrets.CHROME_WEBSTORE_PUBLISHER_ID }}
+      CHROME_WEBSTORE_EXTENSION_ID: ${{ secrets.FABUSHI_CHROME_EXTENSION_ID }}
+      CHROME_WEBSTORE_CLIENT_ID: ${{ secrets.CHROME_WEBSTORE_CLIENT_ID }}
+      CHROME_WEBSTORE_CLIENT_SECRET: ${{ secrets.CHROME_WEBSTORE_CLIENT_SECRET }}
+      CHROME_WEBSTORE_REFRESH_TOKEN: ${{ secrets.CHROME_WEBSTORE_REFRESH_TOKEN }}
+    steps:
+      - name: Validate exact canonical-main source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          source_json="$(gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA")"
+          test "$(jq -r '.sha' <<<"$source_json")" = "$SOURCE_SHA"
+          branch_json="$(gh api "repos/$GITHUB_REPOSITORY/branches/main")"
+          main_sha="$(jq -r '.commit.sha' <<<"$branch_json")"
+          if ! gh api "repos/$GITHUB_REPOSITORY/compare/$SOURCE_SHA...$main_sha" --jq '.status' | grep -Eq 'ahead|identical'; then
+            echo "The requested source SHA is not an ancestor of canonical main." >&2
+            exit 1
+          fi
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "canonical_main_sha=$main_sha" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve successful exact-source Chrome workflow
+        id: chrome-run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/chrome-extension-web-store.yml/runs?head_sha=$SOURCE_SHA&per_page=50")"
+          run_id="$(jq -r --arg sha "$SOURCE_SHA" '[.workflow_runs[] | select(.head_sha == $sha and .event == "push" and .head_branch == "main" and .conclusion == "success")] | sort_by(.created_at) | last | .id // empty' <<<"$runs")"
+          test -n "$run_id" || { echo "No successful canonical-main Chrome package/journey run exists for $SOURCE_SHA." >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "chrome_run_id=$run_id" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download exact-source Chrome package and journey evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: fabushi-chrome-web-store-${{ inputs.source_sha }}
+          path: chrome-artifacts
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.chrome-run.outputs.run_id }}
+
+      - name: Verify package provenance and checksums
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip_path="$(find chrome-artifacts -type f -name 'fabushi-chrome-*.zip' -print -quit)"
+          manifest_path="$(find chrome-artifacts -type f -name 'fabushi-chrome-*.content-manifest.json' -print -quit)"
+          checksums_path="$(find chrome-artifacts -type f -name 'SHA256SUMS.txt' -print -quit)"
+          test -n "$zip_path" && test -n "$manifest_path" && test -n "$checksums_path"
+          test "$(jq -r '.sourceSha' "$manifest_path")" = "$SOURCE_SHA"
+          version="$(jq -r '.version' "$manifest_path")"
+          test "$version" = "0.5.0"
+          archive_sha="$(sha256sum "$zip_path" | awk '{print $1}')"
+          test "$(jq -r '.archive.sha256' "$manifest_path")" = "$archive_sha"
+          (cd "$(dirname "$checksums_path")" && sha256sum -c "$(basename "$checksums_path")")
+          echo "zip_path=$zip_path" >> "$GITHUB_OUTPUT"
+          echo "manifest_path=$manifest_path" >> "$GITHUB_OUTPUT"
+          echo "archive_sha=$archive_sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          {
+            echo "package=$zip_path"
+            echo "version=$version"
+            echo "archive_sha256=$archive_sha"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Submit package to the Chrome Web Store API
+        if: env.DRY_RUN != 'true'
+        id: submit
+        shell: bash
+        env:
+          ZIP_PATH: ${{ steps.package.outputs.zip_path }}
+        run: |
+          set -euo pipefail
+          test -n "$CHROME_WEBSTORE_PUBLISHER_ID"
+          test -n "$CHROME_WEBSTORE_EXTENSION_ID"
+          test -n "$CHROME_WEBSTORE_CLIENT_ID"
+          test -n "$CHROME_WEBSTORE_CLIENT_SECRET"
+          test -n "$CHROME_WEBSTORE_REFRESH_TOKEN"
+          set +x
+          token_response="$(curl --fail-with-body --silent --show-error --request POST \
+            --header 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode "client_id=$CHROME_WEBSTORE_CLIENT_ID" \
+            --data-urlencode "client_secret=$CHROME_WEBSTORE_CLIENT_SECRET" \
+            --data-urlencode "refresh_token=$CHROME_WEBSTORE_REFRESH_TOKEN" \
+            --data-urlencode 'grant_type=refresh_token' \
+            https://oauth2.googleapis.com/token)"
+          access_token="$(jq -r '.access_token // empty' <<<"$token_response")"
+          test -n "$access_token"
+          item_name="publishers/$CHROME_WEBSTORE_PUBLISHER_ID/items/$CHROME_WEBSTORE_EXTENSION_ID"
+          upload_response="$(curl --fail-with-body --silent --show-error --request POST \
+            --header "Authorization: Bearer $access_token" \
+            --header 'Content-Type: application/zip' \
+            --data-binary "@$ZIP_PATH" \
+            "https://chromewebstore.googleapis.com/upload/v2/$item_name:upload")"
+          mkdir -p web-store-evidence
+          jq '{name,itemId,crxVersion,uploadState}' <<<"$upload_response" > web-store-evidence/upload.json
+          upload_state="$(jq -r '.uploadState // empty' <<<"$upload_response")"
+          for attempt in $(seq 1 90); do
+            if [ "$upload_state" = "SUCCEEDED" ]; then break; fi
+            if [ "$upload_state" = "FAILED" ] || [ "$upload_state" = "NOT_FOUND" ]; then
+              echo "Chrome Web Store upload failed with state $upload_state." >&2
+              exit 1
+            fi
+            sleep 20
+            status_response="$(curl --fail-with-body --silent --show-error \
+              --header "Authorization: Bearer $access_token" \
+              "https://chromewebstore.googleapis.com/v2/$item_name:fetchStatus")"
+            jq '{name,itemId,lastAsyncUploadState,publishedItemRevisionStatus,submittedItemRevisionStatus,takenDown,warned}' <<<"$status_response" > web-store-evidence/status.json
+            upload_state="$(jq -r '.lastAsyncUploadState // empty' <<<"$status_response")"
+          done
+          test "$upload_state" = "SUCCEEDED"
+          publish_response="$(curl --fail-with-body --silent --show-error --request POST \
+            --header "Authorization: Bearer $access_token" \
+            --header 'Content-Type: application/json' \
+            --data '{"publishType":"DEFAULT_PUBLISH","skipReview":false,"blockOnWarnings":true}' \
+            "https://chromewebstore.googleapis.com/v2/$item_name:publish")"
+          jq '{name,itemId,state,warningInfo}' <<<"$publish_response" > web-store-evidence/publish.json
+          publish_state="$(jq -r '.state // empty' <<<"$publish_response")"
+          case "$publish_state" in
+            PENDING_REVIEW|STAGED|PUBLISHED) ;;
+            REJECTED|CANCELLED) echo "Chrome Web Store submission ended in $publish_state." >&2; exit 1 ;;
+            *) echo "Unexpected Chrome Web Store submission state: $publish_state" >&2; exit 1 ;;
+          esac
+          echo "publish_state=$publish_state" >> "$GITHUB_OUTPUT"
+          echo "item_name=$item_name" >> "$GITHUB_OUTPUT"
+          echo "Web Store submission state: $publish_state" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$WAIT_FOR_PUBLISHED" = "true" ]; then
+            for attempt in $(seq 1 120); do
+              status_response="$(curl --fail-with-body --silent --show-error \
+                --header "Authorization: Bearer $access_token" \
+                "https://chromewebstore.googleapis.com/v2/$item_name:fetchStatus")"
+              jq '{name,itemId,lastAsyncUploadState,publishedItemRevisionStatus,submittedItemRevisionStatus,takenDown,warned}' <<<"$status_response" > web-store-evidence/status.json
+              published_state="$(jq -r '.publishedItemRevisionStatus.state // empty' <<<"$status_response")"
+              submitted_state="$(jq -r '.submittedItemRevisionStatus.state // empty' <<<"$status_response")"
+              echo "Web Store review state: published=${published_state:-none} submitted=${submitted_state:-none}"
+              if [ "$published_state" = "PUBLISHED" ]; then
+                echo "published=true" >> "$GITHUB_OUTPUT"
+                break
+              fi
+              if [ "$submitted_state" = "REJECTED" ] || [ "$submitted_state" = "CANCELLED" ]; then
+                echo "Chrome Web Store submission ended in $submitted_state." >&2
+                exit 1
+              fi
+              sleep 45
+            done
+            test "$(jq -r '.publishedItemRevisionStatus.state // empty' web-store-evidence/status.json)" = "PUBLISHED"
+          fi
+
+      - name: Write redacted Web Store provenance ledger
+        if: always()
+        shell: bash
+        env:
+          ZIP_PATH: ${{ steps.package.outputs.zip_path }}
+          ARCHIVE_SHA: ${{ steps.package.outputs.archive_sha }}
+          VERSION: ${{ steps.package.outputs.version }}
+          CHROME_RUN_ID: ${{ steps.chrome-run.outputs.run_id }}
+          PUBLISH_STATE: ${{ steps.submit.outputs.publish_state || '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p web-store-evidence
+          jq -n \
+            --arg sourceSha "$SOURCE_SHA" \
+            --arg chromeRunId "$CHROME_RUN_ID" \
+            --arg version "$VERSION" \
+            --arg archiveSha "$ARCHIVE_SHA" \
+            --arg extensionId "${CHROME_WEBSTORE_EXTENSION_ID:-not-configured}" \
+            --arg publisherId "${CHROME_WEBSTORE_PUBLISHER_ID:-not-configured}" \
+            --arg dryRun "$DRY_RUN" \
+            --arg publishState "$PUBLISH_STATE" \
+            '{schemaVersion:1,sourceSha:$sourceSha,chromeRunId:$chromeRunId,version:$version,archiveSha256:$archiveSha,extensionId:$extensionId,publisherId:$publisherId,dryRun:($dryRun == "true"),publishState:$publishState}' \
+            > web-store-evidence/provenance.json
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run only: Web Store API was not called; configure the protected environment secrets and rerun with dry_run=false." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Web Store submission evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-chrome-web-store-publish-${{ inputs.source_sha }}
+          path: web-store-evidence/**
+          if-no-files-found: error
+          retention-days: 90
