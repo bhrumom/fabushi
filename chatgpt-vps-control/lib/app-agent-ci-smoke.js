@@ -85,9 +85,9 @@ export async function runAppAgentCiSmoke(options = {}) {
 
   requirePassed(await client.call("wait", {
     agentId: menuAgentId,
-    state: "hidden",
+    state: "absent",
     timeoutMs: 10_000,
-  }), "profile menu hidden wait");
+  }), "profile menu absence wait");
 
   const finalStatus = await client.status();
   if (finalStatus?.available !== true) throw new Error("Fabushi App Agent Surface became unavailable during the smoke journey.");
