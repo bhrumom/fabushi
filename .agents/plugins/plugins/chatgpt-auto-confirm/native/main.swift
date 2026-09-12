@@ -7,6 +7,11 @@ import SystemConfiguration
 let defaultChatWatchTimeoutSeconds = 21_600
 let maxChatWatchTimeoutSeconds = 86_400
 let defaultChatStagnationTimeoutSeconds = 10_800
+// A Chat can stop exposing its composer/streaming controls without ever
+// creating a final assistant message. Do not leave that round waiting for the
+// multi-hour stagnation watchdog; close it and resend the same instruction in
+// a fresh plugin Chat after this bounded window.
+let defaultChatNoFinalReplyTimeoutSeconds = 300
 
 
 func commandJSONParams() -> [String: Any] {
@@ -27,7 +32,7 @@ let nativeCommandSummaries: [String: String] = [
   "account_status": "检查账号的本机凭据和最近云端验证状态。",
   "account_sync": "重新导出指定账号的 renderer Cookie，保存并运行 smoke。",
   "account_remove": "确认后删除账号凭据、profile 和注册表记录。",
-  "status": "查看自动确认、ChatGPT、隐藏页面和任务队列的当前状态。",
+  "status": "查看自动确认、ChatGPT、插件页面和任务队列的当前状态。",
   "diagnose": "执行只读诊断，检查辅助功能、ChatGPT 进程和调试连接。",
   "start": "启动后台自动确认；第二个参数可传 JSON 配置。",
   "stop": "停止后台自动确认并关闭插件创建的后台目标。",
@@ -38,25 +43,25 @@ let nativeCommandSummaries: [String: String] = [
   "queue_enqueue": "把 1-50 个任务写入可恢复任务队列。",
   "queue_start": "启动任务队列；默认等待下一个待验收任务。",
   "queue_resume": "恢复已暂停的任务队列，不默认阻塞等待验收。",
-  "queue_status": "查看任务队列、隐藏 worker、网络等待和任务状态。",
+  "queue_status": "查看任务队列、插件 worker、网络等待和任务状态。",
   "queue_update": "在不停止长期 Action 的情况下更新任务修订和规范，并在下一轮 Chat 生效。",
   "queue_attach": "把已有 ChatGPT conversationId 绑定到指定队列任务。",
   "queue_wait_review": "等待下一个待验收、阻塞或失败的任务。",
   "queue_review": "接受任务验收，或携带 feedback 退回重新执行。",
   "queue_pause": "暂停调度新任务；已落盘状态会保留。",
   "queue_retry": "恢复中断任务，可更新 connector 并附加恢复说明。",
-  "queue_cancel": "取消指定任务并停止其隐藏 worker。",
-  "queue_watchdog": "超过阈值仍未完成时安全重建隐藏 Chat，并重启队列守护。",
+  "queue_cancel": "取消指定任务并停止其插件 worker。",
+  "queue_watchdog": "超过阈值仍未完成时安全重建插件 Chat，并重启队列守护。",
   "queue_heartbeat": "检查本地队列 watcher；进程退出或运行时升级时自动重启，不发送任务消息。",
   "start_actions_runner": "刷新加密任务状态与登录 Secret，并启动最长六小时的 GitHub Actions 持续运行器。",
   "sync_actions_credentials": "从已打开的 ChatGPT 桌面 app renderer 实时导出会话并同步到 GitHub Secrets。",
   "login_and_sync_actions": "按需打开 ChatGPT 桌面应用，等待 app renderer 登录完成后实时同步 ChatGPT 与 Codex 凭证，并启动 GitHub Actions。",
-  "verify_chatgpt_login": "验证当前 ChatGPT 桌面实例能否创建队列使用的隐藏 Chat renderer。",
-  "send_message": "在插件隐藏 Chat 页面中发送一条消息。",
-  "add_connector": "在隐藏 Chat 页面中选择一个 ChatGPT connector。",
-  "get_reply": "读取隐藏 Chat 页面中的最新回复。",
-  "chat_status": "读取隐藏 Chat 表面、conversationId 和页面状态。",
-  "send_and_watch": "发送消息、自动确认授权，并等待带任务报告的最终回复。",
+  "verify_chatgpt_login": "验证当前 ChatGPT 桌面实例能否创建插件自有的 Chat renderer（可见或隐藏）。",
+  "send_message": "在插件自有的 Chat 页面中发送一条消息。",
+  "add_connector": "在插件自有的 Chat 页面中选择一个 ChatGPT connector。",
+  "get_reply": "读取插件自有 Chat 页面中的最新回复。",
+  "chat_status": "读取插件自有 Chat 表面、conversationId 和页面状态。",
+  "send_and_watch": "发送工作目标、读取自然结果；无最终回复时关闭旧 Chat 并在新 Work Chat 重发，再由新规划 Chat 验收并编排下一轮。",
 ]
 
 func nativeCommandUsage(_ command: String, executable: String) -> String {
@@ -148,7 +153,7 @@ func nativeHelpText(topic: String? = nil) -> (text: String, known: Bool) {
 ChatGPT 自动确认 macOS 原生运行时
 
 用途：
-  在后台扫描 ChatGPT 授权卡、自动确认允许操作，并用隐藏 Chat 页面执行可恢复任务队列。
+  在后台扫描 ChatGPT 授权卡、自动确认允许操作，并用插件自有 Chat 页面执行可恢复任务队列；页面可见或隐藏。
   不切换用户页面、不激活窗口、不移动系统鼠标。
 
 用法：
@@ -185,12 +190,12 @@ ChatGPT 自动确认 macOS 原生运行时
   sync_actions_credentials JSON  从已打开的桌面 app renderer 实时抓取当前两份登录凭证并同步，可选启动 Actions
   login_and_sync_actions JSON    按需打开桌面应用后使用相同实时抓取方式同步凭证
 
-隐藏 Chat：
+插件 Chat：
   send_message JSON      发送消息
   add_connector JSON     选择 connector
   get_reply [JSON]       读取最新回复
-  chat_status [JSON]     查看隐藏 Chat 状态
-  send_and_watch JSON    发送、确认并等待最终任务报告
+  chat_status [JSON]     查看插件 Chat 状态
+  send_and_watch JSON    工作自然结果 →（无最终回复则新 Work Chat 重发）→ 新规划 Chat → 下一轮工作
 
 帮助：
   \(executable) help start
@@ -850,6 +855,10 @@ case "start":
       kill(pid, SIGTERM)
       state.watcherPid = nil
     }
+    // A retry starts from a clean plugin-owned ChatGPT instance. This closes
+    // only the exact renderer/profile recorded by the plugin; the user's main
+    // ChatGPT window is never selected as a cleanup target.
+    closeBackgroundTargets(&state)
     state.enabled = true
     state.rules = rules
     state.approveAll = approveAll
@@ -1005,6 +1014,10 @@ case "stop":
   state.enabled = false
   state.watcherPid = nil
   try? saveState(state)
+  var queueState = loadQueueState()
+  stopQueueWorker(&queueState)
+  cleanupOrphanedDedicatedTaskWorkerArtifacts(queueState)
+  try? saveQueueState(queueState)
   output(statusPayload(state))
 case "watch":
   let activity = beginWatcherActivity(
@@ -1490,7 +1503,7 @@ case "verify_chatgpt_login":
     "hiddenChatPort": hiddenChat.port,
     "hiddenChatTargetId": hiddenChat.targetId,
     "errorCode": "",
-    "message": "ChatGPT 隐藏 Chat 页面已创建并通过认证预检",
+    "message": "ChatGPT 插件 Chat 页面已创建并通过认证预检（可见或隐藏）",
   ])
 case "account_list":
   let records = loadAccounts()
@@ -1789,9 +1802,8 @@ case "queue_attach":
         )
       }
       let now = isoFormatter.string(from: Date())
-      let reattachingSameConversation = tasks[index].conversationId == conversationId
+      let previousTaskConversationId = tasks[index].conversationId
       tasks[index].status = "running"
-      tasks[index].conversationId = conversationId
       tasks[index].chatURL = params["chatUrl"] as? String
       tasks[index].workerPid = nil
       tasks[index].workerStatePath = nil
@@ -1799,9 +1811,6 @@ case "queue_attach":
       tasks[index].startedAt = tasks[index].startedAt ?? now
       tasks[index].finishedAt = nil
       tasks[index].updatedAt = now
-      if !reattachingSameConversation || tasks[index].lastProgressAt == nil {
-        tasks[index].lastProgressAt = tasks[index].startedAt ?? now
-      }
       tasks[index].lastError = nil
       tasks[index].report = nil
       guard let controller = sharedChatController(&state),
@@ -1836,13 +1845,28 @@ case "queue_attach":
       )
       let attachedAttempt = attachedDispatch?["attempt"] as? Int ?? 0
       let requestedAttempt = params["attempt"] as? Int
-      let identityMatches = normalizedConversationId(
+      let attachedLiveConversationId = normalizedConversationId(
         attachedStatus["conversationId"] as? String
-      ) == conversationId
-      let durableTaskBindingMatches = tasks[index].conversationId == conversationId
+      )
+      let attachedRouteConversationId = normalizedConversationId(
+        attachedStatus["routeConversationId"] as? String
+      )
+      let attachedActiveConversationId = normalizedConversationId(
+        attachedStatus["activeConversationId"] as? String
+      )
+      let identityMatches = attachedLiveConversationId == conversationId
+      let durableTaskBindingMatches = previousTaskConversationId == conversationId
         && attachedDispatch?["hasTaskMarker"] as? Bool == true
         && attachedAttempt > 0
-      guard identityMatches || durableTaskBindingMatches else {
+      // An explicit operator attach may point at the durable sidebar/route id
+      // while the live composer has already moved to a local id. Accept that
+      // only when the current page itself names this task, then persist the
+      // composer id as the runtime identity instead of the stale sidebar id.
+      let operatorTaskBindingMatches = attachedDispatch?["hasTaskMarker"] as? Bool == true
+        && attachedAttempt == 0
+        && (attachedRouteConversationId == conversationId
+          || attachedActiveConversationId == conversationId)
+      guard identityMatches || durableTaskBindingMatches || operatorTaskBindingMatches else {
         throw NSError(
           domain: "chatgpt-auto-confirm",
           code: 36,
@@ -1850,6 +1874,20 @@ case "queue_attach":
             "没有找到与 conversationId 匹配的队列专用 Chat renderer"]
         )
       }
+      // Keep the requested durable id as task identity. The live composer can
+      // temporarily use a local id before ChatGPT promotes it, so retain that
+      // exact local identity as a secondary binding for both verified sends
+      // and explicit markerless attachments.
+      tasks[index].conversationId = conversationId
+      if previousTaskConversationId != conversationId
+          || tasks[index].lastProgressAt == nil {
+        tasks[index].lastProgressAt = tasks[index].startedAt ?? now
+      }
+      let markerlessAttachment = attachedAttempt == 0
+        && (identityMatches || operatorTaskBindingMatches)
+      tasks[index].attachedConversationWithoutDispatchMarker = markerlessAttachment
+      tasks[index].dispatchMarkerVerifiedAt = attachedAttempt > 0 ? now : nil
+      tasks[index].dispatchLocalConversationId = attachedLiveConversationId
       tasks[index].workerPort = controller.port
       tasks[index].workerTargetId = controller.targetId
       tasks[index].workerProfilePath = controller.profilePath
@@ -1992,7 +2030,7 @@ case "queue_retry":
         tasks[index].lastError = "connector_updated"
         tasks[index].updatedAt = isoFormatter.string(from: Date())
       } else if tasks[index].status == "running" {
-        // Stop only a response inside the hidden queue window. A legacy or
+        // Stop only a response inside the plugin-owned queue target. A legacy or
         // attached target is deliberately left untouched because it may be the
         // page where the user is composing a new task.
         let port = tasks[index].workerPort ?? state.queueWorkerPort
@@ -2007,7 +2045,7 @@ case "queue_retry":
             timeout: 12.0
           )
         }
-        // An operator retry must not inherit its old hidden renderer. Parallel
+        // An operator retry must not inherit its old plugin-owned renderer. Parallel
         // tasks own different windows, so close only this task and leave other
         // running Chats untouched.
         if state.queueWorkerMode == parallelDedicatedProcessQueueWorkerMode {
@@ -2138,6 +2176,7 @@ case "queue_watch":
     reason: "ChatGPT 自动确认任务队列后台处理"
   )
   defer { ProcessInfo.processInfo.endActivity(activity) }
+  var queueWatchIteration = 0
   while true {
     autoreleasepool {
       do {
@@ -2151,6 +2190,10 @@ case "queue_watch":
             _ = queueTargetRuntimeState(port: port, targetId: targetId, refreshLifecycle: true)
           }
           runQueueIteration(&state)
+          queueWatchIteration += 1
+          if queueWatchIteration % 60 == 0 {
+            cleanupOrphanedDedicatedTaskWorkerArtifacts(state)
+          }
           return state.queueEnabled == true
         }
         if !shouldContinue { Foundation.exit(0) }
@@ -2320,7 +2363,11 @@ case "chat_status":
     try? saveState(state)
     var payload = sanitizeJSONValue(result) as? [String: Any] ?? ["ok": false, "errorCode": "sanitize_failed"]
     payload["trackedChatURLs"] = state.trackedChatURLs ?? []
-    payload["hiddenTargetCount"] = state.backgroundChatTargetId == nil ? 0 : 1
+    let runtimeState = pluginBackgroundRuntimeState(state)
+    payload["hiddenTargetCount"] = runtimeState == .hidden ? 1 : 0
+    payload["visibleTargetCount"] = runtimeState == .visible ? 1 : 0
+    payload["runtimeState"] = runtimeState.map(queueTargetRuntimeStateName) as Any
+    payload["backgroundOnly"] = runtimeState == .hidden
     payload["backgroundPort"] = state.backgroundAppPort as Any
     payload["backgroundTargetId"] = state.backgroundChatTargetId as Any
     if payload["conversationId"] == nil {
@@ -2338,6 +2385,11 @@ case "send_and_watch":
     params = object
   }
   let message = (params["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  let role = (params["role"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) == "planner"
+    ? "planner"
+    : "work"
+  let autoPlanAfterWork = role == "work"
+    && (params["autoPlanAfterWork"] as? Bool ?? true)
   let connector = params["connector"] as? String
   let rawChatURL = params["chatUrl"] as? String
   let rawConversationId = params["conversationId"] as? String
@@ -2352,6 +2404,10 @@ case "send_and_watch":
   let newChat = !resumeExisting && !freshTargetPrepared
   let timeout = min(maxChatWatchTimeoutSeconds, max(10, params["timeout"] as? Int ?? defaultChatWatchTimeoutSeconds))
   let stagnationTimeout = min(defaultChatStagnationTimeoutSeconds, max(60, params["stagnationTimeout"] as? Int ?? defaultChatStagnationTimeoutSeconds))
+  let noFinalReplyTimeout = min(
+    defaultChatStagnationTimeoutSeconds,
+    max(30, params["noFinalReplyTimeout"] as? Int ?? defaultChatNoFinalReplyTimeoutSeconds)
+  )
   let maxRecoveryAttempts = min(5, max(0, params["maxRecoveryAttempts"] as? Int ?? 5))
   let autoContinueIncomplete = params["autoContinueIncomplete"] as? Bool ?? true
   let maxTaskContinuations = min(
@@ -2361,8 +2417,29 @@ case "send_and_watch":
   let continuationDepth = max(0, params["continuationDepth"] as? Int ?? 0)
   let originalGoal = (params["originalGoal"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? message
   let reportFingerprints = params["reportFingerprints"] as? [String] ?? []
-  let defaultContinuationMessage = "上一个 Chat 的 devspace1 或页面已经连续 \(max(1, stagnationTimeout / 60)) 分钟没有新进度。旧 Chat 保持运行，不要停止或关闭它。请在这个新 Chat 中接手原任务：先检查同一 checkout 中最后一个 devspace1 操作是否已返回或落盘，如果该调用超时则只重试对应步骤。不要切换到 Work，不要从头开始，不要覆盖无关改动，完成实现和验证后再返回最终结果。"
-  let continuationMessage = ((params["continuationMessage"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? defaultContinuationMessage
+  let taskId = (params["taskId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let appliedRevision = params["appliedRevision"] as? Int
+  let appliedDigest = (params["appliedDigest"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let defaultContinuationMessage = role == "planner"
+    ? messageWithTaskReportContract(
+      originalGoal,
+      taskId: taskId,
+      appliedRevision: appliedRevision,
+      appliedDigest: appliedDigest
+    )
+    : messageWithoutTaskReportContract(message)
+  // A planner retry must retain the planner input (including the Work result),
+  // while a Work retry must retain only the original executable goal. This is
+  // also the message used when a renderer stalls before producing a terminal
+  // response.
+  let continuationMessage = role == "planner"
+    ? messageWithTaskReportContract(
+      message,
+      taskId: taskId,
+      appliedRevision: appliedRevision,
+      appliedDigest: appliedDigest
+    )
+    : defaultContinuationMessage
   let approveAll = params["approveAll"] as? Bool ?? true
   let pollIntervalMs = min(5000, max(200, params["pollIntervalMs"] as? Int ?? 500))
 
@@ -2374,6 +2451,12 @@ case "send_and_watch":
   // the first poll can mistake the previous assistant message for the reply to
   // the new instruction and return immediately.
   var state = loadState()
+  if !resumeExisting && !freshTargetPrepared {
+    // Public retries must not accumulate private ChatGPT.app instances or
+    // stale renderers. A fresh planner child is already prepared by the
+    // current process and therefore skips this cleanup path.
+    closeBackgroundTargets(&state)
+  }
   let requestedAccountId = (params["accountId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
   let selectedAccount: AccountRecord?
   if let requestedAccountId, !requestedAccountId.isEmpty {
@@ -2382,7 +2465,7 @@ case "send_and_watch":
     }
     selectedAccount = account
   } else {
-    // An omitted accountId means "continue with the already verified hidden
+    // An omitted accountId means "continue with the already verified plugin-owned
     // instance", not "silently switch to the registry default". Switching
     // profiles here changes the CDP port after chat_status has proved a
     // specific process/target pair and can route the send to another app.
@@ -2409,7 +2492,8 @@ case "send_and_watch":
       "errorCode": "new_chat_creation_not_confirmed",
       "message": "发送前没有确认创建新的 Chat，小程序已退出。",
       "preparation": prepared as Any,
-      "backgroundOnly": true,
+      "backgroundOnly": false,
+      "runtimeState": "unavailable",
       "workerUsed": false,
     ], exitCode: 1)
   }
@@ -2438,15 +2522,16 @@ case "send_and_watch":
         "ok": false,
         "errorCode": "approval_watcher_start_failed",
         "message": error.localizedDescription,
-        "backgroundOnly": true,
+        "backgroundOnly": pluginBackgroundRuntimeState(state) == .hidden,
+        "runtimeState": pluginBackgroundRuntimeState(state).map(queueTargetRuntimeStateName) as Any,
         "workerUsed": false,
       ], exitCode: 1)
     }
   }
   try? saveState(state)
-  let baselineReply = cdpEvaluateOnChatGPT(getReplyJS(), preferredURL: preferredChatURL)
+  var baselineReply = cdpEvaluateOnChatGPT(getReplyJS(), preferredURL: preferredChatURL)
   let currentMessageCount = baselineReply?["messageCount"] as? Int ?? 0
-  let baselineMessageCount = resumeExisting ? max(0, currentMessageCount - 1) : currentMessageCount
+  var baselineMessageCount = resumeExisting ? max(0, currentMessageCount - 1) : currentMessageCount
   if let initialThinking = baselineReply?["thinking"] as? String, !initialThinking.isEmpty {
     emitProgress([
       "event": "thinking_progress",
@@ -2465,8 +2550,16 @@ case "send_and_watch":
     "resumedExisting": resumeExisting,
   ]
   if !resumeExisting {
+    let outboundMessage = role == "planner"
+      ? messageWithTaskReportContract(
+        message,
+        taskId: taskId,
+        appliedRevision: appliedRevision,
+        appliedDigest: appliedDigest
+      )
+      : messageWithoutTaskReportContract(message)
     let sendJS = sendMessageJS(
-      message: messageWithTaskReportContract(message), connector: connector, newChat: false)
+      message: outboundMessage, connector: connector, newChat: false)
     // Connector selection plus virtualization-aware bubble confirmation can
     // legitimately take about 19 seconds in the desktop renderer. Keep the
     // outer CDP deadline safely above the script's bounded inner waits.
@@ -2479,7 +2572,7 @@ case "send_and_watch":
       for _ in 0..<24 {
         Thread.sleep(forTimeInterval: 0.5)
         if let verification = cdpEvaluateOnChatGPT(
-          verifySentMessageJS(message: messageWithTaskReportContract(message)),
+          verifySentMessageJS(message: outboundMessage),
           timeout: 5.0,
           preferredURL: preferredChatURL
         ), verification["messageConfirmed"] as? Bool == true {
@@ -2497,7 +2590,8 @@ case "send_and_watch":
           "screenshotPath": captureHiddenChatScreenshot(state, label: "send-cdp-failed") as Any,
           "pageContent": diagnostic["content"] as Any,
           "pageButtons": diagnostic["buttons"] as Any,
-          "backgroundOnly": true,
+          "backgroundOnly": pluginBackgroundRuntimeState(state) == .hidden,
+          "runtimeState": pluginBackgroundRuntimeState(state).map(queueTargetRuntimeStateName) as Any,
           "workerUsed": false,
         ], exitCode: 1)
     }
@@ -2509,7 +2603,10 @@ case "send_and_watch":
       failure["screenshotPath"] = captureHiddenChatScreenshot(state, label: "send-stage-failed") as Any
       failure["pageContent"] = diagnostic["content"] as Any
       failure["pageButtons"] = diagnostic["buttons"] as Any
-      failure["backgroundOnly"] = true
+      let resultRuntimeState = result["runtimeState"] as? String
+      failure["backgroundOnly"] = resultRuntimeState == "hidden-chat"
+        || resultRuntimeState == "hidden"
+      failure["runtimeState"] = resultRuntimeState ?? "unavailable"
       failure["workerUsed"] = false
       output(failure, exitCode: 1)
     }
@@ -2518,7 +2615,7 @@ case "send_and_watch":
 
   // Record audit
   rememberChatURL(sendResult["url"] as? String, in: &state)
-  let activeChatURL = normalizedChatURL(sendResult["url"] as? String) ?? preferredChatURL
+  var activeChatURL = normalizedChatURL(sendResult["url"] as? String) ?? preferredChatURL
   if !resumeExisting {
     state.audit.append(AuditEvent(
       at: isoFormatter.string(from: Date()),
@@ -2547,8 +2644,13 @@ case "send_and_watch":
   var screenshotPath: String?
   var recoveryEvents: [[String: Any]] = []
   var recoveryAttempts = 0
+  var noFinalReplyRetries = 0
+  var noFinalReplyExhausted = false
   var lastActivitySignature = baselineReply?["activitySignature"] as? String ?? ""
   var lastPageChangeAt = Date()
+  var currentRoundSentAt = Date()
+  var noFinalReplySince: Date?
+  var noFinalReplySessionEnded = false
   var completionCandidateSince: Date?
   var completionCandidateSignature = ""
 
@@ -2574,14 +2676,15 @@ case "send_and_watch":
       lastPageChangeAt = Date()
       emitProgress([
         "event": "continue_in_chat",
-        "backgroundOnly": true,
+        "backgroundOnly": pluginBackgroundRuntimeState(state) == .hidden,
+        "runtimeState": pluginBackgroundRuntimeState(state).map(queueTargetRuntimeStateName) as Any,
         "workerUsed": false,
       ])
       Thread.sleep(forTimeInterval: 0.6)
     }
-    // The hidden renderer must remain on the real Chat surface for the whole
-    // run. A handoff or navigation can otherwise expose a Work composer after
-    // the initial send. Abort immediately; never approve or type on Work.
+    // The plugin-owned renderer must remain on the real Chat surface for the
+    // whole run. A handoff or navigation can otherwise expose a Work composer
+    // after the initial send. Abort immediately; never approve or type on Work.
     if let liveSurface = cdpEvaluateOnChatGPT(chatStatusJS(), preferredURL: activeChatURL),
        liveSurface["chatMode"] as? Bool != true || liveSurface["surface"] as? String != "chat" {
       surfaceDrift = true
@@ -2594,7 +2697,8 @@ case "send_and_watch":
         "event": "chat_surface_drift",
         "surfaceStatus": liveSurface,
         "screenshotPath": screenshotPath as Any,
-        "backgroundOnly": true,
+        "backgroundOnly": pluginBackgroundRuntimeState(state) == .hidden,
+        "runtimeState": pluginBackgroundRuntimeState(state).map(queueTargetRuntimeStateName) as Any,
         "workerUsed": false,
       ])
       break
@@ -2610,7 +2714,8 @@ case "send_and_watch":
           "event": "approval",
           "approved": approved,
           "totalApproved": totalApprovals,
-          "backgroundOnly": true,
+          "backgroundOnly": pluginBackgroundRuntimeState(state) == .hidden,
+          "runtimeState": pluginBackgroundRuntimeState(state).map(queueTargetRuntimeStateName) as Any,
           "workerUsed": false,
         ])
       }
@@ -2625,6 +2730,41 @@ case "send_and_watch":
       let isStreaming = replyResult["streaming"] as? Bool ?? false
       finalReply = replyResult
       let activitySignature = replyResult["activitySignature"] as? String ?? ""
+      let awaitingAssistant = replyResult["awaitingAssistant"] as? Bool ?? false
+      let waitingForApproval = replyResult["waitingForApproval"] as? Bool ?? false
+      // `getReplyJS` reports the last assistant node even when it belongs to
+      // the previous round. Only treat content as belonging to this round
+      // after the assistant count has advanced past the captured baseline.
+      let responseContent = (messageCount > baselineMessageCount
+        ? (replyResult["content"] as? String ?? "")
+        : "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      // This is the specific terminal failure the caller described: the user
+      // turn exists, but the Chat has no assistant turn, no visible stream,
+      // no stop control, and no approval waiting to be handled. It is not a
+      // valid empty result and must never be handed to the planner.
+      let noFinalReplyCandidate = !sawNewReply
+        && messageCount <= baselineMessageCount
+        && awaitingAssistant
+        && !isStreaming
+        && !(replyResult["stopAvailable"] as? Bool ?? false)
+        && !waitingForApproval
+        && responseContent.isEmpty
+        && !(replyResult["completionCandidate"] as? Bool ?? false)
+        && !(replyResult["terminalIncomplete"] as? Bool ?? false)
+      if noFinalReplyCandidate {
+        if noFinalReplySince == nil {
+          noFinalReplySince = Date()
+          emitProgress([
+            "event": "no_final_reply_waiting",
+            "message": "当前 Chat 已收到指令但尚未产生最终回复；插件先等待有界窗口。",
+            "timeoutSeconds": noFinalReplyTimeout,
+            "role": role,
+          ])
+        }
+      } else {
+        noFinalReplySince = nil
+      }
       if !activitySignature.isEmpty && activitySignature != lastActivitySignature {
         lastActivitySignature = activitySignature
         lastPageChangeAt = Date()
@@ -2699,57 +2839,133 @@ case "send_and_watch":
       }
     }
 
-    if Date().timeIntervalSince(lastPageChangeAt) >= Double(stagnationTimeout) {
+    let noFinalReplyStableSeconds = noFinalReplySince.map {
+      Date().timeIntervalSince($0)
+    } ?? 0
+    noFinalReplySessionEnded = noFinalReplySince != nil
+      && Date().timeIntervalSince(currentRoundSentAt) >= Double(noFinalReplyTimeout)
+      && noFinalReplyStableSeconds >= Double(noFinalReplyTimeout)
+    if noFinalReplySessionEnded
+      || Date().timeIntervalSince(lastPageChangeAt) >= Double(stagnationTimeout) {
       let diagnostic = cdpEvaluateOnChatGPT(pageDiagnosticJS(), preferredURL: activeChatURL) ?? [:]
       stalledPageContent = diagnostic["content"] as? String ?? (finalReply["pageContent"] as? String ?? "")
       stalledButtons = diagnostic["buttons"] as? [String] ?? []
       let devspaceWaiting = finalReply["devspaceWaiting"] as? Bool ?? false
-      let diagnosticKind = devspaceWaiting ? "devspace-timeout" : "page-stalled"
+      let recoveryWasNoFinalReply = noFinalReplySessionEnded
+      let diagnosticKind = noFinalReplySessionEnded
+        ? "no-final-reply"
+        : (devspaceWaiting ? "devspace-timeout" : "page-stalled")
       screenshotPath = captureHiddenChatScreenshot(state, label: "\(diagnosticKind)-\(recoveryAttempts + 1)")
 
       if recoveryAttempts < maxRecoveryAttempts {
         recoveryAttempts += 1
-        // Do not click Stop or close the unchanged Chat. Start the next round
-        // directly; the old renderer remains available for a late completion.
-        let continuationPreparation = cdpEvaluateOnChatGPT(
-          continueInNewTaskJS(
-            expectedConversationId: normalizedConversationId(
-              finalReply["conversationId"] as? String
-            )
-          ),
-          timeout: 35.0,
-          preferredURL: activeChatURL
-        ) ?? ["ok": false, "error": "continue_in_new_task_cdp_failed"]
-        let continuationMode = "branch_in_new_chat"
+        if noFinalReplySessionEnded {
+          noFinalReplyRetries += 1
+        }
+        // A stalled round is disposable. Close the exact plugin-owned ChatGPT
+        // target and its matching plugin profile before retrying, then launch a
+        // genuinely fresh Chat. This prevents late responses and duplicate
+        // plugin instances from surviving into the next orchestration round.
+        let previousPort = state.backgroundAppPort
+        let previousProfilePath = state.backgroundProfilePath
+        let previousCodexHomePath = state.backgroundCodexHomePath
+        closeBackgroundTargets(&state)
+        state.backgroundAppPort = previousPort
+        state.backgroundProfilePath = previousProfilePath
+        state.backgroundCodexHomePath = previousCodexHomePath
+        state.approveAll = approveAll
+        state.enabled = true
+
+        let continuationPreparation: [String: Any]
+        let continuationMode = recoveryWasNoFinalReply
+          ? "fresh_plugin_chat_after_no_final_reply"
+          : "fresh_plugin_chat_after_stall"
         let recoveryResult: [String: Any]
-        if continuationPreparation["ok"] as? Bool == true {
-          recoveryResult = cdpEvaluateOnChatGPT(
+        let freshPreparation = ensureHiddenChatTarget(
+          &state,
+          newChat: true,
+          conversationId: nil
+        )
+        if let freshPreparation,
+           freshPreparation["ok"] as? Bool == true,
+           freshPreparation["newChatClicked"] as? Bool == true,
+           let freshPort = freshPreparation["port"] as? Int,
+           let freshTargetId = freshPreparation["targetId"] as? String {
+          // cdpEvaluateOnChatGPT reads persisted state, so persist the new
+          // target before sending into its renderer.
+          try? saveState(state)
+          let freshBaseline = cdpEvaluateOnChatGPT(
+            getReplyJS(),
+            preferredURL: nil
+          )
+          let freshSend = cdpEvaluateOnChatGPT(
             sendMessageJS(
               message: continuationMessage,
               connector: connector,
               newChat: false,
               expectedConversationId: normalizedConversationId(
-                continuationPreparation["conversationId"] as? String
+                freshPreparation["conversationId"] as? String
               )
             ),
-            timeout: 35.0,
-            preferredURL: activeChatURL
-          ) ?? ["ok": false, "error": "continuation_send_cdp_failed"]
+            timeout: 65.0,
+            preferredURL: nil
+          ) ?? ["ok": false, "error": "fresh_chat_send_cdp_failed"]
+          var freshResult = freshSend
+          freshResult["freshPort"] = freshPort
+          freshResult["freshTargetId"] = freshTargetId
+          freshResult["continuationMode"] = continuationMode
+          continuationPreparation = freshPreparation
+          recoveryResult = freshResult
+          if freshSend["ok"] as? Bool == true {
+            activeChatURL = normalizedChatURL(
+              freshPreparation["chatUrl"] as? String
+            )
+            baselineReply = freshBaseline
+            baselineMessageCount = freshBaseline?["messageCount"] as? Int ?? 0
+            finalReply = freshBaseline ?? [
+              "content": "",
+              "streaming": false,
+              "done": false,
+              "charCount": 0,
+            ]
+            sawNewReply = false
+            prevCharCount = 0
+            lastActivitySignature = freshBaseline?["activitySignature"] as? String ?? ""
+            currentRoundSentAt = Date()
+            noFinalReplySince = nil
+            noFinalReplySessionEnded = false
+            completionCandidateSince = nil
+            completionCandidateSignature = ""
+            stalledPageContent = ""
+            stalledButtons = []
+          }
         } else {
+          continuationPreparation = freshPreparation ?? [
+            "ok": false,
+            "error": "fresh_plugin_chat_not_confirmed",
+          ]
+          let preparationError = freshPreparation?["error"] as? String
+            ?? state.lastError
+            ?? "fresh_plugin_chat_not_confirmed"
           recoveryResult = [
             "ok": false,
-            "error": continuationPreparation["error"]
-              ?? "same_task_branch_not_confirmed",
-            "failedStage": "branch_in_new_chat",
+            "error": preparationError,
           ]
         }
         let recoveryEvent: [String: Any] = [
           "attempt": recoveryAttempts,
-          "reason": devspaceWaiting ? "devspace_timeout" : "page_stalled",
-          "idleSeconds": stagnationTimeout,
+          "reason": recoveryWasNoFinalReply
+            ? "no_final_reply"
+            : (devspaceWaiting ? "devspace_timeout" : "page_stalled"),
+          "idleSeconds": recoveryWasNoFinalReply
+            ? Int(noFinalReplyStableSeconds)
+            : stagnationTimeout,
+          "noFinalReplyTimeout": noFinalReplyTimeout,
+          "sessionEndedWithoutFinalReply": recoveryWasNoFinalReply,
           "screenshotPath": screenshotPath as Any,
-          "oldChatPreserved": true,
-          "stopRequested": false,
+          "oldChatClosed": true,
+          "oldChatPreserved": false,
+          "stopRequested": true,
           "continuationMode": continuationMode,
           "continuedInNewTask": continuationPreparation["continuationClicked"] as? Bool ?? false,
           "continuationPreparation": continuationPreparation,
@@ -2762,12 +2978,20 @@ case "send_and_watch":
         if recoveryResult["ok"] as? Bool == true {
           lastPageChangeAt = Date()
           lastActivitySignature = ""
+          noFinalReplySince = nil
+          noFinalReplySessionEnded = false
           Thread.sleep(forTimeInterval: 1.0)
         } else {
+          closeBackgroundTargets(&state)
+          try? saveState(state)
+          noFinalReplyExhausted = recoveryWasNoFinalReply
           stalled = true
           break
         }
       } else {
+        noFinalReplyExhausted = noFinalReplySessionEnded
+        closeBackgroundTargets(&state)
+        try? saveState(state)
         stalled = true
         break
       }
@@ -2791,6 +3015,13 @@ case "send_and_watch":
 
   // Build result
   let replyContent = finalReply["content"] as? String ?? ""
+  let naturalReplyContent = [
+    replyContent,
+    finalReply["completedActivity"] as? String ?? "",
+    finalReply["activity"] as? String ?? "",
+  ]
+  .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+  .first { !$0.isEmpty } ?? ""
   var replyPayload: [String: Any] = [:]
   replyPayload["content"] = String(replyContent.prefix(50000))
   replyPayload["thinking"] = String((finalReply["thinking"] as? String ?? "").prefix(50000))
@@ -2816,19 +3047,43 @@ case "send_and_watch":
     replyContent,
     finalReply["completedActivity"] as? String ?? "",
   ].joined(separator: "\n")
-  let taskReport = parseTaskReport(reportSource)
+  let taskReport = role == "planner" ? parseTaskReport(reportSource) : nil
   let taskStatus = taskReport?["status"] as? String
   let finalChatStatus = cdpEvaluateOnChatGPT(chatStatusJS(), preferredURL: activeChatURL) ?? [:]
   let finalConversationId = finalChatStatus["conversationId"] as? String
     ?? state.backgroundConversationId
   let finalChatURL = finalChatStatus["chatUrl"] as? String
+  let finalRuntimeState: QueueTargetRuntimeState? = {
+    guard let port = state.backgroundAppPort,
+          let targetId = state.backgroundChatTargetId else { return nil }
+    return queueTargetRuntimeState(
+      port: port,
+      targetId: targetId,
+      refreshLifecycle: false
+    )
+  }()
   let explicitlyIncomplete = finalReply["explicitlyIncomplete"] as? Bool ?? false
   let effectiveTaskStatus = taskStatus
-  let reportMissing = !resumeExisting && !surfaceDrift && !stalled && !timedOut
+  let reportMissing = role == "planner" && !resumeExisting && !surfaceDrift && !stalled && !timedOut
     && finalReply["done"] as? Bool == true && taskReport == nil
     && !terminalIncomplete && !explicitlyIncomplete
-  resultPayload["ok"] = !stalled && !timedOut && !surfaceDrift && !terminalIncomplete
-    && !reportMissing && effectiveTaskStatus == "complete" && (finalReply["done"] as? Bool == true)
+  // A finished reply without the certificate is still an unfinished round.
+  // Keep this separate from `reportMissing` so an explicit natural-language
+  // "not finished" answer is classified as incomplete while both cases enter
+  // the same fresh-Chat continuation path below.
+  let completionCertificateMissing = role == "planner" && !resumeExisting && !surfaceDrift && !stalled && !timedOut
+    && finalReply["done"] as? Bool == true && taskReport == nil
+  let workReplyReady = role == "work"
+    && !naturalReplyContent.isEmpty
+    && finalReply["done"] as? Bool == true
+  let workNaturalResultMissing = role == "work"
+    && naturalReplyContent.isEmpty
+    && finalReply["done"] as? Bool == true
+  resultPayload["ok"] = role == "work"
+    ? (!stalled && !timedOut && !surfaceDrift && workReplyReady)
+    : (!stalled && !timedOut && !surfaceDrift && !terminalIncomplete
+      && !reportMissing && effectiveTaskStatus == "complete"
+      && (finalReply["done"] as? Bool == true))
   resultPayload["sent"] = resumeExisting ? false : (sendResult["messageConfirmed"] as? Bool ?? false)
   resultPayload["resumedExisting"] = resumeExisting
   resultPayload["preparation"] = prepared as Any
@@ -2836,7 +3091,12 @@ case "send_and_watch":
   resultPayload["reply"] = replyPayload
   resultPayload["approvals"] = ["totalApproved": totalApprovals]
   resultPayload["connector"] = connector as Any
-  resultPayload["backgroundOnly"] = true
+  resultPayload["role"] = role
+  resultPayload["autoPlanAfterWork"] = autoPlanAfterWork
+  resultPayload["naturalWorkResult"] = role == "work" ? String(naturalReplyContent.prefix(50000)) : NSNull()
+  resultPayload["naturalWorkResultMissing"] = workNaturalResultMissing
+  resultPayload["backgroundOnly"] = finalRuntimeState == .hidden
+  resultPayload["runtimeState"] = finalRuntimeState.map(queueTargetRuntimeStateName) as Any
   resultPayload["workerUsed"] = false
   resultPayload["surface"] = "chat"
   resultPayload["backgroundPort"] = state.backgroundAppPort as Any
@@ -2848,11 +3108,15 @@ case "send_and_watch":
   resultPayload["surfaceDrift"] = surfaceDrift
   resultPayload["surfaceStatus"] = surfaceDriftStatus
   resultPayload["stagnationTimeout"] = stagnationTimeout
+  resultPayload["noFinalReplyTimeout"] = noFinalReplyTimeout
   resultPayload["maxRecoveryAttempts"] = maxRecoveryAttempts
   resultPayload["recoveryAttempts"] = recoveryAttempts
+  resultPayload["noFinalReplyRetries"] = noFinalReplyRetries
+  resultPayload["sessionEndedWithoutFinalReply"] = noFinalReplyExhausted
   resultPayload["recoveries"] = recoveryEvents
   resultPayload["taskReport"] = taskReport as Any
   resultPayload["taskStatus"] = effectiveTaskStatus as Any
+  resultPayload["completionCertificateMissing"] = completionCertificateMissing
   resultPayload["taskContinuationDepth"] = continuationDepth
   resultPayload["maxTaskContinuations"] = maxTaskContinuations
   resultPayload["screenshotPath"] = screenshotPath as Any
@@ -2861,35 +3125,167 @@ case "send_and_watch":
   resultPayload["elapsedSeconds"] = Int(Date().timeIntervalSince(deadline.addingTimeInterval(Double(-timeout))))
   if surfaceDrift {
     resultPayload["errorCode"] = "chat_surface_drift"
-    resultPayload["message"] = "隐藏页面已离开 Chat 表面；小程序在批准或发送任何后续操作前立即退出并保存诊断。"
+    resultPayload["message"] = "插件自有页面已离开 Chat 表面；小程序在批准或发送任何后续操作前立即退出并保存诊断。"
   } else if stalled {
     let devspaceWaiting = finalReply["devspaceWaiting"] as? Bool ?? false
-    resultPayload["errorCode"] = devspaceWaiting ? "devspace_timeout" : "page_stalled"
-    resultPayload["message"] = "Chat 页面和可见思考连续 \(stagnationTimeout) 秒没有新内容，小程序已用尽自动续作次数并保存截图与页面文本。"
+    resultPayload["errorCode"] = noFinalReplyExhausted
+      ? "no_final_reply_after_retries"
+      : (devspaceWaiting ? "devspace_timeout" : "page_stalled")
+    resultPayload["message"] = noFinalReplyExhausted
+      ? "Chat 会话已结束但没有最终回复；插件已关闭旧 Chat、用新的 Work Chat 重发原指令，并用尽自动重试次数。"
+      : "Chat 页面和可见思考连续 \(stagnationTimeout) 秒没有新内容，小程序已用尽自动续作次数并保存截图与页面文本。"
   } else if timedOut {
     resultPayload["errorCode"] = "watch_timeout"
     resultPayload["message"] = "等待 ChatGPT 最终结果超过 \(timeout) 秒，小程序已截图并返回当前可见思考。"
   } else if reportMissing {
     resultPayload["errorCode"] = "task_report_missing"
     resultPayload["message"] = "ChatGPT 已停止生成，但最终回答缺少可解析的 MAHAYANA_TASK_REPORT_V1；小程序不会猜测任务是否完成。"
+  } else if workNaturalResultMissing {
+    resultPayload["errorCode"] = "work_natural_result_missing"
+    resultPayload["message"] = "Work Chat 已停止生成，但没有返回可交给规划 Chat 的自然语言结果；插件将关闭旧 Chat 并重试新的 Work Chat。"
   } else if terminalIncomplete || taskStatus == "incomplete" || taskStatus == "blocked" {
     resultPayload["errorCode"] = "chat_finished_incomplete"
-    resultPayload["message"] = "ChatGPT 已停止生成，但明确报告任务未完成；小程序已立即返回失败结果，不等待静默超时。"
+    resultPayload["message"] = role == "work"
+      ? "Work Chat 已停止生成；插件会把这次自然结果交给新的规划 Chat 决定下一步。"
+      : "规划 Chat 已停止生成，但报告说明任务未完成；插件会把 next_task 交给新的 Work Chat。"
+  }
+
+  if role == "work",
+     autoPlanAfterWork,
+     !resumeExisting,
+     !surfaceDrift,
+     !stalled,
+     !timedOut,
+     workReplyReady,
+     let port = state.backgroundAppPort,
+     let targetId = state.backgroundChatTargetId {
+    // Work-to-planner is a real conversation boundary. The old Work reply is
+    // read once, copied into the planner prompt, and never converted into a
+    // report template for the Work Chat.
+    let plannerRound = continuationDepth + 1
+    let plannerTaskId = taskId ?? "send-and-watch"
+    let plannerMarker = "规划验收 Chat 标识：\(plannerTaskId)-\(plannerRound)"
+    let plannerPreparation = prepareNewChatTarget(
+      port: port,
+      targetId: targetId,
+      timeout: 35.0,
+      allowBlankConversationReuse: false
+    )
+    if let plannerPreparation,
+       plannerPreparation["ok"] as? Bool == true {
+      let plannerMessage = acceptancePlannerMessage(
+        originalGoal: originalGoal,
+        workResult: naturalReplyContent,
+        taskId: taskId,
+        appliedRevision: appliedRevision,
+        appliedDigest: appliedDigest
+      ) + "\n\n插件调度标记：\(plannerMarker)"
+      let plannerSend = cdpEvaluateOnChatGPT(
+        sendMessageJS(
+          message: plannerMessage,
+          connector: connector,
+          newChat: false,
+          expectedConversationId: normalizedConversationId(
+            plannerPreparation["conversationId"] as? String
+          )
+        ),
+        timeout: 65.0,
+        preferredURL: activeChatURL
+      )
+      if plannerSend?["ok"] as? Bool == true,
+         let plannerConversationId = normalizedConversationId(
+           plannerPreparation["conversationId"] as? String
+         ) ?? normalizedConversationId(plannerSend?["conversationId"] as? String) {
+        var plannerParams = params
+        plannerParams["message"] = plannerMessage
+        plannerParams["role"] = "planner"
+        plannerParams["autoPlanAfterWork"] = false
+        plannerParams["originalGoal"] = originalGoal
+        plannerParams["taskId"] = taskId ?? NSNull()
+        plannerParams["appliedRevision"] = appliedRevision ?? NSNull()
+        plannerParams["appliedDigest"] = appliedDigest ?? NSNull()
+        plannerParams["continuationDepth"] = continuationDepth + 1
+        plannerParams["resumeExisting"] = true
+        plannerParams["freshTargetPrepared"] = true
+        plannerParams["newChat"] = false
+        plannerParams["conversationId"] = plannerConversationId
+        plannerParams["chatUrl"] = plannerSend?["url"] as? String
+          ?? plannerPreparation["url"] as? String
+          ?? NSNull()
+        plannerParams["goalOnlyDispatch"] = false
+        resultPayload["plannerHandoff"] = [
+          "started": true,
+          "role": "planner",
+          "conversationId": plannerConversationId,
+          "preparation": plannerPreparation as Any,
+          "sendVerification": plannerSend as Any,
+          "plannerMarker": plannerMarker,
+        ]
+        emitProgress([
+          "event": "planner_handoff",
+          "status": "started",
+          "workResultChars": naturalReplyContent.count,
+          "conversationId": plannerConversationId,
+          "backgroundOnly": finalRuntimeState == .hidden,
+          "runtimeState": finalRuntimeState.map(queueTargetRuntimeStateName) as Any,
+        ])
+        relayFreshChatContinuation(plannerParams)
+      }
+      resultPayload["plannerHandoff"] = [
+        "started": false,
+        "preparation": plannerPreparation,
+        "sendVerification": plannerSend as Any,
+      ]
+    } else {
+      resultPayload["plannerHandoff"] = [
+        "started": false,
+        "preparation": plannerPreparation as Any,
+      ]
+    }
+    resultPayload["ok"] = false
+    resultPayload["errorCode"] = "planner_handoff_not_confirmed"
+    resultPayload["message"] = "Work Chat 已返回自然结果，但新的规划 Chat 尚未确认发送；插件保留当前结果并返回诊断。"
   }
 
   if autoContinueIncomplete,
      !surfaceDrift, !stalled, !timedOut,
-     let report = taskReport,
-     taskStatus == "incomplete" || taskStatus == "blocked" {
-    let summary = report["summary"] as? String ?? ""
-    let remaining = (report["remaining"] as? [String] ?? []).joined(separator: "\n")
-    let blockers = (report["blockers"] as? [String] ?? []).joined(separator: "\n")
-    let nextTask = report["next_task"] as? String ?? ""
-    let fingerprint = [summary, remaining, blockers, nextTask]
-      .joined(separator: "|")
-      .lowercased()
-      .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-    let hasNextTask = !nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+     (completionCertificateMissing || taskStatus == "incomplete" || taskStatus == "blocked" || workNaturalResultMissing) {
+    let fingerprint: String
+    let hasNextTask: Bool
+    let continuationPrompt: String
+    if workNaturalResultMissing {
+      fingerprint = "missing-work-natural-result:\(continuationDepth)"
+      hasNextTask = true
+      continuationPrompt = messageWithoutTaskReportContract(message)
+    } else if let report = taskReport {
+      let summary = report["summary"] as? String ?? ""
+      let remaining = (report["remaining"] as? [String] ?? []).joined(separator: "\n")
+      let blockers = (report["blockers"] as? [String] ?? []).joined(separator: "\n")
+      let nextTask = report["next_task"] as? String ?? ""
+      fingerprint = [summary, remaining, blockers, nextTask]
+        .joined(separator: "|")
+        .lowercased()
+        .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+      hasNextTask = role == "planner"
+        ? !nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        : !nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      continuationPrompt = role == "planner"
+        ? continuationFromTaskReport(
+          report, originalGoal: originalGoal, iteration: continuationDepth + 1)
+        : continuationFromTaskReport(
+          report, originalGoal: originalGoal, iteration: continuationDepth + 1)
+    } else {
+      // A planner without its report must be followed by a Work Chat, which
+      // will produce a new natural result for another planner. A Work Chat
+      // without content remains a Work-only recovery and still receives no
+      // report contract.
+      fingerprint = "missing-planner-report:\(continuationDepth)"
+      hasNextTask = true
+      continuationPrompt = role == "planner"
+        ? continuationFromTaskReport(
+          [:], originalGoal: originalGoal, iteration: continuationDepth + 1)
+        : messageWithoutTaskReportContract(originalGoal)
+    }
     let continuationAllowed = maxTaskContinuations == 0
       || continuationDepth < maxTaskContinuations
     if !hasNextTask {
@@ -2899,6 +3295,11 @@ case "send_and_watch":
       resultPayload["errorCode"] = "task_continuation_limit_reached"
       resultPayload["message"] = "未完成任务已达到显式配置的自动续作上限。"
     } else {
+      // Every automatic continuation starts with a real fresh Chat. The
+      // child watcher must send the raw next_task (or the current Work
+      // instruction for a result-less retry) after this preparation, so the
+      // Work -> planner boundary remains intact even for legacy
+      // goalOnlyDispatch callers.
       let continuationPreparation = cdpEvaluateOnChatGPT(
         continueInNewTaskJS(),
         timeout: 35.0,
@@ -2906,8 +3307,11 @@ case "send_and_watch":
       ) ?? ["ok": false, "error": "continue_in_new_task_cdp_failed"]
       if continuationPreparation["ok"] as? Bool == true {
         var childParams = params
-        childParams["message"] = continuationFromTaskReport(
-          report, originalGoal: originalGoal, iteration: continuationDepth + 1)
+        childParams["message"] = continuationPrompt
+        childParams["role"] = role == "planner" ? "work" : role
+        childParams["autoPlanAfterWork"] = role == "planner"
+          ? true
+          : autoPlanAfterWork
         childParams["originalGoal"] = originalGoal
         childParams["continuationDepth"] = continuationDepth + 1
         childParams["reportFingerprints"] = Array((reportFingerprints + [fingerprint]).suffix(100))
@@ -2920,21 +3324,27 @@ case "send_and_watch":
           "event": "task_continuation",
           "status": "started",
           "errorCode": "task_continuation_started",
-          "reason": taskStatus as Any,
+          "reason": workNaturalResultMissing ? "work_natural_result_missing" : (taskStatus ?? "missing_completion_certificate"),
           "iteration": continuationDepth + 1,
           "continuationPreparation": continuationPreparation,
-          "taskReport": report,
-          "backgroundOnly": true,
+          "taskReport": taskReport as Any,
+          "backgroundOnly": pluginBackgroundRuntimeState(state) == .hidden,
+          "runtimeState": pluginBackgroundRuntimeState(state).map(queueTargetRuntimeStateName) as Any,
           "workerUsed": false,
         ])
         relayFreshChatContinuation(childParams)
       }
       resultPayload["continuationPreparation"] = continuationPreparation
-      resultPayload["errorCode"] =
-        continuationPreparation["error"] ?? "continue_in_new_task_not_confirmed"
-      resultPayload["message"] =
-        "任务未完成，但没有确认点击上一条回复底部的“在新任务中继续”；小程序已停止，避免丢失上下文。"
+      resultPayload["errorCode"] = continuationPreparation["error"] ?? "continue_in_new_task_not_confirmed"
+      resultPayload["message"] = "任务尚未完成，但没有确认新的插件 Chat 已创建；小程序已停止，避免把结果发送回旧 Chat。"
     }
+  }
+  // A failed public round must not leave a plugin-owned renderer behind for
+  // the next invocation. Successful rounds remain visible/inspectable until
+  // their caller explicitly stops them; retries and failures are disposable.
+  if resultPayload["ok"] as? Bool != true {
+    closeBackgroundTargets(&state)
+    try? saveState(state)
   }
   output(resultPayload, exitCode: resultPayload["ok"] as? Bool == true ? 0 : 1)
 default:
