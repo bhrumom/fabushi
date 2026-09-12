@@ -294,9 +294,10 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
       setPeerUnreadSemantic(null);
       return;
     }
-    const agentId = `peer-unread:${testId.slice("peer-".length)}`;
+    const semanticBase = `peer-unread:${testId.slice("peer-".length)}`;
     const update = () => {
       const positive = peerButton.querySelector("b") != null;
+      const agentId = `${semanticBase}:${positive ? "positive" : "none"}`;
       setPeerUnreadSemantic((current) => current?.agentId === agentId && current.positive === positive
         ? current
         : { agentId, positive });
