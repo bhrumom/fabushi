@@ -1,0 +1,56 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const controller = await readFile(new URL("../scripts/fcm-010-13-macos-external-controller.mjs", import.meta.url), "utf8");
+const preflight = await readFile(new URL("../scripts/fcm-010-13-protected-account-preflight.mjs", import.meta.url), "utf8");
+const workflow = await readFile(new URL("../../.github/workflows/fcm-010-13-11-macos-external-controller.yml", import.meta.url), "utf8");
+
+const categories = [
+  "startup", "login", "main", "conversations", "search", "send", "receive", "reply", "edit", "delete",
+  "forward", "draft", "pin", "mute", "unread", "contacts", "groups", "bot", "agent", "miniapp", "webmcp",
+  "media", "file", "notifications", "sync", "settings", "update",
+];
+
+test("FCM-010.13.11 external controller is exact-source, production-account and run-owned-device only", () => {
+  assert.match(controller, /7ee12b790e18049d2b9509b0c29128dd2ace690b/u);
+  assert.match(controller, /desktop-1\.2\.56-7ee12b790e18/u);
+  assert.match(controller, /expectedDeviceId !== `gha-\$\{runId\}-\$\{runAttempt\}-macos-app`/u);
+  assert.match(controller, /\^gha-\[0-9\]\+-\[0-9\]\+-macos-app\$/u);
+  assert.match(controller, /name: "list_devices"/u);
+  assert.match(controller, /name: "device_call"/u);
+  assert.match(controller, /https:\/\/fabushi-mcp\.ombhrum\.com/u);
+  assert.doesNotMatch(controller, /gloria-macbook-air|KRIS|runner-owned/u);
+});
+
+test("protected-account preflight performs real production OAuth and same-account discovery before dispatch", () => {
+  for (const token of [
+    "/oauth/register", "/oauth/authorize", "/api/auth/browser/password", "/oauth/fabushi/status", "/oauth/token",
+    "devices.read devices.control", "list_devices", "protected-account-preflight.json",
+  ]) assert.match(preflight, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+});
+
+test("controller executes every frozen macOS full-journey category and preserves logout ordering", () => {
+  for (const category of categories) {
+    assert.match(controller, new RegExp(`category\\(\\\"${category}\\\"`, "u"), `missing category ${category}`);
+  }
+  assert.match(controller, /TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=/u);
+  const ready = controller.indexOf("TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
+  const finish = controller.indexOf('callDevice("ci_session_finish"', ready);
+  const logout = controller.indexOf('agentId: "settings-logout", action: "invoke"', finish);
+  assert.ok(ready >= 0 && finish > ready && logout > finish, "READY -> ci_session_finish -> exact settings-logout order must be preserved");
+  assert.equal(controller.indexOf('callDevice("', logout + 1), -1, "no remote device call may occur after exact settings-logout in the pass path");
+});
+
+test("orchestrator gates dispatch on account preflight and dispatches only the immutable frozen tag", () => {
+  assert.match(workflow, /needs: protected-account-preflight/u);
+  assert.match(workflow, /actions: write/u);
+  assert.match(workflow, /TARGET_WORKFLOW_ID: '350936009'/u);
+  assert.match(workflow, /FROZEN_SOURCE_SHA: 7ee12b790e18049d2b9509b0c29128dd2ace690b/u);
+  assert.match(workflow, /IMMUTABLE_RELEASE_TAG: desktop-1\.2\.56-7ee12b790e18/u);
+  assert.match(workflow, /actions\/workflows\/\$TARGET_WORKFLOW_ID\/dispatches/u);
+  assert.match(workflow, /-f ref="\$IMMUTABLE_RELEASE_TAG"/u);
+  assert.match(workflow, /expected_device_id="gha-\$\{target_run_id\}-\$\{target_run_attempt\}-macos-app"/u);
+  assert.match(workflow, /test "\$\(jq -r '\.conclusion' <<<"\$final"\)" = success/u);
+  assert.match(workflow, /fabushi-macos-interactive-evidence-\$\{TARGET_RUN_ID\}-\$\{TARGET_RUN_ATTEMPT\}/u);
+});
