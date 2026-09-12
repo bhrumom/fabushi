@@ -271,7 +271,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   }
   async function waitForAssistantUnread(expectedPositive, timeoutMs = 90_000) {
     const label = expectedPositive ? "positive" : "cleared";
-    return poll(`assistant peer unread ${label} semantic transition`, () => readAssistantUnreadState(expectedPositive), timeoutMs, 400);
+    return poll(`assistant peer unread badge ${label} semantic transition`, () => readAssistantUnreadState(expectedPositive), timeoutMs, 400);
   }
   async function waitForIncomingMessage(beforeIds, sentMessageRowId) {
     return messageReceiveTracker.waitForIncoming(beforeIds, sentMessageRowId);
