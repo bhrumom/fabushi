@@ -6,6 +6,8 @@ const REQUIRED_CATEGORIES = [
   "media", "file", "notifications", "sync", "settings", "update",
 ];
 const ASSISTANT_PEER_ID = "test:peer-legacy:conversation:mahayana-ai:agent:assistant";
+const MESSAGE_ROW_PREFIX = "message-actions:";
+const MESSENGER_INPUT_AGENT_ID = "test:messenger-input";
 const PROFILE_NAVIGATION_AGENT_IDS = new Map([
   ["聊天", "profile-navigation-chats"],
   ["联系人", "profile-navigation-contacts"],
@@ -15,6 +17,77 @@ const PROFILE_NAVIGATION_AGENT_IDS = new Map([
   ["设置", "profile-navigation-settings"],
 ]);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export function newestMessageRowsFromSnapshot(snapshotValue, limit = 100) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error(`message snapshot limit must be an integer in 1..100; received ${String(limit)}`);
+  }
+  const elements = Array.isArray(snapshotValue?.elements) ? snapshotValue.elements : [];
+  const composerIndex = elements.findIndex((item) => item?.agentId === MESSENGER_INPUT_AGENT_ID);
+  if (composerIndex < 0) {
+    throw new Error("message_snapshot_incomplete: exact messenger input sentinel missing");
+  }
+  return elements
+    .slice(0, composerIndex)
+    .filter((item) => item?.role === "article" && String(item?.agentId || "").startsWith(MESSAGE_ROW_PREFIX))
+    .slice(-limit);
+}
+
+export function createMessageReceiveTracker({
+  callDevice,
+  sleepFn = sleep,
+  timeoutMs = 90_000,
+  intervalMs = 800,
+  maxAttempts = null,
+}) {
+  if (typeof callDevice !== "function") throw new Error("message receive tracker requires callDevice");
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("message receive tracker timeout must be positive");
+  if (!Number.isFinite(intervalMs) || intervalMs < 0) throw new Error("message receive tracker interval must be non-negative");
+  if (maxAttempts != null && (!Number.isInteger(maxAttempts) || maxAttempts < 1)) throw new Error("message receive tracker maxAttempts must be a positive integer");
+
+  async function readNewestRows() {
+    const fresh = await callDevice("fabushi.app.snapshot", { maxElements: 500, includeText: true });
+    return newestMessageRowsFromSnapshot(fresh);
+  }
+
+  async function captureBeforeSend(send) {
+    if (typeof send !== "function") throw new Error("message receive tracker requires a send callback");
+    const beforeIds = new Set((await readNewestRows()).map((item) => String(item?.agentId || "")));
+    const sentMessageRowId = String(await send() || "");
+    if (!sentMessageRowId.startsWith(MESSAGE_ROW_PREFIX)) {
+      throw new Error(`sent_message_identity_missing: ${sentMessageRowId || "<empty>"}`);
+    }
+    if (beforeIds.has(sentMessageRowId)) {
+      throw new Error(`sent_message_identity_not_new: ${sentMessageRowId}`);
+    }
+    return { beforeIds, sentMessageRowId };
+  }
+
+  async function waitForIncoming(beforeIds, sentMessageRowId) {
+    if (!(beforeIds instanceof Set)) throw new Error("message receive tracker requires a Set baseline");
+    if (!String(sentMessageRowId || "").startsWith(MESSAGE_ROW_PREFIX)) throw new Error("message receive tracker requires the exact sent message row identity");
+    const deadline = Date.now() + timeoutMs;
+    let attempt = 0;
+    let last = null;
+    while (Date.now() < deadline && (maxAttempts == null || attempt < maxAttempts)) {
+      attempt += 1;
+      const rows = await readNewestRows();
+      const candidate = rows.find((item) => {
+        const id = String(item?.agentId || "");
+        const text = String(item?.text || item?.name || "");
+        return !beforeIds.has(id) && id !== sentMessageRowId && Boolean(text);
+      });
+      if (candidate) {
+        return { agentId: candidate.agentId, text: String(candidate.text || candidate.name || "").slice(0, 240) };
+      }
+      last = rows.at(-1) ?? null;
+      if (intervalMs > 0) await sleepFn(intervalMs);
+    }
+    throw new Error(`new incoming assistant message timed out; last=${JSON.stringify(last)}`);
+  }
+
+  return { captureBeforeSend, waitForIncoming };
+}
 
 export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDeviceId, runId, runAttempt, record }) {
   const completedCategories = [];
@@ -28,8 +101,9 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
       },
     });
   }
+  const messageReceiveTracker = createMessageReceiveTracker({ callDevice });
   async function snapshot() { return callDevice("fabushi.app.snapshot", { maxElements: 500, includeText: true }); }
-  async function find(query) { return callDevice("fabushi.app.find", { ...query, limit: query.limit || 100 }); }
+  async function find(query) { return callDevice("fabushi.app.find", query); }
   async function waitFor(query, timeoutMs = 30_000) {
     const result = await callDevice("fabushi.app.wait", { ...query, timeoutMs });
     if (result.passed !== true) throw new Error(`wait failed: ${JSON.stringify(query)} :: ${JSON.stringify(result.failures || [])}`);
@@ -75,7 +149,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
       invokeDeviceCall,
       args,
       resolveLatestTarget: async () => {
-        const refreshed = await invokeDeviceCall("fabushi.app.find", { ...query, limit: query.limit || 100 });
+        const refreshed = await invokeDeviceCall("fabushi.app.find", query);
         return { generation: refreshed.generation, target: chooseUniqueMatch(refreshed, query, predicate) };
       },
       onRetry: ({ attempt, resolver, agentId, previousGeneration, findGeneration, refreshedGeneration }) => {
@@ -182,10 +256,6 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await invokeTest(agentId.startsWith("test:") ? agentId.slice(5) : agentId);
     await waitFor({ agentId: "test:messenger-input", state: "visible" });
   }
-  async function messageRowIds() {
-    const found = await find({ role: "article", limit: 200 });
-    return new Set((found.matches || []).map((item) => String(item?.agentId || "")).filter((id) => id.startsWith("message-actions:")));
-  }
   async function waitForAssistantUnread(previousPeerText) {
     return poll("assistant peer unread badge", async () => {
       const found = await find({ agentId: ASSISTANT_PEER_ID, limit: 1 });
@@ -195,16 +265,8 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
       return { ok: Boolean(peer && text !== previousPeerText && unreadMatch), value: { text, unread: unreadMatch ? Number(unreadMatch[1]) : 0 } };
     }, 90_000, 800);
   }
-  async function waitForIncomingMessage(beforeIds, ownText) {
-    return poll("new incoming assistant message", async () => {
-      const found = await find({ role: "article", limit: 200 });
-      const candidate = (found.matches || []).find((item) => {
-        const id = String(item?.agentId || "");
-        const text = String(item?.text || item?.name || "");
-        return id.startsWith("message-actions:") && !beforeIds.has(id) && text && !text.includes(ownText);
-      });
-      return { ok: Boolean(candidate), value: candidate ? { agentId: candidate.agentId, text: String(candidate.text || candidate.name || "").slice(0, 240) } : null };
-    }, 90_000, 800);
+  async function waitForIncomingMessage(beforeIds, sentMessageRowId) {
+    return messageReceiveTracker.waitForIncoming(beforeIds, sentMessageRowId);
   }
   async function ensureGlobalDharmaInstalled() {
     await closeGlobalSearchIfOpen();
@@ -256,13 +318,22 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   const sendProbe = `${base} receive-unread-probe`;
   const assistantBefore = await find({ agentId: ASSISTANT_PEER_ID, limit: 1 });
   const assistantPeerTextBefore = String(assistantBefore.matches?.[0]?.text || assistantBefore.matches?.[0]?.name || "");
-  let messageIdsAfterSend = new Set();
+  let messageIdsBeforeSend = new Set();
+  let sentMessageRowId = "";
   await category("send", async () => {
     await openAssistantConversation();
-    await sendText(sendProbe);
-    messageIdsAfterSend = await messageRowIds();
-    const own = await find({ text: sendProbe, limit: 100 });
-    if (!(own.matches || []).some((item) => String(item?.agentId || "").startsWith("message-actions:"))) throw new Error("sent probe did not resolve to a real semantic message row");
+    const tracking = await messageReceiveTracker.captureBeforeSend(async () => {
+      await sendText(sendProbe);
+      const own = await find({ text: sendProbe, limit: 100 });
+      const sent = chooseUniqueMatch(own, { text: sendProbe }, (item) => (
+        String(item?.agentId || "").startsWith(MESSAGE_ROW_PREFIX)
+        && String(item?.text || item?.name || "").trim() === sendProbe
+      ));
+      return String(sent.agentId || "");
+    });
+    messageIdsBeforeSend = tracking.beforeIds;
+    sentMessageRowId = tracking.sentMessageRowId;
+    record("sent-message-row-resolved", { agentId: sentMessageRowId });
     await navigateSection("频道");
     await openPeer(channelAId);
     await navigateSection("聊天");
@@ -274,7 +345,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   });
   await category("receive", async () => {
     await openAssistantConversation();
-    const received = await waitForIncomingMessage(messageIdsAfterSend, sendProbe);
+    const received = await waitForIncomingMessage(messageIdsBeforeSend, sentMessageRowId);
     record("incoming-message-observed", received);
   });
 
@@ -328,7 +399,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await openMessageMenu(source);
     await invokeTest("message-action-forward");
     await waitFor({ agentId: "test:forward-message-dialog", state: "visible" });
-    const peers = await find({ role: "button", limit: 200 });
+    const peers = await find({ role: "button", name: `${base} B`, limit: 100 });
     const target = chooseMatch(peers, { role: "button", name: `${base} B` }, (item) => String(item?.agentId || "").startsWith("forward-message-peer:") && String(item?.text || item?.name || "").includes(`${base} B`));
     await callDevice("fabushi.app.action", { generation: peers.generation, agentId: target.agentId, action: "invoke" });
     await waitFor({ agentId: "test:forward-message-dialog", state: "absent" }, 30_000);
