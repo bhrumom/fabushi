@@ -4,6 +4,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { serializeDeviceCallArguments } from "./fcm-010-13-find-contract.mjs";
 import { runLiveJourney } from "./fcm-010-13-macos-live-journey.mjs";
 
 const FROZEN_SOURCE = String(process.env.FROZEN_SOURCE_SHA || "").trim();
@@ -137,7 +138,7 @@ async function waitForDevice() {
   throw new Error(`exact run-owned App device ${expectedDeviceId} was not returned by production list_devices`);
 }
 async function callDevice(toolName, args = {}) {
-  const result = await client.callTool({ name: "device_call", arguments: { deviceId: expectedDeviceId, toolName, argumentsJson: JSON.stringify(args) } });
+  const result = await client.callTool({ name: "device_call", arguments: { deviceId: expectedDeviceId, toolName, argumentsJson: serializeDeviceCallArguments(toolName, args) } });
   return parseRelay(result, toolName);
 }
 
