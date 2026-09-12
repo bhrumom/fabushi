@@ -12,6 +12,7 @@ async function flushMicrotasks(): Promise<void> {
 test('FCM-010.13.11 refreshes authoritative conversation projection after open and assistant completion', async () => {
   let runtimeListener: ((event: RuntimeEvent) => void) | null = null;
   const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
+  const eventTarget = new EventTarget();
   const fakeWindow = {
     mahayana: {
       contractVersion: 1,
@@ -43,8 +44,9 @@ test('FCM-010.13.11 refreshes authoritative conversation projection after open a
       async windowFocused() { return true; },
       async registerMiniAppDocument() { return 'about:blank'; },
     },
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener: eventTarget.addEventListener.bind(eventTarget),
+    removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
+    dispatchEvent: eventTarget.dispatchEvent.bind(eventTarget),
   };
   const globalWithWindow = globalThis as unknown as { window?: typeof fakeWindow };
   const previousWindow = globalWithWindow.window;
@@ -86,7 +88,13 @@ test('FCM-010.13.11 refreshes authoritative conversation projection after open a
       const command = params?.command as { type?: string } | undefined;
       return command?.type === 'conversation.list';
     });
+    const refreshRequestIds = refreshes.map(({ params }) => {
+      const command = params?.command as { requestId?: string } | undefined;
+      return command?.requestId ?? '';
+    });
     expect(refreshes).toHaveLength(2);
+    expect(refreshRequestIds.some((requestId) => requestId.startsWith('conversation-list-after-open-'))).toBe(true);
+    expect(refreshRequestIds.some((requestId) => requestId.startsWith('conversation-list-assistant-message-'))).toBe(true);
 
     await transport.close();
   } finally {
