@@ -631,10 +631,12 @@ mod tests {
         assert!(state.history.is_empty());
         assert_eq!(state.unread_count(&conversation_id), 0);
 
-        assert!(state.record_assistant_completion(
-            message(MessageRole::Assistant, "visible reply"),
-            false,
-        ));
+        assert!(
+            state.record_assistant_completion(
+                message(MessageRole::Assistant, "visible reply"),
+                false,
+            )
+        );
         assert_eq!(state.history.len(), 1);
         assert_eq!(state.unread_count(&conversation_id), 1);
     }
