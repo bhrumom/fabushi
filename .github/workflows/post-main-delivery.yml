@@ -312,7 +312,7 @@ jobs:
           chrome_checksums="$(find chrome-artifacts -type f -name 'SHA256SUMS.txt' -print -quit)"
           test -n "$chrome_zip" && test -n "$chrome_manifest" && test -n "$chrome_checksums"
           test "$(jq -r '.sourceSha' "$chrome_manifest")" = "$SOURCE_SHA"
-          test "$(jq -r '.version' "$chrome_manifest")" = "0.5.0"
+          test "$(jq -r '.version' "$chrome_manifest")" = "0.6.0"
 
           mkdir -p release-assets
           while IFS= read -r asset; do cp "$asset" release-assets/; done < <(
@@ -361,7 +361,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Validated exact-SHA updater assets for version $version / $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "Validated Fabushi Chrome 0.5.0 package from workflow run $CHROME_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+          echo "Validated Fabushi Chrome 0.6.0 package from workflow run $CHROME_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort >> "$GITHUB_STEP_SUMMARY"
 
       - id: release
@@ -515,4 +515,4 @@ jobs:
             release-assets/**
             chrome-artifacts/evidence/**
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90

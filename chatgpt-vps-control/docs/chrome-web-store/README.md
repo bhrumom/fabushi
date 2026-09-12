@@ -43,9 +43,12 @@ key from being mistaken for the published Web Store extension.
 | `<all_urls>` | Preserve the 0.4.1 document-start page handshake used by the local script runner; executable bundled scripts still match only approved HTTPS pages. |
 
 The extension never stores or returns passwords, cookies, refresh tokens, or
-sensitive input. Account operations stay in the desktop Host. Browser control
-is separately authenticated by the per-user native-messaging secret and exact
-extension ID allow-list.
+sensitive input. The browser account flow keeps only its short-lived access token
+and login poll secret in trusted `storage.session`; the token is sent only to the
+Fabushi account API and the account-scoped `/browser-agent` WebSocket. The desktop
+Host remains an optional account and native-messaging bridge. Browser control
+accepts connections only from the configured published extension ID and then
+requires server-side account authentication.
 
 ## Verification and migration
 
