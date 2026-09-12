@@ -11,7 +11,7 @@ async function writeFixture(path, value = "fixture\n") {
 }
 
 async function createRuntimeSource(root) {
-  const directoryEntries = new Set(["bin", "extension", "lib", "native", "scripts", "skills", "node_modules"]);
+  const directoryEntries = new Set(["bin", "chrome-platform", "extension", "lib", "native", "scripts", "skills", "node_modules"]);
   for (const entry of privateRuntimeEntries) {
     if (directoryEntries.has(entry)) await mkdir(join(root, entry), { recursive: true });
     else await writeFixture(join(root, entry), entry === "package.json" ? '{"name":"fixture","version":"1.0.0"}\n' : `${entry}\n`);
@@ -31,6 +31,21 @@ async function createRuntimeSource(root) {
   await writeFixture(join(root, "lib", "app-agent-surface-client.d.ts"), "export declare function createAppAgentSurfaceClient(): unknown;\n");
   await writeFixture(join(root, "lib", "app-agent-tools.js"), "export {};\n");
   await writeFixture(join(root, "scripts", "browser-extension-host.mjs"), "export {};\n");
+  for (const relativePath of [
+    "manifest.json",
+    "app.html",
+    "app.js",
+    "app.css",
+    "service-worker.js",
+    "platform-bridge.js",
+    "browser-control.js",
+    "userscript-core.js",
+    "userscript-runner.js",
+    "userscript-content.js",
+    "userscript.css",
+    "userscript/chatgpt-auto-confirm.user.js",
+    "marketplace/chatgpt-task-queue.user.js",
+  ]) await writeFixture(join(root, "chrome-platform", "extension", relativePath));
   await writeFixture(join(root, "lib", "entry.js"), "export const fixture = true;\n");
   await writeFixture(join(root, "native", "linux", "accessibility-helper.py"), "#!/usr/bin/env python3\n");
   await writeFixture(join(root, "native", "macos", "ComputerHelper.swift"), "import Foundation\n");

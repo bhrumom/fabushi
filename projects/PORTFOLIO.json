@@ -5,7 +5,7 @@
   "project_id_regex": "^FAB-P[0-9]{4}$",
   "allocation_policy": "monotonic-no-reuse",
   "ordering_basis": "first-formal-project-folder-commit-on-canonical-main",
-  "next_sequence": 11,
+  "next_sequence": 12,
   "projects": [
     {
       "project_id": "FAB-P0001",
@@ -115,6 +115,17 @@
       "status": "active",
       "registered_at": "2026-09-07",
       "first_canonical_main_commit": "9556afe338bc05f268b9bcdf43a09a76ce332327",
+      "legacy_project_ids": []
+    },
+    {
+      "project_id": "FAB-P0011",
+      "project_key": "CWA",
+      "slug": "fabushi-chrome-web-app",
+      "name": "Fabushi Chrome Web App / Computer Control Bridge Fusion",
+      "authoritative_path": "projects/fabushi-chrome-web-app",
+      "status": "active",
+      "registered_at": "2026-09-12",
+      "first_canonical_main_commit": "656d05e8d66bfed241f5b9d871a062abfbf2f952",
       "legacy_project_ids": []
     }
   ]

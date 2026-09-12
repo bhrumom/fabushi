@@ -332,6 +332,7 @@ async function listExtensionBrowserSessions() {
       return {
         ...target,
         claim: targetClaim(browserIdentity, target),
+        generation: connection.generation,
         owner: tab.owner === "automation" ? "automation" : "user",
         retained: tab.owner === "automation" ? tab.retained === true : true,
       };
@@ -390,6 +391,7 @@ async function freshManagedTarget(session, targetId, claim = "", requireClaim = 
       targetId: selected.id,
       title: selected.title,
       url: selected.url,
+      generation: selected.generation,
     });
     return { ...selected, title: String(fresh.title ?? ""), url: String(fresh.url ?? ""), webSocketDebuggerUrl: null };
   }
@@ -737,7 +739,12 @@ export async function browserSessionTabAction({ name, action, targetId = "", tar
     } else {
       if (!targetId) throw new Error(`${action} requires an exact targetId and targetClaim.`);
       const selected = assertTargetClaim(session, targetId, claim);
-      await browserExtensionRequest(session.extensionInstanceId, "claim_tab", { targetId: selected.id, title: selected.title, url: selected.url });
+      await browserExtensionRequest(session.extensionInstanceId, "claim_tab", {
+        targetId: selected.id,
+        title: selected.title,
+        url: selected.url,
+        generation: selected.generation,
+      });
       if (["back", "forward", "reload", "screenshot"].includes(action)) {
         const monitor = await ensureTargetMonitor(session, selected.id);
         if (action === "reload") await monitor.client.send("Page.reload", { ignoreCache: false });

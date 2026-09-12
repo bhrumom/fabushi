@@ -26,6 +26,19 @@ const required = [
   "lib/app-agent-surface-client.d.ts",
   "lib/app-agent-tools.js",
   "extension/manifest.json",
+  "chrome-platform/extension/manifest.json",
+  "chrome-platform/extension/app.html",
+  "chrome-platform/extension/app.js",
+  "chrome-platform/extension/app.css",
+  "chrome-platform/extension/service-worker.js",
+  "chrome-platform/extension/platform-bridge.js",
+  "chrome-platform/extension/browser-control.js",
+  "chrome-platform/extension/userscript-core.js",
+  "chrome-platform/extension/userscript-runner.js",
+  "chrome-platform/extension/userscript-content.js",
+  "chrome-platform/extension/userscript.css",
+  "chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js",
+  "chrome-platform/extension/marketplace/chatgpt-task-queue.user.js",
   "lib/fabushi-computer-policy.js",
   "native/linux/accessibility-helper.py",
   "native/macos/ComputerHelper.swift",
@@ -33,6 +46,7 @@ const required = [
   "native/macos/RequestService-Info.plist",
   "native/windows/computer-helper.ps1",
   "scripts/browser-extension-host.mjs",
+  "scripts/chrome-platform-host.mjs",
   "node_modules/@modelcontextprotocol/sdk/package.json",
   "node_modules/ws/package.json",
   "node_modules/zod/package.json",
@@ -86,7 +100,7 @@ async function hashEntry(hash, root, relativePath) {
 async function fixtureSourceHash(root) {
   const hash = createHash("sha256");
   hash.update("chatgpt-computer-control-runtime-v1\0");
-  for (const entry of ["bin", "extension", "lib", "native", "scripts", "skills", "computer-use.js", "server.js", "package.json", "package-lock.json"]) {
+  for (const entry of ["bin", "chrome-platform", "extension", "lib", "native", "scripts", "skills", "computer-use.js", "server.js", "package.json", "package-lock.json"]) {
     await hashEntry(hash, root, entry);
   }
   return hash.digest("hex");
