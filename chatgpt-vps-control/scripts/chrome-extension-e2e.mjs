@@ -222,7 +222,9 @@ const unpackedRoot = join(tempRoot, "extension");
 const resultPath = join(evidenceRoot, "native-journey.json");
 const screenshotPath = join(evidenceRoot, "06-cdp-screenshot.png");
 const pidPath = join(tempRoot, "native-host.pid");
-const hostScript = join(tempRoot, "fake-browser-host.mjs");
+// The generated host uses CommonJS `require`; use a .cjs suffix so Node does
+// not treat the Native Messaging entry point as an ES module.
+const hostScript = join(tempRoot, "fake-browser-host.cjs");
 let context = null;
 let server = null;
 let appPage = null;
