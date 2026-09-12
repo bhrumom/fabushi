@@ -145,13 +145,22 @@ test("protected-account preflight performs real production OAuth and same-accoun
   ]) contains(preflight, token);
 });
 
-test("live journey executes every required semantic category and preserves READY -> finish -> fresh snapshot -> logout ordering", () => {
+test("live journey executes every required semantic category and preserves readiness and final logout ordering", () => {
   for (const category of categories) contains(journey, `category("${category}"`, `category ${category}`);
   for (const token of [
     "valuePresent", "valueLength", "selfhosted-channel-created", "assistant peer unread badge", "new incoming assistant message",
     "test:peer-selfhosted:channel:", "message-action-edit", "message-action-forward", "message-action-delete",
     "callGenerationSensitiveAction", "generation-retry", "resolveLatestTarget", "chooseUniqueMatch",
   ]) contains(journey, token);
+
+  const createChannelAction = journey.indexOf('await invokeNamed("新建频道");');
+  const channelDialogReady = journey.indexOf('await waitFor({ role: "textbox", name: "频道名称", state: "visible" }', createChannelAction);
+  const channelNameSet = journey.indexOf('await act({ role: "textbox", name: "频道名称" }, "setValue", name);', channelDialogReady);
+  assert.ok(
+    createChannelAction >= 0 && channelDialogReady > createChannelAction && channelNameSet > channelDialogReady,
+    "channel creation must wait for semantic dialog readiness before setting the channel name",
+  );
+
   contains(journey, "TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
   const ready = journey.indexOf("TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
   const finish = journey.indexOf('callDevice("ci_session_finish"', ready);
