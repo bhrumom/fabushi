@@ -24,19 +24,29 @@ test('macOS interactive workflow_run identity is resolved from stable workflow p
   assert.doesNotMatch(source, /github\.event\.workflow_run\.name/u);
 });
 
-test('macOS interactive dispatch is pinned to an exact-source release tag rather than moving main', async () => {
+test('macOS release handoff is pinned to an immutable exact-source release tag', async () => {
   const source = await workflow();
+  assert.match(source, /\.immutable == true/u);
   assert.match(source, /\.target_commitish == \$sha/u);
-  assert.match(source, /macos-\.\*\[\.\]zip\$/u);
+  assert.match(source, /fabushi-\[0-9\]\+\[\.\]\[0-9\]\+\[\.\]\[0-9\]\+-macos-arm64/u);
   assert.match(source, /commits\/\$release_tag/u);
   assert.match(source, /test "\$tag_sha" = "\$source_sha"/u);
-  assert.match(source, /gh workflow run macos-interactive-app-e2e\.yml[^\n]*--ref "\$RELEASE_TAG"/u);
-  assert.doesNotMatch(source, /gh workflow run macos-interactive-app-e2e\.yml[^\n]*--ref main/u);
+  assert.match(source, /short_source="\$\{source_sha:0:12\}"/u);
+  assert.match(source, /\[\[ "\$release_tag" == desktop-\*"-\$short_source" \]\]/u);
 });
 
-test('macOS interactive release chain suppresses duplicate active or successful exact-source runs', async () => {
+test('release chain delegates target creation and control exclusively to FCM external controller', async () => {
   const source = await workflow();
-  assert.match(source, /actions\/workflows\/macos-interactive-app-e2e\.yml\/runs\?head_sha=\$source_sha/u);
+  assert.match(source, /gh workflow run fcm-010-13-11-macos-external-controller\.yml[^\n]*--ref "\$RELEASE_TAG"/u);
+  assert.doesNotMatch(source, /gh workflow run macos-interactive-app-e2e\.yml/u);
+  assert.match(source, /never dispatches the target workflow directly/u);
+});
+
+test('macOS release chain suppresses duplicate active or successful exact-source controller runs', async () => {
+  const source = await workflow();
+  assert.match(source, /actions\/workflows\/fcm-010-13-11-macos-external-controller\.yml\/runs\?head_sha=\$source_sha/u);
+  assert.match(source, /select\(\.event == "workflow_dispatch"\)/u);
+  assert.match(source, /select\(\.head_branch == \$tag\)/u);
   assert.match(source, /select\(\.status != "completed" or \.conclusion == "success"\)/u);
   assert.match(source, /steps\.release\.outputs\.skip != 'true'/u);
 });

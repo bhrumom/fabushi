@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   dispatch-interactive:
-    name: Dispatch exact-source App-owned macOS interactive lane
+    name: Dispatch exact-source FCM external controller
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -78,25 +78,28 @@ jobs:
           releases="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[]')"
           release_tag="$(jq -sr --arg sha "$source_sha" '
             [ .[]
-              | select(.draft == false and .target_commitish == $sha)
-              | select(any(.assets[]?; .name | test("macos-.*[.]zip$")))
+              | select(.draft == false and .immutable == true and .target_commitish == $sha)
+              | select(any(.assets[]?; (.name // "") | test("^fabushi-[0-9]+[.][0-9]+[.][0-9]+-macos-arm64[.]zip$")))
             ]
             | sort_by(.published_at // .created_at)
             | last
             | .tag_name // empty
           ' <<<"$releases")"
           if [ -z "$release_tag" ]; then
-            echo "No published macOS release with an installable ZIP is bound to exact source $source_sha" >&2
+            echo "No immutable published macOS release with an installable ZIP is bound to exact source $source_sha" >&2
             exit 1
           fi
 
           tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$release_tag" --jq '.sha')"
           test "$tag_sha" = "$source_sha"
+          short_source="${source_sha:0:12}"
+          [[ "$release_tag" == desktop-*"-$short_source" ]]
 
-          existing="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/macos-interactive-app-e2e.yml/runs?head_sha=$source_sha&per_page=100")"
-          existing_run="$(jq -r '
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/fcm-010-13-11-macos-external-controller.yml/runs?head_sha=$source_sha&per_page=100")"
+          existing_run="$(jq -r --arg tag "$release_tag" '
             [ .workflow_runs[]
-              | select(.event == "workflow_dispatch" or .event == "release")
+              | select(.event == "workflow_dispatch")
+              | select(.head_branch == $tag)
               | select(.status != "completed" or .conclusion == "success")
             ]
             | sort_by(.created_at)
@@ -112,21 +115,21 @@ jobs:
           echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
           {
-            echo '## macOS release -> interactive App E2E chain'
+            echo '## macOS release -> FCM external controller chain'
             echo
             echo "- Trigger event: $GITHUB_EVENT_NAME"
             echo "- Upstream: $upstream_name / $upstream_id"
             echo "- Exact source SHA: \`$source_sha\`"
-            echo "- Exact release tag/ref: \`$release_tag\`"
+            echo "- Exact immutable release tag/ref: \`$release_tag\`"
             if [ "$skip" = true ]; then
-              echo "- Existing active/successful exact-source interactive run: \`$existing_run\`; duplicate dispatch suppressed."
+              echo "- Existing active/successful exact-source external-controller run: \`$existing_run\`; duplicate dispatch suppressed."
             else
-              echo '- No active/successful exact-source interactive run exists; dispatch is required.'
+              echo '- No active/successful exact-source external-controller run exists; controller dispatch is required.'
             fi
-            echo '- The installed App remains the only device-registration owner; this bridge only selects exact-source provenance and dispatches the existing lane.'
+            echo '- The FCM controller is the only component allowed to create and externally control the fresh target run; this bridge never dispatches the target workflow directly.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Dispatch existing App-owned macOS interactive workflow from exact release tag
+      - name: Dispatch exact-source FCM external controller from immutable release tag
         if: steps.release.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -135,4 +138,4 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$RELEASE_TAG"
-          gh workflow run macos-interactive-app-e2e.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_TAG"
+          gh workflow run fcm-010-13-11-macos-external-controller.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_TAG"
