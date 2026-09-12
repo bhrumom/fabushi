@@ -132,7 +132,29 @@ test('Mahayana preload deterministically repairs a missing canonical assistant c
   });
 });
 
-test('Mahayana preload never duplicates or rewrites an authoritative assistant projection', () => {
+test('Mahayana preload normalizes a canonical assistant miniapp projection before Messenger filtering can erase it', () => {
+  const bridge = loadPreload();
+  const channel = 'fabushi-edge:mahayana-host:event:runtime-event';
+  const authoritative = {
+    id: ASSISTANT_CONVERSATION_ID,
+    title: '大乘助手',
+    kind: 'miniapp',
+    pinned: true,
+    unreadCount: 4,
+    updatedAtMs: 987654,
+  };
+  bridge.emit(channel, { type: 'conversation.listed', conversations: [{ id: 'other' }, authoritative] });
+  const received = [];
+  bridge.exposed.mahayana.subscribe((event) => received.push(event));
+  const assistants = received[0].conversations.filter((conversation) => conversation.id === ASSISTANT_CONVERSATION_ID);
+  assert.equal(assistants.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(assistants[0])), {
+    ...authoritative,
+    kind: 'agent',
+  });
+});
+
+test('Mahayana preload never duplicates or rewrites an already semantic assistant projection', () => {
   const bridge = loadPreload();
   const channel = 'fabushi-edge:mahayana-host:event:runtime-event';
   const authoritative = {
