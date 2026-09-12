@@ -1,0 +1,201 @@
+name: FCM-010.13.11 macOS external controller
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fcm-010-13-11-macos-external-controller.yml'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-protected-account-preflight.mjs'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller.mjs'
+      - 'chatgpt-vps-control/tests/fcm-010-13-macos-external-controller-contract.test.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: fcm-010-13-11-external-controller
+  cancel-in-progress: false
+
+env:
+  FROZEN_SOURCE_SHA: 7ee12b790e18049d2b9509b0c29128dd2ace690b
+  IMMUTABLE_RELEASE_TAG: desktop-1.2.56-7ee12b790e18
+  TARGET_WORKFLOW_ID: '350936009'
+  FABUSHI_MCP_ORIGIN: https://fabushi-mcp.ombhrum.com
+
+jobs:
+  protected-account-preflight:
+    name: Protected account production MCP preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    env:
+      FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+      FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+    steps:
+      - name: Checkout controller source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+
+      - name: Install MCP client dependencies
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts --prefer-offline
+
+      - name: Verify protected CI account can authenticate to production Fabushi MCP
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/protected-account-preflight
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          node chatgpt-vps-control/scripts/fcm-010-13-protected-account-preflight.mjs
+          jq -e '.schema == "fcm-010.13.11.protected-account-preflight.v1" and .ok == true' \
+            "$EVIDENCE_DIR/protected-account-preflight.json" >/dev/null
+
+      - name: Upload account preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fcm-010-13-11-protected-account-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/protected-account-preflight/
+          if-no-files-found: error
+          retention-days: 90
+
+  dispatch-and-control:
+    name: Dispatch frozen lane and externally control run-owned App
+    needs: protected-account-preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    environment: production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+      FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+    steps:
+      - name: Checkout external controller source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+
+      - name: Install MCP client dependencies
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts --prefer-offline
+
+      - name: Verify immutable Release provenance before dispatch
+        run: |
+          set -euo pipefail
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$IMMUTABLE_RELEASE_TAG")"
+          test "$(jq -r '.immutable' <<<"$release")" = true
+          test "$(jq -r '.target_commitish' <<<"$release")" = "$FROZEN_SOURCE_SHA"
+          jq -e --arg name 'fabushi-1.2.56-macos-arm64.zip' '.assets[] | select(.name == $name and .state == "uploaded" and (.digest | startswith("sha256:")))' <<<"$release" >/dev/null
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$IMMUTABLE_RELEASE_TAG" --jq '.object.sha')"
+          test "$tag_sha" = "$FROZEN_SOURCE_SHA"
+
+      - id: dispatch
+        name: Dispatch a new exact-source macOS interactive run
+        run: |
+          set -euo pipefail
+          marker="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh api --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW_ID/dispatches" \
+            -f ref="$IMMUTABLE_RELEASE_TAG"
+
+          target_run_id=''
+          for attempt in $(seq 1 90); do
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW_ID/runs?event=workflow_dispatch&branch=$IMMUTABLE_RELEASE_TAG&per_page=30")"
+            target_run_id="$(jq -r --arg sha "$FROZEN_SOURCE_SHA" --arg marker "$marker" \
+              '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == env.IMMUTABLE_RELEASE_TAG and .created_at >= $marker)] | sort_by(.created_at) | last | .id // empty' <<<"$runs")"
+            if test -n "$target_run_id"; then break; fi
+            sleep 2
+          done
+          test -n "$target_run_id"
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$target_run_id")"
+          target_run_attempt="$(jq -r '.run_attempt' <<<"$run")"
+          test "$(jq -r '.head_sha' <<<"$run")" = "$FROZEN_SOURCE_SHA"
+          test "$(jq -r '.head_branch' <<<"$run")" = "$IMMUTABLE_RELEASE_TAG"
+          test "$(jq -r '.event' <<<"$run")" = workflow_dispatch
+          test "$target_run_attempt" -ge 1
+          expected_device_id="gha-${target_run_id}-${target_run_attempt}-macos-app"
+          {
+            echo "target_run_id=$target_run_id"
+            echo "target_run_attempt=$target_run_attempt"
+            echo "expected_device_id=$expected_device_id"
+          } >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$run" > "$RUNNER_TEMP/dispatched-target-run.json"
+          echo "Dispatched exact-source run $target_run_id attempt $target_run_attempt; expected App-owned device $expected_device_id"
+
+      - name: Execute external full semantic journey against only the new App-owned device
+        env:
+          TARGET_RUN_ID: ${{ steps.dispatch.outputs.target_run_id }}
+          TARGET_RUN_ATTEMPT: ${{ steps.dispatch.outputs.target_run_attempt }}
+          TARGET_HEAD_SHA: ${{ env.FROZEN_SOURCE_SHA }}
+          TARGET_HEAD_BRANCH: ${{ env.IMMUTABLE_RELEASE_TAG }}
+          EXPECTED_DEVICE_ID: ${{ steps.dispatch.outputs.expected_device_id }}
+          EVIDENCE_DIR: ${{ runner.temp }}/external-controller-evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          cp "$RUNNER_TEMP/dispatched-target-run.json" "$EVIDENCE_DIR/dispatched-target-run.json"
+          node chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller.mjs 2>&1 | tee "$EVIDENCE_DIR/controller.log"
+          jq -e --arg run "$TARGET_RUN_ID" --arg device "$EXPECTED_DEVICE_ID" \
+            '.schema == "fcm-010.13.11.external-controller.v1" and .status == "passed" and .runId == $run and .deviceId == $device and .finalAction.agentId == "settings-logout" and .finalAction.action == "invoke"' \
+            "$EVIDENCE_DIR/external-controller-summary.json" >/dev/null
+
+      - name: Require the exact target run to finish green
+        env:
+          TARGET_RUN_ID: ${{ steps.dispatch.outputs.target_run_id }}
+        run: |
+          set -euo pipefail
+          final=''
+          for attempt in $(seq 1 240); do
+            run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TARGET_RUN_ID")"
+            status="$(jq -r '.status' <<<"$run")"
+            if test "$status" = completed; then
+              final="$run"
+              break
+            fi
+            sleep 5
+          done
+          test -n "$final"
+          test "$(jq -r '.head_sha' <<<"$final")" = "$FROZEN_SOURCE_SHA"
+          test "$(jq -r '.head_branch' <<<"$final")" = "$IMMUTABLE_RELEASE_TAG"
+          test "$(jq -r '.conclusion' <<<"$final")" = success
+          printf '%s\n' "$final" > "$RUNNER_TEMP/external-controller-evidence/final-target-run.json"
+
+      - name: Require target evidence artifact to exist
+        env:
+          TARGET_RUN_ID: ${{ steps.dispatch.outputs.target_run_id }}
+          TARGET_RUN_ATTEMPT: ${{ steps.dispatch.outputs.target_run_attempt }}
+        run: |
+          set -euo pipefail
+          artifacts="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TARGET_RUN_ID/artifacts?per_page=100")"
+          expected="fabushi-macos-interactive-evidence-${TARGET_RUN_ID}-${TARGET_RUN_ATTEMPT}"
+          jq -e --arg expected "$expected" '.artifacts[] | select(.name == $expected and .expired == false)' <<<"$artifacts" >/dev/null
+          printf '%s\n' "$artifacts" > "$RUNNER_TEMP/external-controller-evidence/target-artifacts.json"
+
+      - name: Upload external controller evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fcm-010-13-11-external-controller-${{ steps.dispatch.outputs.target_run_id || github.run_id }}-${{ steps.dispatch.outputs.target_run_attempt || github.run_attempt }}
+          path: ${{ runner.temp }}/external-controller-evidence/
+          if-no-files-found: warn
+          retention-days: 90
