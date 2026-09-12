@@ -154,12 +154,15 @@ test("live journey executes every required semantic category and preserves readi
   ]) contains(journey, token);
 
   const createChannelAction = journey.indexOf('await invokeNamed("新建频道");');
-  const channelDialogReady = journey.indexOf('await waitFor({ role: "textbox", name: "频道名称", state: "visible" }', createChannelAction);
-  const channelNameSet = journey.indexOf('await act({ role: "textbox", name: "频道名称" }, "setValue", name);', channelDialogReady);
+  const channelDialogReady = journey.indexOf('await waitFor({ role: "textbox", name: "名称", state: "visible" }', createChannelAction);
+  const channelNameSet = journey.indexOf('await act({ role: "textbox", name: "名称" }, "setValue", name);', channelDialogReady);
+  const channelDescriptionSet = journey.indexOf('await act({ role: "textbox", name: "描述" }, "setValue"', channelNameSet);
   assert.ok(
-    createChannelAction >= 0 && channelDialogReady > createChannelAction && channelNameSet > channelDialogReady,
-    "channel creation must wait for semantic dialog readiness before setting the channel name",
+    createChannelAction >= 0 && channelDialogReady > createChannelAction && channelNameSet > channelDialogReady && channelDescriptionSet > channelNameSet,
+    "channel creation must use App Surface label semantics: invoke -> wait 名称 -> set 名称 -> set 描述",
   );
+  assert.equal(journey.includes('role: "textbox", name: "频道名称"'), false, "channel placeholder must not be used as an App Surface name selector");
+  assert.equal(journey.includes('role: "textbox", name: "频道简介"'), false, "channel description placeholder must not be used as an App Surface name selector");
 
   contains(journey, "TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
   const ready = journey.indexOf("TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
