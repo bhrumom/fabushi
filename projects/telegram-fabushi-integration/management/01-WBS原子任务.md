@@ -164,3 +164,15 @@
 - [ ] `TFI-USR-ST-006` 完成真实 Chrome 安装版本与异常 → 新会话 → 原样重发 → 新验收会话的完整视觉/诊断证据。
 
 当前状态：`SOURCE_RELEASED / PARENT_READBACK_COMPLETE / LIVE_INSTALL_PENDING`；仅限独立油猴脚本。
+
+## 2026-09-12 — TFI-USERSCRIPT-RECOVERY-006 页面加载态识别与等待
+
+- [x] `TFI-USR-LD-001` 固化用户截图语义：中央 spinner 是页面尚未完成渲染，不是生成已停止。
+- [x] `TFI-USR-LD-002` 在独立 userscript 增加主内容区 loading detection 与可恢复 `loading` 状态，加载期间保持会话 URL/token 与当前调度占用。
+- [x] `TFI-USR-LD-003` 加载期排除 `no-final-reply` 异常观察、重发、刷新和重复发送；加载信号消失后重新开始 clear observation。
+- [x] `TFI-USR-LD-004` 增加 spinner、`aria-busy`、范围隔离和加载到稳定状态的 jsdom 回归；本地 81/81 PASS。
+- [x] `TFI-USR-LD-005` source PR #10、source PR CI、exact source-main CI、canonical source readback 和 `v2.9.10` Release 已完成。
+- [ ] `TFI-USR-LD-006` 父仓库记录 PR 经 protected main 合并并 canonical readback。
+- [ ] `TFI-USR-LD-007` 已登录 Chrome 安装 `v2.9.10` 后保留加载中 → 完全加载 → 继续监督的截图、完整视频、trace/diagnostics。
+
+当前状态：`SOURCE_RELEASED / PARENT_RECORD_PENDING / LIVE_EVIDENCE_PENDING`；仅限独立油猴脚本，不触发 Fabushi 应用构建门禁。
