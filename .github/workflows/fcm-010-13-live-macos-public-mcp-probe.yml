@@ -1,0 +1,34 @@
+name: FCM 010.13 live macOS Public MCP probe
+
+on:
+  push:
+    branches:
+      - test/fcm-010-13-live-macos-public-mcp-controller-20260912
+
+permissions:
+  contents: read
+
+jobs:
+  probe-live-app-owned-device:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    environment: production
+    env:
+      FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+      FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+      FABUSHI_MCP_ORIGIN: https://fabushi-mcp.ombhrum.com
+      EXPECTED_DEVICE_ID: gha-34664585793-1-macos-app
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install existing MCP client dependencies
+        working-directory: chatgpt-vps-control
+        run: npm ci --ignore-scripts
+      - name: Probe live canonical App-owned macOS device through production Public MCP
+        working-directory: chatgpt-vps-control
+        run: node scripts/macos-live-public-mcp-probe.mjs
