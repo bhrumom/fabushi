@@ -56,7 +56,7 @@ test("production controller serializes every fabushi.app.find through the shared
   assert.equal(normalizeDeviceCallArguments("fabushi.app.wait", unrelated), unrelated);
 });
 
-test("production message receive tracker detects the appended assistant row past 100 rendered messages", async () => {
+test("production message receive tracker detects an echoed assistant reply past 100 rendered messages by sent-row identity", async () => {
   let rows = messageRows(130);
   const calls = [];
   const fakeDeviceTransport = async (toolName, args) => {
@@ -71,28 +71,40 @@ test("production message receive tracker detects the appended assistant row past
     maxAttempts: 1,
   });
 
-  const beforeIds = await tracker.captureBeforeSend(async () => {
+  const tracking = await tracker.captureBeforeSend(async () => {
     calls.push({ toolName: "send" });
     rows = [
       ...rows,
       { role: "article", agentId: "message-actions:test:130", text: "own probe" },
-      { role: "article", agentId: "message-actions:test:131", text: "assistant response" },
+      { role: "article", agentId: "message-actions:test:131", text: "收到：own probe" },
     ];
+    return "message-actions:test:130";
   });
+  const { beforeIds, sentMessageRowId } = tracking;
 
   assert.equal(beforeIds.size, 100);
   assert.equal(beforeIds.has("message-actions:test:29"), false);
   assert.equal(beforeIds.has("message-actions:test:30"), true);
   assert.equal(beforeIds.has("message-actions:test:129"), true);
+  assert.equal(sentMessageRowId, "message-actions:test:130");
 
-  const received = await tracker.waitForIncoming(beforeIds, "own probe");
+  const received = await tracker.waitForIncoming(beforeIds, sentMessageRowId);
   assert.deepEqual(received, {
     agentId: "message-actions:test:131",
-    text: "assistant response",
+    text: "收到：own probe",
   });
   assert.deepEqual(calls.map((call) => call.toolName), ["fabushi.app.snapshot", "send", "fabushi.app.snapshot"]);
   assert.deepEqual(calls[0].args, { maxElements: 500, includeText: true });
   assert.deepEqual(calls[2].args, { maxElements: 500, includeText: true });
+
+  await assert.rejects(
+    () => tracker.captureBeforeSend(async () => "message-actions:test:129"),
+    /sent_message_identity_not_new/u,
+  );
+  await assert.rejects(
+    () => tracker.captureBeforeSend(async () => ""),
+    /sent_message_identity_missing/u,
+  );
 
   assert.throws(
     () => newestMessageRowsFromSnapshot(messageSnapshot(messageRows(130), { includeComposer: false })),
@@ -101,8 +113,10 @@ test("production message receive tracker detects the appended assistant row past
   assert.throws(() => newestMessageRowsFromSnapshot(messageSnapshot(messageRows(10)), 101), /1\.\.100/u);
 
   assert.match(journey, /const messageReceiveTracker = createMessageReceiveTracker\(\{ callDevice \}\)/u);
-  assert.match(journey, /messageReceiveTracker\.captureBeforeSend\(\(\) => sendText\(sendProbe\)\)/u);
-  assert.match(journey, /messageReceiveTracker\.waitForIncoming\(beforeIds, ownText\)/u);
+  assert.match(journey, /const tracking = await messageReceiveTracker\.captureBeforeSend\(async \(\) => \{/u);
+  assert.match(journey, /String\(item\?\.text \|\| item\?\.name \|\| ""\)\.trim\(\) === sendProbe/u);
+  assert.match(journey, /messageReceiveTracker\.waitForIncoming\(beforeIds, sentMessageRowId\)/u);
+  assert.equal(journey.includes("text.includes(ownText)"), false, "assistant replies that echo the prompt must not be filtered by text");
   assert.equal(journey.includes('find({ role: "article"'), false, "production journey must not use the oldest-first capped article query");
 });
 
