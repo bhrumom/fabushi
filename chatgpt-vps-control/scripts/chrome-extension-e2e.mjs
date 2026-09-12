@@ -332,6 +332,13 @@ try {
   await appPage.getByText("当前 Chrome", { exact: true }).waitFor({ state: "visible", timeout: 5_000 });
   await captureCheckpoint(appPage, join(evidenceRoot, "03-browser-view.png"));
   step("browser-view");
+  const browserStatus = await appPage.evaluate(() => new Promise((resolvePromise) => {
+    chrome.runtime.sendMessage({ type: "fabushi.browser.status" }, (response) => {
+      const runtimeError = chrome.runtime.lastError;
+      resolvePromise({ response: response || null, error: runtimeError?.message || null });
+    });
+  }));
+  step("browser-status", browserStatus);
 
   const nativeResult = await waitFor(async () => {
     try {
