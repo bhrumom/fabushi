@@ -79,15 +79,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -f "$EVIDENCE_DIR/macos-session.mov"
           /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/000-recording-start.png"
-          RUNNER_TRACKING_ID= nohup /usr/sbin/screencapture -v -V 3300 -D 1 "$EVIDENCE_DIR/macos-session.mov" \
-            > "$EVIDENCE_DIR/screencapture.log" 2>&1 &
-          recorder_pid=$!
-          echo "$recorder_pid" > "$EVIDENCE_DIR/screencapture.pid"
-          sleep 3
-          kill -0 "$recorder_pid"
-          echo 'Whole-session recorder is live before release resolution or installation.'
+          bash chatgpt-vps-control/scripts/fcm-010-13-macos-session-recorder.sh start "$EVIDENCE_DIR"
+          bash chatgpt-vps-control/scripts/fcm-010-13-macos-session-recorder.sh assert-live "$EVIDENCE_DIR"
+          echo 'Whole-session recorder has captured real frames and passed its playable-video fallback preflight before release resolution or installation.'
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -425,7 +420,7 @@ jobs:
               -u DEVICE_ID \
               -u DEVICE_NAME \
               -u GITHUB_ACTIONS \
-              npx playwright test e2e/app-agent-surface.spec.ts
+              npx playwright test e2e/app-agent-surface.spec.ts e2e/fcm-010-13-assistant-projection.spec.ts
 
       - name: Collect macOS App, device-call, Playwright, and release evidence
         if: always()
@@ -441,15 +436,9 @@ jobs:
         run: |
           set +e
           /usr/sbin/screencapture -x -D 1 "$EVIDENCE_DIR/steps/999-final.png" || true
-          if test -f "$EVIDENCE_DIR/screencapture.pid"; then
-            recorder_pid="$(cat "$EVIDENCE_DIR/screencapture.pid")"
-            kill -INT "$recorder_pid" 2>/dev/null || true
-            for attempt in $(seq 1 20); do
-              kill -0 "$recorder_pid" 2>/dev/null || break
-              sleep 1
-            done
-            kill -TERM "$recorder_pid" 2>/dev/null || true
-          fi
+          recorder_stop_status=0
+          bash chatgpt-vps-control/scripts/fcm-010-13-macos-session-recorder.sh stop "$EVIDENCE_DIR" || recorder_stop_status=$?
+          printf '%s\n' "$recorder_stop_status" > "$EVIDENCE_DIR/recorder-stop-exit.txt"
           log show --style compact --last 60m --predicate 'process == "fabushi" OR process == "Fabushi"' \
             > "$EVIDENCE_DIR/fabushi-system.log" 2>&1 || true
           cp "$FABUSHI_DEVICE_CALL_TRACE_FILE" "$EVIDENCE_DIR/device-calls.jsonl" 2>/dev/null || : > "$EVIDENCE_DIR/device-calls.jsonl"
@@ -464,6 +453,8 @@ jobs:
           action_smoke_status="$(jq -r '.ok // false' "$EVIDENCE_DIR/action-owned-app-agent-smoke.json" 2>/dev/null || echo false)"
           completed_tools="$(jq -r 'select(.phase == "completed" and .ok == true) | (.toolName // empty)' "$EVIDENCE_DIR/device-calls.jsonl" 2>/dev/null | sort -u | jq -R -s 'split("\n") | map(select(length > 0))')"
           [ -n "$completed_tools" ] || completed_tools='[]'
+          remote_action_count="$(jq -s '[.[] | select(.phase == "completed" and .ok == true and .toolName == "fabushi.app.action")] | length' "$EVIDENCE_DIR/device-calls.jsonl" 2>/dev/null || echo 0)"
+          recorder_playable="$(jq -r '.playable // false' "$EVIDENCE_DIR/recorder-final.json" 2>/dev/null || echo false)"
           journey_note="$(jq -r 'select(.note | contains("TFI_MACOS_FULL_JOURNEY")) | .note' "$EVIDENCE_DIR/remote-notes.jsonl" 2>/dev/null | tail -n 1)"
           jq -n \
             --arg schema fabushi.macos.interactive-evidence.v1 \
@@ -482,9 +473,11 @@ jobs:
             --arg actionSmokeStatus "$action_smoke_status" \
             --arg playwrightOutcome "${PLAYWRIGHT_OUTCOME:-unknown}" \
             --arg journeyNote "$journey_note" \
+            --arg recorderPlayable "$recorder_playable" \
             --arg completedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson remoteActionCount "$remote_action_count" \
             --argjson completedTools "$completed_tools" \
-            '{schema:$schema,workflowSourceSha:$workflowSourceSha,releaseTag:$releaseTag,releaseTargetSha:$releaseTargetSha,releaseAssetId:$releaseAssetId,installedVersion:$installedVersion,installedBuild:$installedBuild,runId:$runId,runAttempt:$runAttempt,job:$job,runUrl:$runUrl,deviceId:$deviceId,controlStatus:$controlStatus,actionSmokeStatus:$actionSmokeStatus,playwrightOutcome:$playwrightOutcome,journeyNote:$journeyNote,completedTools:$completedTools,completedAt:$completedAt}' \
+            '{schema:$schema,workflowSourceSha:$workflowSourceSha,releaseTag:$releaseTag,releaseTargetSha:$releaseTargetSha,releaseAssetId:$releaseAssetId,installedVersion:$installedVersion,installedBuild:$installedBuild,runId:$runId,runAttempt:$runAttempt,job:$job,runUrl:$runUrl,deviceId:$deviceId,controlStatus:$controlStatus,actionSmokeStatus:$actionSmokeStatus,playwrightOutcome:$playwrightOutcome,journeyNote:$journeyNote,remoteActionCount:$remoteActionCount,recorderPlayable:($recorderPlayable == "true"),completedTools:$completedTools,completedAt:$completedAt}' \
             > "$EVIDENCE_DIR/report.json"
           {
             echo '# Fabushi macOS interactive evidence'
@@ -497,6 +490,8 @@ jobs:
             echo "- Action-owned App Agent smoke: \`$action_smoke_status\`"
             echo "- @fabushi test journey: \`$control_status\`"
             echo "- Playwright packaged App Surface: \`${PLAYWRIGHT_OUTCOME:-unknown}\`"
+            echo "- Whole-session recorder playable: \`$recorder_playable\`"
+            echo "- Completed remote App actions: \`$remote_action_count\`"
             echo "- Journey note: ${journey_note:-missing}"
             echo '- Release upload alone is not treated as pass evidence.'
             echo '- Device registration is valid only when owned by the installed macOS App after protected-account login.'
@@ -544,9 +539,12 @@ jobs:
             printf '%s' "$note" | grep -Eq "(^|,|=)${category}(,|$| )"
           done
           test "$PLAYWRIGHT_OUTCOME" = success
-          test -s "$EVIDENCE_DIR/macos-session.mov"
-          test "$(stat -f %z "$EVIDENCE_DIR/macos-session.mov")" -gt 100000
+          test "$(cat "$EVIDENCE_DIR/recorder-stop-exit.txt")" = 0
+          bash chatgpt-vps-control/scripts/fcm-010-13-macos-session-recorder.sh verify "$EVIDENCE_DIR"
           test -s "$EVIDENCE_DIR/device-calls.jsonl"
+          remote_action_count="$(jq -s '[.[] | select(.phase == "completed" and .ok == true and .toolName == "fabushi.app.action")] | length' "$EVIDENCE_DIR/device-calls.jsonl")"
+          test "$remote_action_count" -gt 0
+          jq -e --argjson count "$remote_action_count" '.remoteActionCount == $count and .recorderPlayable == true' "$EVIDENCE_DIR/report.json" >/dev/null
           for tool in fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert ci_session_status ci_session_note ci_session_finish; do
             jq -e --arg tool "$tool" 'select(.phase == "completed" and .ok == true and .toolName == $tool)' \
               "$EVIDENCE_DIR/device-calls.jsonl" >/dev/null
