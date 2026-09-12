@@ -69,10 +69,10 @@ Downstream run `34664585793`, job `103473835434`, has already completed these re
 
 At the time of this evidence write, the same run is still at `Hold for @fabushi test complete macOS journey`. Its final gate requires the external controller to use that newly registered App-owned device, complete the current semantic user journey, write the required `TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=...` note, call `ci_session_finish`, then invoke exact `settings-logout`. Only after that may Playwright/log/trace/video collection and the final truthful evidence gate complete.
 
-The currently connected device-control namespace does not expose `gha-34664585793-1-macos-app`; it exposes only the user's existing Linux/Windows/macOS devices. Replacing the CI App-owned device with a local or historical device would violate the acceptance contract, so no substitute call or fabricated trace is used.
+The generic connected device-control namespace does not expose `gha-34664585793-1-macos-app`; it exposes only the user's existing Linux/Windows/macOS devices. A dedicated Fabushi dynamic-device MCP is present in this execution environment, but both its account-identity probe and its live-device listing return HTTP 400 with `We couldn't connect your account. Please try again.` Therefore the protected CI test-account namespace needed to reach this transient App-owned device is not authenticated in the current execution. Replacing the CI App-owned device with a local or historical device would violate the acceptance contract, so no substitute call or fabricated trace is used.
 
 - State: **blocked / in-progress**, not passed.
-- Blocking dependency: an authenticated external controller in the protected CI test account namespace must reach the App-owned device for run `34664585793` before its interactive hold closes.
+- Blocking dependency: reconnect/authenticate the dedicated Fabushi dynamic-device MCP to the protected CI test account so an external controller can reach the exact App-owned device for run `34664585793` before its interactive hold closes. If the hold expires first, rerun the same immutable exact-source lane after restoring that connection.
 
 ## Completion decision
 
