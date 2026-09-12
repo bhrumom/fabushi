@@ -41,6 +41,23 @@ async function waitFor(check, timeoutMs = 30_000) {
   throw new Error(`Timed out after ${timeoutMs}ms waiting for the packaged Chrome journey.`);
 }
 
+async function captureCheckpoint(page, path) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      // A viewport screenshot is deterministic under xvfb and avoids the
+      // transient full-page capture failure seen while Chrome is settling a
+      // newly navigated document.
+      await page.screenshot({ path, fullPage: false, animations: "disabled" });
+      return;
+    } catch (error) {
+      lastError = error;
+      await page.waitForTimeout(250).catch(() => {});
+    }
+  }
+  throw lastError || new Error(`Unable to capture checkpoint: ${path}`);
+}
+
 async function writeNativeHostManifest(directory, host) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await writeFile(join(directory, `${host.name}.json`), `${JSON.stringify(host, null, 2)}\n`, { mode: 0o600 });
@@ -267,7 +284,7 @@ try {
   await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
   fixturePage = context.pages()[0] || await context.newPage();
   await fixturePage.goto(fixtureUrl, { waitUntil: "domcontentloaded" });
-  await fixturePage.screenshot({ path: join(evidenceRoot, "01-startup-fixture.png"), fullPage: true });
+  await captureCheckpoint(fixturePage, join(evidenceRoot, "01-startup-fixture.png"));
   step("startup", { url: fixtureUrl });
 
   const serviceWorker = await waitFor(() => context.serviceWorkers().find((worker) => worker.url().startsWith("chrome-extension://")));
@@ -275,11 +292,11 @@ try {
   appPage = await context.newPage();
   await appPage.goto(`${extensionOrigin}/app.html`, { waitUntil: "domcontentloaded" });
   await appPage.getByText("Marketplace", { exact: true }).first().waitFor({ state: "visible", timeout: 10_000 });
-  await appPage.screenshot({ path: join(evidenceRoot, "02-fabushi-shell.png"), fullPage: true });
+  await captureCheckpoint(appPage, join(evidenceRoot, "02-fabushi-shell.png"));
   step("fabushi-shell", { extensionId, origin: extensionOrigin });
   await appPage.locator('[data-view="browser"]').first().click();
   await appPage.getByText("当前 Chrome", { exact: true }).waitFor({ state: "visible", timeout: 5_000 });
-  await appPage.screenshot({ path: join(evidenceRoot, "03-browser-view.png"), fullPage: true });
+  await captureCheckpoint(appPage, join(evidenceRoot, "03-browser-view.png"));
   step("browser-view");
 
   const nativeResult = await waitFor(async () => {
@@ -289,7 +306,7 @@ try {
     } catch { return null; }
   }, 45_000);
   if (nativeResult.events.some((event) => event.type === "failure")) throw new Error("Packaged native browser journey reported a failure.");
-  await fixturePage.screenshot({ path: join(evidenceRoot, "05-after-browser-control.png"), fullPage: true });
+  await captureCheckpoint(fixturePage, join(evidenceRoot, "05-after-browser-control.png"));
   step("browser-control", { events: nativeResult.events.map((event) => event.type) });
   report.nativeJourney = nativeResult;
 } catch (error) {
