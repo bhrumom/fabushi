@@ -24,14 +24,24 @@ function uniqueStableMatch(value, agentId) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+function resolvedTargetArgs(target) {
+  const agentId = String(target?.agentId || "").trim();
+  if (agentId) return { agentId };
+  const ref = String(target?.ref || "").trim();
+  if (ref) return { ref };
+  return null;
+}
+
 export async function callGenerationSensitiveAction({
   invokeDeviceCall,
   args,
   maxAttempts = DEFAULT_MAX_ATTEMPTS,
   onRetry = () => {},
+  resolveLatestTarget = null,
 }) {
   if (typeof invokeDeviceCall !== "function") throw new TypeError("invokeDeviceCall must be a function");
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1) throw new RangeError("maxAttempts must be a positive integer");
+  if (resolveLatestTarget != null && typeof resolveLatestTarget !== "function") throw new TypeError("resolveLatestTarget must be a function when provided");
 
   const agentId = stableAgentId(args);
   let currentArgs = { ...args };
@@ -43,9 +53,39 @@ export async function callGenerationSensitiveAction({
     } catch (error) {
       lastError = error;
       if (!isStaleAppSurfaceGeneration(error) || attempt === maxAttempts) throw error;
-      if (!agentId) throw error;
 
       const previousGeneration = positiveGeneration(currentArgs.generation);
+      if (resolveLatestTarget) {
+        const resolved = await resolveLatestTarget({
+          invokeDeviceCall,
+          attempt,
+          previousArgs: { ...currentArgs },
+          error,
+        });
+        const refreshedGeneration = positiveGeneration(resolved?.generation);
+        const targetArgs = resolvedTargetArgs(resolved?.target);
+        if (refreshedGeneration == null || !targetArgs) {
+          throw new Error("stale_app_surface_generation_query_rebase_failed: semantic query did not uniquely resolve a current target", { cause: error });
+        }
+        currentArgs = {
+          ...currentArgs,
+          generation: refreshedGeneration,
+          ...targetArgs,
+        };
+        if (targetArgs.agentId) delete currentArgs.ref;
+        else delete currentArgs.agentId;
+        onRetry({
+          attempt,
+          resolver: "semantic-query",
+          agentId: targetArgs.agentId || null,
+          previousGeneration,
+          findGeneration: refreshedGeneration,
+          refreshedGeneration,
+        });
+        continue;
+      }
+
+      if (!agentId) throw error;
       const found = await invokeDeviceCall("fabushi.app.find", { agentId, limit: 2 });
       const findGeneration = positiveGeneration(found?.generation);
       const foundTarget = uniqueStableMatch(found?.matches, agentId);
@@ -77,6 +117,7 @@ export async function callGenerationSensitiveAction({
       delete currentArgs.ref;
       onRetry({
         attempt,
+        resolver: "stable-agent",
         agentId,
         previousGeneration,
         findGeneration,
