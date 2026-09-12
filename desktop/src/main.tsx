@@ -20,6 +20,7 @@ import './grok-agent-ui-parity.css';
 import './mahayana-agent-transcript-semantics.css';
 import './credential-vault.css';
 import './sidebar-contact-groups.css';
+import './ios-white-desktop-theme.css';
 
 const root = document.querySelector<HTMLDivElement>('#root');
 if (!root) {

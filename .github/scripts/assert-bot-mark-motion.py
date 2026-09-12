@@ -26,6 +26,7 @@ host = read_repo_text('frontend/apps/web/src/app/host/host-client.tsx')
 identity_aliases = read_repo_text('desktop/src/agent-identity-aliases.ts')
 durable_state = read_repo_text('desktop/src/durable-agent-state.ts')
 desktop_main = read_repo_text('desktop/src/main.tsx')
+desktop_theme = read_repo_text('desktop/src/ios-white-desktop-theme.css')
 
 required_component = [
     'FabushiBotMarkEngine',
@@ -63,21 +64,38 @@ for marker in required_engine:
         raise SystemExit(f'BotMark motion gate: missing Fabushi avatar adapter behavior: {marker}')
 
 required_runtime = [
-    'data-fabushi-avatar-runtime="v1"',
+    'data-fabushi-avatar-runtime="v2"',
+    'data-avatar-style="ios-cloth-ghost"',
     'requestAnimationFrame(tick)',
     'cancelAnimationFrame(frame)',
     'prefers-reduced-motion: reduce',
-    'personaPath(shape)',
+    'clothGhostPath(',
     'linearGradient',
-    'radialGradient',
+    'IOS_GHOST_COLORS',
     'MOTION: Partial<Record<BotMarkState, MotionProfile>>',
+    'document.visibilityState === "visible"',
+    'document.hasFocus()',
+    'fabushiMotionPaused',
+    'isLowEnergyState(state)',
+    '1000 / 15',
+    '1000 / 30',
     'actionRef',
     'pointermove',
     'FabushiAvatarRuntimeHandle',
 ]
 for marker in required_runtime:
     if marker not in runtime:
-        raise SystemExit(f'BotMark motion gate: Fabushi-owned runtime is incomplete: {marker}')
+        raise SystemExit(f'BotMark motion gate: iOS cloth ghost runtime/energy contract is incomplete: {marker}')
+
+required_desktop_theme = [
+    'color-scheme: light;',
+    '--fabushi-desktop-bg: #ffffff;',
+    "html[data-fabushi-motion-paused='true'] *",
+    'animation-play-state: paused !important;',
+]
+for marker in required_desktop_theme:
+    if marker not in desktop_theme:
+        raise SystemExit(f'BotMark motion gate: desktop light/paused-motion contract is incomplete: {marker}')
 
 # These terms identify the retired vendored/runtime paths. They are prohibited
 # from the production avatar implementation; documentation/evidence may still
@@ -142,9 +160,10 @@ for bootstrap_marker in [
     'await restoreDurableAgentState()',
     'installBotIdentityAliases()',
     'installDurableAgentState()',
+    "import './ios-white-desktop-theme.css';",
 ]:
     if bootstrap_marker not in desktop_main:
-        raise SystemExit(f'BotMark motion gate: desktop bootstrap skipped identity/durability stage: {bootstrap_marker}')
+        raise SystemExit(f'BotMark motion gate: desktop bootstrap skipped identity/durability/light-theme stage: {bootstrap_marker}')
 
 for semantic_state in ['tool-running', 'speaking', 'result', 'error']:
     if f'"{semantic_state}"' not in component:
@@ -168,4 +187,4 @@ if 'className={styles.sidebarBotMark}' in host:
     if 'followPointer' in sidebar_region:
         raise SystemExit('BotMark motion gate: sidebar list marks must not attach pointer-follow listeners')
 
-print('BotMark motion gate passed: Fabushi-owned procedural SVG runtime, semantic Agent states, canonical identity, visibility pause, reduced-motion, and no upstream avatar/renderer dependency.')
+print('BotMark motion gate passed: iOS cloth ghost runtime, semantic Agent states, canonical identity, hard background pause, reduced-motion, 15/30 FPS caps, white desktop palette, and no upstream avatar dependency.')
