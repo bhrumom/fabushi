@@ -155,6 +155,7 @@ test('whole-session recorder detects the GitHub-hosted paravirtual display, reje
   assert.match(recorderSource, /first_sample=decoded/u);
   assert.match(recorderSource, /fallbackRecorderPlayable/u);
   assert.match(recorderSource, /recorder-preflight\.json/u);
+  assert.match(recorderSource, /macos-session\.mov/u);
   assert.match(videoSource, /AVAssetWriter/u);
   assert.match(videoSource, /AVAssetReader/u);
   assert.match(videoSource, /copyNextSampleBuffer/u);
@@ -179,7 +180,6 @@ test('evidence upload allowlist excludes private account sessions and includes r
   assert.doesNotMatch(upload, /FABUSHI_ACCOUNT_SESSION_FILE/u);
   assert.doesNotMatch(upload, /FABUSHI_CI_ACCOUNT_SESSION_FILE/u);
 
-  assert.match(source, /macos-session\.mov/u);
   assert.match(source, /recorder-final\.json/u);
   assert.match(source, /action-owned-app-agent-smoke\.json/u);
   const collection = stepBlock(
