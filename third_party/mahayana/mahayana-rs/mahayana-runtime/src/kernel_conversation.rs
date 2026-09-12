@@ -14,6 +14,7 @@ use mahayana_kernel::{
     RuntimeProfile, SessionId, SharedKernelEventSink,
 };
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -28,32 +29,54 @@ const OPEN_CONVERSATION_HISTORY_LIMIT: u32 = 200;
 
 struct ConversationState {
     history: Vec<Message>,
-    read_through: usize,
+    read_through_by_conversation: BTreeMap<String, usize>,
 }
 
 impl ConversationState {
     fn new(history: Vec<Message>) -> Self {
-        let read_through = history.len();
+        let mut read_through_by_conversation = BTreeMap::new();
+        for message in &history {
+            *read_through_by_conversation
+                .entry(message.conversation_id.as_str().to_string())
+                .or_insert(0) += 1;
+        }
         Self {
             history,
-            read_through,
+            read_through_by_conversation,
         }
     }
 
     fn unread_count(&self, conversation_id: &ConversationId) -> u32 {
-        self.history[self.read_through.min(self.history.len())..]
+        let read_through = self
+            .read_through_by_conversation
+            .get(conversation_id.as_str())
+            .copied()
+            .unwrap_or_default();
+        self.history
             .iter()
-            .filter(|message| {
-                &message.conversation_id == conversation_id
-                    && message.role == MessageRole::Assistant
-            })
+            .filter(|message| &message.conversation_id == conversation_id)
+            .skip(read_through)
+            .filter(|message| message.role == MessageRole::Assistant)
             .count()
             .try_into()
             .unwrap_or(u32::MAX)
     }
 
-    fn mark_read(&mut self) {
-        self.read_through = self.history.len();
+    fn mark_read(&mut self, conversation_id: &ConversationId) {
+        let visible_message_count = self
+            .history
+            .iter()
+            .filter(|message| &message.conversation_id == conversation_id)
+            .count();
+        self.read_through_by_conversation.insert(
+            conversation_id.as_str().to_string(),
+            visible_message_count,
+        );
+    }
+
+    fn clear(&mut self) {
+        self.history.clear();
+        self.read_through_by_conversation.clear();
     }
 
     fn record_assistant_completion(&mut self, message: Message, hidden: bool) -> bool {
@@ -186,7 +209,7 @@ impl ConversationProvider for KernelConversationProvider {
         let start = matching.len().saturating_sub(limit as usize);
         let messages = matching[start..].to_vec();
         if history_request_marks_read(limit) {
-            state.mark_read();
+            state.mark_read(conversation_id);
         }
         Ok(messages)
     }
@@ -259,8 +282,7 @@ impl ConversationProvider for KernelConversationProvider {
             let mut state = self.state.lock().map_err(|_| {
                 ConversationError::Provider("kernel conversation state mutex poisoned".into())
             })?;
-            state.history.clear();
-            state.mark_read();
+            state.clear();
         }
         persist_history(&self.state, self.history_path.as_deref()).map_err(kernel_error)
     }
@@ -573,10 +595,14 @@ fn replace_file(temporary: &Path, destination: &Path) -> Result<(), KernelError>
 mod tests {
     use super::*;
 
-    fn message(role: MessageRole, text: &str) -> Message {
+    fn conversation(id: &str) -> ConversationId {
+        ConversationId(id.to_string())
+    }
+
+    fn message(conversation_id: &ConversationId, role: MessageRole, text: &str) -> Message {
         Message {
             id: MessageId::generated("test-message"),
-            conversation_id: ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string()),
+            conversation_id: conversation_id.clone(),
             role,
             text: text.to_string(),
             created_at_ms: 1,
@@ -585,65 +611,92 @@ mod tests {
     }
 
     #[test]
-    fn unread_counts_only_assistant_messages_after_last_read_boundary() {
-        let conversation_id =
-            ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
+    fn unread_counts_only_assistant_messages_after_per_conversation_read_boundary() {
+        let assistant = conversation(mahayana_core::MAHAYANA_AI_CONVERSATION_ID);
+        let research = conversation("codex:agent:research");
         let mut state = ConversationState::new(Vec::new());
-        state.history.push(message(MessageRole::User, "hello"));
-        assert_eq!(state.unread_count(&conversation_id), 0);
 
+        state.history.push(message(&assistant, MessageRole::User, "hello"));
         state
             .history
-            .push(message(MessageRole::Assistant, "reply one"));
+            .push(message(&assistant, MessageRole::Assistant, "reply one"));
         state
             .history
-            .push(message(MessageRole::Assistant, "reply two"));
-        assert_eq!(state.unread_count(&conversation_id), 2);
+            .push(message(&research, MessageRole::Assistant, "research reply"));
+        state
+            .history
+            .push(message(&assistant, MessageRole::Assistant, "reply two"));
 
-        state.mark_read();
-        assert_eq!(state.unread_count(&conversation_id), 0);
+        assert_eq!(state.unread_count(&assistant), 2);
+        assert_eq!(state.unread_count(&research), 1);
+
+        state.mark_read(&research);
+        assert_eq!(state.unread_count(&assistant), 2);
+        assert_eq!(state.unread_count(&research), 0);
+
+        state.mark_read(&assistant);
+        assert_eq!(state.unread_count(&assistant), 0);
     }
 
     #[test]
-    fn persisted_history_starts_read_and_new_assistant_reply_becomes_unread() {
-        let conversation_id =
-            ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
-        let mut state = ConversationState::new(vec![message(MessageRole::Assistant, "persisted")]);
-        assert_eq!(state.unread_count(&conversation_id), 0);
+    fn persisted_history_starts_read_for_every_existing_conversation() {
+        let assistant = conversation(mahayana_core::MAHAYANA_AI_CONVERSATION_ID);
+        let research = conversation("codex:agent:research");
+        let mut state = ConversationState::new(vec![
+            message(&assistant, MessageRole::Assistant, "persisted assistant"),
+            message(&research, MessageRole::Assistant, "persisted research"),
+        ]);
+        assert_eq!(state.unread_count(&assistant), 0);
+        assert_eq!(state.unread_count(&research), 0);
 
-        state.history.push(message(MessageRole::User, "new prompt"));
         state
             .history
-            .push(message(MessageRole::Assistant, "fresh reply"));
-        assert_eq!(state.unread_count(&conversation_id), 1);
+            .push(message(&assistant, MessageRole::User, "new prompt"));
+        state
+            .history
+            .push(message(&assistant, MessageRole::Assistant, "fresh reply"));
+        assert_eq!(state.unread_count(&assistant), 1);
+        assert_eq!(state.unread_count(&research), 0);
     }
 
     #[test]
     fn hidden_assistant_completion_stays_out_of_visible_history_and_unread() {
-        let conversation_id =
-            ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
+        let assistant = conversation(mahayana_core::MAHAYANA_AI_CONVERSATION_ID);
         let mut state = ConversationState::new(Vec::new());
 
         assert!(!state.record_assistant_completion(
-            message(MessageRole::Assistant, "hidden reply"),
+            message(&assistant, MessageRole::Assistant, "hidden reply"),
             true,
         ));
         assert!(state.history.is_empty());
-        assert_eq!(state.unread_count(&conversation_id), 0);
+        assert_eq!(state.unread_count(&assistant), 0);
 
-        assert!(
-            state.record_assistant_completion(
-                message(MessageRole::Assistant, "visible reply"),
-                false,
-            )
-        );
+        assert!(state.record_assistant_completion(
+            message(&assistant, MessageRole::Assistant, "visible reply"),
+            false,
+        ));
         assert_eq!(state.history.len(), 1);
-        assert_eq!(state.unread_count(&conversation_id), 1);
+        assert_eq!(state.unread_count(&assistant), 1);
     }
 
     #[test]
     fn only_explicit_open_history_contract_marks_read() {
         assert!(history_request_marks_read(OPEN_CONVERSATION_HISTORY_LIMIT));
         assert!(!history_request_marks_read(500));
+    }
+
+    #[test]
+    fn reset_clears_history_and_all_conversation_boundaries() {
+        let assistant = conversation(mahayana_core::MAHAYANA_AI_CONVERSATION_ID);
+        let research = conversation("codex:agent:research");
+        let mut state = ConversationState::new(vec![
+            message(&assistant, MessageRole::Assistant, "persisted assistant"),
+            message(&research, MessageRole::Assistant, "persisted research"),
+        ]);
+        state.clear();
+        assert!(state.history.is_empty());
+        assert!(state.read_through_by_conversation.is_empty());
+        assert_eq!(state.unread_count(&assistant), 0);
+        assert_eq!(state.unread_count(&research), 0);
     }
 }
