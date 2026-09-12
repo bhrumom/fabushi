@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const controller = await readFile(new URL("../scripts/fcm-010-13-macos-external-controller.mjs", import.meta.url), "utf8");
+const controller = await readFile(new URL("../scripts/fcm-010-13-macos-external-controller-v2.mjs", import.meta.url), "utf8");
+const journey = await readFile(new URL("../scripts/fcm-010-13-macos-live-journey.mjs", import.meta.url), "utf8");
 const preflight = await readFile(new URL("../scripts/fcm-010-13-protected-account-preflight.mjs", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../../.github/workflows/fcm-010-13-11-macos-external-controller.yml", import.meta.url), "utf8");
 
@@ -16,7 +17,7 @@ function contains(text, literal, label = literal) {
   assert.ok(text.includes(literal), `missing required contract token: ${label}`);
 }
 
-test("FCM-010.13.11 external controller is exact-source, production-account and run-owned-device only", () => {
+test("FCM-010.13.11 controller v2 is exact-source, production-account and run-owned-device only", () => {
   contains(controller, "7ee12b790e18049d2b9509b0c29128dd2ace690b");
   contains(controller, "desktop-1.2.56-7ee12b790e18");
   contains(controller, 'expectedDeviceId !== `gha-${runId}-${runAttempt}-macos-app`');
@@ -24,9 +25,9 @@ test("FCM-010.13.11 external controller is exact-source, production-account and 
   contains(controller, 'name: "list_devices"');
   contains(controller, 'name: "device_call"');
   contains(controller, "https://fabushi-mcp.ombhrum.com");
-  assert.equal(controller.includes("gloria-macbook-air"), false);
-  assert.equal(controller.includes("KRIS"), false);
-  assert.equal(controller.includes("runner-owned"), false);
+  for (const forbidden of ["gloria-macbook-air", "KRIS", "runner-owned"]) {
+    assert.equal(`${controller}\n${journey}`.includes(forbidden), false);
+  }
 });
 
 test("protected-account preflight performs real production OAuth and same-account discovery before dispatch", () => {
@@ -36,19 +37,22 @@ test("protected-account preflight performs real production OAuth and same-accoun
   ]) contains(preflight, token);
 });
 
-test("controller executes every frozen macOS full-journey category and preserves logout ordering", () => {
-  for (const category of categories) contains(controller, `category("${category}"`, `category ${category}`);
-  contains(controller, "TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
-  const ready = controller.indexOf("TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
-  const finish = controller.indexOf('callDevice("ci_session_finish"', ready);
-  const logout = controller.indexOf('agentId: "settings-logout", action: "invoke"', finish);
-  const catchBoundary = controller.indexOf("} catch (error) {", logout);
-  assert.ok(ready >= 0 && finish > ready && logout > finish && catchBoundary > logout, "READY -> ci_session_finish -> exact settings-logout order must be preserved");
-  const remainingPassPath = controller.slice(logout + 1, catchBoundary);
-  assert.equal(remainingPassPath.includes('callDevice("'), false, "no remote device call may occur after exact settings-logout in the successful pass path");
+test("live journey executes every required semantic category and preserves READY -> finish -> logout ordering", () => {
+  for (const category of categories) contains(journey, `category("${category}"`, `category ${category}`);
+  for (const token of [
+    "valuePresent", "valueLength", "selfhosted-channel-created", "assistant peer unread badge", "new incoming assistant message",
+    "test:peer-selfhosted:channel:", "message-action-edit", "message-action-forward", "message-action-delete",
+  ]) contains(journey, token);
+  contains(journey, "TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
+  const ready = journey.indexOf("TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
+  const finish = journey.indexOf('callDevice("ci_session_finish"', ready);
+  const logout = journey.indexOf('agentId: "settings-logout", action: "invoke"', finish);
+  const returned = journey.indexOf("return { categories: completedCategories", logout);
+  assert.ok(ready >= 0 && finish > ready && logout > finish && returned > logout, "READY -> ci_session_finish -> exact settings-logout order must be preserved");
+  assert.equal(journey.slice(logout + 1, returned).includes('callDevice("'), false, "no remote device call may occur after exact settings-logout in the successful pass path");
 });
 
-test("orchestrator gates dispatch on account preflight and dispatches only the immutable frozen tag", () => {
+test("orchestrator gates dispatch on preflight, invokes controller v2, and still requires target green evidence", () => {
   for (const token of [
     "needs: protected-account-preflight",
     "actions: write",
@@ -58,6 +62,8 @@ test("orchestrator gates dispatch on account preflight and dispatches only the i
     'actions/workflows/$TARGET_WORKFLOW_ID/dispatches',
     '-f ref="$IMMUTABLE_RELEASE_TAG"',
     'expected_device_id="gha-${target_run_id}-${target_run_attempt}-macos-app"',
+    "fcm-010-13-macos-external-controller-v2.mjs",
+    'fcm-010.13.11.external-controller.v2',
     'test "$(jq -r \'.conclusion\' <<<"$final")" = success',
     'fabushi-macos-interactive-evidence-${TARGET_RUN_ID}-${TARGET_RUN_ATTEMPT}',
   ]) contains(workflow, token);
