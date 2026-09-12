@@ -20,13 +20,44 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex as AsyncMutex;
 
+struct ConversationState {
+    history: Vec<Message>,
+    read_through: usize,
+}
+
+impl ConversationState {
+    fn new(history: Vec<Message>) -> Self {
+        let read_through = history.len();
+        Self {
+            history,
+            read_through,
+        }
+    }
+
+    fn unread_count(&self, conversation_id: &ConversationId) -> u32 {
+        self.history[self.read_through.min(self.history.len())..]
+            .iter()
+            .filter(|message| {
+                &message.conversation_id == conversation_id
+                    && message.role == MessageRole::Assistant
+            })
+            .count()
+            .try_into()
+            .unwrap_or(u32::MAX)
+    }
+
+    fn mark_read(&mut self) {
+        self.read_through = self.history.len();
+    }
+}
+
 pub struct KernelConversationProvider {
     backend: Arc<dyn EngineBackend>,
     profile: BuildProfile,
     workspace_root: Option<String>,
     model: Option<String>,
     session_id: AsyncMutex<Option<SessionId>>,
-    history: Arc<Mutex<Vec<Message>>>,
+    state: Arc<Mutex<ConversationState>>,
     history_path: Option<PathBuf>,
 }
 
@@ -48,7 +79,7 @@ impl KernelConversationProvider {
             workspace_root,
             model,
             session_id: AsyncMutex::new(None),
-            history: Arc::new(Mutex::new(history)),
+            state: Arc::new(Mutex::new(ConversationState::new(history))),
             history_path,
         }
     }
@@ -62,9 +93,10 @@ impl KernelConversationProvider {
             return Ok(session_id.clone());
         }
         let history = self
-            .history
+            .state
             .lock()
-            .map_err(|_| ConversationError::Provider("kernel history mutex poisoned".into()))?
+            .map_err(|_| ConversationError::Provider("kernel conversation state mutex poisoned".into()))?
+            .history
             .iter()
             .filter(|message| &message.conversation_id == conversation_id)
             .map(|message| json!({
@@ -105,7 +137,15 @@ impl ConversationProvider for KernelConversationProvider {
     }
 
     async fn list_conversations(&self) -> Result<Vec<Conversation>, ConversationError> {
-        Ok(vec![Conversation::mahayana_assistant()])
+        let conversation_id = ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
+        let unread_count = self
+            .state
+            .lock()
+            .map_err(|_| ConversationError::Provider("kernel conversation state mutex poisoned".into()))?
+            .unread_count(&conversation_id);
+        let mut conversation = Conversation::mahayana_assistant();
+        conversation.unread_count = unread_count;
+        Ok(vec![conversation])
     }
 
     async fn history(
@@ -113,17 +153,20 @@ impl ConversationProvider for KernelConversationProvider {
         conversation_id: &ConversationId,
         limit: u32,
     ) -> Result<Vec<Message>, ConversationError> {
-        let history = self
-            .history
+        let mut state = self
+            .state
             .lock()
-            .map_err(|_| ConversationError::Provider("kernel history mutex poisoned".into()))?;
-        let matching = history
+            .map_err(|_| ConversationError::Provider("kernel conversation state mutex poisoned".into()))?;
+        let matching = state
+            .history
             .iter()
             .filter(|message| &message.conversation_id == conversation_id)
             .cloned()
             .collect::<Vec<_>>();
         let start = matching.len().saturating_sub(limit as usize);
-        Ok(matching[start..].to_vec())
+        let messages = matching[start..].to_vec();
+        state.mark_read();
+        Ok(messages)
     }
 
     async fn send_message(
@@ -145,11 +188,12 @@ impl ConversationProvider for KernelConversationProvider {
             metadata: json!({"runtime": "mahayana-kernel"}),
         };
         if !request.hidden {
-            self.history
+            self.state
                 .lock()
-                .map_err(|_| ConversationError::Provider("kernel history mutex poisoned".into()))?
+                .map_err(|_| ConversationError::Provider("kernel conversation state mutex poisoned".into()))?
+                .history
                 .push(user_message);
-            persist_history(&self.history, self.history_path.as_deref()).map_err(kernel_error)?;
+            persist_history(&self.state, self.history_path.as_deref()).map_err(kernel_error)?;
         }
 
         let kernel_operation_id = KernelOperationId::from_string(request.operation_id.as_str());
@@ -157,7 +201,7 @@ impl ConversationProvider for KernelConversationProvider {
             conversation_id: request.conversation_id,
             operation_id: request.operation_id,
             events,
-            history: Arc::clone(&self.history),
+            state: Arc::clone(&self.state),
             history_path: self.history_path.clone(),
         });
         self.backend
@@ -186,11 +230,15 @@ impl ConversationProvider for KernelConversationProvider {
     async fn reset_session(&self) -> Result<(), ConversationError> {
         self.backend.reset_session().map_err(kernel_error)?;
         *self.session_id.lock().await = None;
-        self.history
-            .lock()
-            .map_err(|_| ConversationError::Provider("kernel history mutex poisoned".into()))?
-            .clear();
-        persist_history(&self.history, self.history_path.as_deref()).map_err(kernel_error)
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| ConversationError::Provider("kernel conversation state mutex poisoned".into()))?;
+            state.history.clear();
+            state.mark_read();
+        }
+        persist_history(&self.state, self.history_path.as_deref()).map_err(kernel_error)
     }
 
     async fn resolve_approval(
@@ -215,7 +263,7 @@ struct RuntimeKernelEventBridge {
     conversation_id: ConversationId,
     operation_id: OperationId,
     events: SharedConversationEventSink,
-    history: Arc<Mutex<Vec<Message>>>,
+    state: Arc<Mutex<ConversationState>>,
     history_path: Option<PathBuf>,
 }
 
@@ -266,11 +314,12 @@ impl KernelEventSink for RuntimeKernelEventBridge {
                     created_at_ms: now_ms(),
                     metadata: json!({"runtime": "mahayana-kernel"}),
                 };
-                self.history
+                self.state
                     .lock()
-                    .map_err(|_| KernelError::Backend("kernel history mutex poisoned".into()))?
+                    .map_err(|_| KernelError::Backend("kernel conversation state mutex poisoned".into()))?
+                    .history
                     .push(message.clone());
-                persist_history(&self.history, self.history_path.as_deref())?;
+                persist_history(&self.state, self.history_path.as_deref())?;
                 self.emit_runtime(RuntimeEvent::MessageCompleted {
                     operation_id: self.operation_id.clone(),
                     message,
@@ -439,18 +488,18 @@ fn load_history(path: &Path) -> Vec<Message> {
 }
 
 fn persist_history(
-    history: &Arc<Mutex<Vec<Message>>>,
+    state: &Arc<Mutex<ConversationState>>,
     path: Option<&Path>,
 ) -> Result<(), KernelError> {
     let Some(path) = path else {
         return Ok(());
     };
     let bytes = {
-        let history = history
+        let state = state
             .lock()
-            .map_err(|_| KernelError::Backend("kernel history mutex poisoned".into()))?;
-        let start = history.len().saturating_sub(1_000);
-        serde_json::to_vec(&history[start..])
+            .map_err(|_| KernelError::Backend("kernel conversation state mutex poisoned".into()))?;
+        let start = state.history.len().saturating_sub(1_000);
+        serde_json::to_vec(&state.history[start..])
             .map_err(|error| KernelError::Backend(error.to_string()))?
     };
     let parent = path
@@ -488,5 +537,47 @@ fn replace_file(temporary: &Path, destination: &Path) -> Result<(), KernelError>
                 .map_err(|rename_error| KernelError::Backend(rename_error.to_string()))
         }
         Err(error) => Err(KernelError::Backend(error.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn message(role: MessageRole, text: &str) -> Message {
+        Message {
+            id: MessageId::generated("test-message"),
+            conversation_id: ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string()),
+            role,
+            text: text.to_string(),
+            created_at_ms: 1,
+            metadata: Value::Null,
+        }
+    }
+
+    #[test]
+    fn unread_counts_only_assistant_messages_after_last_read_boundary() {
+        let conversation_id = ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
+        let mut state = ConversationState::new(Vec::new());
+        state.history.push(message(MessageRole::User, "hello"));
+        assert_eq!(state.unread_count(&conversation_id), 0);
+
+        state.history.push(message(MessageRole::Assistant, "reply one"));
+        state.history.push(message(MessageRole::Assistant, "reply two"));
+        assert_eq!(state.unread_count(&conversation_id), 2);
+
+        state.mark_read();
+        assert_eq!(state.unread_count(&conversation_id), 0);
+    }
+
+    #[test]
+    fn persisted_history_starts_read_and_new_assistant_reply_becomes_unread() {
+        let conversation_id = ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
+        let mut state = ConversationState::new(vec![message(MessageRole::Assistant, "persisted")]);
+        assert_eq!(state.unread_count(&conversation_id), 0);
+
+        state.history.push(message(MessageRole::User, "new prompt"));
+        state.history.push(message(MessageRole::Assistant, "fresh reply"));
+        assert_eq!(state.unread_count(&conversation_id), 1);
     }
 }
