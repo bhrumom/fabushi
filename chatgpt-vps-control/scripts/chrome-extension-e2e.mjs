@@ -213,7 +213,10 @@ process.stdin.on("end", () => { if (phase !== "complete") fail("native messaging
 
 await rm(evidenceRoot, { recursive: true, force: true });
 await mkdir(evidenceRoot, { recursive: true, mode: 0o700 });
-const tempRoot = await (await import("node:fs/promises")).mkdtemp(join((await import("node:os")).tmpdir(), "fabushi-chrome-packaged-e2e-"));
+// Keep the temporary host on the checked-out filesystem. Some hosted Chrome
+// runners mount /tmp with noexec, which makes a valid Native Messaging
+// manifest look like a missing host when Chrome cannot launch its path.
+const tempRoot = await (await import("node:fs/promises")).mkdtemp(join(repositoryRoot, ".fabushi-chrome-packaged-e2e-"));
 const profileRoot = join(tempRoot, "profile");
 const unpackedRoot = join(tempRoot, "extension");
 const resultPath = join(evidenceRoot, "native-journey.json");
@@ -282,6 +285,7 @@ try {
   }
   step("native-host-setup", {
     host: nativeHost.name,
+    allowedOrigins: nativeHost.allowed_origins,
     home,
     envHome: process.env.HOME || null,
     xdgConfigHome: process.env.XDG_CONFIG_HOME || null,
