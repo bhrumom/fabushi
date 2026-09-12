@@ -75,7 +75,53 @@ test("generation-sensitive action re-finds generation 96 after deterministic 95 
   );
 });
 
-test("generation-sensitive action remains fail-closed for a stale generation-bound ref with no stable agentId", async () => {
+test("query-resolvable action replaces stale generation-bound ref after deterministic 95 -> 98 race", async () => {
+  const calls = [];
+  let actionAttempts = 0;
+  const query = { role: "button", name: "新建", limit: 5 };
+  const invokeDeviceCall = async (toolName, args) => {
+    calls.push({ toolName, args: { ...args } });
+    if (toolName === "fabushi.app.action") {
+      actionAttempts += 1;
+      if (actionAttempts === 1) {
+        assert.equal(args.generation, 95);
+        assert.equal(args.ref, "g95:new-button");
+        throw new Error("stale_app_surface_generation: expected 98, received 95");
+      }
+      assert.equal(args.generation, 98);
+      assert.equal(args.ref, "g98:new-button");
+      return { ok: true, generation: 99 };
+    }
+    if (toolName === "fabushi.app.find") {
+      assert.deepEqual(args, query);
+      return { generation: 98, matches: [{ role: "button", name: "新建", ref: "g98:new-button" }] };
+    }
+    throw new Error(`unexpected tool ${toolName}`);
+  };
+
+  const result = await callGenerationSensitiveAction({
+    invokeDeviceCall,
+    args: { generation: 95, ref: "g95:new-button", action: "invoke" },
+    maxAttempts: 2,
+    resolveLatestTarget: async () => {
+      const found = await invokeDeviceCall("fabushi.app.find", query);
+      assert.equal(found.matches.length, 1);
+      return { generation: found.generation, target: found.matches[0] };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    calls.map(({ toolName, args }) => [toolName, args.generation ?? null, args.ref ?? null]),
+    [
+      ["fabushi.app.action", 95, "g95:new-button"],
+      ["fabushi.app.find", null, null],
+      ["fabushi.app.action", 98, "g98:new-button"],
+    ],
+  );
+});
+
+test("generation-sensitive action remains fail-closed for a stale generation-bound ref without a semantic resolver", async () => {
   const calls = [];
   const invokeDeviceCall = async (toolName, args) => {
     calls.push({ toolName, args: { ...args } });
@@ -104,7 +150,7 @@ test("live journey executes every required semantic category and preserves READY
   for (const token of [
     "valuePresent", "valueLength", "selfhosted-channel-created", "assistant peer unread badge", "new incoming assistant message",
     "test:peer-selfhosted:channel:", "message-action-edit", "message-action-forward", "message-action-delete",
-    "callGenerationSensitiveAction", "generation-retry",
+    "callGenerationSensitiveAction", "generation-retry", "resolveLatestTarget", "chooseUniqueMatch",
   ]) contains(journey, token);
   contains(journey, "TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
   const ready = journey.indexOf("TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=");
