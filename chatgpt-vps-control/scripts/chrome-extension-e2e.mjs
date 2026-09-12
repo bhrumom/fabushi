@@ -279,6 +279,9 @@ try {
     join(home, ".config", "chrome-for-testing", "NativeMessagingHosts"),
     ...(process.env.XDG_CONFIG_HOME ? [join(resolve(process.env.XDG_CONFIG_HOME), "google-chrome", "NativeMessagingHosts")] : []),
     ...(process.env.XDG_CONFIG_HOME ? [join(resolve(process.env.XDG_CONFIG_HOME), "chromium", "NativeMessagingHosts")] : []),
+    // Chromium resolves DIR_USER_NATIVE_MESSAGING relative to the explicit
+    // --user-data-dir used by Playwright, rather than the default home config.
+    join(profileRoot, "NativeMessagingHosts"),
   ]) {
     await writeNativeHostManifest(directory, nativeHost);
     nativeManifestPaths.push(join(directory, `${nativeHost.name}.json`));
