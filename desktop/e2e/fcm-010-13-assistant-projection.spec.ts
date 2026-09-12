@@ -95,17 +95,26 @@ async function closeNonEmptyGlobalSearch(page: Page): Promise<void> {
   await expect(page.getByTestId('global-search-surface')).toBeHidden();
 }
 
-async function navigateToChats(page: Page): Promise<void> {
+async function openProfileSection(page: Page, testId: string): Promise<void> {
   const menu = page.getByTestId('profile-navigation-menu');
   if (!(await menu.isVisible())) {
     await page.getByTestId('profile-navigation-trigger').click();
   }
   await expect(menu).toBeVisible();
-  await page.getByTestId('profile-navigation-chats').click();
+  await page.getByTestId(testId).click();
+}
+
+async function navigateToChats(page: Page): Promise<void> {
+  await openProfileSection(page, 'profile-navigation-chats');
   await expect(page.getByRole('button', { name: '新建', exact: true })).toBeVisible();
 }
 
-test('FCM-010.13.11 real App Surface journey reprojects the canonical assistant and keeps unread semantics on the chat list', async () => {
+async function navigateToChannels(page: Page): Promise<void> {
+  await openProfileSection(page, 'profile-navigation-channels');
+  await expect(page.locator('[data-testid^="peer-selfhosted:channel:"]').first()).toBeVisible();
+}
+
+test('FCM-010.13.11 real App Surface journey leaves an active assistant before proving the unread list baseline', async () => {
   const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-fcm-010-13-assistant-projection-'));
   const policyDir = path.join(appDataDir, 'feature-host', 'runtime');
   await mkdir(policyDir, { recursive: true });
@@ -148,16 +157,43 @@ test('FCM-010.13.11 real App Surface journey reprojects the canonical assistant 
     expect(afterChannels.count).toBe(1);
     expect(afterChannels.matches[0]?.agentId).toBe(assistantAgentId);
 
+    const openedBeforeSearch = await client.call('action', {
+      generation: afterChannels.generation,
+      agentId: assistantAgentId,
+      action: 'invoke',
+    }) as { status?: string; target?: { agentId?: string } };
+    expect(openedBeforeSearch).toMatchObject({ status: 'completed', target: { agentId: assistantAgentId } });
+    await expect(page.getByTestId('peer-legacy:conversation:mahayana-ai:agent:assistant')).toBeVisible();
+    await expect(page.getByTestId('messenger-input')).toBeVisible();
+
+    const unreadWhileAssistantInitiallyOpen = await findAssistantUnread(client, 'unread-none');
+    expect(unreadWhileAssistantInitiallyOpen.count).toBe(0);
+
     await page.getByTestId('global-search-trigger').click();
     await expect(page.getByTestId('global-search-surface')).toBeVisible();
     await expect(page.getByTestId('global-search-tab-chats')).toBeVisible();
     await page.getByTestId('global-search-input').fill('全球法布施');
     await closeNonEmptyGlobalSearch(page);
 
+    // This reproduces the production precondition that PR #2557 missed: choosing the
+    // Chats section alone does not deselect the already-active assistant conversation.
     await navigateToChats(page);
-    const afterSearch = await findAssistant(client);
-    expect(afterSearch.count).toBe(1);
-    expect(afterSearch.matches[0]?.agentId).toBe(assistantAgentId);
+    const unreadAfterChatsNavigationOnly = await findAssistantUnread(client, 'unread-none');
+    expect(unreadAfterChatsNavigationOnly.count).toBe(0);
+
+    // Establish the real chat-list state through a known non-assistant peer, matching
+    // the production controller's repaired assistant -> channel A -> Chats transition.
+    await navigateToChannels(page);
+    await page.locator('[data-testid^="peer-selfhosted:channel:"]')
+      .filter({ hasText: 'FCM semantic projection A' })
+      .first()
+      .click();
+    await expect(page.getByTestId('messenger-input')).toBeVisible();
+    await navigateToChats(page);
+
+    const afterDeselect = await findAssistant(client);
+    expect(afterDeselect.count).toBe(1);
+    expect(afterDeselect.matches[0]?.agentId).toBe(assistantAgentId);
 
     const unreadOnChatList = await findAssistantUnread(client, 'unread-none');
     expect(unreadOnChatList.count).toBe(1);
@@ -167,12 +203,12 @@ test('FCM-010.13.11 real App Surface journey reprojects the canonical assistant 
       role: 'img',
     });
 
-    const opened = await client.call('action', {
-      generation: afterSearch.generation,
+    const reopened = await client.call('action', {
+      generation: afterDeselect.generation,
       agentId: assistantAgentId,
       action: 'invoke',
     }) as { status?: string; target?: { agentId?: string } };
-    expect(opened).toMatchObject({ status: 'completed', target: { agentId: assistantAgentId } });
+    expect(reopened).toMatchObject({ status: 'completed', target: { agentId: assistantAgentId } });
     await expect(page.getByTestId('peer-legacy:conversation:mahayana-ai:agent:assistant')).toBeVisible();
     await expect(page.getByTestId('messenger-input')).toBeVisible();
 
