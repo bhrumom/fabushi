@@ -157,9 +157,17 @@ test("live journey executes every required semantic category and preserves readi
   const channelDialogReady = journey.indexOf('await waitFor({ role: "textbox", name: "名称", state: "visible" }', createChannelAction);
   const channelNameSet = journey.indexOf('await act({ role: "textbox", name: "名称" }, "setValue", name);', channelDialogReady);
   const channelDescriptionSet = journey.indexOf('await act({ role: "textbox", name: "描述" }, "setValue"', channelNameSet);
+  const channelCreateCommit = journey.indexOf('await invokeNamed("创建频道");', channelDescriptionSet);
+  const messengerReady = journey.indexOf('await waitFor({ agentId: "test:messenger-input", state: "visible" }', channelCreateCommit);
+  const channelProjectionReady = journey.indexOf('await waitFor({ text: name, state: "present" }', messengerReady);
+  const channelProjectionFind = journey.indexOf('const found = await find({ text: name, limit: 100 });', channelProjectionReady);
   assert.ok(
     createChannelAction >= 0 && channelDialogReady > createChannelAction && channelNameSet > channelDialogReady && channelDescriptionSet > channelNameSet,
     "channel creation must use App Surface label semantics: invoke -> wait 名称 -> set 名称 -> set 描述",
+  );
+  assert.ok(
+    channelCreateCommit > channelDescriptionSet && messengerReady > channelCreateCommit && channelProjectionReady > messengerReady && channelProjectionFind > channelProjectionReady,
+    "created channel projection must be explicitly present before resolving its peer row",
   );
   assert.equal(journey.includes('role: "textbox", name: "频道名称"'), false, "channel placeholder must not be used as an App Surface name selector");
   assert.equal(journey.includes('role: "textbox", name: "频道简介"'), false, "channel description placeholder must not be used as an App Surface name selector");
