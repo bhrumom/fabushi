@@ -6,6 +6,7 @@ const REQUIRED_CATEGORIES = [
   "media", "file", "notifications", "sync", "settings", "update",
 ];
 const ASSISTANT_PEER_ID = "test:peer-legacy:conversation:mahayana-ai:agent:assistant";
+const ASSISTANT_UNREAD_AGENT_ID = "peer-unread:legacy:conversation:mahayana-ai:agent:assistant";
 const MESSAGE_ROW_PREFIX = "message-actions:";
 const MESSENGER_INPUT_AGENT_ID = "test:messenger-input";
 const PROFILE_NAVIGATION_AGENT_IDS = new Map([
@@ -31,26 +32,6 @@ export function newestMessageRowsFromSnapshot(snapshotValue, limit = 100) {
     .slice(0, composerIndex)
     .filter((item) => item?.role === "article" && String(item?.agentId || "").startsWith(MESSAGE_ROW_PREFIX))
     .slice(-limit);
-}
-
-export function peerHasUnreadBadgeFromSnapshot(snapshotValue, peerAgentId) {
-  if (!String(peerAgentId || "").startsWith("test:peer-")) {
-    throw new Error(`peer unread snapshot requires a stable test:peer-* id; received ${String(peerAgentId || "<empty>")}`);
-  }
-  const elements = Array.isArray(snapshotValue?.elements) ? snapshotValue.elements : [];
-  const peerIndex = elements.findIndex((item) => item?.agentId === peerAgentId);
-  if (peerIndex < 0) return false;
-  let endIndex = elements.length;
-  for (let index = peerIndex + 1; index < elements.length; index += 1) {
-    const agentId = String(elements[index]?.agentId || "");
-    if (agentId.startsWith("test:peer-") && agentId !== peerAgentId) {
-      endIndex = index;
-      break;
-    }
-  }
-  return elements
-    .slice(peerIndex + 1, endIndex)
-    .some((item) => item?.tag === "b" && item?.visible !== false);
 }
 
 export function matchingTargets(found, query, predicate) {
@@ -275,12 +256,22 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await invokeTest(agentId.startsWith("test:") ? agentId.slice(5) : agentId);
     await waitFor({ agentId: "test:messenger-input", state: "visible" });
   }
-  async function waitForAssistantUnread() {
-    return poll("assistant peer unread badge", async () => {
-      const fresh = await snapshot();
-      const unread = peerHasUnreadBadgeFromSnapshot(fresh, ASSISTANT_PEER_ID);
-      return { ok: unread, value: { unread, generation: fresh.generation } };
-    }, 90_000, 800);
+  async function readAssistantUnreadState(expectedPositive) {
+    const marker = expectedPositive ? "unread-positive" : "unread-none";
+    const found = await find({ agentId: ASSISTANT_UNREAD_AGENT_ID, name: marker, limit: 1 });
+    return {
+      ok: (found.matches || []).length === 1,
+      value: {
+        positive: expectedPositive,
+        marker,
+        generation: found.generation,
+        agentId: ASSISTANT_UNREAD_AGENT_ID,
+      },
+    };
+  }
+  async function waitForAssistantUnread(expectedPositive, timeoutMs = 90_000) {
+    const label = expectedPositive ? "positive" : "cleared";
+    return poll(`assistant peer unread ${label} semantic transition`, () => readAssistantUnreadState(expectedPositive), timeoutMs, 400);
   }
   async function waitForIncomingMessage(beforeIds, sentMessageRowId) {
     return messageReceiveTracker.waitForIncoming(beforeIds, sentMessageRowId);
@@ -337,6 +328,8 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   let sentMessageRowId = "";
   await category("send", async () => {
     await openAssistantConversation();
+    const unreadBaseline = await waitForAssistantUnread(false, 30_000);
+    record("unread-baseline-cleared", unreadBaseline);
     const tracking = await messageReceiveTracker.captureBeforeSend(async () => {
       await sendText(sendProbe);
       const own = await find({ text: sendProbe, limit: 100 });
@@ -353,9 +346,9 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await navigateSection("聊天");
   });
   await category("unread", async () => {
-    const unread = await waitForAssistantUnread();
-    if (unread.unread !== true) throw new Error(`assistant unread badge was not positive: ${JSON.stringify(unread)}`);
-    record("unread-observed", unread);
+    const unread = await waitForAssistantUnread(true);
+    if (unread.positive !== true) throw new Error(`assistant unread semantic marker did not transition positive: ${JSON.stringify(unread)}`);
+    record("unread-transition-observed", unread);
   });
   await category("receive", async () => {
     await openAssistantConversation();
