@@ -2,8 +2,7 @@
 
 ## Scope and exact source
 
-- Canonical source SHA for this evidence round: `7ee12b790e18049d2b9509b0c29128dd2ace690b`.
-- `main` was read before and during the round and remained on that exact SHA.
+- Canonical product source SHA for this evidence round: `7ee12b790e18049d2b9509b0c29128dd2ace690b`.
 - This record is fail-closed: FCM-010.13 is not passed until the exact-source installed macOS App-owned full journey and final evidence gate succeed.
 
 ## FCM-010.13.8 — PR required Actions
@@ -12,16 +11,9 @@
 - PR head: `ed0b608717ae585cf73bf6ca3b164cd018750b2f`.
 - Merge commit: `f25792495c47c9a5054611bba622047e3c94517d`.
 - PR-head `CI result` check `103463385262`, workflow run `34661029319`: `success`.
-- Related PR-head Electron/security/Rust checks also completed successfully.
 - State: **passed**.
 
-## FCM-010.13.9 — protected merge and canonical readback
-
-- The exact-source release bridge is present on canonical `main@7ee12b790e18049d2b9509b0c29128dd2ace690b`.
-- Canonical main readback confirms `.github/workflows/macos-interactive-release-chain.yml` and `macos-interactive-app-e2e.yml` retain exact-source / immutable-release behavior.
-- State: **passed**.
-
-## Canonical same-SHA platform gates
+## FCM-010.13.9 — canonical same-SHA gates and Release
 
 For `main@7ee12b790e18049d2b9509b0c29128dd2ace690b`:
 
@@ -32,53 +24,65 @@ For `main@7ee12b790e18049d2b9509b0c29128dd2ace690b`:
 - `Require exact-main desktop and mobile E2E` check `103473542655`, post-main run `34664490101`: `success`.
 - `Publish tested main artifacts to GitHub Release` check `103473560652`, post-main run `34664490101`: `success`.
 
-## Published immutable Release
+Published Release:
 
 - Release ID: `387414284`.
 - Tag: `desktop-1.2.56-7ee12b790e18`.
-- Release is published (`draft=false`, `prerelease=false`) and immutable.
+- Published (`draft=false`, `prerelease=false`) and immutable.
 - `target_commitish`: `7ee12b790e18049d2b9509b0c29128dd2ace690b`.
-- Git tag dereference resolves directly to commit `7ee12b790e18049d2b9509b0c29128dd2ace690b`.
-- macOS asset: `fabushi-1.2.56-macos-arm64.zip`.
-- Asset size: `151338366` bytes.
+- Git tag dereference resolves directly to `7ee12b790e18049d2b9509b0c29128dd2ace690b`.
+- macOS asset: `fabushi-1.2.56-macos-arm64.zip`, asset ID `558368830`, size `151338366` bytes.
 - Declared asset digest: `sha256:314225bc49ca203f72cf271e02c85884b6b91ef38638a91f2136f81c25f57e0c`.
+- State: **passed**.
 
 ## FCM-010.13.10 — automatic immutable-tag dispatch
 
-- `macos-interactive-release-chain` run `34664577213` is a successful `workflow_run` execution on exact source `7ee12b790e18049d2b9509b0c29128dd2ace690b`.
-- Job/check `Dispatch exact-source App-owned macOS interactive lane` (`103473806024`) completed `success`; this is the required automatic dispatch and is not skipped.
-- An earlier duplicate/precondition chain attempt was skipped; it is not used as acceptance evidence. The later Post-main-linked chain above is the accepted run.
-- Downstream `macOS interactive app device E2E` run `34664585793` was created automatically with:
-  - `head_branch=desktop-1.2.56-7ee12b790e18`
-  - `head_sha=7ee12b790e18049d2b9509b0c29128dd2ace690b`
-  - trigger actor `github-actions[bot]`
-- State: **passed** for automatic exact-source dispatch.
+- `macos-interactive-release-chain` run `34664577213` is the accepted successful `workflow_run` on exact source `7ee12b790e18049d2b9509b0c29128dd2ace690b`.
+- `Dispatch exact-source App-owned macOS interactive lane` check/job `103473806024` completed `success`; it was not skipped.
+- An earlier duplicate/precondition attempt was skipped and is not acceptance evidence.
+- The chain automatically created downstream `macOS interactive app device E2E` run `34664585793` with `head_branch=desktop-1.2.56-7ee12b790e18`, `head_sha=7ee12b790e18049d2b9509b0c29128dd2ace690b`, actor `github-actions[bot]`.
+- State: **passed**.
 
 ## FCM-010.13.11 — installed App-owned packaged journey
 
-Downstream run `34664585793`, job `103473835434`, has already completed these real installed-package steps successfully:
+Downstream run `34664585793`, job `103473835434`, proved the installed-package portion is real:
 
-1. Resolve/download the exact published Release.
-2. Validate the downloaded ZIP digest against Release metadata.
-3. Extract and install the single top-level App to `/Applications/Fabushi.app`.
-4. Verify arm64 executable, `codesign --verify --deep --strict`, Gatekeeper assessment, bundle ID and version.
-5. Authenticate the protected CI test account and export only the bounded refresh-token-free App session.
-6. Launch the installed Fabushi App and wait for App-owned device registration.
-7. Run the Action-owned packaged App Agent semantic smoke successfully (`status`, `snapshot`, `wait`, `find`, `action`, `assert`, close/wait, final status).
-8. Whole-session macOS recording began before Release resolution/install; step screenshots are collected throughout.
+1. Exact Release resolution/download and ZIP digest verification: success.
+2. Install the single top-level App to `/Applications/Fabushi.app`: success.
+3. arm64 executable, `codesign --verify --deep --strict`, Gatekeeper, bundle ID and version verification: success.
+4. Protected CI account authentication and bounded refresh-token-free App session: success.
+5. Installed App launch and App-owned device registration as `gha-34664585793-1-macos-app`: success.
+6. Action-owned packaged App Agent semantic smoke: success (`route=/index.html`, `screen=messenger`, generation 64).
+7. Secondary packaged App Agent Surface Playwright test: success (`1 passed`, 7.5s).
+8. Whole-session recording and step screenshots were collected.
 
-At the time of this evidence write, the same run is still at `Hold for @fabushi test complete macOS journey`. Its final gate requires the external controller to use that newly registered App-owned device, complete the current semantic user journey, write the required `TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=...` note, call `ci_session_finish`, then invoke exact `settings-logout`. Only after that may Playwright/log/trace/video collection and the final truthful evidence gate complete.
+The required external complete user journey did **not** occur. The hold waited 1500 seconds and failed at `2026-09-12T01:47:51Z` with `Timed out waiting for @fabushi test complete macOS journey.` Evidence compilation reported `0 successful remote device actions`. The final evidence gate ran with:
 
-The currently connected device-control namespace does not expose `gha-34664585793-1-macos-app`; it exposes only the user's existing Linux/Windows/macOS devices. Replacing the CI App-owned device with a local or historical device would violate the acceptance contract, so no substitute call or fabricated trace is used.
+- `ACTION_SMOKE_OUTCOME=success`
+- `CONTROL_OUTCOME=failure`
+- `PLAYWRIGHT_OUTCOME=success`
 
-- State: **blocked / in-progress**, not passed.
-- Blocking dependency: an authenticated external controller in the protected CI test account namespace must reach the App-owned device for run `34664585793` before its interactive hold closes.
+`Enforce truthful macOS external journey and evidence gate` therefore completed `failure`. There is no acceptable READY_FOR_LOGOUT category note, successful `ci_session_finish`, complete semantic/CI-session trace, or exact `settings-logout` sequence to satisfy FCM-010.13.11.
+
+Evidence was preserved even on failure:
+
+- Artifact ID: `10289026380`.
+- Artifact: `fabushi-macos-interactive-evidence-34664585793-1`.
+- Size: `151030416` bytes.
+- Digest: `sha256:2eb1bc6133d6957c5f44549be840139e933c4c3fdde105246c19446f08182196`.
+- Files uploaded: 58.
+- Artifact source remains immutable tag `desktop-1.2.56-7ee12b790e18` / exact SHA `7ee12b790e18049d2b9509b0c29128dd2ace690b`.
+
+The execution environment also exposes a dedicated Fabushi dynamic-device MCP, but both its account probe and live-device listing return HTTP 400: `We couldn't connect your account. Please try again.` The generic device namespace likewise does not expose the transient CI App-owned device. This accounts for the absence of external remote calls; substituting a local/historical/KRIS device is forbidden.
+
+- State: **failed / blocking**.
+- Required recovery: restore the dedicated Fabushi MCP connection to the protected CI test account, rerun the same immutable exact-source lane, and complete the required semantic categories + READY note + `ci_session_finish` + exact `settings-logout` before the hold timeout.
 
 ## Completion decision
 
 - FCM-010.13.8: passed.
 - FCM-010.13.9: passed.
 - FCM-010.13.10: passed.
-- FCM-010.13.11: blocked/in-progress.
-- Overall FCM-010.13: **in-progress (fail-closed)**.
-- CI latency observer compression work is not advanced in this round because the user's sequencing explicitly requires all FCM-010.13 gates to pass first.
+- FCM-010.13.11: **failed / blocking**.
+- Overall FCM-010.13: **in-progress (fail-closed), not passed**.
+- The next CI latency observer / bottleneck-compression round remains intentionally deferred until FCM-010.13.11 succeeds, as required by the user-requested sequence.
