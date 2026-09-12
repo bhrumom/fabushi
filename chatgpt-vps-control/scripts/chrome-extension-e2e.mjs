@@ -122,7 +122,7 @@ function nextAfterResponse(message, pendingRequest) {
     if (phase === "stale-claim") {
       record("stale-generation-rejected", { error: message.error });
       phase = "claim";
-      request("claim_tab", { ...selected, generation: hello.generation });
+      request("claim_tab", { targetId: selected.id, title: selected.title, url: selected.url, generation: selected.generation });
       return;
     }
     fail(pendingRequest.command + ": " + (message.error || "request failed"));

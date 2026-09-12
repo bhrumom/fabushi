@@ -17,6 +17,7 @@ let nativeConnected = false;
 let nativeError = "";
 let reconnectTimer = null;
 let reconnectDelayMs = 500;
+let stateSeedPromise = null;
 const attachedTabs = new Set();
 const queues = new Map();
 const childSessions = new Map();
@@ -31,23 +32,38 @@ function isOrdinaryWebUrl(value) {
   catch { return false; }
 }
 
+async function seedState() {
+  if (stateSeedPromise) return stateSeedPromise;
+  stateSeedPromise = (async () => {
+    const [local, session] = await Promise.all([
+      chrome.storage.local.get([STORAGE.instanceId]),
+      chrome.storage.session.get([STORAGE.generation]),
+    ]);
+    if (!local[STORAGE.instanceId]) {
+      await chrome.storage.local.set({ [STORAGE.instanceId]: randomId() });
+    }
+    if (!session[STORAGE.generation]) {
+      await chrome.storage.session.set({ [STORAGE.generation]: randomId() });
+    }
+  })().finally(() => { stateSeedPromise = null; });
+  return stateSeedPromise;
+}
+
 async function state() {
-  const local = await chrome.storage.local.get([STORAGE.instanceId]);
-  const session = await chrome.storage.session.get([
-    STORAGE.generation,
-    STORAGE.claimed,
-    STORAGE.automation,
-    STORAGE.retained,
-    STORAGE.automationGroup,
+  // Multiple tab events can wake a cold worker simultaneously. Serialize the
+  // one-time seed so every listing/claim in this worker observes one
+  // generation instead of racing two random values into storage.session.
+  await seedState();
+  const [local, session] = await Promise.all([
+    chrome.storage.local.get([STORAGE.instanceId]),
+    chrome.storage.session.get([
+      STORAGE.generation,
+      STORAGE.claimed,
+      STORAGE.automation,
+      STORAGE.retained,
+      STORAGE.automationGroup,
+    ]),
   ]);
-  if (!local[STORAGE.instanceId]) {
-    local[STORAGE.instanceId] = randomId();
-    await chrome.storage.local.set({ [STORAGE.instanceId]: local[STORAGE.instanceId] });
-  }
-  if (!session[STORAGE.generation]) {
-    session[STORAGE.generation] = randomId();
-    await chrome.storage.session.set({ [STORAGE.generation]: session[STORAGE.generation] });
-  }
   return {
     instanceId: local[STORAGE.instanceId],
     generation: session[STORAGE.generation],
