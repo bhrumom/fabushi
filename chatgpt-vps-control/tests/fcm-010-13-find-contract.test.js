@@ -6,7 +6,10 @@ import {
   normalizeDeviceCallArguments,
   serializeDeviceCallArguments,
 } from "../scripts/fcm-010-13-find-contract.mjs";
-import { newestMessageRowsFromSnapshot } from "../scripts/fcm-010-13-macos-live-journey.mjs";
+import {
+  createMessageReceiveTracker,
+  newestMessageRowsFromSnapshot,
+} from "../scripts/fcm-010-13-macos-live-journey.mjs";
 
 const controller = await readFile(new URL("../scripts/fcm-010-13-macos-external-controller-v2.mjs", import.meta.url), "utf8");
 const journey = await readFile(new URL("../scripts/fcm-010-13-macos-live-journey.mjs", import.meta.url), "utf8");
@@ -15,12 +18,16 @@ function serializedFind(args) {
   return JSON.parse(serializeDeviceCallArguments("fabushi.app.find", args));
 }
 
-function messageSnapshot(count, { includeComposer = true } = {}) {
-  const elements = Array.from({ length: count }, (_, index) => ({
+function messageRows(count) {
+  return Array.from({ length: count }, (_, index) => ({
     role: "article",
     agentId: `message-actions:test:${index}`,
     text: `message ${index}`,
   }));
+}
+
+function messageSnapshot(rows, { includeComposer = true } = {}) {
+  const elements = [...rows];
   if (includeComposer) elements.push({ role: "textbox", agentId: "test:messenger-input", name: "Message" });
   return { elements };
 }
@@ -49,52 +56,54 @@ test("production controller serializes every fabushi.app.find through the shared
   assert.equal(normalizeDeviceCallArguments("fabushi.app.wait", unrelated), unrelated);
 });
 
-test("messageRowIds/send regression preserves the newest response past 100 rendered rows", () => {
-  const baselineRows = newestMessageRowsFromSnapshot(messageSnapshot(130));
-  assert.equal(baselineRows.length, 100);
-  assert.equal(baselineRows[0].agentId, "message-actions:test:30");
-  assert.equal(baselineRows.at(-1).agentId, "message-actions:test:129");
+test("production message receive tracker detects the appended assistant row past 100 rendered messages", async () => {
+  let rows = messageRows(130);
+  const calls = [];
+  const fakeDeviceTransport = async (toolName, args) => {
+    calls.push({ toolName, args });
+    if (toolName !== "fabushi.app.snapshot") throw new Error(`unexpected fake device call: ${toolName}`);
+    return messageSnapshot(rows);
+  };
+  const tracker = createMessageReceiveTracker({
+    callDevice: fakeDeviceTransport,
+    intervalMs: 0,
+    timeoutMs: 1_000,
+    maxAttempts: 1,
+  });
 
-  const baselineIds = new Set(baselineRows.map((item) => item.agentId));
-  const afterRows = newestMessageRowsFromSnapshot(messageSnapshot(131));
-  const unseen = afterRows.filter((item) => !baselineIds.has(item.agentId));
-  assert.deepEqual(unseen.map((item) => item.agentId), ["message-actions:test:130"]);
+  const beforeIds = await tracker.captureBeforeSend(async () => {
+    calls.push({ toolName: "send" });
+    rows = [
+      ...rows,
+      { role: "article", agentId: "message-actions:test:130", text: "own probe" },
+      { role: "article", agentId: "message-actions:test:131", text: "assistant response" },
+    ];
+  });
+
+  assert.equal(beforeIds.size, 100);
+  assert.equal(beforeIds.has("message-actions:test:29"), false);
+  assert.equal(beforeIds.has("message-actions:test:30"), true);
+  assert.equal(beforeIds.has("message-actions:test:129"), true);
+
+  const received = await tracker.waitForIncoming(beforeIds, "own probe");
+  assert.deepEqual(received, {
+    agentId: "message-actions:test:131",
+    text: "assistant response",
+  });
+  assert.deepEqual(calls.map((call) => call.toolName), ["fabushi.app.snapshot", "send", "fabushi.app.snapshot"]);
+  assert.deepEqual(calls[0].args, { maxElements: 500, includeText: true });
+  assert.deepEqual(calls[2].args, { maxElements: 500, includeText: true });
 
   assert.throws(
-    () => newestMessageRowsFromSnapshot(messageSnapshot(130, { includeComposer: false })),
+    () => newestMessageRowsFromSnapshot(messageSnapshot(messageRows(130), { includeComposer: false })),
     /message_snapshot_incomplete: exact messenger input sentinel missing/u,
   );
-  assert.throws(() => newestMessageRowsFromSnapshot(messageSnapshot(10), 101), /1\.\.100/u);
+  assert.throws(() => newestMessageRowsFromSnapshot(messageSnapshot(messageRows(10)), 101), /1\.\.100/u);
 
-  const messageRowIdsStart = journey.indexOf("async function messageRowIds()");
-  const messageRowIdsEnd = journey.indexOf("async function waitForAssistantUnread", messageRowIdsStart);
-  const messageRowIds = journey.slice(messageRowIdsStart, messageRowIdsEnd);
-  assert.ok(messageRowIdsStart >= 0 && messageRowIdsEnd > messageRowIdsStart, "messageRowIds helper must remain present");
-  assert.match(messageRowIds, /const fresh = await snapshot\(\)/u);
-  assert.match(messageRowIds, /newestMessageRowsFromSnapshot\(fresh\)/u);
-  assert.equal(messageRowIds.includes('find({ role: "article"'), false, "message baseline must not use the oldest-first capped find path");
-
-  const incomingStart = journey.indexOf("async function waitForIncomingMessage");
-  const incomingEnd = journey.indexOf("async function ensureGlobalDharmaInstalled", incomingStart);
-  const incoming = journey.slice(incomingStart, incomingEnd);
-  assert.match(incoming, /newestMessageRowsFromSnapshot\(await snapshot\(\)\)/u);
-  assert.equal(incoming.includes('find({ role: "article"'), false, "incoming polling must not use the oldest-first capped find path");
-
-  const sendStart = journey.indexOf('await category("send"');
-  const sendEnd = journey.indexOf('await category("unread"', sendStart);
-  const send = journey.slice(sendStart, sendEnd);
-  assert.ok(sendStart >= 0 && sendEnd > sendStart, "send category must remain present");
-  const baselineIndex = send.indexOf("messageIdsBeforeSend = await messageRowIds()");
-  const sendProbeIndex = send.indexOf("await sendText(sendProbe)");
-  assert.ok(baselineIndex >= 0 && sendProbeIndex > baselineIndex, "message baseline must be captured before sending so a fast response cannot be absorbed into the baseline");
-
-  const receiveStart = journey.indexOf('await category("receive"');
-  const receiveEnd = journey.indexOf('await navigateSection("频道")', receiveStart);
-  const receive = journey.slice(receiveStart, receiveEnd);
-  assert.match(receive, /waitForIncomingMessage\(messageIdsBeforeSend, sendProbe\)/u);
-
-  assert.deepEqual(serializedFind({ role: "article", limit: 100 }), { role: "article", limit: 100 });
-  assert.deepEqual(serializedFind({ role: "article", limit: 200 }), { role: "article", limit: 100 });
+  assert.match(journey, /const messageReceiveTracker = createMessageReceiveTracker\(\{ callDevice \}\)/u);
+  assert.match(journey, /messageReceiveTracker\.captureBeforeSend\(\(\) => sendText\(sendProbe\)\)/u);
+  assert.match(journey, /messageReceiveTracker\.waitForIncoming\(beforeIds, ownText\)/u);
+  assert.equal(journey.includes('find({ role: "article"'), false, "production journey must not use the oldest-first capped article query");
 });
 
 test("all literal production journey find limits are <=100 before serialization and remain <=100 after it", () => {
