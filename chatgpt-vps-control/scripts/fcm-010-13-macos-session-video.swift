@@ -178,7 +178,8 @@ private func validate(_ url: URL) throws {
     guard output.copyNextSampleBuffer() != nil else {
         throw RecorderError.invalidVideo("first video sample could not be decoded")
     }
-    print("playable=true duration_seconds=\(String(format: \"%.3f\", duration)) video_tracks=\(tracks.count) first_sample=decoded")
+    let formattedDuration = String(format: "%.3f", duration)
+    print("playable=true duration_seconds=\(formattedDuration) video_tracks=\(tracks.count) first_sample=decoded")
 }
 
 private func run() throws {
