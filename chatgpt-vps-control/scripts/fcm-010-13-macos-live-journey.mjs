@@ -6,6 +6,14 @@ const REQUIRED_CATEGORIES = [
   "media", "file", "notifications", "sync", "settings", "update",
 ];
 const ASSISTANT_PEER_ID = "test:peer-legacy:conversation:mahayana-ai:agent:assistant";
+const PROFILE_NAVIGATION_AGENT_IDS = new Map([
+  ["聊天", "profile-navigation-chats"],
+  ["联系人", "profile-navigation-contacts"],
+  ["Bots", "profile-navigation-bots"],
+  ["群组", "profile-navigation-groups"],
+  ["频道", "profile-navigation-channels"],
+  ["设置", "profile-navigation-settings"],
+]);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDeviceId, runId, runAttempt, record }) {
@@ -130,10 +138,19 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   }
   async function closeGlobalSearchIfOpen() {
     const found = await find({ agentId: "test:global-search-surface", limit: 1 });
-    if ((found.matches || []).length) {
-      const close = await find({ role: "button", name: "关闭搜索", limit: 5 });
-      if ((close.matches || []).length) await act({ role: "button", name: "关闭搜索", limit: 5 }, "invoke");
+    if (!(found.matches || []).length) return;
+
+    const clear = await find({ role: "button", name: "清除搜索", limit: 5 });
+    if ((clear.matches || []).length) {
+      await act({ role: "button", name: "清除搜索", limit: 5 }, "invoke");
     }
+
+    const close = await find({ role: "button", name: "关闭搜索", limit: 5 });
+    if (!(close.matches || []).length) {
+      throw new Error("global search surface remained open without the exact close control");
+    }
+    await act({ role: "button", name: "关闭搜索", limit: 5 }, "invoke");
+    await waitFor({ agentId: "test:global-search-surface", state: "absent" });
   }
   async function navigateSection(title) {
     await closeGlobalSearchIfOpen();
@@ -142,7 +159,9 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
       await invokeTest("profile-navigation-trigger");
       await waitFor({ agentId: "test:profile-navigation-menu", state: "visible" });
     }
-    await invokeNamed(title);
+    const profileAgentId = PROFILE_NAVIGATION_AGENT_IDS.get(title);
+    if (!profileAgentId) throw new Error(`unsupported profile navigation section: ${title}`);
+    await invokeTest(profileAgentId);
   }
   async function createSelfHostedChannel(name) {
     await navigateSection("聊天");
