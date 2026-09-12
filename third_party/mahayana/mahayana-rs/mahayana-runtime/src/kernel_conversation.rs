@@ -20,6 +20,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex as AsyncMutex;
 
+// FeatureHost's explicit conversation.open contract requests 200 messages. The
+// background search/index path asks for 2,000 and Runtime clamps that request to
+// 500. Keep read acknowledgement tied to the explicit-open request so a
+// background history scan can never clear a real unread assistant reply.
+const OPEN_CONVERSATION_HISTORY_LIMIT: u32 = 200;
+
 struct ConversationState {
     history: Vec<Message>,
     read_through: usize,
@@ -49,6 +55,10 @@ impl ConversationState {
     fn mark_read(&mut self) {
         self.read_through = self.history.len();
     }
+}
+
+fn history_request_marks_read(limit: u32) -> bool {
+    limit == OPEN_CONVERSATION_HISTORY_LIMIT
 }
 
 pub struct KernelConversationProvider {
@@ -137,11 +147,14 @@ impl ConversationProvider for KernelConversationProvider {
     }
 
     async fn list_conversations(&self) -> Result<Vec<Conversation>, ConversationError> {
-        let conversation_id = ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
+        let conversation_id =
+            ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
         let unread_count = self
             .state
             .lock()
-            .map_err(|_| ConversationError::Provider("kernel conversation state mutex poisoned".into()))?
+            .map_err(|_| {
+                ConversationError::Provider("kernel conversation state mutex poisoned".into())
+            })?
             .unread_count(&conversation_id);
         let mut conversation = Conversation::mahayana_assistant();
         conversation.unread_count = unread_count;
@@ -153,10 +166,9 @@ impl ConversationProvider for KernelConversationProvider {
         conversation_id: &ConversationId,
         limit: u32,
     ) -> Result<Vec<Message>, ConversationError> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| ConversationError::Provider("kernel conversation state mutex poisoned".into()))?;
+        let mut state = self.state.lock().map_err(|_| {
+            ConversationError::Provider("kernel conversation state mutex poisoned".into())
+        })?;
         let matching = state
             .history
             .iter()
@@ -165,7 +177,9 @@ impl ConversationProvider for KernelConversationProvider {
             .collect::<Vec<_>>();
         let start = matching.len().saturating_sub(limit as usize);
         let messages = matching[start..].to_vec();
-        state.mark_read();
+        if history_request_marks_read(limit) {
+            state.mark_read();
+        }
         Ok(messages)
     }
 
@@ -190,7 +204,9 @@ impl ConversationProvider for KernelConversationProvider {
         if !request.hidden {
             self.state
                 .lock()
-                .map_err(|_| ConversationError::Provider("kernel conversation state mutex poisoned".into()))?
+                .map_err(|_| {
+                    ConversationError::Provider("kernel conversation state mutex poisoned".into())
+                })?
                 .history
                 .push(user_message);
             persist_history(&self.state, self.history_path.as_deref()).map_err(kernel_error)?;
@@ -231,10 +247,9 @@ impl ConversationProvider for KernelConversationProvider {
         self.backend.reset_session().map_err(kernel_error)?;
         *self.session_id.lock().await = None;
         {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| ConversationError::Provider("kernel conversation state mutex poisoned".into()))?;
+            let mut state = self.state.lock().map_err(|_| {
+                ConversationError::Provider("kernel conversation state mutex poisoned".into())
+            })?;
             state.history.clear();
             state.mark_read();
         }
@@ -316,7 +331,9 @@ impl KernelEventSink for RuntimeKernelEventBridge {
                 };
                 self.state
                     .lock()
-                    .map_err(|_| KernelError::Backend("kernel conversation state mutex poisoned".into()))?
+                    .map_err(|_| {
+                        KernelError::Backend("kernel conversation state mutex poisoned".into())
+                    })?
                     .history
                     .push(message.clone());
                 persist_history(&self.state, self.history_path.as_deref())?;
@@ -557,13 +574,18 @@ mod tests {
 
     #[test]
     fn unread_counts_only_assistant_messages_after_last_read_boundary() {
-        let conversation_id = ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
+        let conversation_id =
+            ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
         let mut state = ConversationState::new(Vec::new());
         state.history.push(message(MessageRole::User, "hello"));
         assert_eq!(state.unread_count(&conversation_id), 0);
 
-        state.history.push(message(MessageRole::Assistant, "reply one"));
-        state.history.push(message(MessageRole::Assistant, "reply two"));
+        state
+            .history
+            .push(message(MessageRole::Assistant, "reply one"));
+        state
+            .history
+            .push(message(MessageRole::Assistant, "reply two"));
         assert_eq!(state.unread_count(&conversation_id), 2);
 
         state.mark_read();
@@ -572,12 +594,21 @@ mod tests {
 
     #[test]
     fn persisted_history_starts_read_and_new_assistant_reply_becomes_unread() {
-        let conversation_id = ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
+        let conversation_id =
+            ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
         let mut state = ConversationState::new(vec![message(MessageRole::Assistant, "persisted")]);
         assert_eq!(state.unread_count(&conversation_id), 0);
 
         state.history.push(message(MessageRole::User, "new prompt"));
-        state.history.push(message(MessageRole::Assistant, "fresh reply"));
+        state
+            .history
+            .push(message(MessageRole::Assistant, "fresh reply"));
         assert_eq!(state.unread_count(&conversation_id), 1);
+    }
+
+    #[test]
+    fn only_explicit_open_history_contract_marks_read() {
+        assert!(history_request_marks_read(OPEN_CONVERSATION_HISTORY_LIMIT));
+        assert!(!history_request_marks_read(500));
     }
 }
