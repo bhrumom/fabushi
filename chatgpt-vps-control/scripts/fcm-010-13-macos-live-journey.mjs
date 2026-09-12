@@ -144,6 +144,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await navigateSection("聊天");
     await invokeNamed("新建");
     await invokeNamed("新建频道");
+    await waitFor({ role: "textbox", name: "频道名称", state: "visible" }, 30_000);
     await act({ role: "textbox", name: "频道名称" }, "setValue", name);
     await act({ role: "textbox", name: "频道简介" }, "setValue", `FCM-010.13.11 external journey ${runId}.${runAttempt}`);
     await invokeNamed("创建频道");
