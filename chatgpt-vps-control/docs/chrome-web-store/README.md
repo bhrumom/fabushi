@@ -8,6 +8,10 @@ the existing-Chrome Computer Control bridge, and the 0.4.1 userscript runner
 The old `ChatGPT Computer Control Bridge` extension is a migration source only
 and is not part of this package.
 
+After installation, open 设置 → Fabushi 账号 and sign in with the same Fabushi
+account used by the official MCP. The extension then appears as that account's
+Chrome device; no desktop app is required for browser control.
+
 ## Package contract
 
 `npm run chrome:package` stages an explicit file allow-list and writes:
