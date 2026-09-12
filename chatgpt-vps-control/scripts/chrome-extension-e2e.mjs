@@ -271,10 +271,20 @@ try {
     // host and remove them in finally below.
     join(home, ".config", "google-chrome-for-testing", "NativeMessagingHosts"),
     join(home, ".config", "chrome-for-testing", "NativeMessagingHosts"),
+    ...(process.env.XDG_CONFIG_HOME ? [join(resolve(process.env.XDG_CONFIG_HOME), "google-chrome", "NativeMessagingHosts")] : []),
+    ...(process.env.XDG_CONFIG_HOME ? [join(resolve(process.env.XDG_CONFIG_HOME), "chromium", "NativeMessagingHosts")] : []),
   ]) {
     await writeNativeHostManifest(directory, nativeHost);
     nativeManifestPaths.push(join(directory, `${nativeHost.name}.json`));
   }
+  step("native-host-setup", {
+    host: nativeHost.name,
+    home,
+    envHome: process.env.HOME || null,
+    xdgConfigHome: process.env.XDG_CONFIG_HOME || null,
+    manifests: nativeManifestPaths,
+    hostScript,
+  });
 
   server = createServer((request, response) => {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -297,6 +307,8 @@ try {
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-networking",
+      `--enable-logging=stderr`,
+      `--log-file=${join(evidenceRoot, "chrome.log")}`,
     ],
   });
   context.on("serviceworker", (worker) => {
