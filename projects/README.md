@@ -14,10 +14,12 @@ Identity policy: [`PROJECT_ID_POLICY.md`](./PROJECT_ID_POLICY.md)
 | `FAB-P0007` | `DHRF` | DeepSeek Harness Rust Fusion | `projects/deepseek-harness-rust-fusion/` | `11fd9d32d5b7edf09882ff5308be55b566e1a6d4` |
 | `FAB-P0008` | `AAC` | Fabushi Account Access Control | `projects/fabushi-account-access-control/` | `52b7c10889e585660b7d2a22a40781c22f31b7a1` |
 | `FAB-P0009` | `RDF` | RustDesk -> Fabushi 核心能力融合 | `projects/rustdesk-fabushi-fusion/` | `9c7d16bf8bf57828adbb0bdb3d32ec0ba26abe6e` |
+| `FAB-P0010` | `RHS` | Fabushi Repository History Slimming | `projects/fabushi-repository-history-slimming/` | `9556afe338bc05f268b9bcdf43a09a76ce332327` |
+| `FAB-P0011` | `CWA` | Fabushi Chrome Web App / Computer Control Bridge Fusion | `projects/fabushi-chrome-web-app/` | `pending — this task branch` |
 
 ## Next Project ID
 
-The registry high-water mark is authoritative. The next allocatable ID is `FAB-P0010`.
+The registry high-water mark is authoritative. The next allocatable ID is `FAB-P0012`.
 Always re-read `PORTFOLIO.json` on canonical `main` immediately before allocating it.
 
 ## Identifier semantics

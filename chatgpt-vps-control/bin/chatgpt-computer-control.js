@@ -3,11 +3,11 @@ import { platform } from "node:os";
 import { applyLocalConfig, doctorLocalComputer, readLocalConfig, setupLocalComputer } from "../lib/local-install.js";
 import { installService, removeService } from "../lib/service-manager.js";
 import { ensureLinuxDesktop } from "../lib/linux-desktop.js";
-import { browserExtensionStatus, installBrowserExtension } from "../lib/browser-extension-install.js";
+import { browserExtensionStatus, installBrowserExtension, quarantineLegacyBrowserExtension, unregisterLegacyNativeMessaging } from "../lib/browser-extension-install.js";
 import { installUnifiedDeviceSkill } from "../lib/skill-install.js";
 
 function printUsage() {
-  console.log(`Fabushi Computer Control\n\nUsage:\n  chatgpt-computer-control setup [--no-deps] [--host 127.0.0.1] [--port 8787]\n  chatgpt-computer-control doctor\n  chatgpt-computer-control serve\n  chatgpt-computer-control presence\n  chatgpt-computer-control service install\n  chatgpt-computer-control service remove\n  chatgpt-computer-control browser-extension install\n  chatgpt-computer-control browser-extension status\n  chatgpt-computer-control skill install\n  chatgpt-computer-control url\n\nThe MCP server binds to loopback by default. Expose it only through an authenticated HTTPS tunnel or another trusted transport.`);
+  console.log(`Fabushi Computer Control\n\nUsage:\n  chatgpt-computer-control setup [--no-deps] [--host 127.0.0.1] [--port 8787]\n  chatgpt-computer-control doctor\n  chatgpt-computer-control serve\n  chatgpt-computer-control presence\n  chatgpt-computer-control service install\n  chatgpt-computer-control service remove\n  chatgpt-computer-control browser-extension install\n  chatgpt-computer-control browser-extension status\n  chatgpt-computer-control browser-extension cleanup-legacy\n  chatgpt-computer-control skill install\n  chatgpt-computer-control url\n\nThe MCP server binds to loopback by default. Expose it only through an authenticated HTTPS tunnel or another trusted transport.`);
 }
 
 function valueAfter(args, flag, fallback) {
@@ -94,10 +94,19 @@ async function browserExtension(command) {
     const result = await browserExtensionStatus();
     console.log(result.installed ? "Browser bridge files: installed" : "Browser bridge files: not installed");
     console.log(`Extension path: ${result.extensionPath}`);
+    if (result.legacyExtensionPath) console.log(`Legacy Bridge path: ${result.legacyExtensionPath}`);
     if (result.extensionId) console.log(`Extension ID: ${result.extensionId}`);
+    if (!result.publishedExtensionId) console.log("Published Chrome ID: not configured (development unpacked identity only)");
     return;
   }
-  throw new Error("Use: chatgpt-computer-control browser-extension install|status");
+  if (command === "cleanup-legacy") {
+    const native = await unregisterLegacyNativeMessaging();
+    const quarantine = await quarantineLegacyBrowserExtension();
+    console.log(`Removed legacy native-host registrations: ${native.removed.length}`);
+    console.log(quarantine.moved ? `Moved legacy Bridge source to: ${quarantine.path}` : "Legacy Bridge source directory was not present.");
+    return;
+  }
+  throw new Error("Use: chatgpt-computer-control browser-extension install|status|cleanup-legacy");
 }
 
 async function main() {

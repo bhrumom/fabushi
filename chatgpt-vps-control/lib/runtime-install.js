@@ -5,6 +5,7 @@ import { join, relative, resolve, sep } from "node:path";
 
 const RUNTIME_ENTRIES = [
   "bin",
+  "chrome-platform",
   "extension",
   "lib",
   "native",
@@ -27,6 +28,19 @@ const REQUIRED_RUNTIME_PATHS = [
   "lib/fabushi-account-auth.js",
   "bin/fabushi-device-agent.js",
   "bin/fabushi-ci-account-login.js",
+  "chrome-platform/extension/manifest.json",
+  "chrome-platform/extension/app.html",
+  "chrome-platform/extension/app.js",
+  "chrome-platform/extension/app.css",
+  "chrome-platform/extension/service-worker.js",
+  "chrome-platform/extension/platform-bridge.js",
+  "chrome-platform/extension/browser-control.js",
+  "chrome-platform/extension/userscript-core.js",
+  "chrome-platform/extension/userscript-runner.js",
+  "chrome-platform/extension/userscript-content.js",
+  "chrome-platform/extension/userscript.css",
+  "chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js",
+  "chrome-platform/extension/marketplace/chatgpt-task-queue.user.js",
   "extension/manifest.json",
   "lib/fabushi-computer-policy.js",
   "lib/device-agent.js",
@@ -41,6 +55,7 @@ const REQUIRED_RUNTIME_PATHS = [
   "native/macos/RequestService-Info.plist",
   "native/windows/computer-helper.ps1",
   "scripts/browser-extension-host.mjs",
+  "scripts/chrome-platform-host.mjs",
   "node_modules/@modelcontextprotocol/sdk/package.json",
   "node_modules/ws/package.json",
   "node_modules/zod/package.json",
@@ -112,6 +127,7 @@ function runtimeResult(root, runtimeId, reused) {
     reused,
     cliPath: join(root, "bin", "chatgpt-computer-control.js"),
     browserHostPath: join(root, "scripts", "browser-extension-host.mjs"),
+    chromePlatformHostPath: join(root, "scripts", "chrome-platform-host.mjs"),
   };
 }
 
@@ -170,6 +186,7 @@ export async function installPrivateRuntime({ sourceRoot, appHome }) {
     await chmod(join(staging, "bin", "fabushi-device-agent.js"), 0o700).catch(() => {});
     await chmod(join(staging, "bin", "fabushi-ci-account-login.js"), 0o700).catch(() => {});
     await chmod(join(staging, "scripts", "browser-extension-host.mjs"), 0o700).catch(() => {});
+    await chmod(join(staging, "scripts", "chrome-platform-host.mjs"), 0o700).catch(() => {});
     await writeFile(join(staging, "runtime-manifest.json"), `${JSON.stringify({
       layoutVersion: RUNTIME_LAYOUT_VERSION,
       runtimeId,

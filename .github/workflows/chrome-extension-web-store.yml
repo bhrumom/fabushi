@@ -1,0 +1,103 @@
+name: Chrome Extension Web Store
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "chatgpt-vps-control/chrome-platform/**"
+      - "chatgpt-vps-control/lib/**"
+      - "chatgpt-vps-control/scripts/**"
+      - "chatgpt-vps-control/tests/**"
+      - "chatgpt-vps-control/docs/chrome-web-store/**"
+      - "chatgpt-vps-control/package.json"
+      - "desktop/electron/chrome-platform-server.cjs"
+      - "desktop/electron/host-process.cjs"
+      - ".github/scripts/verify-packaged-computer-control.mjs"
+      - "ai-backend/src/miniapp_marketplace_catalog.js"
+      - ".github/workflows/chrome-extension-web-store.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "chatgpt-vps-control/chrome-platform/**"
+      - "chatgpt-vps-control/lib/browser-extension-install.js"
+      - "chatgpt-vps-control/lib/runtime-install.js"
+      - "chatgpt-vps-control/scripts/browser-extension-host.mjs"
+      - "chatgpt-vps-control/scripts/chrome-platform-host.mjs"
+      - "chatgpt-vps-control/scripts/chrome-extension-e2e.mjs"
+      - "chatgpt-vps-control/tests/browser-extension.test.js"
+      - "chatgpt-vps-control/tests/chrome-platform.test.js"
+      - "chatgpt-vps-control/tests/extension-entry.test.js"
+      - "chatgpt-vps-control/tests/chatgpt-task-queue-userscript.test.js"
+      - "chatgpt-vps-control/tests/chrome-extension-e2e-contract.test.js"
+      - "chatgpt-vps-control/scripts/validate-chrome-extension.mjs"
+      - "chatgpt-vps-control/scripts/package-chrome-extension.mjs"
+      - "chatgpt-vps-control/docs/chrome-web-store/**"
+      - "chatgpt-vps-control/package.json"
+      - "desktop/electron/chrome-platform-server.cjs"
+      - "desktop/electron/host-process.cjs"
+      - ".github/workflows/chrome-extension-web-store.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chatgpt-vps-control
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - name: Setup Node
+        id: setup-node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            chatgpt-vps-control/package-lock.json
+            desktop/package-lock.json
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --prefer-offline
+      - name: Run production Chrome release preflight
+        run: npm run chrome:release
+
+      - name: Install packaged journey Playwright dependencies
+        working-directory: desktop
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Install Chromium and video support for packaged journey
+        working-directory: desktop
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright install ffmpeg
+
+      - name: Run packaged Chrome simulated-user journey
+        run: xvfb-run -a npm run chrome:e2e
+
+      - name: Record warm-build and source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "node=$(node --version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "npm_cache_hit=${{ steps.setup-node.outputs.cache-hit || 'false' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "build_mode=deterministic allow-list package; npm cache is acceleration only" >> "$GITHUB_STEP_SUMMARY"
+          cat dist/chrome-extension/SHA256SUMS.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload Web Store package
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-chrome-web-store-${{ github.sha }}
+          path: |
+            chatgpt-vps-control/dist/chrome-extension/*.zip
+            chatgpt-vps-control/dist/chrome-extension/SHA256SUMS.txt
+            chatgpt-vps-control/dist/chrome-extension/*.content-manifest.json
+            chatgpt-vps-control/dist/chrome-extension/evidence/**
+          if-no-files-found: error
+          retention-days: 90

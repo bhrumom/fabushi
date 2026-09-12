@@ -1,0 +1,23 @@
+project_id: FAB-P0011
+project_key: CWA
+legacy_project_ids: []
+name: Fabushi Chrome Web App / Computer Control Bridge Fusion
+slug: fabushi-chrome-web-app
+status: active
+repository: bhrumom/fabushi
+authoritative_branch: main
+authoritative_path: projects/fabushi-chrome-web-app
+owner: Fabushi desktop and browser-platform maintainers
+reviewers:
+  - Fabushi security maintainers
+  - Fabushi release maintainers
+risk_tier: tier-1
+security_classification: restricted
+created_at: 2026-09-12
+updated_at: 2026-09-12
+current_stage: CWA-S2-implementation-and-contract-verification
+target_finish: null
+related_projects:
+  - FAB-P0003
+  - FAB-P0005
+  - FAB-P0008
