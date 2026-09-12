@@ -6,8 +6,8 @@ const journey = await readFile(new URL("../scripts/fcm-010-13-macos-live-journey
 
 test("send leaves the active assistant via a known peer before probing exact unread-none", () => {
   const conversationsStart = journey.indexOf('await category("conversations", async () => {');
-  const searchStart = journey.indexOf('await category("search", async () => {', conversationsStart);
-  const conversationsSlice = journey.slice(conversationsStart, searchStart);
+  const agentStart = journey.indexOf('await category("agent",', conversationsStart);
+  const conversationsSlice = journey.slice(conversationsStart, agentStart);
   const sendStart = journey.indexOf('await category("send", async () => {');
   const channelsIndex = journey.indexOf('await navigateSection("频道");', sendStart);
   const nonAssistantPeerIndex = journey.indexOf("await openPeer(channelAId);", channelsIndex);
@@ -18,7 +18,8 @@ test("send leaves the active assistant via a known peer before probing exact unr
   const sendIndex = journey.indexOf("const tracking = await messageReceiveTracker.captureBeforeSend(async () => {", openIndex);
 
   assert.ok(conversationsStart >= 0, "conversations category must exist");
-  assert.match(conversationsSlice, /await openAssistantConversation\(\);\s*\n\s*\}\);$/u,
+  assert.ok(agentStart > conversationsStart, "agent category must follow conversations");
+  assert.match(conversationsSlice, /await openAssistantConversation\(\);\s*\n\s*\}\);\s*$/u,
     "conversations must deliberately leave the assistant selected before search/send");
   assert.ok(sendStart >= 0, "send category must exist");
   assert.ok(channelsIndex > sendStart, "send must leave the active assistant by navigating to Channels");
