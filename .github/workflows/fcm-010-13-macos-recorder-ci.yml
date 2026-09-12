@@ -39,6 +39,7 @@ jobs:
         shell: bash
         env:
           FCM_MACOS_RECORDING_INTERVAL_SECONDS: '0.5'
+          FCM_MACOS_RECORDING_MIN_BYTES: '10000'
         run: |
           set -euo pipefail
           evidence="$FCM_RECORDER_EVIDENCE"
@@ -48,7 +49,7 @@ jobs:
           bash chatgpt-vps-control/scripts/fcm-010-13-macos-session-recorder.sh stop "$evidence"
           bash chatgpt-vps-control/scripts/fcm-010-13-macos-session-recorder.sh verify "$evidence"
           jq -e '.schema == "fabushi.macos-session-recorder-preflight.v1" and .failClosed == true and .fallbackRecorderPlayable == true' "$evidence/recorder-preflight.json" >/dev/null
-          jq -e '.schema == "fabushi.macos-session-recorder.v1" and .playable == true and .firstSampleDecoded == true and .frames >= 3 and .durationSeconds > 0' "$evidence/recorder-final.json" >/dev/null
+          jq -e '.schema == "fabushi.macos-session-recorder.v1" and .playable == true and .firstSampleDecoded == true and .frames >= 3 and .durationSeconds > 0 and .movieBytes > .minimumMovieBytes' "$evidence/recorder-final.json" >/dev/null
           test -s "$evidence/macos-session.mov"
           shasum -a 256 "$evidence/macos-session.mov" > "$evidence/macos-session.mov.sha256"
           /usr/bin/find "$evidence" -type f -print | sort > "$evidence/files.txt"
