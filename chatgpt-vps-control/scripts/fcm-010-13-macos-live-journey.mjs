@@ -6,6 +6,8 @@ const REQUIRED_CATEGORIES = [
   "media", "file", "notifications", "sync", "settings", "update",
 ];
 const ASSISTANT_PEER_ID = "test:peer-legacy:conversation:mahayana-ai:agent:assistant";
+const MESSAGE_ROW_PREFIX = "message-actions:";
+const MESSENGER_INPUT_AGENT_ID = "test:messenger-input";
 const PROFILE_NAVIGATION_AGENT_IDS = new Map([
   ["聊天", "profile-navigation-chats"],
   ["联系人", "profile-navigation-contacts"],
@@ -15,6 +17,21 @@ const PROFILE_NAVIGATION_AGENT_IDS = new Map([
   ["设置", "profile-navigation-settings"],
 ]);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export function newestMessageRowsFromSnapshot(snapshotValue, limit = 100) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error(`message snapshot limit must be an integer in 1..100; received ${String(limit)}`);
+  }
+  const elements = Array.isArray(snapshotValue?.elements) ? snapshotValue.elements : [];
+  const composerIndex = elements.findIndex((item) => item?.agentId === MESSENGER_INPUT_AGENT_ID);
+  if (composerIndex < 0) {
+    throw new Error("message_snapshot_incomplete: exact messenger input sentinel missing");
+  }
+  return elements
+    .slice(0, composerIndex)
+    .filter((item) => item?.role === "article" && String(item?.agentId || "").startsWith(MESSAGE_ROW_PREFIX))
+    .slice(-limit);
+}
 
 export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDeviceId, runId, runAttempt, record }) {
   const completedCategories = [];
@@ -183,8 +200,8 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await waitFor({ agentId: "test:messenger-input", state: "visible" });
   }
   async function messageRowIds() {
-    const found = await find({ role: "article", limit: 100 });
-    return new Set((found.matches || []).map((item) => String(item?.agentId || "")).filter((id) => id.startsWith("message-actions:")));
+    const fresh = await snapshot();
+    return new Set(newestMessageRowsFromSnapshot(fresh).map((item) => String(item?.agentId || "")));
   }
   async function waitForAssistantUnread(previousPeerText) {
     return poll("assistant peer unread badge", async () => {
@@ -197,11 +214,11 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   }
   async function waitForIncomingMessage(beforeIds, ownText) {
     return poll("new incoming assistant message", async () => {
-      const found = await find({ role: "article", limit: 100 });
-      const candidate = (found.matches || []).find((item) => {
+      const rows = newestMessageRowsFromSnapshot(await snapshot());
+      const candidate = rows.find((item) => {
         const id = String(item?.agentId || "");
         const text = String(item?.text || item?.name || "");
-        return id.startsWith("message-actions:") && !beforeIds.has(id) && text && !text.includes(ownText);
+        return !beforeIds.has(id) && text && !text.includes(ownText);
       });
       return { ok: Boolean(candidate), value: candidate ? { agentId: candidate.agentId, text: String(candidate.text || candidate.name || "").slice(0, 240) } : null };
     }, 90_000, 800);
@@ -256,11 +273,11 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   const sendProbe = `${base} receive-unread-probe`;
   const assistantBefore = await find({ agentId: ASSISTANT_PEER_ID, limit: 1 });
   const assistantPeerTextBefore = String(assistantBefore.matches?.[0]?.text || assistantBefore.matches?.[0]?.name || "");
-  let messageIdsAfterSend = new Set();
+  let messageIdsBeforeSend = new Set();
   await category("send", async () => {
     await openAssistantConversation();
+    messageIdsBeforeSend = await messageRowIds();
     await sendText(sendProbe);
-    messageIdsAfterSend = await messageRowIds();
     const own = await find({ text: sendProbe, limit: 100 });
     if (!(own.matches || []).some((item) => String(item?.agentId || "").startsWith("message-actions:"))) throw new Error("sent probe did not resolve to a real semantic message row");
     await navigateSection("频道");
@@ -274,7 +291,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   });
   await category("receive", async () => {
     await openAssistantConversation();
-    const received = await waitForIncomingMessage(messageIdsAfterSend, sendProbe);
+    const received = await waitForIncomingMessage(messageIdsBeforeSend, sendProbe);
     record("incoming-message-observed", received);
   });
 
@@ -328,7 +345,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await openMessageMenu(source);
     await invokeTest("message-action-forward");
     await waitFor({ agentId: "test:forward-message-dialog", state: "visible" });
-    const peers = await find({ role: "button", limit: 100 });
+    const peers = await find({ role: "button", name: `${base} B`, limit: 100 });
     const target = chooseMatch(peers, { role: "button", name: `${base} B` }, (item) => String(item?.agentId || "").startsWith("forward-message-peer:") && String(item?.text || item?.name || "").includes(`${base} B`));
     await callDevice("fabushi.app.action", { generation: peers.generation, agentId: target.agentId, action: "invoke" });
     await waitFor({ agentId: "test:forward-message-dialog", state: "absent" }, 30_000);
