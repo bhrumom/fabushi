@@ -1,3 +1,5 @@
+import { callGenerationSensitiveAction } from "./fcm-010-13-generation-sensitive-action.mjs";
+
 const REQUIRED_CATEGORIES = [
   "startup", "login", "main", "conversations", "search", "send", "receive", "reply", "edit", "delete",
   "forward", "draft", "pin", "mute", "unread", "contacts", "groups", "bot", "agent", "miniapp", "webmcp",
@@ -6,8 +8,18 @@ const REQUIRED_CATEGORIES = [
 const ASSISTANT_PEER_ID = "test:peer-legacy:conversation:mahayana-ai:agent:assistant";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function runLiveJourney({ callDevice, expectedDeviceId, runId, runAttempt, record }) {
+export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDeviceId, runId, runAttempt, record }) {
   const completedCategories = [];
+  async function callDevice(toolName, args = {}) {
+    if (toolName !== "fabushi.app.action") return invokeDeviceCall(toolName, args);
+    return callGenerationSensitiveAction({
+      invokeDeviceCall,
+      args,
+      onRetry: ({ attempt, agentId, previousGeneration, findGeneration, refreshedGeneration }) => {
+        record("generation-retry", { attempt, agentId, previousGeneration, findGeneration, refreshedGeneration });
+      },
+    });
+  }
   async function snapshot() { return callDevice("fabushi.app.snapshot", { maxElements: 500, includeText: true }); }
   async function find(query) { return callDevice("fabushi.app.find", { ...query, limit: query.limit || 100 }); }
   async function waitFor(query, timeoutMs = 30_000) {
@@ -31,18 +43,10 @@ export async function runLiveJourney({ callDevice, expectedDeviceId, runId, runA
     return selected;
   }
   async function act(query, action, value, predicate) {
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      const found = await find(query);
-      const target = chooseMatch(found, query, predicate);
-      const args = { generation: found.generation, action, ...(target.agentId ? { agentId: target.agentId } : { ref: target.ref }), ...(value === undefined ? {} : { value }) };
-      try {
-        return await callDevice("fabushi.app.action", args);
-      } catch (error) {
-        if (!String(error?.message || error).includes("stale_app_surface_generation") || attempt === 3) throw error;
-        await sleep(150);
-      }
-    }
-    throw new Error(`semantic action failed after generation retries: ${JSON.stringify(query)}`);
+    const found = await find(query);
+    const target = chooseMatch(found, query, predicate);
+    const args = { generation: found.generation, action, ...(target.agentId ? { agentId: target.agentId } : { ref: target.ref }), ...(value === undefined ? {} : { value }) };
+    return callDevice("fabushi.app.action", args);
   }
   async function poll(description, probe, timeoutMs = 60_000, intervalMs = 600) {
     const deadline = Date.now() + timeoutMs;
@@ -317,7 +321,8 @@ export async function runLiveJourney({ callDevice, expectedDeviceId, runId, runA
     const bots = await find({ text: "全球法布施", limit: 100 });
     const bot = (bots.matches || []).find((item) => item?.role === "button") || bots.matches?.[0];
     if (!bot) throw new Error("Global Dharma Bot was not projected after installation");
-    await callDevice("fabushi.app.action", { generation: bots.generation, ...(bot.agentId ? { agentId: bot.agentId } : { ref: bot.ref }), action: "invoke" });
+    if (!bot.agentId) throw new Error("Global Dharma Bot semantic target did not expose a stable agentId");
+    await callDevice("fabushi.app.action", { generation: bots.generation, agentId: bot.agentId, action: "invoke" });
     await waitFor({ agentId: "test:miniapp-bot-open", state: "visible" }, 30_000);
   });
   await category("webmcp", async () => {
@@ -362,16 +367,9 @@ export async function runLiveJourney({ callDevice, expectedDeviceId, runId, runA
   await waitFor({ agentId: "settings-logout", state: "visible" });
   await callDevice("ci_session_note", { note: `TFI_MACOS_FULL_JOURNEY READY_FOR_LOGOUT PASS categories=${REQUIRED_CATEGORIES.join(",")}` });
   await callDevice("ci_session_finish", { reason: `FCM-010.13.11 external full journey passed on ${expectedDeviceId}` });
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const fresh = await snapshot();
-    const logout = (fresh.elements || []).find((item) => item?.agentId === "settings-logout");
-    if (!logout) throw new Error("fresh pre-logout snapshot did not contain exact settings-logout");
-    try {
-      await callDevice("fabushi.app.action", { generation: fresh.generation, agentId: "settings-logout", action: "invoke" });
-      break;
-    } catch (error) {
-      if (!String(error?.message || error).includes("stale_app_surface_generation") || attempt === 3) throw error;
-    }
-  }
+  const fresh = await snapshot();
+  const logout = (fresh.elements || []).find((item) => item?.agentId === "settings-logout");
+  if (!logout) throw new Error("fresh pre-logout snapshot did not contain exact settings-logout");
+  await callDevice("fabushi.app.action", { generation: fresh.generation, agentId: "settings-logout", action: "invoke" });
   return { categories: completedCategories, finalAction: { toolName: "fabushi.app.action", agentId: "settings-logout", action: "invoke" } };
 }
