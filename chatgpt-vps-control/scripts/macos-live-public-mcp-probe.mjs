@@ -15,13 +15,24 @@ const redirectUri = "http://127.0.0.1/callback";
 const verifier = "v".repeat(64);
 const challenge = createHash("sha256").update(verifier).digest("base64url");
 
+async function registerClient() {
+  let lastStatus = 0;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const response = await fetch(`${origin}/oauth/register`, {
+      method: "POST", headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ redirect_uris: [redirectUri] }),
+    });
+    if (response.ok) return response.json();
+    lastStatus = response.status;
+    if (response.status < 500 || response.status > 599 || attempt === 4) break;
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+  }
+  throw new Error(`dynamic client registration failed: HTTP ${lastStatus}`);
+}
+
 async function authorize() {
-  const registrationResponse = await fetch(`${origin}/oauth/register`, {
-    method: "POST", headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ redirect_uris: [redirectUri] }),
-  });
-  if (!registrationResponse.ok) throw new Error(`dynamic client registration failed: HTTP ${registrationResponse.status}`);
-  const registration = await registrationResponse.json();
+  const registration = await registerClient();
+  if (!registration?.client_id) throw new Error("dynamic client registration returned no client_id");
   const authorizeUrl = new URL(`${origin}/oauth/authorize`);
   authorizeUrl.search = new URLSearchParams({
     client_id: registration.client_id, redirect_uri: redirectUri, response_type: "code",
