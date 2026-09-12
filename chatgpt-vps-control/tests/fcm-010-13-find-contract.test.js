@@ -8,7 +8,9 @@ import {
 } from "../scripts/fcm-010-13-find-contract.mjs";
 import {
   createMessageReceiveTracker,
+  matchingTargets,
   newestMessageRowsFromSnapshot,
+  peerHasUnreadBadgeFromSnapshot,
 } from "../scripts/fcm-010-13-macos-live-journey.mjs";
 
 const controller = await readFile(new URL("../scripts/fcm-010-13-macos-external-controller-v2.mjs", import.meta.url), "utf8");
@@ -54,6 +56,53 @@ test("production controller serializes every fabushi.app.find through the shared
 
   const unrelated = { timeoutMs: 30_000, limit: 200 };
   assert.equal(normalizeDeviceCallArguments("fabushi.app.wait", unrelated), unrelated);
+});
+
+test("production find selection trusts server text/name filtering after returned labels are redacted", () => {
+  const redactedTextResult = {
+    matches: [
+      { role: "div", agentId: "test:message-list", text: "<redacted-ui-text>" },
+      { role: "article", agentId: "message-actions:legacy:optimistic:chat-send-1", text: "<redacted-ui-text>" },
+    ],
+  };
+  const textMatches = matchingTargets(redactedTextResult, { text: "secret probe" }, (item) => (
+    item?.role === "article" && String(item?.agentId || "").startsWith("message-actions:")
+  ));
+  assert.deepEqual(textMatches.map((item) => item.agentId), ["message-actions:legacy:optimistic:chat-send-1"]);
+
+  const redactedNameResult = {
+    matches: [
+      { role: "button", agentId: "forward-message-peer:channel-b", name: "<redacted-ui-text>" },
+    ],
+  };
+  const nameMatches = matchingTargets(redactedNameResult, { role: "button", name: "FCM channel B" }, (item) => (
+    String(item?.agentId || "").startsWith("forward-message-peer:")
+  ));
+  assert.deepEqual(nameMatches.map((item) => item.agentId), ["forward-message-peer:channel-b"]);
+
+  assert.equal(journey.includes("if (query.name && item?.name !== query.name)"), false);
+  assert.equal(journey.includes("haystack.includes(query.text)"), false);
+  assert.equal(journey.includes(".trim() === sendProbe"), false);
+  assert.equal(journey.includes(".includes(text)"), false);
+});
+
+test("assistant unread detection remains fail-closed without reading redacted peer text", () => {
+  const assistantPeerId = "test:peer-legacy:conversation:mahayana-ai:agent:assistant";
+  const baseElements = [
+    { role: "button", agentId: assistantPeerId, text: "<redacted-ui-text>" },
+    { role: "span", tag: "span", text: "<redacted-ui-text>", visible: true },
+  ];
+  const nextPeer = { role: "button", agentId: "test:peer-selfhosted:channel:next", text: "<redacted-ui-text>" };
+
+  assert.equal(peerHasUnreadBadgeFromSnapshot({ elements: [...baseElements, { role: "generic", tag: "b", text: "<redacted-ui-text>", visible: true }, nextPeer] }, assistantPeerId), true);
+  assert.equal(peerHasUnreadBadgeFromSnapshot({ elements: [...baseElements, nextPeer, { role: "generic", tag: "b", visible: true }] }, assistantPeerId), false);
+  assert.equal(peerHasUnreadBadgeFromSnapshot({ elements: [...baseElements, { role: "generic", tag: "b", visible: false }, nextPeer] }, assistantPeerId), false);
+  assert.equal(peerHasUnreadBadgeFromSnapshot({ elements: [nextPeer] }, assistantPeerId), false);
+  assert.throws(() => peerHasUnreadBadgeFromSnapshot({ elements: [] }, "legacy:assistant"), /stable test:peer-/u);
+
+  assert.match(journey, /peerHasUnreadBadgeFromSnapshot\(fresh, ASSISTANT_PEER_ID\)/u);
+  assert.equal(journey.includes("unreadMatch = text.match"), false);
+  assert.equal(journey.includes("assistantPeerTextBefore"), false);
 });
 
 test("production message receive tracker detects an echoed assistant reply past 100 rendered messages by sent-row identity", async () => {
@@ -114,7 +163,7 @@ test("production message receive tracker detects an echoed assistant reply past 
 
   assert.match(journey, /const messageReceiveTracker = createMessageReceiveTracker\(\{ callDevice \}\)/u);
   assert.match(journey, /const tracking = await messageReceiveTracker\.captureBeforeSend\(async \(\) => \{/u);
-  assert.match(journey, /String\(item\?\.text \|\| item\?\.name \|\| ""\)\.trim\(\) === sendProbe/u);
+  assert.match(journey, /item\?\.role === "article" && String\(item\?\.agentId \|\| ""\)\.startsWith\(MESSAGE_ROW_PREFIX\)/u);
   assert.match(journey, /messageReceiveTracker\.waitForIncoming\(beforeIds, sentMessageRowId\)/u);
   assert.equal(journey.includes("text.includes(ownText)"), false, "assistant replies that echo the prompt must not be filtered by text");
   assert.equal(journey.includes('find({ role: "article"'), false, "production journey must not use the oldest-first capped article query");
