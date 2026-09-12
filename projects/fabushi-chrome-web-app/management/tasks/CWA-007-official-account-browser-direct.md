@@ -4,7 +4,7 @@
 - Status: in-progress. Started/updated: 2026-09-12. Completed: null.
 - Source: source/2026-09-12-official-account-browser-direct.md; CWA-R009..R012, R002..R007.
 - Objective: independent Fabushi login in Chrome and official same-account MCP browser discovery/control with complete Bridge compatibility.
-- Branch: codex/cwa-007-account-browser-direct-20260912. Commit/PR: pending.
+- Branch: codex/cwa-007-account-browser-direct-20260912. Commits: `64a5209b5`, `46be2a979`. PR: https://github.com/bhrumom/fabushi/pull/2563 (open).
 - Dependencies: existing Fabushi account browser-login API, remote MCP device gateway, stable extension identity, CI/protected main and release deployment.
 - In scope: login/logout, authenticated browser registration, account isolation, command/event parity, UI and CI evidence.
 - Out of scope: unrelated extension deletion, replacing account identity service, exposing desktop control to a browser-only agent.
@@ -37,5 +37,5 @@ inspection were performed locally; no local app build/test was run.
 ## Risks/blockers/next action
 
 Stable Web Store extension ID and production gateway deployment remain external release
-dependencies. Next: commit/push, open PR, run CI review, merge through protected main, deploy
-the gateway and execute exact-SHA packaged same-account E2E/Release. All delivery gates remain pending.
+dependencies. Next: inspect PR #2563 CI/review, merge through protected main, deploy the
+gateway and execute exact-SHA packaged same-account E2E/Release. All delivery gates remain pending.
