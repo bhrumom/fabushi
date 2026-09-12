@@ -8,11 +8,13 @@ import {
 } from "../scripts/fcm-010-13-find-contract.mjs";
 import {
   createMessageReceiveTracker,
+  matchingTargets,
   newestMessageRowsFromSnapshot,
 } from "../scripts/fcm-010-13-macos-live-journey.mjs";
 
 const controller = await readFile(new URL("../scripts/fcm-010-13-macos-external-controller-v2.mjs", import.meta.url), "utf8");
 const journey = await readFile(new URL("../scripts/fcm-010-13-macos-live-journey.mjs", import.meta.url), "utf8");
+const botMark = await readFile(new URL("../../frontend/apps/web/src/app/host/bot-mark.tsx", import.meta.url), "utf8");
 
 function serializedFind(args) {
   return JSON.parse(serializeDeviceCallArguments("fabushi.app.find", args));
@@ -54,6 +56,58 @@ test("production controller serializes every fabushi.app.find through the shared
 
   const unrelated = { timeoutMs: 30_000, limit: 200 };
   assert.equal(normalizeDeviceCallArguments("fabushi.app.wait", unrelated), unrelated);
+});
+
+test("production find selection trusts server text/name filtering after returned labels are redacted", () => {
+  const redactedTextResult = {
+    matches: [
+      { role: "div", agentId: "test:message-list", text: "<redacted-ui-text>" },
+      { role: "article", agentId: "message-actions:legacy:optimistic:chat-send-1", text: "<redacted-ui-text>" },
+    ],
+  };
+  const textMatches = matchingTargets(redactedTextResult, { text: "secret probe" }, (item) => (
+    item?.role === "article" && String(item?.agentId || "").startsWith("message-actions:")
+  ));
+  assert.deepEqual(textMatches.map((item) => item.agentId), ["message-actions:legacy:optimistic:chat-send-1"]);
+
+  const redactedNameResult = {
+    matches: [
+      { role: "button", agentId: "forward-message-peer:channel-b", name: "<redacted-ui-text>" },
+    ],
+  };
+  const nameMatches = matchingTargets(redactedNameResult, { role: "button", name: "FCM channel B" }, (item) => (
+    String(item?.agentId || "").startsWith("forward-message-peer:")
+  ));
+  assert.deepEqual(nameMatches.map((item) => item.agentId), ["forward-message-peer:channel-b"]);
+
+  assert.equal(journey.includes("if (query.name && item?.name !== query.name)"), false);
+  assert.equal(journey.includes("haystack.includes(query.text)"), false);
+  assert.equal(journey.includes(".trim() === sendProbe"), false);
+  assert.equal(journey.includes(".includes(text)"), false);
+});
+
+test("assistant unread contract exposes stable semantics and requires a post-send false-to-true transition", () => {
+  assert.match(botMark, /closest<HTMLElement>\('button\[data-testid\^="peer-"\]'\)/u);
+  assert.match(botMark, /const agentId = `peer-unread:\$\{testId\.slice\("peer-"\.length\)\}`/u);
+  assert.match(botMark, /peerButton\.querySelector\("b"\) != null/u);
+  assert.match(botMark, /new MutationObserver\(update\)/u);
+  assert.match(botMark, /data-agent-id=\{peerUnreadSemantic\?\.agentId\}/u);
+  assert.match(botMark, /"unread-positive" : "unread-none"/u);
+
+  assert.match(journey, /const ASSISTANT_UNREAD_AGENT_ID = "peer-unread:legacy:conversation:mahayana-ai:agent:assistant"/u);
+  assert.match(journey, /find\(\{ agentId: ASSISTANT_UNREAD_AGENT_ID, name: marker, limit: 1 \}\)/u);
+  assert.equal(journey.includes("peerHasUnreadBadgeFromSnapshot"), false);
+  assert.equal(journey.includes("unreadMatch = text.match"), false);
+  assert.equal(journey.includes("assistantPeerTextBefore"), false);
+
+  const baselineIndex = journey.indexOf("const unreadBaseline = await waitForAssistantUnread(false, 30_000)");
+  const sendIndex = journey.indexOf("const tracking = await messageReceiveTracker.captureBeforeSend(async () => {");
+  const positiveIndex = journey.indexOf("const unread = await waitForAssistantUnread(true)");
+  assert.ok(baselineIndex >= 0, "pre-send unread-none baseline is required");
+  assert.ok(sendIndex > baselineIndex, "send must happen after a verified no-unread baseline");
+  assert.ok(positiveIndex > sendIndex, "positive unread must be observed only after the probe send");
+  assert.match(journey, /record\("unread-baseline-cleared", unreadBaseline\)/u);
+  assert.match(journey, /record\("unread-transition-observed", unread\)/u);
 });
 
 test("production message receive tracker detects an echoed assistant reply past 100 rendered messages by sent-row identity", async () => {
@@ -114,7 +168,7 @@ test("production message receive tracker detects an echoed assistant reply past 
 
   assert.match(journey, /const messageReceiveTracker = createMessageReceiveTracker\(\{ callDevice \}\)/u);
   assert.match(journey, /const tracking = await messageReceiveTracker\.captureBeforeSend\(async \(\) => \{/u);
-  assert.match(journey, /String\(item\?\.text \|\| item\?\.name \|\| ""\)\.trim\(\) === sendProbe/u);
+  assert.match(journey, /item\?\.role === "article" && String\(item\?\.agentId \|\| ""\)\.startsWith\(MESSAGE_ROW_PREFIX\)/u);
   assert.match(journey, /messageReceiveTracker\.waitForIncoming\(beforeIds, sentMessageRowId\)/u);
   assert.equal(journey.includes("text.includes(ownText)"), false, "assistant replies that echo the prompt must not be filtered by text");
   assert.equal(journey.includes('find({ role: "article"'), false, "production journey must not use the oldest-first capped article query");
