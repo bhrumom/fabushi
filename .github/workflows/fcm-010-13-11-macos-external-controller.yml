@@ -6,14 +6,16 @@ on:
     paths:
       - '.github/workflows/fcm-010-13-11-macos-external-controller.yml'
       - 'chatgpt-vps-control/scripts/fcm-010-13-protected-account-preflight.mjs'
-      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller.mjs'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller-v2.mjs'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-live-journey.mjs'
       - 'chatgpt-vps-control/tests/fcm-010-13-macos-external-controller-contract.test.js'
   push:
     branches: [main]
     paths:
       - '.github/workflows/fcm-010-13-11-macos-external-controller.yml'
       - 'chatgpt-vps-control/scripts/fcm-010-13-protected-account-preflight.mjs'
-      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller.mjs'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller-v2.mjs'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-live-journey.mjs'
       - 'chatgpt-vps-control/tests/fcm-010-13-macos-external-controller-contract.test.js'
   workflow_dispatch:
 
@@ -50,7 +52,8 @@ jobs:
         run: |
           set -euo pipefail
           node --check chatgpt-vps-control/scripts/fcm-010-13-protected-account-preflight.mjs
-          node --check chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller.mjs
+          node --check chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller-v2.mjs
+          node --check chatgpt-vps-control/scripts/fcm-010-13-macos-live-journey.mjs
           node --test chatgpt-vps-control/tests/fcm-010-13-macos-external-controller-contract.test.js
 
   protected-account-preflight:
@@ -185,9 +188,9 @@ jobs:
           set -euo pipefail
           mkdir -p "$EVIDENCE_DIR"
           cp "$RUNNER_TEMP/dispatched-target-run.json" "$EVIDENCE_DIR/dispatched-target-run.json"
-          node chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller.mjs 2>&1 | tee "$EVIDENCE_DIR/controller.log"
+          node chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller-v2.mjs 2>&1 | tee "$EVIDENCE_DIR/controller.log"
           jq -e --arg run "$TARGET_RUN_ID" --arg device "$EXPECTED_DEVICE_ID" \
-            '.schema == "fcm-010.13.11.external-controller.v1" and .status == "passed" and .runId == $run and .deviceId == $device and .finalAction.agentId == "settings-logout" and .finalAction.action == "invoke"' \
+            '.schema == "fcm-010.13.11.external-controller.v2" and .status == "passed" and .runId == $run and .deviceId == $device and .finalAction.agentId == "settings-logout" and .finalAction.action == "invoke"' \
             "$EVIDENCE_DIR/external-controller-summary.json" >/dev/null
 
       - name: Require the exact target run to finish green
