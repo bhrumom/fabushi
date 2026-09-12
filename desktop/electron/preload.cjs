@@ -9,7 +9,6 @@ const MAHAYANA_EDGE = 'mahayana-host';
 const NATIVE_EDGE = 'native-desktop';
 const MAHAYANA_RUNTIME_EVENT = 'runtime-event';
 const EDGE_CONTRACT_VERSION = 1;
-const MAHAYANA_ASSISTANT_CONVERSATION_ID = 'mahayana-ai:agent:assistant';
 const NATIVE_EVENTS = new Set([
   'app-agent-surface-request',
   'mcp-auth-completed',
@@ -74,42 +73,6 @@ function subscribeEdge(edge, eventName, listener) {
   return () => ipcRenderer.off(channel, forward);
 }
 
-function projectMahayanaRuntimePayload(payload) {
-  if (payload?.type !== 'conversation.listed' || !Array.isArray(payload.conversations)) return payload;
-  const assistantIndex = payload.conversations.findIndex(
-    (conversation) => conversation?.id === MAHAYANA_ASSISTANT_CONVERSATION_ID,
-  );
-  if (assistantIndex >= 0) {
-    const assistant = payload.conversations[assistantIndex];
-    // The canonical Mahayana assistant is a messenger/agent conversation. A
-    // later Host projection may describe the same id as `miniapp`; the
-    // Electron transport intentionally removes miniapp conversations from the
-    // messenger list, so leaving this shape untouched erases the exact
-    // semantic peer. Preserve every authoritative field and only repair the
-    // projection kind needed to keep the canonical assistant in Messenger.
-    if (String(assistant?.kind ?? '').trim().toLowerCase() !== 'miniapp') return payload;
-    const conversations = [...payload.conversations];
-    conversations[assistantIndex] = { ...assistant, kind: 'agent' };
-    return { ...payload, conversations };
-  }
-  const parsedTimestamp = typeof payload.timestamp === 'string' ? Date.parse(payload.timestamp) : NaN;
-  const updatedAtMs = Number.isFinite(parsedTimestamp) ? parsedTimestamp : Date.now();
-  return {
-    ...payload,
-    conversations: [
-      ...payload.conversations,
-      {
-        id: MAHAYANA_ASSISTANT_CONVERSATION_ID,
-        title: '大乘助手',
-        kind: 'agent',
-        pinned: false,
-        unreadCount: 0,
-        updatedAtMs,
-      },
-    ],
-  };
-}
-
 // Runtime bootstrap events are one-shot projections emitted by the Rust Host.
 // Keep one permanent preload listener so React surface transitions cannot drop
 // them across any number of HostClient/Messenger transport subscriptions. Retain
@@ -136,11 +99,10 @@ function clearMahayanaReplay() {
 }
 const mahayanaRuntimeChannel = eventChannel(MAHAYANA_EDGE, MAHAYANA_RUNTIME_EVENT);
 ipcRenderer.on(mahayanaRuntimeChannel, (_event, payload) => {
-  const projectedPayload = projectMahayanaRuntimePayload(payload);
-  if (MAHAYANA_REPLAYABLE_EVENTS.has(projectedPayload?.type)) {
-    mahayanaReplay.set(projectedPayload.type, projectedPayload);
+  if (MAHAYANA_REPLAYABLE_EVENTS.has(payload?.type)) {
+    mahayanaReplay.set(payload.type, payload);
   }
-  for (const listener of mahayanaRuntimeListeners) listener(projectedPayload);
+  for (const listener of mahayanaRuntimeListeners) listener(payload);
 });
 
 const mahayana = Object.freeze({
