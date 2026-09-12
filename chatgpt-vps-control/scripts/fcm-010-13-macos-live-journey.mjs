@@ -327,10 +327,13 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   let messageIdsBeforeSend = new Set();
   let sentMessageRowId = "";
   await category("send", async () => {
-    // The dedicated peer-unread semantic node lives on the chat-list avatar surface.
-    // Verify the false baseline there before selecting the assistant conversation,
-    // because opening the conversation intentionally unmounts that list-only node.
+    // The preceding journey intentionally leaves the assistant conversation active.
+    // Move to a known non-assistant peer first, then return to the chat-list surface;
+    // merely selecting the Chats section does not clear the active peer.
+    await navigateSection("频道");
+    await openPeer(channelAId);
     await navigateSection("聊天");
+    record("unread-baseline-list-state-established", { viaAgentId: channelAId });
     const unreadBaseline = await waitForAssistantUnread(false, 30_000);
     record("unread-baseline-cleared", unreadBaseline);
     await openAssistantConversation();
