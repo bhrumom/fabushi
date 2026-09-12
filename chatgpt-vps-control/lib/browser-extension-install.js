@@ -164,7 +164,11 @@ export async function installBrowserExtension({ currentPlatform = platform(), ma
     await mkdir(destination.directory, { recursive: true, mode: 0o700 });
     for (const nativeHost of nativeHosts) {
       const target = join(destination.directory, `${nativeHost.name}.json`);
-      await writeFile(target, `${JSON.stringify(nativeHost, null, 2)}\n`, { mode: 0o600 });
+      // Native Messaging manifests contain no credentials and must remain
+      // readable by the browser's sandboxed launcher. Keep the containing
+      // directory private, but use the documented 0644 manifest mode.
+      await writeFile(target, `${JSON.stringify(nativeHost, null, 2)}\n`, { mode: 0o644 });
+      await chmod(target, 0o644);
       installedManifests.push({ browser: destination.browser, name: nativeHost.name, path: target });
     }
   }

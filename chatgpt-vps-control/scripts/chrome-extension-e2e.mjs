@@ -60,7 +60,10 @@ async function captureCheckpoint(page, path) {
 
 async function writeNativeHostManifest(directory, host) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  await writeFile(join(directory, `${host.name}.json`), `${JSON.stringify(host, null, 2)}\n`, { mode: 0o600 });
+  // Chrome reads the manifest before launching the host. Keep the directory
+  // private to the CI user while matching Chrome's documented sample, which
+  // makes the non-secret manifest world-readable for browser sandbox checks.
+  await writeFile(join(directory, `${host.name}.json`), `${JSON.stringify(host, null, 2)}\n`, { mode: 0o644 });
 }
 
 function fakeBrowserHostSource({ resultPath, screenshotPath, pidPath }) {
