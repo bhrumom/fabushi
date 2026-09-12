@@ -55,6 +55,14 @@ impl ConversationState {
     fn mark_read(&mut self) {
         self.read_through = self.history.len();
     }
+
+    fn record_assistant_completion(&mut self, message: Message, hidden: bool) -> bool {
+        if hidden {
+            return false;
+        }
+        self.history.push(message);
+        true
+    }
 }
 
 fn history_request_marks_read(limit: u32) -> bool {
@@ -219,6 +227,7 @@ impl ConversationProvider for KernelConversationProvider {
             events,
             state: Arc::clone(&self.state),
             history_path: self.history_path.clone(),
+            hidden: request.hidden,
         });
         self.backend
             .run(
@@ -280,6 +289,7 @@ struct RuntimeKernelEventBridge {
     events: SharedConversationEventSink,
     state: Arc<Mutex<ConversationState>>,
     history_path: Option<PathBuf>,
+    hidden: bool,
 }
 
 impl RuntimeKernelEventBridge {
@@ -329,14 +339,16 @@ impl KernelEventSink for RuntimeKernelEventBridge {
                     created_at_ms: now_ms(),
                     metadata: json!({"runtime": "mahayana-kernel"}),
                 };
-                self.state
+                let should_persist = self
+                    .state
                     .lock()
                     .map_err(|_| {
                         KernelError::Backend("kernel conversation state mutex poisoned".into())
                     })?
-                    .history
-                    .push(message.clone());
-                persist_history(&self.state, self.history_path.as_deref())?;
+                    .record_assistant_completion(message.clone(), self.hidden);
+                if should_persist {
+                    persist_history(&self.state, self.history_path.as_deref())?;
+                }
                 self.emit_runtime(RuntimeEvent::MessageCompleted {
                     operation_id: self.operation_id.clone(),
                     message,
@@ -603,6 +615,27 @@ mod tests {
         state
             .history
             .push(message(MessageRole::Assistant, "fresh reply"));
+        assert_eq!(state.unread_count(&conversation_id), 1);
+    }
+
+    #[test]
+    fn hidden_assistant_completion_stays_out_of_visible_history_and_unread() {
+        let conversation_id =
+            ConversationId(mahayana_core::MAHAYANA_AI_CONVERSATION_ID.to_string());
+        let mut state = ConversationState::new(Vec::new());
+
+        assert!(!state.record_assistant_completion(
+            message(MessageRole::Assistant, "hidden reply"),
+            true,
+        ));
+        assert!(state.history.is_empty());
+        assert_eq!(state.unread_count(&conversation_id), 0);
+
+        assert!(state.record_assistant_completion(
+            message(MessageRole::Assistant, "visible reply"),
+            false,
+        ));
+        assert_eq!(state.history.len(), 1);
         assert_eq!(state.unread_count(&conversation_id), 1);
     }
 
