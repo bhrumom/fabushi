@@ -217,8 +217,14 @@ test('FCM-010.13.11 real App Surface journey leaves an active assistant before p
       role: 'img',
     });
 
+    // The unread poll itself can advance App Surface generation. Re-resolve the
+    // stable assistant id immediately before invoke, matching production's
+    // openAssistantConversation() behavior instead of intentionally sending a stale generation.
+    const beforeReopen = await findAssistant(client);
+    expect(beforeReopen.count).toBe(1);
+    expect(beforeReopen.matches[0]?.agentId).toBe(assistantAgentId);
     const reopened = await client.call('action', {
-      generation: afterDeselect.generation,
+      generation: beforeReopen.generation,
       agentId: assistantAgentId,
       action: 'invoke',
     }) as { status?: string; target?: { agentId?: string } };
