@@ -162,6 +162,25 @@ async function callDevice(toolName, args = {}) {
   return parseRelay(result, toolName);
 }
 
+async function waitForAppReady() {
+  let session = null;
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    session = await callDevice("ci_session_status", {});
+    if (session.deviceId !== expectedDeviceId) {
+      throw new Error(`CI session switched away from exact device: ${JSON.stringify(session)}`);
+    }
+    if (session.appReady === true) {
+      record("app-ready", { phase: session.phase || null, updatedAt: session.updatedAt || null });
+      return session;
+    }
+    if (attempt % 10 === 0) {
+      record("app-ready-wait", { phase: session.phase || null, message: session.message || null, updatedAt: session.updatedAt || null });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(`CI session never became app-ready for exact device: ${JSON.stringify(session)}`);
+}
+
 async function snapshot() { return callDevice("fabushi.app.snapshot", { maxElements: 500, includeText: true }); }
 async function find(query) { return callDevice("fabushi.app.find", { ...query, limit: query.limit || 100 }); }
 async function waitFor(query, timeoutMs = 30_000) {
@@ -277,8 +296,7 @@ try {
   await waitForDevice();
 
   await category("startup", async () => {
-    const session = await callDevice("ci_session_status", {});
-    if (session.deviceId !== expectedDeviceId || session.appReady !== true) throw new Error(`CI session is not app-ready for exact device: ${JSON.stringify(session)}`);
+    await waitForAppReady();
     const status = await callDevice("fabushi.app.status", {});
     if (status.available !== true || status.platform !== "electron") throw new Error(`Fabushi App MCP not available on Electron: ${JSON.stringify(status)}`);
     await snapshot();
