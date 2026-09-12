@@ -327,9 +327,13 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   let messageIdsBeforeSend = new Set();
   let sentMessageRowId = "";
   await category("send", async () => {
-    await openAssistantConversation();
+    // The dedicated peer-unread semantic node lives on the chat-list avatar surface.
+    // Verify the false baseline there before selecting the assistant conversation,
+    // because opening the conversation intentionally unmounts that list-only node.
+    await navigateSection("聊天");
     const unreadBaseline = await waitForAssistantUnread(false, 30_000);
     record("unread-baseline-cleared", unreadBaseline);
+    await openAssistantConversation();
     const tracking = await messageReceiveTracker.captureBeforeSend(async () => {
       await sendText(sendProbe);
       const own = await find({ text: sendProbe, limit: 100 });
