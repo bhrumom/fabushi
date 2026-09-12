@@ -31,6 +31,7 @@ async function createRuntimeSource(root) {
   await writeFixture(join(root, "lib", "app-agent-surface-client.d.ts"), "export declare function createAppAgentSurfaceClient(): unknown;\n");
   await writeFixture(join(root, "lib", "app-agent-tools.js"), "export {};\n");
   await writeFixture(join(root, "scripts", "browser-extension-host.mjs"), "export {};\n");
+  await writeFixture(join(root, "scripts", "chrome-platform-host.mjs"), "export {};\n");
   for (const relativePath of [
     "manifest.json",
     "app.html",

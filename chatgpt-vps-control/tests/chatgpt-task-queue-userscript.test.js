@@ -38,7 +38,7 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   assert.match(runner, /chrome\.runtime\.onInstalled/);
   assert.match(runner, /chrome\.tabs\.onUpdated/);
   assert.match(runner, /__fabushiDesktopRequest/);
-  assert.match(core, /@require/);
+  assert.match(core, /forbiddenDirectives/);
   assert.match(core, /dynamic WebAssembly/);
   assert.match(content, /fabushi\.userscript\.pageReady/);
   assert.match(app, /userscript-chatgpt-task-queue/);

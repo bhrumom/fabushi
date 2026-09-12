@@ -625,7 +625,12 @@ async function connectDesktopEnhancements() {
     }
     await desktopRequest("feature.info", {}, 10_000);
     setDesktopConnection(true);
-    setAuth({ loggedIn: false, deferred: true, provider: "Fabushi" });
+    // Account state remains owned by the desktop Host. The extension only
+    // receives the redacted auth summary needed to render the account chip;
+    // older Hosts that do not expose this method keep the deferred state.
+    const auth = await desktopRequest("feature.auth.status", {}, 10_000)
+      .catch(() => ({ loggedIn: false, deferred: true, provider: "Fabushi" }));
+    setAuth(auth);
     await Promise.allSettled([refreshBrowser(), refreshMarketplace("")]);
   } catch (error) {
     setDesktopConnection(false, error.message);
