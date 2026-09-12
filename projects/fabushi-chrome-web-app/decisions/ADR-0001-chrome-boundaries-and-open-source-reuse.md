@@ -14,3 +14,15 @@ This is preferred over wholesale branch merging because it keeps the existing MC
 browser-session boundary, allows separate security review, and keeps credentials
 unreachable from extension code. Compatibility is maintained at command/event level while
 generation/title/URL checks strengthen stale-claim behavior.
+
+For store delivery, use Google's current Chrome Web Store API v2 upload/fetchStatus/publish
+endpoints with a protected GitHub environment and short-lived OAuth access tokens minted
+from a refresh token. The workflow is manual and exact-SHA bound, defaults to a redacted
+dry run, submits with review enabled, and never places credentials in the extension or
+release artifacts. The listing ID remains an external prerequisite because the v2 API
+updates an existing item; first-time listing creation stays in the Developer Dashboard.
+
+The browser bridge also retries a transient `Page.captureScreenshot` surface error by
+bringing the target forward and requesting the non-surface capture path. This mirrors the
+existing desktop CUA fallback and preserves background-tab control without weakening other
+CDP error handling.

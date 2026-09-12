@@ -10,7 +10,7 @@
     "chrome:validate": "node scripts/validate-chrome-extension.mjs",
     "chrome:package": "npm run chrome:validate && node scripts/package-chrome-extension.mjs",
     "chrome:e2e": "node scripts/chrome-extension-e2e.mjs",
-    "chrome:release": "npm run chrome:validate && node --test tests/browser-extension.test.js tests/chrome-platform.test.js tests/extension-entry.test.js tests/chatgpt-task-queue-userscript.test.js tests/chrome-extension-e2e-contract.test.js && node scripts/package-chrome-extension.mjs",
+    "chrome:release": "npm run chrome:validate && node --test tests/browser-extension.test.js tests/chrome-platform.test.js tests/extension-entry.test.js tests/chatgpt-task-queue-userscript.test.js tests/chrome-extension-e2e-contract.test.js tests/chrome-web-store-publish-contract.test.js && node scripts/package-chrome-extension.mjs",
     "remote-mcp": "node bin/fabushi-remote-mcp.js",
     "device-agent": "node bin/fabushi-device-agent.js"
   },
