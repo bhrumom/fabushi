@@ -13,3 +13,7 @@ export function normalizeDeviceCallArguments(toolName, args = {}) {
     limit: Math.min(requestedLimit, MAX_FABUSHI_APP_FIND_LIMIT),
   };
 }
+
+export function serializeDeviceCallArguments(toolName, args = {}) {
+  return JSON.stringify(normalizeDeviceCallArguments(toolName, args));
+}
