@@ -1,6 +1,13 @@
 name: FCM-010.13.11 macOS external controller
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/fcm-010-13-11-macos-external-controller.yml'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-protected-account-preflight.mjs'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller.mjs'
+      - 'chatgpt-vps-control/tests/fcm-010-13-macos-external-controller-contract.test.js'
   push:
     branches: [main]
     paths:
@@ -15,7 +22,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: fcm-010-13-11-external-controller
+  group: fcm-010-13-11-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -25,8 +32,31 @@ env:
   FABUSHI_MCP_ORIGIN: https://fabushi-mcp.ombhrum.com
 
 jobs:
+  contract:
+    name: External controller contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Parse controller scripts and enforce fail-closed contract
+        run: |
+          set -euo pipefail
+          node --check chatgpt-vps-control/scripts/fcm-010-13-protected-account-preflight.mjs
+          node --check chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller.mjs
+          node --test chatgpt-vps-control/tests/fcm-010-13-macos-external-controller-contract.test.js
+
   protected-account-preflight:
     name: Protected account production MCP preflight
+    if: github.event_name != 'pull_request'
+    needs: contract
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: production
@@ -72,6 +102,7 @@ jobs:
 
   dispatch-and-control:
     name: Dispatch frozen lane and externally control run-owned App
+    if: github.event_name != 'pull_request'
     needs: protected-account-preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 55
@@ -121,8 +152,8 @@ jobs:
           target_run_id=''
           for attempt in $(seq 1 90); do
             runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW_ID/runs?event=workflow_dispatch&branch=$IMMUTABLE_RELEASE_TAG&per_page=30")"
-            target_run_id="$(jq -r --arg sha "$FROZEN_SOURCE_SHA" --arg marker "$marker" \
-              '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == env.IMMUTABLE_RELEASE_TAG and .created_at >= $marker)] | sort_by(.created_at) | last | .id // empty' <<<"$runs")"
+            target_run_id="$(jq -r --arg sha "$FROZEN_SOURCE_SHA" --arg branch "$IMMUTABLE_RELEASE_TAG" --arg marker "$marker" \
+              '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == $branch and .created_at >= $marker)] | sort_by(.created_at) | last | .id // empty' <<<"$runs")"
             if test -n "$target_run_id"; then break; fi
             sleep 2
           done
