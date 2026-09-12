@@ -33,6 +33,55 @@ export function newestMessageRowsFromSnapshot(snapshotValue, limit = 100) {
     .slice(-limit);
 }
 
+export function createMessageReceiveTracker({
+  callDevice,
+  sleepFn = sleep,
+  timeoutMs = 90_000,
+  intervalMs = 800,
+  maxAttempts = null,
+}) {
+  if (typeof callDevice !== "function") throw new Error("message receive tracker requires callDevice");
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("message receive tracker timeout must be positive");
+  if (!Number.isFinite(intervalMs) || intervalMs < 0) throw new Error("message receive tracker interval must be non-negative");
+  if (maxAttempts != null && (!Number.isInteger(maxAttempts) || maxAttempts < 1)) throw new Error("message receive tracker maxAttempts must be a positive integer");
+
+  async function readNewestRows() {
+    const fresh = await callDevice("fabushi.app.snapshot", { maxElements: 500, includeText: true });
+    return newestMessageRowsFromSnapshot(fresh);
+  }
+
+  async function captureBeforeSend(send) {
+    if (typeof send !== "function") throw new Error("message receive tracker requires a send callback");
+    const beforeIds = new Set((await readNewestRows()).map((item) => String(item?.agentId || "")));
+    await send();
+    return beforeIds;
+  }
+
+  async function waitForIncoming(beforeIds, ownText) {
+    if (!(beforeIds instanceof Set)) throw new Error("message receive tracker requires a Set baseline");
+    const deadline = Date.now() + timeoutMs;
+    let attempt = 0;
+    let last = null;
+    while (Date.now() < deadline && (maxAttempts == null || attempt < maxAttempts)) {
+      attempt += 1;
+      const rows = await readNewestRows();
+      const candidate = rows.find((item) => {
+        const id = String(item?.agentId || "");
+        const text = String(item?.text || item?.name || "");
+        return !beforeIds.has(id) && text && !text.includes(ownText);
+      });
+      if (candidate) {
+        return { agentId: candidate.agentId, text: String(candidate.text || candidate.name || "").slice(0, 240) };
+      }
+      last = rows.at(-1) ?? null;
+      if (intervalMs > 0) await sleepFn(intervalMs);
+    }
+    throw new Error(`new incoming assistant message timed out; last=${JSON.stringify(last)}`);
+  }
+
+  return { captureBeforeSend, waitForIncoming };
+}
+
 export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDeviceId, runId, runAttempt, record }) {
   const completedCategories = [];
   async function callDevice(toolName, args = {}) {
@@ -45,6 +94,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
       },
     });
   }
+  const messageReceiveTracker = createMessageReceiveTracker({ callDevice });
   async function snapshot() { return callDevice("fabushi.app.snapshot", { maxElements: 500, includeText: true }); }
   async function find(query) { return callDevice("fabushi.app.find", query); }
   async function waitFor(query, timeoutMs = 30_000) {
@@ -199,10 +249,6 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     await invokeTest(agentId.startsWith("test:") ? agentId.slice(5) : agentId);
     await waitFor({ agentId: "test:messenger-input", state: "visible" });
   }
-  async function messageRowIds() {
-    const fresh = await snapshot();
-    return new Set(newestMessageRowsFromSnapshot(fresh).map((item) => String(item?.agentId || "")));
-  }
   async function waitForAssistantUnread(previousPeerText) {
     return poll("assistant peer unread badge", async () => {
       const found = await find({ agentId: ASSISTANT_PEER_ID, limit: 1 });
@@ -213,15 +259,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     }, 90_000, 800);
   }
   async function waitForIncomingMessage(beforeIds, ownText) {
-    return poll("new incoming assistant message", async () => {
-      const rows = newestMessageRowsFromSnapshot(await snapshot());
-      const candidate = rows.find((item) => {
-        const id = String(item?.agentId || "");
-        const text = String(item?.text || item?.name || "");
-        return !beforeIds.has(id) && text && !text.includes(ownText);
-      });
-      return { ok: Boolean(candidate), value: candidate ? { agentId: candidate.agentId, text: String(candidate.text || candidate.name || "").slice(0, 240) } : null };
-    }, 90_000, 800);
+    return messageReceiveTracker.waitForIncoming(beforeIds, ownText);
   }
   async function ensureGlobalDharmaInstalled() {
     await closeGlobalSearchIfOpen();
@@ -276,8 +314,7 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
   let messageIdsBeforeSend = new Set();
   await category("send", async () => {
     await openAssistantConversation();
-    messageIdsBeforeSend = await messageRowIds();
-    await sendText(sendProbe);
+    messageIdsBeforeSend = await messageReceiveTracker.captureBeforeSend(() => sendText(sendProbe));
     const own = await find({ text: sendProbe, limit: 100 });
     if (!(own.matches || []).some((item) => String(item?.agentId || "").startsWith("message-actions:"))) throw new Error("sent probe did not resolve to a real semantic message row");
     await navigateSection("频道");
