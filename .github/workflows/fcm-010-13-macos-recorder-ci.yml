@@ -1,0 +1,64 @@
+name: FCM-010.13.11 macOS recorder validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/fcm-010-13-macos-recorder-ci.yml'
+      - '.github/workflows/macos-interactive-app-e2e.yml'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-session-recorder.sh'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-session-video.swift'
+      - 'chatgpt-vps-control/tests/macos-interactive-app-e2e-contract.test.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recorder:
+    name: Hosted macOS playable session recorder
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize recorder evidence path
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/fcm-010-13-recorder-validation"
+          rm -rf "$evidence"
+          mkdir -p "$evidence"
+          echo "FCM_RECORDER_EVIDENCE=$evidence" >> "$GITHUB_ENV"
+
+      - name: Record and decode a real hosted-runner session
+        shell: bash
+        env:
+          FCM_MACOS_RECORDING_INTERVAL_SECONDS: '0.5'
+          FCM_MACOS_RECORDING_MIN_BYTES: '10000'
+        run: |
+          set -euo pipefail
+          evidence="$FCM_RECORDER_EVIDENCE"
+          bash chatgpt-vps-control/scripts/fcm-010-13-macos-session-recorder.sh start "$evidence"
+          sleep 15
+          bash chatgpt-vps-control/scripts/fcm-010-13-macos-session-recorder.sh assert-live "$evidence"
+          bash chatgpt-vps-control/scripts/fcm-010-13-macos-session-recorder.sh stop "$evidence"
+          bash chatgpt-vps-control/scripts/fcm-010-13-macos-session-recorder.sh verify "$evidence"
+          jq -e '.schema == "fabushi.macos-session-recorder-preflight.v1" and .failClosed == true and .fallbackRecorderPlayable == true' "$evidence/recorder-preflight.json" >/dev/null
+          jq -e '.schema == "fabushi.macos-session-recorder.v1" and .playable == true and .firstSampleDecoded == true and .frames >= 3 and .durationSeconds > 0 and .movieBytes > .minimumMovieBytes' "$evidence/recorder-final.json" >/dev/null
+          test -s "$evidence/macos-session.mov"
+          shasum -a 256 "$evidence/macos-session.mov" > "$evidence/macos-session.mov.sha256"
+          /usr/bin/find "$evidence" -type f -print | sort > "$evidence/files.txt"
+
+      - name: Upload recorder validation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fcm-010-13-macos-recorder-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.FCM_RECORDER_EVIDENCE }}/
+          if-no-files-found: error
+          retention-days: 30

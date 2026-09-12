@@ -6,8 +6,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { runLiveJourney } from "./fcm-010-13-macos-live-journey.mjs";
 
-const FROZEN_SOURCE = "7ee12b790e18049d2b9509b0c29128dd2ace690b";
-const IMMUTABLE_TAG = "desktop-1.2.56-7ee12b790e18";
+const FROZEN_SOURCE = String(process.env.FROZEN_SOURCE_SHA || "").trim();
+const IMMUTABLE_TAG = String(process.env.IMMUTABLE_RELEASE_TAG || "").trim();
 const origin = String(process.env.FABUSHI_MCP_ORIGIN || "https://fabushi-mcp.ombhrum.com").replace(/\/$/u, "");
 const mcpUrl = `${origin}/mcp`;
 const username = String(process.env.FABUSHI_CI_TEST_USERNAME || "").trim();
@@ -20,6 +20,8 @@ const expectedDeviceId = String(process.env.EXPECTED_DEVICE_ID || "").trim();
 const evidenceDir = String(process.env.EVIDENCE_DIR || "").trim();
 
 if (!username || !password) throw new Error("managed Fabushi test account credentials are required");
+if (!/^[0-9a-f]{40}$/u.test(FROZEN_SOURCE)) throw new Error("FROZEN_SOURCE_SHA must be an exact commit SHA");
+if (!/^desktop-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{12}$/u.test(IMMUTABLE_TAG)) throw new Error("IMMUTABLE_RELEASE_TAG must be an immutable desktop source tag");
 if (!runId || !runAttempt || !/^\d+$/u.test(runId) || !/^\d+$/u.test(runAttempt)) throw new Error("target run id/attempt are required");
 if (headSha !== FROZEN_SOURCE) throw new Error(`controller refuses non-frozen source ${headSha}`);
 if (headBranch !== IMMUTABLE_TAG) throw new Error(`controller refuses non-immutable tag ${headBranch}`);

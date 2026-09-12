@@ -110,7 +110,11 @@ export async function runLiveJourney({ callDevice: invokeDeviceCall, expectedDev
     throw new Error(`CI session never became app-ready for exact device: ${JSON.stringify(session)}`);
   }
   async function openAssistantConversation() {
-    await invokeTest(ASSISTANT_PEER_ID.slice(5));
+    await navigateSection("聊天");
+    const found = await find({ agentId: ASSISTANT_PEER_ID, limit: 1 });
+    const peer = chooseUniqueMatch(found, { agentId: ASSISTANT_PEER_ID });
+    record("assistant-semantic-projection-resolved", { agentId: peer.agentId, generation: found.generation });
+    await callDevice("fabushi.app.action", { generation: found.generation, agentId: ASSISTANT_PEER_ID, action: "invoke" });
     await waitFor({ agentId: "test:messenger-input", state: "visible" });
   }
   async function openMessageMenu(text) {
