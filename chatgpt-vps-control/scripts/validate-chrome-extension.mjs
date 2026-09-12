@@ -24,7 +24,7 @@ async function mustExist(relative) {
 const requiredPermissions = ["alarms", "debugger", "downloads", "nativeMessaging", "scripting", "storage", "tabGroups", "tabs", "userScripts", "webNavigation"];
 assert(manifest.manifest_version === 3, "manifest_version must be 3");
 assert(manifest.name === "Fabushi" && manifest.short_name === "Fabushi", "the shipped extension must use the Fabushi identity");
-assert(manifest.version === "0.5.0", "Fabushi Chrome release must be version 0.5.0");
+assert(manifest.version === "0.6.0", "Fabushi Chrome release must be version 0.6.0");
 assert(manifest.minimum_chrome_version === "120", "Chrome 120 is the supported minimum for MV3 debugger/userScripts behavior");
 assert(manifest.action?.default_popup === "app.html", "action.default_popup must be app.html");
 assert(manifest.background?.service_worker === "service-worker.js", "background.service_worker must be service-worker.js");
@@ -35,10 +35,11 @@ assert(Array.isArray(manifest.content_scripts) && manifest.content_scripts.some(
 assert(releaseReadme.includes(`Production candidate: **${manifest.version}**`), "Chrome Web Store README production candidate must match manifest.version");
 assert(releaseReadme.includes("Every Chrome Web Store update must increment"), "release docs must preserve the monotonic version gate");
 
-for (const relative of [manifest.action.default_popup, manifest.background.service_worker, "app.css", "app.js", "platform-bridge.js", "browser-control.js", "userscript-core.js", "userscript-runner.js", "userscript-content.js", "userscript.css", "userscript/chatgpt-auto-confirm.user.js", "marketplace/chatgpt-task-queue.user.js"]) await mustExist(relative);
+for (const relative of [manifest.action.default_popup, manifest.background.service_worker, "app.css", "app.js", "platform-bridge.js", "browser-control.js", "account-browser-agent.js", "userscript-core.js", "userscript-runner.js", "userscript-content.js", "userscript.css", "userscript/chatgpt-auto-confirm.user.js", "marketplace/chatgpt-task-queue.user.js"]) await mustExist(relative);
 const serviceWorker = await readFile(join(extension, manifest.background.service_worker), "utf8");
 assert(serviceWorker.includes('import "./platform-bridge.js"'), "service worker must load the product bridge");
 assert(serviceWorker.includes('import "./browser-control.js"'), "service worker must load the browser-control bridge");
+assert(serviceWorker.includes('import "./account-browser-agent.js"'), "service worker must load the same-account official MCP browser agent");
 assert(serviceWorker.includes('import "./userscript-runner.js"'), "service worker must load the existing userscript runtime");
 
 const appHtml = await readFile(join(extension, "app.html"), "utf8");
@@ -61,6 +62,7 @@ assert(!/https?:\/\/[^\s"']+\.js/i.test(`${serviceWorker}\n${appHtml}\n${appJs}\
 
 const platformBridge = await readFile(join(extension, "platform-bridge.js"), "utf8");
 const browserControl = await readFile(join(extension, "browser-control.js"), "utf8");
+const accountBrowserAgent = await readFile(join(extension, "account-browser-agent.js"), "utf8");
 assert(platformBridge.includes("com.fabushi.chrome_platform"), "product bridge must use com.fabushi.chrome_platform");
 assert(browserControl.includes("com.fabushi.browser_control"), "browser bridge must use the new Fabushi browser-control host");
 assert(!browserControl.includes("com.fabushi.chatgpt_computer_control"), "production browser bridge must not use the legacy host");
@@ -69,6 +71,11 @@ for (const action of ["activate_tab", "close_tab", "navigate", "reload", "back",
 assert(browserControl.includes("Target.attachedToTarget") && browserControl.includes("Target.detachedFromTarget"), "browser bridge must forward CDP child-session events");
 assert(browserControl.includes("generation") && browserControl.includes("The browser extension generation changed"), "claims must fail closed on stale extension generations");
 assert(browserControl.includes("chrome.debugger.attach"), "browser bridge must use Chrome Debugger API");
+assert(accountBrowserAgent.includes("/api/auth/browser/start") && accountBrowserAgent.includes("/browser-agent"), "Chrome must independently authenticate and register with the official MCP gateway");
+assert(accountBrowserAgent.includes("chrome.storage.session") && !accountBrowserAgent.includes("refreshToken"), "Chrome account session must be memory-backed and must not retain refresh credentials");
+assert(accountBrowserAgent.includes("TRUSTED_CONTEXTS"), "Chrome account session must be restricted to trusted extension contexts");
+assert(accountBrowserAgent.includes("__fabushiBrowserRevokeClaims"), "logout must revoke browser claims");
+assert(accountBrowserAgent.includes("browser_events"), "remote Chrome must expose buffered Bridge events");
 
 assert(paths.includes('NATIVE_HOST_NAME = "com.fabushi.browser_control"'), "native host identity must be renamed to Fabushi browser_control");
 assert(installer.includes('join(runtimeRoot, "chrome-platform", "extension")'), "installer must stage the first-class Chrome platform source");
@@ -79,7 +86,7 @@ assert(desktopServer.includes("FORBIDDEN_EXTENSION_COMMANDS"), "desktop server m
 assert(desktopServer.includes("FABUSHI_CHROME_EXTENSION_ID") && desktopServer.includes("requires the published extension ID"), "desktop server must fail closed until the published Fabushi extension ID is configured");
 assert(desktopHost.includes("createChromePlatformServer") && desktopHost.includes("chromePlatformServer.broadcastEvent"), "desktop Host must own and forward the Chrome platform server");
 
-for (const relative of ["app.js", "platform-bridge.js", "browser-control.js", "userscript-core.js", "userscript-runner.js", "userscript-content.js", "service-worker.js"]) execFileSync(process.execPath, ["--check", join(extension, relative)], { stdio: "inherit" });
+for (const relative of ["app.js", "platform-bridge.js", "browser-control.js", "account-browser-agent.js", "userscript-core.js", "userscript-runner.js", "userscript-content.js", "service-worker.js"]) execFileSync(process.execPath, ["--check", join(extension, relative)], { stdio: "inherit" });
 execFileSync(process.execPath, ["--check", join(root, "scripts", "chrome-platform-host.mjs")], { stdio: "inherit" });
 execFileSync(process.execPath, ["--check", join(root, "scripts", "package-chrome-extension.mjs")], { stdio: "inherit" });
 execFileSync(process.execPath, ["--check", join(root, "scripts", "chrome-extension-e2e.mjs")], { stdio: "inherit" });

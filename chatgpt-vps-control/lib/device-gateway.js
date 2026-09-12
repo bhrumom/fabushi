@@ -4,6 +4,9 @@ import { WebSocketServer } from "ws";
 import { z } from "zod";
 
 const DEFAULT_AGENT_PATH = "/agent";
+const DEFAULT_BROWSER_AGENT_PATH = "/browser-agent";
+const BROWSER_AUTH_TIMEOUT_MS = 10_000;
+const DEFAULT_BROWSER_REAUTH_SECONDS = 10 * 60;
 const DEFAULT_CALL_TIMEOUT_SECONDS = 120;
 const MAX_CALL_TIMEOUT_SECONDS = 600;
 const MAX_ARGUMENTS_JSON_CHARS = 20 * 1024 * 1024;
@@ -180,7 +183,7 @@ function handleAgentMessage(socket, raw, options) {
     const toolSchemaVersion = toolCatalogVersion(tools);
     const leaseSeconds = Math.min(
       Math.max(Number(message.leaseSeconds) || Number(options.defaultLeaseSeconds) || DEFAULT_DEVICE_LEASE_SECONDS, MIN_DEVICE_LEASE_SECONDS),
-      Number(options.maxLeaseSeconds) || MAX_DEVICE_LEASE_SECONDS,
+      Number(socket.maxLeaseSeconds) || Number(options.maxLeaseSeconds) || MAX_DEVICE_LEASE_SECONDS,
     );
     const now = Date.now();
     const expiresAt = now + leaseSeconds * 1000;
@@ -244,6 +247,10 @@ function handleAgentMessage(socket, raw, options) {
 export function attachDeviceGateway(httpServer, options = {}) {
   if (attachedServers.has(httpServer)) return null;
   const path = options.path ?? process.env.DEVICE_GATEWAY_PATH ?? DEFAULT_AGENT_PATH;
+  const browserPath = options.browserPath ?? process.env.DEVICE_BROWSER_GATEWAY_PATH ?? DEFAULT_BROWSER_AGENT_PATH;
+  const browserExtensionId = String(options.browserExtensionId ?? process.env.FABUSHI_CHROME_EXTENSION_ID ?? "").trim();
+  const browserReauthSeconds = Math.max(MIN_DEVICE_LEASE_SECONDS, Math.min(Number(options.browserReauthSeconds) || DEFAULT_BROWSER_REAUTH_SECONDS, MAX_DEVICE_LEASE_SECONDS));
+  const browserOrigin = /^[a-p]{32}$/u.test(browserExtensionId) ? `chrome-extension://${browserExtensionId}` : "";
   const resolveAccount = options.resolveAccount;
   const legacyToken = String(options.token ?? process.env.DEVICE_GATEWAY_TOKEN ?? "");
   const legacyAccountId = String(options.legacyAccountId ?? process.env.DEVICE_GATEWAY_LEGACY_ACCOUNT_ID ?? "legacy");
@@ -272,12 +279,18 @@ export function attachDeviceGateway(httpServer, options = {}) {
   }
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_RESULT_BYTES });
+  const browserWss = new WebSocketServer({ noServer: true, maxPayload: MAX_RESULT_BYTES });
   const onUpgrade = async (req, socket, head) => {
     let pathname = "";
     try {
       pathname = new URL(req.url ?? "", "http://localhost").pathname;
     } catch {
       socket.destroy();
+      return;
+    }
+    if (pathname === browserPath) {
+      if (typeof resolveAccount !== "function" || !browserOrigin || String(req.headers.origin || "") !== browserOrigin) return rejectUpgrade(socket, 403, "Forbidden");
+      browserWss.handleUpgrade(req, socket, head, (ws) => browserWss.emit("connection", ws, req));
       return;
     }
     if (pathname !== path) return;
@@ -311,9 +324,42 @@ export function attachDeviceGateway(httpServer, options = {}) {
     socket.on("error", () => markDisconnected(socket));
   });
 
+  browserWss.on("connection", (socket) => {
+    socket.accountId = "";
+    socket.isAlive = true;
+    socket.authenticated = false;
+    const authTimer = setTimeout(() => rejectSocket(socket, 4003, "browser authentication timed out"), BROWSER_AUTH_TIMEOUT_MS);
+    authTimer.unref?.();
+    socket.once("message", async (raw) => {
+      let message;
+      try { message = JSON.parse(raw.toString("utf8")); } catch { return rejectSocket(socket, 1007, "invalid JSON"); }
+      if (message?.type !== "authenticate") return rejectSocket(socket, 1008, "browser authentication required");
+      try {
+        const account = await resolveAccount(String(message.accessToken || ""));
+        if (!account?.userId) throw new Error("invalid account");
+        socket.accountId = String(account.userId);
+        socket.maxLeaseSeconds = browserReauthSeconds;
+        socket.authenticated = true;
+        clearTimeout(authTimer);
+        socket.send(JSON.stringify({ type: "authenticated", accountLabel: String(account.label || "Fabushi").slice(0, 200) }));
+        audit(options, { type: "browser.authenticated", accountId: socket.accountId });
+        socket.on("message", (nextRaw) => handleAgentMessage(socket, nextRaw, options));
+      } catch {
+        clearTimeout(authTimer);
+        rejectSocket(socket, 4003, "browser authentication failed");
+      }
+    });
+    socket.on("close", () => {
+      clearTimeout(authTimer);
+      audit(options, { type: "browser.disconnected", accountId: socket.accountId, deviceId: socket.deviceId || "" });
+      markDisconnected(socket);
+    });
+    socket.on("error", () => markDisconnected(socket));
+  });
+
   const heartbeatTimer = setInterval(() => {
     const now = Date.now();
-    for (const socket of wss.clients) {
+    for (const socket of [...wss.clients, ...browserWss.clients]) {
       if (!socket.isAlive) {
         socket.terminate();
         continue;
@@ -334,11 +380,14 @@ export function attachDeviceGateway(httpServer, options = {}) {
 
   return {
     path,
+    browserPath,
     close: async () => {
       clearInterval(heartbeatTimer);
       httpServer.off("upgrade", onUpgrade);
       for (const socket of wss.clients) socket.close(1001, "gateway closing");
+      for (const socket of browserWss.clients) socket.close(1001, "gateway closing");
       await new Promise((resolve) => wss.close(resolve));
+      await new Promise((resolve) => browserWss.close(resolve));
     },
   };
 }

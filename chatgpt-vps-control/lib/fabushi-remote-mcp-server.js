@@ -241,6 +241,7 @@ export function createFabushiRemoteMcpServer(options = {}) {
   const requestedPort = Number(options.port ?? process.env.PORT ?? process.env.FABUSHI_REMOTE_MCP_PORT ?? 8790);
   const mcpPath = normalizePath(options.mcpPath ?? process.env.MCP_PATH_PREFIX, "/mcp");
   const agentPath = normalizePath(options.agentPath ?? process.env.DEVICE_GATEWAY_PATH, "/agent");
+  const browserAgentPath = normalizePath(options.browserAgentPath ?? process.env.DEVICE_BROWSER_GATEWAY_PATH, "/browser-agent");
   const publicOrigin = normalizePublicOrigin(options.publicOrigin ?? process.env.FABUSHI_REMOTE_MCP_PUBLIC_ORIGIN ?? "");
   const statePath = options.statePath ?? process.env.FABUSHI_REMOTE_MCP_STATE_PATH ?? resolve(homedir(), ".fabushi", "remote-mcp-state.json");
   const auditPath = options.auditPath ?? process.env.FABUSHI_REMOTE_MCP_AUDIT_PATH ?? resolve(homedir(), ".fabushi", "remote-mcp-audit.jsonl");
@@ -609,6 +610,8 @@ export function createFabushiRemoteMcpServer(options = {}) {
 
   gateway = attachDeviceGateway(httpServer, {
     path: agentPath,
+    browserPath: browserAgentPath,
+    browserExtensionId: options.browserExtensionId,
     resolveAccount: (token) => accountClient.resolveAccessToken(token),
     audit: (record) => void audit({ ...record, accountRef: record.accountId ? safeAccountRef(record.accountId) : undefined, accountId: undefined }),
     defaultLeaseSeconds: Number(options.defaultLeaseSeconds ?? process.env.DEVICE_DEFAULT_LEASE_SECONDS ?? 2 * 60 * 60),
@@ -620,6 +623,7 @@ export function createFabushiRemoteMcpServer(options = {}) {
     requestedPort,
     mcpPath,
     agentPath,
+    browserAgentPath,
     httpServer,
     accountClient,
     async listen() {

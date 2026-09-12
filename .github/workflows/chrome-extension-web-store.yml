@@ -22,11 +22,13 @@ on:
     paths:
       - "chatgpt-vps-control/chrome-platform/**"
       - "chatgpt-vps-control/lib/browser-extension-install.js"
+      - "chatgpt-vps-control/lib/device-gateway.js"
       - "chatgpt-vps-control/lib/runtime-install.js"
       - "chatgpt-vps-control/scripts/browser-extension-host.mjs"
       - "chatgpt-vps-control/scripts/chrome-platform-host.mjs"
       - "chatgpt-vps-control/scripts/chrome-extension-e2e.mjs"
       - "chatgpt-vps-control/tests/browser-extension.test.js"
+      - "chatgpt-vps-control/tests/device-gateway-account.test.js"
       - "chatgpt-vps-control/tests/chrome-platform.test.js"
       - "chatgpt-vps-control/tests/extension-entry.test.js"
       - "chatgpt-vps-control/tests/chatgpt-task-queue-userscript.test.js"

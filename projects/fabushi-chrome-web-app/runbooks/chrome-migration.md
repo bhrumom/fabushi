@@ -2,7 +2,7 @@
 
 1. Confirm exact-main Release, ZIP checksum and desktop package evidence. Stop active
    Computer Control operations and ask old Bridge to detach.
-2. Keep user and automation tabs open. Install/update Fabushi 0.5.0 from the verified CI
+2. Keep user and automation tabs open. Install/update Fabushi 0.6.0 from the verified CI
    artifact. Do not copy old claim/generation state.
 3. Open Fabushi Chrome, enumerate tabs, and claim only current title, URL and generation.
    Run snapshot/locator/CUA/navigation/download/create-retain-release/cleanup/detach checks

@@ -10,7 +10,7 @@
 ## Objective
 
 把独立的 ChatGPT Computer Control Bridge 完整融合到 Fabushi Chrome 扩展，让一个
-Fabushi 0.5.0 扩展同时承载产品 UI、桌面账户桥、现有 Chrome 的 Computer Control
+Fabushi 0.6.0 扩展同时承载产品 UI、桌面账户桥、现有 Chrome 的 Computer Control
 和已批准的自动化用户脚本；迁移完成后通过 Chrome UI 删除旧 Bridge 与官方 ChatGPT
 扩展。
 
@@ -22,6 +22,10 @@ Queue userscript. The PR Chrome packaged journey and static/security checks are 
 next gate is protected merge plus canonical-main packaged Electron/Chrome E2E. Release and
 local profile migration remain pending.
 
+CWA-007 adds independent Fabushi account login and account-scoped official MCP
+browser registration in the 0.6.0 change stream. PR, CI, canonical package/E2E,
+gateway deployment, Web Store release and production same-account proof remain required.
+
 ## Scope
 
 In scope: product shell parity with Fabushi 0.4.1, all nine Bridge commands,
@@ -31,4 +35,4 @@ Out of scope: copying official ChatGPT bookmarks/history/sidebar features or del
 Computer Use runtime/native accessibility helpers.
 
 Start with SOURCE_OF_TRUTH.md, then PROJECT.yaml, docs, management records, ADRs,
-evidence and runbooks. The atomic task is management/tasks/CWA-006-computer-control-bridge-fusion.md.
+evidence and runbooks. Active tasks are CWA-006 and CWA-007 under management/tasks/.
