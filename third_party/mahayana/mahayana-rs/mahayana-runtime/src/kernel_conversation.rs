@@ -68,10 +68,8 @@ impl ConversationState {
             .iter()
             .filter(|message| &message.conversation_id == conversation_id)
             .count();
-        self.read_through_by_conversation.insert(
-            conversation_id.as_str().to_string(),
-            visible_message_count,
-        );
+        self.read_through_by_conversation
+            .insert(conversation_id.as_str().to_string(), visible_message_count);
     }
 
     fn clear(&mut self) {
@@ -616,7 +614,9 @@ mod tests {
         let research = conversation("codex:agent:research");
         let mut state = ConversationState::new(Vec::new());
 
-        state.history.push(message(&assistant, MessageRole::User, "hello"));
+        state
+            .history
+            .push(message(&assistant, MessageRole::User, "hello"));
         state
             .history
             .push(message(&assistant, MessageRole::Assistant, "reply one"));
