@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: macos-interactive-release-chain-${{ github.event.workflow_run.head_sha || inputs.source_sha || github.run_id }}
+  group: macos-interactive-release-chain-${{ github.event.workflow_run.id || inputs.source_sha || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -37,15 +37,35 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
-            source_sha='${{ github.event.workflow_run.head_sha }}'
-            upstream_name='${{ github.event.workflow_run.name }}'
             upstream_id='${{ github.event.workflow_run.id }}'
             upstream_conclusion='${{ github.event.workflow_run.conclusion }}'
-            case "$upstream_name" in
-              'Native Electron macOS test release'|'Post-main E2E Release delivery') ;;
-              *) echo "Unexpected upstream workflow: $upstream_name" >&2; exit 1 ;;
-            esac
+            test -n "$upstream_id"
             test "$upstream_conclusion" = success
+
+            upstream="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$upstream_id")"
+            upstream_path="$(jq -r '.path // empty' <<<"$upstream")"
+            upstream_title="$(jq -r '.display_title // empty' <<<"$upstream")"
+            upstream_event="$(jq -r '.event // empty' <<<"$upstream")"
+            upstream_head_sha="$(jq -r '.head_sha // empty' <<<"$upstream")"
+
+            case "$upstream_path" in
+              .github/workflows/native-electron-release.yml)
+                source_sha="$upstream_head_sha"
+                ;;
+              .github/workflows/post-main-delivery.yml)
+                if [ "$upstream_event" != workflow_run ]; then
+                  echo "skip=true" >> "$GITHUB_OUTPUT"
+                  echo "Ignoring non-delivery Post-main contract run $upstream_id ($upstream_event)." >> "$GITHUB_STEP_SUMMARY"
+                  exit 0
+                fi
+                source_sha="$(sed -nE 's/^Post-main source=([0-9a-f]{40}) upstream=.*/\1/p' <<<"$upstream_title")"
+                ;;
+              *)
+                echo "Unexpected upstream workflow path: $upstream_path" >&2
+                exit 1
+                ;;
+            esac
+            upstream_name="$upstream_title"
           else
             source_sha="$DISPATCH_SOURCE_SHA"
             upstream_name='manual exact-source replay'
@@ -53,6 +73,7 @@ jobs:
           fi
           test -n "$source_sha"
           test "${#source_sha}" = 40
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
 
           releases="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[]')"
           release_tag="$(jq -sr --arg sha "$source_sha" '

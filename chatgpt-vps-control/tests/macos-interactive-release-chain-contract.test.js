@@ -12,8 +12,16 @@ test('macOS interactive release chain follows both canonical release producers',
   const source = await workflow();
   assert.match(source, /Native Electron macOS test release/u);
   assert.match(source, /Post-main E2E Release delivery/u);
-  assert.match(source, /github\.event\.workflow_run\.head_sha/u);
   assert.match(source, /inputs\.source_sha/u);
+});
+
+test('macOS interactive workflow_run identity is resolved from stable workflow path, not dynamic run-name', async () => {
+  const source = await workflow();
+  assert.match(source, /actions\/runs\/\$upstream_id/u);
+  assert.match(source, /\.github\/workflows\/native-electron-release\.yml/u);
+  assert.match(source, /\.github\/workflows\/post-main-delivery\.yml/u);
+  assert.match(source, /Post-main source=\(\[0-9a-f\]\{40\}\) upstream=/u);
+  assert.doesNotMatch(source, /github\.event\.workflow_run\.name/u);
 });
 
 test('macOS interactive dispatch is pinned to an exact-source release tag rather than moving main', async () => {
