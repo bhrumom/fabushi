@@ -10,11 +10,11 @@ import {
   createMessageReceiveTracker,
   matchingTargets,
   newestMessageRowsFromSnapshot,
-  peerHasUnreadBadgeFromSnapshot,
 } from "../scripts/fcm-010-13-macos-live-journey.mjs";
 
 const controller = await readFile(new URL("../scripts/fcm-010-13-macos-external-controller-v2.mjs", import.meta.url), "utf8");
 const journey = await readFile(new URL("../scripts/fcm-010-13-macos-live-journey.mjs", import.meta.url), "utf8");
+const botMark = await readFile(new URL("../../frontend/apps/web/src/app/host/bot-mark.tsx", import.meta.url), "utf8");
 
 function serializedFind(args) {
   return JSON.parse(serializeDeviceCallArguments("fabushi.app.find", args));
@@ -86,23 +86,28 @@ test("production find selection trusts server text/name filtering after returned
   assert.equal(journey.includes(".includes(text)"), false);
 });
 
-test("assistant unread detection remains fail-closed without reading redacted peer text", () => {
-  const assistantPeerId = "test:peer-legacy:conversation:mahayana-ai:agent:assistant";
-  const baseElements = [
-    { role: "button", agentId: assistantPeerId, text: "<redacted-ui-text>" },
-    { role: "span", tag: "span", text: "<redacted-ui-text>", visible: true },
-  ];
-  const nextPeer = { role: "button", agentId: "test:peer-selfhosted:channel:next", text: "<redacted-ui-text>" };
+test("assistant unread contract exposes stable semantics and requires a post-send false-to-true transition", () => {
+  assert.match(botMark, /closest<HTMLElement>\('button\[data-testid\^="peer-"\]'\)/u);
+  assert.match(botMark, /const agentId = `peer-unread:\$\{testId\.slice\("peer-"\.length\)\}`/u);
+  assert.match(botMark, /peerButton\.querySelector\("b"\) != null/u);
+  assert.match(botMark, /new MutationObserver\(update\)/u);
+  assert.match(botMark, /data-agent-id=\{peerUnreadSemantic\?\.agentId\}/u);
+  assert.match(botMark, /"unread-positive" : "unread-none"/u);
 
-  assert.equal(peerHasUnreadBadgeFromSnapshot({ elements: [...baseElements, { role: "generic", tag: "b", text: "<redacted-ui-text>", visible: true }, nextPeer] }, assistantPeerId), true);
-  assert.equal(peerHasUnreadBadgeFromSnapshot({ elements: [...baseElements, nextPeer, { role: "generic", tag: "b", visible: true }] }, assistantPeerId), false);
-  assert.equal(peerHasUnreadBadgeFromSnapshot({ elements: [...baseElements, { role: "generic", tag: "b", visible: false }, nextPeer] }, assistantPeerId), false);
-  assert.equal(peerHasUnreadBadgeFromSnapshot({ elements: [nextPeer] }, assistantPeerId), false);
-  assert.throws(() => peerHasUnreadBadgeFromSnapshot({ elements: [] }, "legacy:assistant"), /stable test:peer-/u);
-
-  assert.match(journey, /peerHasUnreadBadgeFromSnapshot\(fresh, ASSISTANT_PEER_ID\)/u);
+  assert.match(journey, /const ASSISTANT_UNREAD_AGENT_ID = "peer-unread:legacy:conversation:mahayana-ai:agent:assistant"/u);
+  assert.match(journey, /find\(\{ agentId: ASSISTANT_UNREAD_AGENT_ID, name: marker, limit: 1 \}\)/u);
+  assert.equal(journey.includes("peerHasUnreadBadgeFromSnapshot"), false);
   assert.equal(journey.includes("unreadMatch = text.match"), false);
   assert.equal(journey.includes("assistantPeerTextBefore"), false);
+
+  const baselineIndex = journey.indexOf("const unreadBaseline = await waitForAssistantUnread(false, 30_000)");
+  const sendIndex = journey.indexOf("const tracking = await messageReceiveTracker.captureBeforeSend(async () => {");
+  const positiveIndex = journey.indexOf("const unread = await waitForAssistantUnread(true)");
+  assert.ok(baselineIndex >= 0, "pre-send unread-none baseline is required");
+  assert.ok(sendIndex > baselineIndex, "send must happen after a verified no-unread baseline");
+  assert.ok(positiveIndex > sendIndex, "positive unread must be observed only after the probe send");
+  assert.match(journey, /record\("unread-baseline-cleared", unreadBaseline\)/u);
+  assert.match(journey, /record\("unread-transition-observed", unread\)/u);
 });
 
 test("production message receive tracker detects an echoed assistant reply past 100 rendered messages by sent-row identity", async () => {
