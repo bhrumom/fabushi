@@ -121,6 +121,54 @@ test("query-resolvable action replaces stale generation-bound ref after determin
   );
 });
 
+test("default generation retry budget survives the eight-stale production race and re-finds every retry", async () => {
+  const calls = [];
+  let actionAttempts = 0;
+  let nextGeneration = 96;
+  const query = { role: "button", name: "新建频道", limit: 5 };
+  const invokeDeviceCall = async (toolName, args) => {
+    calls.push({ toolName, args: { ...args } });
+    if (toolName === "fabushi.app.action") {
+      actionAttempts += 1;
+      if (actionAttempts <= 8) {
+        const expected = Number(args.generation) + 1;
+        throw new Error(`stale_app_surface_generation: expected ${expected}, received ${args.generation}`);
+      }
+      assert.equal(args.generation, 103);
+      assert.equal(args.ref, "g103:new-channel");
+      return { ok: true, generation: 104 };
+    }
+    if (toolName === "fabushi.app.find") {
+      assert.deepEqual(args, query);
+      const generation = nextGeneration;
+      nextGeneration += 1;
+      return { generation, matches: [{ role: "button", name: "新建频道", ref: `g${generation}:new-channel` }] };
+    }
+    throw new Error(`unexpected tool ${toolName}`);
+  };
+
+  const result = await callGenerationSensitiveAction({
+    invokeDeviceCall,
+    args: { generation: 95, ref: "g95:new-channel", action: "invoke" },
+    resolveLatestTarget: async () => {
+      const found = await invokeDeviceCall("fabushi.app.find", query);
+      assert.equal(found.matches.length, 1);
+      return { generation: found.generation, target: found.matches[0] };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(actionAttempts, 9);
+  assert.deepEqual(
+    calls.filter(({ toolName }) => toolName === "fabushi.app.find").map(({ args }) => args),
+    Array.from({ length: 8 }, () => query),
+  );
+  assert.deepEqual(
+    calls.filter(({ toolName }) => toolName === "fabushi.app.action").map(({ args }) => [args.generation, args.ref]),
+    Array.from({ length: 9 }, (_, index) => [95 + index, `g${95 + index}:new-channel`]),
+  );
+});
+
 test("generation-sensitive action remains fail-closed for a stale generation-bound ref without a semantic resolver", async () => {
   const calls = [];
   const invokeDeviceCall = async (toolName, args) => {

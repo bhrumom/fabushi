@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/fcm-010-13-11-macos-external-controller.yml'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-generation-sensitive-action.mjs'
       - 'chatgpt-vps-control/scripts/fcm-010-13-protected-account-preflight.mjs'
       - 'chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller-v2.mjs'
       - 'chatgpt-vps-control/scripts/fcm-010-13-macos-live-journey.mjs'
@@ -13,6 +14,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/fcm-010-13-11-macos-external-controller.yml'
+      - 'chatgpt-vps-control/scripts/fcm-010-13-generation-sensitive-action.mjs'
       - 'chatgpt-vps-control/scripts/fcm-010-13-protected-account-preflight.mjs'
       - 'chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller-v2.mjs'
       - 'chatgpt-vps-control/scripts/fcm-010-13-macos-live-journey.mjs'
@@ -51,6 +53,7 @@ jobs:
       - name: Parse controller scripts and enforce fail-closed contract
         run: |
           set -euo pipefail
+          node --check chatgpt-vps-control/scripts/fcm-010-13-generation-sensitive-action.mjs
           node --check chatgpt-vps-control/scripts/fcm-010-13-protected-account-preflight.mjs
           node --check chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller-v2.mjs
           node --check chatgpt-vps-control/scripts/fcm-010-13-macos-live-journey.mjs

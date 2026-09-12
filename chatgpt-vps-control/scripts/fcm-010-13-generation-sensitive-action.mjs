@@ -1,4 +1,8 @@
-const DEFAULT_MAX_ATTEMPTS = 8;
+// Keep retries bounded and fail-closed, but allow enough semantic re-resolution
+// for production App Surface churn. The previous budget of 8 was exhausted by
+// a real query-only action even though every stale attempt correctly re-found
+// the latest generation-bound target.
+const DEFAULT_MAX_ATTEMPTS = 32;
 
 export function isStaleAppSurfaceGeneration(error) {
   return /stale_app_surface_generation/u.test(error instanceof Error ? error.message : String(error));
