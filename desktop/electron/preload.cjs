@@ -76,7 +76,22 @@ function subscribeEdge(edge, eventName, listener) {
 
 function projectMahayanaRuntimePayload(payload) {
   if (payload?.type !== 'conversation.listed' || !Array.isArray(payload.conversations)) return payload;
-  if (payload.conversations.some((conversation) => conversation?.id === MAHAYANA_ASSISTANT_CONVERSATION_ID)) return payload;
+  const assistantIndex = payload.conversations.findIndex(
+    (conversation) => conversation?.id === MAHAYANA_ASSISTANT_CONVERSATION_ID,
+  );
+  if (assistantIndex >= 0) {
+    const assistant = payload.conversations[assistantIndex];
+    // The canonical Mahayana assistant is a messenger/agent conversation. A
+    // later Host projection may describe the same id as `miniapp`; the
+    // Electron transport intentionally removes miniapp conversations from the
+    // messenger list, so leaving this shape untouched erases the exact
+    // semantic peer. Preserve every authoritative field and only repair the
+    // projection kind needed to keep the canonical assistant in Messenger.
+    if (String(assistant?.kind ?? '').trim().toLowerCase() !== 'miniapp') return payload;
+    const conversations = [...payload.conversations];
+    conversations[assistantIndex] = { ...assistant, kind: 'agent' };
+    return { ...payload, conversations };
+  }
   const parsedTimestamp = typeof payload.timestamp === 'string' ? Date.parse(payload.timestamp) : NaN;
   const updatedAtMs = Number.isFinite(parsedTimestamp) ? parsedTimestamp : Date.now();
   return {
