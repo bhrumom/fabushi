@@ -17,6 +17,13 @@ function stableAgentId(args) {
   return match?.[1]?.trim() || "";
 }
 
+function uniqueStableMatch(value, agentId) {
+  const matches = Array.isArray(value)
+    ? value.filter((candidate) => String(candidate?.agentId || "").trim() === agentId)
+    : [];
+  return matches.length === 1 ? matches[0] : null;
+}
+
 export async function callGenerationSensitiveAction({
   invokeDeviceCall,
   args,
@@ -39,12 +46,23 @@ export async function callGenerationSensitiveAction({
       if (!agentId) throw error;
 
       const previousGeneration = positiveGeneration(currentArgs.generation);
-      const refreshed = await invokeDeviceCall("fabushi.app.find", { agentId, limit: 2 });
-      const refreshedGeneration = positiveGeneration(refreshed?.generation);
-      const matches = Array.isArray(refreshed?.matches)
-        ? refreshed.matches.filter((candidate) => String(candidate?.agentId || "").trim() === agentId)
-        : [];
-      if (refreshedGeneration == null || matches.length !== 1) {
+      const found = await invokeDeviceCall("fabushi.app.find", { agentId, limit: 2 });
+      const findGeneration = positiveGeneration(found?.generation);
+      const foundTarget = uniqueStableMatch(found?.matches, agentId);
+      if (findGeneration == null || !foundTarget) {
+        throw new Error(
+          `stale_app_surface_generation_rebase_failed: target ${agentId} was not uniquely resolvable by find`,
+          { cause: error },
+        );
+      }
+
+      // Capture the latest full semantic surface as a stable lease before retrying.
+      // The desktop App Surface can then perform its own bounded stable-target rebase
+      // if generation advances again between this controller refresh and the action.
+      const surface = await invokeDeviceCall("fabushi.app.snapshot", { maxElements: 500, includeText: true });
+      const refreshedGeneration = positiveGeneration(surface?.generation);
+      const surfaceTarget = uniqueStableMatch(surface?.elements, agentId);
+      if (refreshedGeneration == null || !surfaceTarget) {
         throw new Error(
           `stale_app_surface_generation_rebase_failed: target ${agentId} was not uniquely resolvable on the latest semantic surface`,
           { cause: error },
@@ -61,6 +79,7 @@ export async function callGenerationSensitiveAction({
         attempt,
         agentId,
         previousGeneration,
+        findGeneration,
         refreshedGeneration,
       });
     }
