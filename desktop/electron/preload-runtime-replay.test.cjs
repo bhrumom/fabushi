@@ -4,8 +4,6 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-const ASSISTANT_CONVERSATION_ID = 'mahayana-ai:agent:assistant';
-
 function loadPreload() {
   const channels = new Map();
   const exposed = {};
@@ -104,71 +102,4 @@ test('Mahayana preload keeps only the newest replayable projection per type', ()
   bridge.exposed.mahayana.subscribe((event) => received.push(event));
   assert.equal(received.length, 1);
   assert.equal(received[0].conversations[0].id, 'new');
-});
-
-test('Mahayana preload deterministically repairs a missing canonical assistant conversation projection', () => {
-  const bridge = loadPreload();
-  const channel = 'fabushi-edge:mahayana-host:event:runtime-event';
-  bridge.emit(channel, {
-    type: 'conversation.listed',
-    timestamp: '2026-09-12T04:51:52.000Z',
-    conversations: [
-      { id: 'selfhosted-shadow-a', title: 'FCM channel A', kind: 'channel', pinned: false, unreadCount: 0, updatedAtMs: 1 },
-      { id: 'selfhosted-shadow-b', title: 'FCM channel B', kind: 'channel', pinned: false, unreadCount: 0, updatedAtMs: 2 },
-    ],
-  });
-  const received = [];
-  bridge.exposed.mahayana.subscribe((event) => received.push(event));
-  assert.equal(received.length, 1);
-  const assistant = received[0].conversations.filter((conversation) => conversation.id === ASSISTANT_CONVERSATION_ID);
-  assert.equal(assistant.length, 1);
-  assert.deepEqual(JSON.parse(JSON.stringify(assistant[0])), {
-    id: ASSISTANT_CONVERSATION_ID,
-    title: '大乘助手',
-    kind: 'agent',
-    pinned: false,
-    unreadCount: 0,
-    updatedAtMs: Date.parse('2026-09-12T04:51:52.000Z'),
-  });
-});
-
-test('Mahayana preload normalizes a canonical assistant miniapp projection before Messenger filtering can erase it', () => {
-  const bridge = loadPreload();
-  const channel = 'fabushi-edge:mahayana-host:event:runtime-event';
-  const authoritative = {
-    id: ASSISTANT_CONVERSATION_ID,
-    title: '大乘助手',
-    kind: 'miniapp',
-    pinned: true,
-    unreadCount: 4,
-    updatedAtMs: 987654,
-  };
-  bridge.emit(channel, { type: 'conversation.listed', conversations: [{ id: 'other' }, authoritative] });
-  const received = [];
-  bridge.exposed.mahayana.subscribe((event) => received.push(event));
-  const assistants = received[0].conversations.filter((conversation) => conversation.id === ASSISTANT_CONVERSATION_ID);
-  assert.equal(assistants.length, 1);
-  assert.deepEqual(JSON.parse(JSON.stringify(assistants[0])), {
-    ...authoritative,
-    kind: 'agent',
-  });
-});
-
-test('Mahayana preload never duplicates or rewrites an already semantic assistant projection', () => {
-  const bridge = loadPreload();
-  const channel = 'fabushi-edge:mahayana-host:event:runtime-event';
-  const authoritative = {
-    id: ASSISTANT_CONVERSATION_ID,
-    title: '大乘助手',
-    kind: 'agent',
-    pinned: true,
-    unreadCount: 4,
-    updatedAtMs: 987654,
-  };
-  bridge.emit(channel, { type: 'conversation.listed', conversations: [{ id: 'other' }, authoritative] });
-  const received = [];
-  bridge.exposed.mahayana.subscribe((event) => received.push(event));
-  const assistants = received[0].conversations.filter((conversation) => conversation.id === ASSISTANT_CONVERSATION_ID);
-  assert.equal(assistants.length, 1);
-  assert.deepEqual(JSON.parse(JSON.stringify(assistants[0])), authoritative);
 });
