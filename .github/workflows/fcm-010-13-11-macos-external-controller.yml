@@ -10,15 +10,8 @@ on:
       - 'chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller-v2.mjs'
       - 'chatgpt-vps-control/scripts/fcm-010-13-macos-live-journey.mjs'
       - 'chatgpt-vps-control/tests/fcm-010-13-macos-external-controller-contract.test.js'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/fcm-010-13-11-macos-external-controller.yml'
-      - 'chatgpt-vps-control/scripts/fcm-010-13-generation-sensitive-action.mjs'
-      - 'chatgpt-vps-control/scripts/fcm-010-13-protected-account-preflight.mjs'
-      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller-v2.mjs'
-      - 'chatgpt-vps-control/scripts/fcm-010-13-macos-live-journey.mjs'
-      - 'chatgpt-vps-control/tests/fcm-010-13-macos-external-controller-contract.test.js'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -30,8 +23,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  FROZEN_SOURCE_SHA: 7ee12b790e18049d2b9509b0c29128dd2ace690b
-  IMMUTABLE_RELEASE_TAG: desktop-1.2.56-7ee12b790e18
   TARGET_WORKFLOW_ID: '350936009'
   FABUSHI_MCP_ORIGIN: https://fabushi-mcp.ombhrum.com
 
@@ -61,7 +52,7 @@ jobs:
 
   protected-account-preflight:
     name: Protected account production MCP preflight
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'desktop-'))
     needs: contract
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -107,8 +98,8 @@ jobs:
           retention-days: 90
 
   dispatch-and-control:
-    name: Dispatch frozen lane and externally control run-owned App
-    if: github.event_name != 'pull_request'
+    name: Bind immutable Release, dispatch frozen lane, and externally control run-owned App
+    if: github.event_name != 'pull_request' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'desktop-'))
     needs: protected-account-preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 55
@@ -135,18 +126,46 @@ jobs:
         working-directory: chatgpt-vps-control
         run: npm ci --ignore-scripts --prefer-offline
 
-      - name: Verify immutable Release provenance before dispatch
+      - id: binding
+        name: Resolve immutable exact-source macOS Release binding
+        env:
+          EVENT_RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$IMMUTABLE_RELEASE_TAG")"
+          release_tag="${EVENT_RELEASE_TAG:-}"
+          if test -z "$release_tag"; then
+            expected_source="$GITHUB_SHA"
+            releases="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")"
+            release_tag="$(jq -r --arg source "$expected_source" '[.[] | select(.draft == false and .immutable == true and .target_commitish == $source and (.tag_name | startswith("desktop-")))] | sort_by(.published_at // .created_at) | last | .tag_name // empty' <<<"$releases")"
+            test -n "$release_tag"
+          fi
+          [[ "$release_tag" == desktop-* ]]
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$release_tag")"
+          test "$(jq -r '.draft' <<<"$release")" = false
           test "$(jq -r '.immutable' <<<"$release")" = true
-          test "$(jq -r '.target_commitish' <<<"$release")" = "$FROZEN_SOURCE_SHA"
-          jq -e --arg name 'fabushi-1.2.56-macos-arm64.zip' '.assets[] | select(.name == $name and .state == "uploaded" and (.digest | startswith("sha256:")))' <<<"$release" >/dev/null
-          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$IMMUTABLE_RELEASE_TAG" --jq '.object.sha')"
-          test "$tag_sha" = "$FROZEN_SOURCE_SHA"
+          target="$(jq -r '.target_commitish // empty' <<<"$release")"
+          test -n "$target"
+          source_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$target" --jq .sha)"
+          test -n "$source_sha"
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$release_tag" --jq '.object.sha')"
+          test "$tag_sha" = "$source_sha"
+          asset_name="$(jq -r '[.assets[] | select(.state == "uploaded" and (.name | test("^fabushi-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$")) and (.digest | startswith("sha256:")))] | if length == 1 then .[0].name else empty end' <<<"$release")"
+          test -n "$asset_name"
+          short_source="${source_sha:0:12}"
+          [[ "$release_tag" == *"-$short_source" ]]
+          {
+            echo "source_sha=$source_sha"
+            echo "release_tag=$release_tag"
+            echo "asset_name=$asset_name"
+          } >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$release" > "$RUNNER_TEMP/bound-immutable-release.json"
+          echo "Bound production controller to exact immutable Release $release_tag at $source_sha"
 
       - id: dispatch
         name: Dispatch a new exact-source macOS interactive run
+        env:
+          FROZEN_SOURCE_SHA: ${{ steps.binding.outputs.source_sha }}
+          IMMUTABLE_RELEASE_TAG: ${{ steps.binding.outputs.release_tag }}
         run: |
           set -euo pipefail
           marker="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -181,23 +200,28 @@ jobs:
 
       - name: Execute external full semantic journey against only the new App-owned device
         env:
+          FROZEN_SOURCE_SHA: ${{ steps.binding.outputs.source_sha }}
+          IMMUTABLE_RELEASE_TAG: ${{ steps.binding.outputs.release_tag }}
           TARGET_RUN_ID: ${{ steps.dispatch.outputs.target_run_id }}
           TARGET_RUN_ATTEMPT: ${{ steps.dispatch.outputs.target_run_attempt }}
-          TARGET_HEAD_SHA: ${{ env.FROZEN_SOURCE_SHA }}
-          TARGET_HEAD_BRANCH: ${{ env.IMMUTABLE_RELEASE_TAG }}
+          TARGET_HEAD_SHA: ${{ steps.binding.outputs.source_sha }}
+          TARGET_HEAD_BRANCH: ${{ steps.binding.outputs.release_tag }}
           EXPECTED_DEVICE_ID: ${{ steps.dispatch.outputs.expected_device_id }}
           EVIDENCE_DIR: ${{ runner.temp }}/external-controller-evidence
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE_DIR"
           cp "$RUNNER_TEMP/dispatched-target-run.json" "$EVIDENCE_DIR/dispatched-target-run.json"
+          cp "$RUNNER_TEMP/bound-immutable-release.json" "$EVIDENCE_DIR/bound-immutable-release.json"
           node chatgpt-vps-control/scripts/fcm-010-13-macos-external-controller-v2.mjs 2>&1 | tee "$EVIDENCE_DIR/controller.log"
-          jq -e --arg run "$TARGET_RUN_ID" --arg device "$EXPECTED_DEVICE_ID" \
-            '.schema == "fcm-010.13.11.external-controller.v2" and .status == "passed" and .runId == $run and .deviceId == $device and .finalAction.agentId == "settings-logout" and .finalAction.action == "invoke"' \
+          jq -e --arg run "$TARGET_RUN_ID" --arg device "$EXPECTED_DEVICE_ID" --arg source "$FROZEN_SOURCE_SHA" --arg tag "$IMMUTABLE_RELEASE_TAG" \
+            '.schema == "fcm-010.13.11.external-controller.v2" and .status == "passed" and .source == $source and .tag == $tag and .runId == $run and .deviceId == $device and .finalAction.agentId == "settings-logout" and .finalAction.action == "invoke"' \
             "$EVIDENCE_DIR/external-controller-summary.json" >/dev/null
 
       - name: Require the exact target run to finish green
         env:
+          FROZEN_SOURCE_SHA: ${{ steps.binding.outputs.source_sha }}
+          IMMUTABLE_RELEASE_TAG: ${{ steps.binding.outputs.release_tag }}
           TARGET_RUN_ID: ${{ steps.dispatch.outputs.target_run_id }}
         run: |
           set -euo pipefail
@@ -225,7 +249,7 @@ jobs:
           set -euo pipefail
           artifacts="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TARGET_RUN_ID/artifacts?per_page=100")"
           expected="fabushi-macos-interactive-evidence-${TARGET_RUN_ID}-${TARGET_RUN_ATTEMPT}"
-          jq -e --arg expected "$expected" '.artifacts[] | select(.name == $expected and .expired == false)' <<<"$artifacts" >/dev/null
+          jq -e --arg expected "$expected" '.artifacts[] | select(.name == $expected and .expired == false and (.digest | startswith("sha256:")))' <<<"$artifacts" >/dev/null
           printf '%s\n' "$artifacts" > "$RUNNER_TEMP/external-controller-evidence/target-artifacts.json"
 
       - name: Upload external controller evidence
