@@ -31,4 +31,4 @@
 
 ## 验收与证据
 
-源码版本 `2.9.19` 已在 source 仓库完成 PR、exact-main CI 和 Release；parent task record 已通过 protected merge queue 合并并从 canonical parent `main@576a310ccd47146f7e758f27ab0a2d32cd9860cd` 回读。已登录 Chrome 的真实分步截图/完整视频/trace/diagnostics 仍按任务门禁跟踪，不以源代码回归替代现场证据。
+源码版本 `2.9.19` 已在 source 仓库完成 PR、exact-main CI 和 Release；parent task record 已通过 PR #2587、回读更新 PR #2588 的 protected merge queue 合并，最终从 canonical parent `main@baf1311363ddb03470e9ec14bd04de52d1141662` 回读。已登录 Chrome 的真实分步截图/完整视频/trace/diagnostics 仍按任务门禁跟踪，不以源代码回归替代现场证据。
