@@ -1,6 +1,6 @@
 # OpenBot feature -> Fabushi implementation -> evidence -> gap matrix
 
-Pinned upstream: `CopilotKit/OpenBot@19fdcbb7fd5c072d5c2aa95800fcbbbf72aa202c` (MIT). This round is anchored to canonical `main@9365b5e13f1fb5ac7b31f00049e487ab2174edbc`; the closure branch must be reviewed as a delta from that exact SHA. Reference screenshot: user task `Fabushi:82655b0d-e929-44c7-a4f4-fdcfd0a13c8a`, original `2048x1280`, SHA-256 `555f8ae43517b2f6b2a1e545a16c0eb95e596585a1c9adfd211cad6a217c475b`; app-controlled comparison crop `(176,196,1671,937)` remains the visual acceptance surface defined in `docs/09-视觉回归规范.md`.
+Pinned upstream: `CopilotKit/OpenBot@19fdcbb7fd5c072d5c2aa95800fcbbbf72aa202c` (MIT). This round initially opened from `main@9365b5e13f1fb5ac7b31f00049e487ab2174edbc`; while the round was executing, canonical main advanced one commit and the OBF branch was synchronized so its current canonical base/merge-base is `main@c41e9305dd2c2af4f48139dadfefe71eef50068f`. Reference screenshot: user task `Fabushi:82655b0d-e929-44c7-a4f4-fdcfd0a13c8a`, original `2048x1280`, SHA-256 `555f8ae43517b2f6b2a1e545a16c0eb95e596585a1c9adfd211cad6a217c475b`; app-controlled comparison crop `(176,196,1671,937)` remains the visual acceptance surface defined in `docs/09-视觉回归规范.md`.
 
 Classification:
 
