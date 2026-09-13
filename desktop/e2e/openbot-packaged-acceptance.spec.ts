@@ -108,6 +108,11 @@ async function installLifecycleJournal(page: Page): Promise<void> {
     const scope = window as typeof window & { __obfLifecycle?: LifecycleSample[] };
     scope.__obfLifecycle = [];
     const sample = () => {
+      for (const node of document.querySelectorAll<HTMLElement>('[class*="agentThinkingRow"]')) {
+        const text = (node.innerText || '').trim();
+        const seen = scope.__obfLifecycle?.some((entry) => entry.status === 'thinking' && entry.text === text);
+        if (!seen) scope.__obfLifecycle?.push({ at: Date.now(), status: 'thinking', text });
+      }
       for (const node of document.querySelectorAll<HTMLElement>('[data-testid="agent-step"]')) {
         const status = node.dataset.status || '';
         const text = (node.innerText || '').trim();
@@ -236,6 +241,7 @@ test('OBF exact packaged reference journey uses real Mahayana events and stays w
     await expect(page.getByTestId('messenger-input')).toBeVisible();
 
     const lifecycle = await page.evaluate(() => (window as typeof window & { __obfLifecycle?: LifecycleSample[] }).__obfLifecycle || []);
+    expect(lifecycle.some((sample) => sample.status === 'thinking')).toBeTruthy();
     expect(lifecycle.some((sample) => sample.status === 'running')).toBeTruthy();
     expect(lifecycle.some((sample) => sample.status === 'completed')).toBeTruthy();
     expect(lifecycle.some((sample) => sample.status === 'failed')).toBeTruthy();
