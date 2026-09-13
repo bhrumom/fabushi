@@ -35,7 +35,10 @@ for (const token of [
 for (const shape of ['blob', 'pebble', 'squircle', 'tablet', 'wedge', 'hex', 'cloud', 'teardrop']) {
   assert.ok(botMark.includes(`"${shape}"`), `BotMark must retain OpenBot-style identity silhouette ${shape}`);
 }
-assert.match(botMark, /const SHAPES: readonly BotMarkShape\[]/u, 'BotMark must expose deterministic silhouette roster');
+assert.ok(
+  botMark.includes('const SHAPES: readonly BotMarkShape[]'),
+  'BotMark must expose deterministic silhouette roster',
+);
 assert.match(botMark, /export function botMarkShape\(botId: string\)/u, 'BotMark shape must be identity-derived');
 assert.doesNotMatch(
   botMark,
