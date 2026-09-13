@@ -675,7 +675,8 @@ impl PluginInstaller {
                 let previous = plugin_root.join("previous-active.json");
                 let bytes = serde_json::to_vec_pretty(&current)
                     .map_err(|error| RuntimeError::InvalidRelease(error.to_string()))?;
-                let temporary = plugin_root.join(format!("previous-active.{}.json", Uuid::new_v4()));
+                let temporary =
+                    plugin_root.join(format!("previous-active.{}.json", Uuid::new_v4()));
                 fs::write(&temporary, bytes).map_err(RuntimeError::Io)?;
                 #[cfg(windows)]
                 if previous.exists() {
@@ -699,7 +700,10 @@ impl PluginInstaller {
     /// Switch back to the version that was active immediately before the
     /// latest successful activation. This is intentionally explicit: normal
     /// installs remain monotonic and cannot silently downgrade.
-    pub fn rollback(&self, plugin_id: &str) -> Result<Option<InstalledPluginPointer>, RuntimeError> {
+    pub fn rollback(
+        &self,
+        plugin_id: &str,
+    ) -> Result<Option<InstalledPluginPointer>, RuntimeError> {
         validate_identifier(plugin_id, "pluginId")?;
         let plugin_root = self.root.join(plugin_id);
         let previous_path = plugin_root.join("previous-active.json");
@@ -1328,8 +1332,7 @@ fn validate_marketplace_install_contract(
     })?;
     if object.get("protocol").and_then(serde_json::Value::as_str)
         != Some("fabushi.marketplace.install.v1")
-        || object.get("strategy").and_then(serde_json::Value::as_str)
-            != Some("github-immutable")
+        || object.get("strategy").and_then(serde_json::Value::as_str) != Some("github-immutable")
         || object.get("pluginId").and_then(serde_json::Value::as_str)
             != Some(release.plugin_id.as_str())
         || object.get("version").and_then(serde_json::Value::as_str)
@@ -1381,9 +1384,10 @@ fn validate_marketplace_install_contract(
             RuntimeError::InvalidRelease("marketplace install contract has no artifacts".into())
         })?;
     if contract_artifacts.len() != release.artifacts.len()
-        || release.artifacts.iter().any(|artifact| {
-            !is_github_artifact_source(&artifact.source)
-        })
+        || release
+            .artifacts
+            .iter()
+            .any(|artifact| !is_github_artifact_source(&artifact.source))
     {
         return Err(RuntimeError::InvalidRelease(
             "marketplace artifacts must be GitHub-hosted and match the release".into(),
@@ -1393,13 +1397,17 @@ fn validate_marketplace_install_contract(
         let contract_object = contract.as_object().ok_or_else(|| {
             RuntimeError::InvalidRelease("marketplace artifact contract is invalid".into())
         })?;
-        let same_id = contract_object.get("id").and_then(serde_json::Value::as_str)
+        let same_id = contract_object
+            .get("id")
+            .and_then(serde_json::Value::as_str)
             == Some(artifact.id.as_str());
         let same_digest = contract_object
             .get("sha256")
             .and_then(serde_json::Value::as_str)
             .is_some_and(|digest| digest.eq_ignore_ascii_case(&artifact.sha256));
-        let same_size = contract_object.get("size").and_then(serde_json::Value::as_u64)
+        let same_size = contract_object
+            .get("size")
+            .and_then(serde_json::Value::as_u64)
             == Some(artifact.size);
         if !(same_id && same_digest && same_size) {
             return Err(RuntimeError::InvalidRelease(
@@ -1421,8 +1429,8 @@ fn validate_marketplace_install_contract(
 }
 
 fn validate_github_repository_url(value: &str) -> Result<(), RuntimeError> {
-    let url = Url::parse(value.trim())
-        .map_err(|error| RuntimeError::InvalidSource(error.to_string()))?;
+    let url =
+        Url::parse(value.trim()).map_err(|error| RuntimeError::InvalidSource(error.to_string()))?;
     if url.scheme() != "https"
         || !url
             .host_str()
@@ -1892,7 +1900,11 @@ mod tests {
             .install_verified_bytes(&release_v2, &artifact, &archive)
             .unwrap();
         assert_eq!(
-            installer.active("monotonic-plugin").unwrap().unwrap().version,
+            installer
+                .active("monotonic-plugin")
+                .unwrap()
+                .unwrap()
+                .version,
             "2.0.0"
         );
         assert!(matches!(
@@ -1900,11 +1912,19 @@ mod tests {
             Err(RuntimeError::DowngradeBlocked { .. })
         ));
         assert_eq!(
-            installer.rollback("monotonic-plugin").unwrap().unwrap().version,
+            installer
+                .rollback("monotonic-plugin")
+                .unwrap()
+                .unwrap()
+                .version,
             "1.0.0"
         );
         assert_eq!(
-            installer.active("monotonic-plugin").unwrap().unwrap().version,
+            installer
+                .active("monotonic-plugin")
+                .unwrap()
+                .unwrap()
+                .version,
             "1.0.0"
         );
     }

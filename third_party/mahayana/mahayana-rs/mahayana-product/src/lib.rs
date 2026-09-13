@@ -990,13 +990,7 @@ impl MahayanaProductClient {
             .map(|platform| {
                 if matches!(
                     platform.as_str(),
-                    "cli"
-                        | "desktop"
-                        | "mobile"
-                        | "web"
-                        | "ios"
-                        | "android"
-                        | "chrome-extension"
+                    "cli" | "desktop" | "mobile" | "web" | "ios" | "android" | "chrome-extension"
                 ) {
                     Ok(platform.clone())
                 } else {

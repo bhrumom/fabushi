@@ -134,8 +134,8 @@ function miniAppMarketplaceAction(
 }
 
 function miniAppReleaseLabel(app: MarketplacePluginSummary): string {
-  const source = app.install?.source;
-  const sourceRef = source && typeof source.sourceRef === 'string' ? source.sourceRef.slice(0, 9) : '';
+  const source = app.install?.source as { sourceRef?: unknown } | undefined;
+  const sourceRef = typeof source?.sourceRef === 'string' ? source.sourceRef.slice(0, 9) : '';
   return sourceRef ? `GitHub · ${sourceRef}` : 'GitHub 来源待确认';
 }
 

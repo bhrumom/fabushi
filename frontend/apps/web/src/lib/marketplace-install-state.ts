@@ -54,7 +54,7 @@ function readJson(key: string): unknown {
 function readLegacyIds(): string[] {
   const value = readJson(LEGACY_MARKETPLACE_INSTALL_STATE_KEY);
   return Array.isArray(value)
-    ? [...new Set(value.filter((item): item is string => typeof item === "string" && item.trim()).map((item) => item.trim()))]
+    ? [...new Set(value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()))]
     : [];
 }
 
@@ -63,7 +63,7 @@ function normalizeRecord(id: string, value: unknown): MarketplaceInstallRecord |
   const normalizedId = text(value.id) || id;
   if (!normalizedId) return undefined;
   const platforms = Array.isArray(value.platforms)
-    ? value.platforms.filter((item): item is string => typeof item === "string" && item.trim()).map((item) => item.trim())
+    ? value.platforms.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim())
     : [];
   const verification = value.verification === "github-sha256"
     || value.verification === "github-metadata"

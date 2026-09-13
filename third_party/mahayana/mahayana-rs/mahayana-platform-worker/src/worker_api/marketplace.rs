@@ -38,9 +38,10 @@ fn is_github_artifact_url(value: &str) -> bool {
         return false;
     };
     url.scheme() == "https"
-        && url
-            .host_str()
-            .is_some_and(|host| host.eq_ignore_ascii_case("github.com") || host.eq_ignore_ascii_case("raw.githubusercontent.com"))
+        && url.host_str().is_some_and(|host| {
+            host.eq_ignore_ascii_case("github.com")
+                || host.eq_ignore_ascii_case("raw.githubusercontent.com")
+        })
         && url.username().is_empty()
         && url.password().is_none()
         && url.port().is_none()
@@ -86,7 +87,10 @@ fn release_supports_chrome_extension(release_manifest: &Value) -> bool {
                     .and_then(Value::as_array)
                     .is_some_and(|platforms| {
                         platforms.iter().any(|platform| {
-                            matches!(platform.as_str(), Some("web" | "all" | CHROME_EXTENSION_PLATFORM))
+                            matches!(
+                                platform.as_str(),
+                                Some("web" | "all" | CHROME_EXTENSION_PLATFORM)
+                            )
                         })
                     })
             })
@@ -101,14 +105,14 @@ fn add_chrome_extension_platform(release_manifest: &mut Value) {
         return;
     };
     for artifact in artifacts {
-        let Some(platforms) = artifact
-            .get_mut("platforms")
-            .and_then(Value::as_array_mut)
-        else {
+        let Some(platforms) = artifact.get_mut("platforms").and_then(Value::as_array_mut) else {
             continue;
         };
         let web_compatible = platforms.iter().any(|platform| {
-            matches!(platform.as_str(), Some("web" | "all" | CHROME_EXTENSION_PLATFORM))
+            matches!(
+                platform.as_str(),
+                Some("web" | "all" | CHROME_EXTENSION_PLATFORM)
+            )
         });
         if web_compatible
             && !platforms
@@ -130,14 +134,26 @@ fn github_install_contract(
     let repository = source
         .get("repository")
         .and_then(Value::as_str)
-        .or_else(|| manifest_source.and_then(|value| value.get("repository")).and_then(Value::as_str))
+        .or_else(|| {
+            manifest_source
+                .and_then(|value| value.get("repository"))
+                .and_then(Value::as_str)
+        })
         .and_then(normalized_github_repository)?;
     let source_ref = source
         .get("sourceRef")
         .and_then(Value::as_str)
         .or_else(|| source.get("commit").and_then(Value::as_str))
-        .or_else(|| manifest_source.and_then(|value| value.get("sourceRef")).and_then(Value::as_str))
-        .or_else(|| manifest_source.and_then(|value| value.get("commit")).and_then(Value::as_str))
+        .or_else(|| {
+            manifest_source
+                .and_then(|value| value.get("sourceRef"))
+                .and_then(Value::as_str)
+        })
+        .or_else(|| {
+            manifest_source
+                .and_then(|value| value.get("commit"))
+                .and_then(Value::as_str)
+        })
         .map(str::trim)
         .filter(|value| is_git_object_id(value))?
         .to_string();
@@ -164,7 +180,11 @@ fn github_install_contract(
     let manifest_url = source
         .get("manifestUrl")
         .and_then(Value::as_str)
-        .or_else(|| manifest_source.and_then(|value| value.get("manifestUrl")).and_then(Value::as_str));
+        .or_else(|| {
+            manifest_source
+                .and_then(|value| value.get("manifestUrl"))
+                .and_then(Value::as_str)
+        });
     let permissions = release_manifest
         .get("permissions")
         .cloned()
@@ -919,13 +939,7 @@ pub(super) async fn marketplace_external_release_publish(
         || platforms.iter().any(|platform| {
             !matches!(
                 platform.as_str(),
-                "cli"
-                    | "desktop"
-                    | "mobile"
-                    | "web"
-                    | "ios"
-                    | "android"
-                    | "chrome-extension"
+                "cli" | "desktop" | "mobile" | "web" | "ios" | "android" | "chrome-extension"
             )
         })
     {
@@ -1047,12 +1061,8 @@ pub(super) async fn marketplace_external_release_publish(
         .get("source")
         .cloned()
         .unwrap_or_else(|| json!({"provider":"external","artifact": primary.get("source").cloned().unwrap_or(Value::Null)}));
-    let (release_manifest, install) = enrich_github_release(
-        &plugin_id,
-        &version,
-        &source,
-        release_manifest,
-    );
+    let (release_manifest, install) =
+        enrich_github_release(&plugin_id, &version, &source, release_manifest);
     let Some(install) = install else {
         return error_response(
             400,
@@ -1198,7 +1208,8 @@ pub(super) async fn marketplace_release_metadata(
             "The approved plugin release does not exist.",
         );
     }
-    let mut platforms = serde_json::from_str::<Vec<String>>(&row.platforms_json).unwrap_or_default();
+    let mut platforms =
+        serde_json::from_str::<Vec<String>>(&row.platforms_json).unwrap_or_default();
     let source = serde_json::from_str::<Value>(&row.source_json).unwrap_or(Value::Null);
     let stored_release_manifest =
         serde_json::from_str::<Value>(&row.release_manifest_json).unwrap_or(Value::Null);
@@ -1513,20 +1524,22 @@ mod tests {
     #[test]
     fn enriches_legacy_github_rows_with_shared_install_contract() {
         let (source, release) = github_release();
-        let (enriched, install) = enrich_github_release(
-            "global-dharma",
-            "1.0.0",
-            &source,
-            release,
-        );
+        let (enriched, install) = enrich_github_release("global-dharma", "1.0.0", &source, release);
         let install = install.expect("GitHub release should be installable");
         assert_eq!(install["protocol"], MARKETPLACE_INSTALL_PROTOCOL);
         assert_eq!(install["strategy"], "github-immutable");
         assert_eq!(install["source"]["sourceRef"], source["commit"]);
-        assert_eq!(enriched["install"]["source"]["repository"], "https://github.com/bhrumom/fabushi");
-        assert!(enriched["artifacts"][0]["platforms"]
-            .as_array()
-            .is_some_and(|platforms| platforms.iter().any(|platform| platform == CHROME_EXTENSION_PLATFORM)));
+        assert_eq!(
+            enriched["install"]["source"]["repository"],
+            "https://github.com/bhrumom/fabushi"
+        );
+        assert!(
+            enriched["artifacts"][0]["platforms"]
+                .as_array()
+                .is_some_and(|platforms| platforms
+                    .iter()
+                    .any(|platform| platform == CHROME_EXTENSION_PLATFORM))
+        );
     }
 
     #[test]

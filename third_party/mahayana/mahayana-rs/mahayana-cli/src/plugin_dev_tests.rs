@@ -239,7 +239,8 @@ fn marketplace_update_replaces_the_package_and_rejects_downgrades() {
     )
     .expect("initialize source plugin");
     let source_plugin = source_repository.join(".agents/plugins/plugins/update-plugin");
-    let initial_archive = pack_plugin_bundle_tar_gz(&source_plugin, 50 * 1024 * 1024).expect("pack initial plugin");
+    let initial_archive =
+        pack_plugin_bundle_tar_gz(&source_plugin, 50 * 1024 * 1024).expect("pack initial plugin");
 
     let destination_repository = temporary_repository("market-update-destination");
     fs::create_dir_all(&destination_repository).expect("create destination repository");
@@ -262,7 +263,8 @@ fn marketplace_update_replaces_the_package_and_rejects_downgrades() {
         serde_json::to_string_pretty(&manifest).expect("serialize updated manifest") + "\n",
     )
     .expect("write updated manifest");
-    let updated_archive = pack_plugin_bundle_tar_gz(&source_plugin, 50 * 1024 * 1024).expect("pack updated plugin");
+    let updated_archive =
+        pack_plugin_bundle_tar_gz(&source_plugin, 50 * 1024 * 1024).expect("pack updated plugin");
     let receipt = update_marketplace_bundle(
         &destination_repository,
         "update-plugin",
@@ -273,7 +275,8 @@ fn marketplace_update_replaces_the_package_and_rejects_downgrades() {
     assert_eq!(receipt["updated"], true);
     let installed: Value = serde_json::from_str(
         &fs::read_to_string(
-            destination_repository.join(".agents/plugins/plugins/update-plugin/.codex-plugin/plugin.json"),
+            destination_repository
+                .join(".agents/plugins/plugins/update-plugin/.codex-plugin/plugin.json"),
         )
         .expect("read updated installed manifest"),
     )

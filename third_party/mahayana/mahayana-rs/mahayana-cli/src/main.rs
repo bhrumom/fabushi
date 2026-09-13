@@ -1118,7 +1118,9 @@ fn verified_marketplace_archive(
     }
     let release_value = metadata
         .get("releaseManifest")
-        .filter(|value| value.get("protocol").and_then(Value::as_str) == Some("mahayana.external-release.v1"))
+        .filter(|value| {
+            value.get("protocol").and_then(Value::as_str) == Some("mahayana.external-release.v1")
+        })
         .ok_or_else(|| "市场版本没有提供可验证的 GitHub external release manifest".to_string())?;
     let install = metadata
         .get("install")
@@ -1180,10 +1182,16 @@ fn validate_marketplace_install_contract(
         || repository_url.fragment().is_some()
         || repository_parts.len() != 2
         || repository_parts.iter().any(|part| part.is_empty())
-        || source.get("sourceRef").and_then(Value::as_str).is_none_or(|value| {
-            value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit())
-        })
-        || source.get("marketplaceHostsPackage").and_then(Value::as_bool) != Some(false)
+        || source
+            .get("sourceRef")
+            .and_then(Value::as_str)
+            .is_none_or(|value| {
+                value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
+        || source
+            .get("marketplaceHostsPackage")
+            .and_then(Value::as_bool)
+            != Some(false)
     {
         return Err("市场安装合同必须固定到公开 GitHub commit，且市场不得托管包字节".into());
     }

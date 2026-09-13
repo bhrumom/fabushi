@@ -10,14 +10,14 @@ use mahayana_platform_core::HostPlatform;
 use mahayana_platform_core::canonical_json_bytes;
 use mahayana_plugin_host::LocalPlugin;
 use mahayana_product::default_mahayana_home;
+use semver::Version;
 use serde_json::Value;
 use serde_json::json;
-use semver::Version;
-use std::cmp::Ordering;
 #[cfg(test)]
 use sha2::Digest;
 #[cfg(test)]
 use sha2::Sha256;
+use std::cmp::Ordering;
 use std::env;
 use std::fs;
 use std::path::Component;
@@ -356,10 +356,9 @@ fn marketplace_contains(path: &Path, plugin_id: &str) -> Result<bool, String> {
     if !path.is_file() {
         return Ok(false);
     }
-    let marketplace: Value = serde_json::from_str(
-        &fs::read_to_string(path).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("invalid existing marketplace: {error}"))?;
+    let marketplace: Value =
+        serde_json::from_str(&fs::read_to_string(path).map_err(|error| error.to_string())?)
+            .map_err(|error| format!("invalid existing marketplace: {error}"))?;
     Ok(marketplace
         .get("plugins")
         .and_then(Value::as_array)
