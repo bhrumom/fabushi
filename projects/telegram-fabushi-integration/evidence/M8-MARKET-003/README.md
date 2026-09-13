@@ -10,6 +10,7 @@
 - **Version commit**: `04a985633`
 - **状态**: `IN_PROGRESS`
 - **创建日期**: `2026-09-13`
+- **PR**: [#2578](https://github.com/bhrumom/fabushi/pull/2578)
 
 ## 目标与证据边界
 

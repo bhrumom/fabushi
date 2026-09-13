@@ -77,10 +77,10 @@
 - Commit: `3cd8ba783` (`feat(marketplace): unify GitHub install and update flow`)
 - Records commit: `7c95a6f89` (`docs(marketplace): record implementation commit`)
 - Version commit: `04a985633` (`release: advance test version to 1.2.58`)
-- PR: pending (本机未安装 GitHub CLI；分支待推送后创建)
+- PR: [#2578](https://github.com/bhrumom/fabushi/pull/2578)（open，等待 required checks / protected merge）
 - CI/E2E/Release: pending
 - Evidence index: `../../evidence/M8-MARKET-003/README.md` (implementation evidence recorded; PR/main/post-main evidence pending)
 
 ## Next action
 
-Open the task PR with the implementation and records, run exact-head CI and required review/protected-main gates, then execute the exact accepted `main` packaged Electron/mobile/CLI journeys with the mandatory screenshots/video/trace/report bundle before considering Release publication or task closure.
+Drive PR #2578 through exact-head CI and required review/protected-main gates, then execute the exact accepted `main` packaged Electron/mobile/CLI journeys with the mandatory screenshots/video/trace/report bundle before considering Release publication or task closure.
