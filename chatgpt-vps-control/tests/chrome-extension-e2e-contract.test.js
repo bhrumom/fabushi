@@ -38,4 +38,6 @@ test("Chrome packaged journey retains canonical visual and trace evidence", asyn
   assert.match(postMainWorkflow, /fabushi-chrome-web-store-\$\{\{ needs\.gate\.outputs\.source_sha \}\}/);
   assert.match(postMainWorkflow, /fabushi-chrome-SHA256SUMS\.txt/);
   assert.match(postMainWorkflow, /jq -r '\.sourceSha'/);
+  assert.match(postMainWorkflow, /chrome_version=.*\.version \/\/ empty/);
+  assert.doesNotMatch(postMainWorkflow, /\.version' "\$chrome_manifest"\) = "0\.5\.0"/);
 });
