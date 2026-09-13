@@ -183,7 +183,7 @@
 - [x] `TFI-USR-ATTACH-002` Work、验收、下一轮 Work、暂停/取消恢复和异常重发均在当前 composer 重新注入/确认，未确认时 fail-closed。
 - [x] `TFI-USR-ATTACH-003` 增加连续轮次、DOM/document 重建、暂停/取消恢复和失败重试回归；source `98/98` PASS。
 - [x] `TFI-USR-ATTACH-004` source PR #14、exact source-main CI、canonical source readback 和 Release `v2.9.19` 已完成。
-- [x] `TFI-USR-ATTACH-005` 父仓库记录 PR #2587 已经 merge queue 合并并 canonical readback，main `576a310ccd47146f7e758f27ab0a2d32cd9860cd`。
+- [x] `TFI-USR-ATTACH-005` 父仓库记录 PR #2587/#2588 已经 merge queue 合并并最终 canonical readback，main `baf1311363ddb03470e9ec14bd04de52d1141662`。
 - [ ] `TFI-USR-ATTACH-006` 已登录 Chrome 安装 `v2.9.19` 后完成首次带附件 → 恢复/继续 → 下一轮仍带附件的分步截图、完整视频、trace/diagnostics。
 - [ ] `TFI-USR-ATTACH-007` 现场证据确认缺 Blob/上传失败/超时不会发送无附件目标，并记录可重试状态。
 

@@ -6,7 +6,7 @@
 - Project Key: `TFI`
 - Task ID: `TFI-USERSCRIPT-RECOVERY-010`
 - Started: `2026-09-13T23:15:00+08:00`
-- Updated: `2026-09-14T00:06:23+08:00`
+- Updated: `2026-09-14T00:13:08+08:00`
 - Status: `IN_PROGRESS`
 
 ## Objective
@@ -79,7 +79,8 @@
 - Parent PR: [#2587](https://github.com/bhrumom/fabushi/pull/2587) — merged through GitHub merge queue.
 - Parent PR head: `d938b1b6f3f915911cda42ee12494634059d2d4a`
 - Merge-group CI: run `34767503268` / head `576a310ccd47146f7e758f27ab0a2d32cd9860cd` — success.
-- Canonical parent `main`: `576a310ccd47146f7e758f27ab0a2d32cd9860cd`; task and evidence files were read back from that SHA.
+- Readback update PR: [#2588](https://github.com/bhrumom/fabushi/pull/2588) — merged through GitHub merge queue.
+- Final canonical parent `main`: `baf1311363ddb03470e9ec14bd04de52d1141662`; task and evidence files were read back from this SHA.
 - Live Chrome evidence: pending; source tests and source Release do not substitute for the required real-browser evidence.
 - Post-main packaged Fabushi build/E2E: `N/A` — this task changes only the independently released userscript and project records, not a Fabushi packaged product.
 
