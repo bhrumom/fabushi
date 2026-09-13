@@ -17,7 +17,8 @@ Scope: independent ChatGPT userscript attachment continuity; Fabushi packaged de
 ## Parent and live evidence
 
 - Parent branch: `codex/tfi-userscript-attachment-recovery-20260913`.
-- Parent PR, protected-main merge and canonical readback: pending.
+- Parent PR [#2587](https://github.com/bhrumom/fabushi/pull/2587) merged through GitHub merge queue; merge-group CI `34767503268` succeeded.
+- Canonical parent `main`: `576a310ccd47146f7e758f27ab0a2d32cd9860cd`; task/source/evidence records were read back from this SHA.
 - Authenticated Chrome evidence bundle (version readback, labelled screenshots, complete journey video, trace/diagnostics): pending.
 - Post-main packaged build/E2E: `N/A`, because no Fabushi packaged/runnable product code or delivery workflow is changed.
 

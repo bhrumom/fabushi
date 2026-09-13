@@ -6,7 +6,7 @@
 - Project Key: `TFI`
 - Task ID: `TFI-USERSCRIPT-RECOVERY-010`
 - Started: `2026-09-13T23:15:00+08:00`
-- Updated: `2026-09-13T23:45:00+08:00`
+- Updated: `2026-09-14T00:06:23+08:00`
 - Status: `IN_PROGRESS`
 
 ## Objective
@@ -50,7 +50,7 @@
 - [ ] A04：缺 Blob、控件、确认或上传失败/超时均 fail-closed，保留任务供重试。
 - [ ] A05：源仓库语法与回归测试通过，覆盖连续轮次、暂停/取消恢复、DOM/document 重建和失败重试。
 - [ ] A06：source PR、exact-main CI、Release 与安装资产可追溯到同一 source main SHA。
-- [ ] A07：parent records 经 protected main 合并并回读，且已登录 Chrome 取得带标签的截图、完整视频和 trace/diagnostics。
+- [ ] A07：parent records 经 protected main 合并并回读，且已登录 Chrome 取得带标签的截图、完整视频和 trace/diagnostics；前半项已完成，现场证据仍待补齐。
 
 ## Open-source-first survey and decision
 
@@ -76,7 +76,10 @@
 ## Parent/release evidence
 
 - Parent branch: `codex/tfi-userscript-attachment-recovery-20260913`
-- Parent PR / merge / canonical readback: pending.
+- Parent PR: [#2587](https://github.com/bhrumom/fabushi/pull/2587) — merged through GitHub merge queue.
+- Parent PR head: `d938b1b6f3f915911cda42ee12494634059d2d4a`
+- Merge-group CI: run `34767503268` / head `576a310ccd47146f7e758f27ab0a2d32cd9860cd` — success.
+- Canonical parent `main`: `576a310ccd47146f7e758f27ab0a2d32cd9860cd`; task and evidence files were read back from that SHA.
 - Live Chrome evidence: pending; source tests and source Release do not substitute for the required real-browser evidence.
 - Post-main packaged Fabushi build/E2E: `N/A` — this task changes only the independently released userscript and project records, not a Fabushi packaged product.
 
@@ -84,4 +87,4 @@
 
 - Risk: ChatGPT may change attachment DOM or upload behavior; retain current-composer scoped confirmation and fail-closed behavior.
 - Risk: IndexedDB data may be unavailable after profile/storage changes; retain task metadata and require reselect/retry rather than sending without attachments.
-- Next: merge parent records through protected main, read back canonical state, then run the authenticated Chrome attachment recovery journey and attach complete evidence.
+- Next: run the authenticated Chrome attachment recovery journey and attach complete evidence; keep the task open until the browser evidence bundle is complete.
