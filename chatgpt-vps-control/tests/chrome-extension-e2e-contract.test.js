@@ -40,4 +40,6 @@ test("Chrome packaged journey retains canonical visual and trace evidence", asyn
   assert.match(postMainWorkflow, /jq -r '\.sourceSha'/);
   assert.match(postMainWorkflow, /chrome_version=.*\.version \/\/ empty/);
   assert.doesNotMatch(postMainWorkflow, /\.version' "\$chrome_manifest"\) = "0\.5\.0"/);
+  assert.match(postMainWorkflow, /awk '\$2 == "\.\/SHA256SUMS\.txt"/);
+  assert.doesNotMatch(postMainWorkflow, /grep -Fq 'SHA256SUMS\.txt'/);
 });
