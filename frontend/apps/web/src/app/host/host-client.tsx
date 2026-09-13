@@ -2395,6 +2395,10 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
       if (!record) throw new Error("市场没有可记录的 GitHub 版本。");
       setInstalledMiniAppRecords(readMarketplaceInstallRecords());
       setInstalledMiniApps((current) => new Set(current).add(miniAppId));
+      setFeatureStates((current) => ({
+        ...current,
+        "marketplace.install": "passed",
+      }));
     }).finally(() => setBusyMiniApp(null));
   };
 
