@@ -76,7 +76,7 @@
 - Branch: `codex/tfi-miniapp-unified-install-update-20260913`
 - Commit: `3cd8ba783` (`feat(marketplace): unify GitHub install and update flow`)
 - Records commit: `7c95a6f89` (`docs(marketplace): record implementation commit`)
-- Version commit: pending
+- Version commit: `04a985633` (`release: advance test version to 1.2.58`)
 - PR: pending (本机未安装 GitHub CLI；分支待推送后创建)
 - CI/E2E/Release: pending
 - Evidence index: `../../evidence/M8-MARKET-003/README.md` (implementation evidence recorded; PR/main/post-main evidence pending)
