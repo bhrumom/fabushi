@@ -32,7 +32,8 @@ test('macOS release handoff is pinned to an immutable exact-source release tag',
   assert.match(source, /commits\/\$release_tag/u);
   assert.match(source, /test "\$tag_sha" = "\$source_sha"/u);
   assert.match(source, /short_source="\$\{source_sha:0:12\}"/u);
-  assert.match(source, /\[\[ "\$release_tag" == desktop-\*"-\$short_source" \]\]/u);
+  assert.match(source, /if \[\[ "\$release_tag" != desktop-\*"-\$short_source" \]\]/u);
+  assert.match(source, /Skipping external-controller dispatch for ordinary Release/u);
 });
 
 test('release chain delegates target creation and control exclusively to FCM external controller', async () => {
