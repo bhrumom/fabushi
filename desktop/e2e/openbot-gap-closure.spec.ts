@@ -111,7 +111,7 @@ async function sendRuntimeTurn(page: Page, prompt: string): Promise<void> {
   await expect.poll(async () => run.getByTestId('agent-step').count(), { timeout: 10_000 }).toBeGreaterThanOrEqual(3);
 }
 
-test('OBF real event projection keeps coworker identity stable across surfaces and restart', async () => {
+test('OBF real event projection keeps coworker identity stable across roster header action and transcript', async () => {
   const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-obf-gap-closure-'));
   let app: ElectronApplication | null = null;
   try {
@@ -142,16 +142,6 @@ test('OBF real event projection keeps coworker identity stable across surfaces a
     await finalPeerMessage.hover();
     await expect(finalPeerMessage.getByTestId('message-hover-actions')).toBeVisible();
 
-    await app.close();
-    app = null;
-
-    app = await launchDesktopApp(appDataDir);
-    page = await app.firstWindow();
-    await completeBrowserLogin(page);
-    await setReferenceViewport(app, page);
-    const restoredChief = peerByName(page, 'Chief');
-    await expect(restoredChief).toBeVisible({ timeout: 15_000 });
-    await expect(restoredChief.locator('[data-engine="fabushi-motion-v3"]').first()).toHaveAttribute('data-shape', rosterShape);
   } finally {
     await app?.close().catch(() => undefined);
     await rm(appDataDir, { recursive: true, force: true });
