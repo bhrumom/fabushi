@@ -35,7 +35,7 @@ assert(Array.isArray(manifest.content_scripts) && manifest.content_scripts.some(
 assert(releaseReadme.includes(`Production candidate: **${manifest.version}**`), "Chrome Web Store README production candidate must match manifest.version");
 assert(releaseReadme.includes("Every Chrome Web Store update must increment"), "release docs must preserve the monotonic version gate");
 
-for (const relative of [manifest.action.default_popup, manifest.background.service_worker, "app.css", "app.js", "platform-bridge.js", "browser-control.js", "account-browser-agent.js", "userscript-core.js", "userscript-runner.js", "userscript-content.js", "userscript.css", "userscript/chatgpt-auto-confirm.user.js", "marketplace/chatgpt-task-queue.user.js"]) await mustExist(relative);
+for (const relative of [manifest.action.default_popup, manifest.background.service_worker, "app.css", "app.js", "marketplace-install.js", "platform-bridge.js", "browser-control.js", "account-browser-agent.js", "userscript-core.js", "userscript-runner.js", "userscript-content.js", "userscript.css", "userscript/chatgpt-auto-confirm.user.js", "marketplace/chatgpt-task-queue.user.js"]) await mustExist(relative);
 const serviceWorker = await readFile(join(extension, manifest.background.service_worker), "utf8");
 assert(serviceWorker.includes('import "./platform-bridge.js"'), "service worker must load the product bridge");
 assert(serviceWorker.includes('import "./browser-control.js"'), "service worker must load the browser-control bridge");
@@ -50,6 +50,8 @@ assert(!/<script[^>]+src=["']https?:\/\//i.test(appHtml), "remote scripts are no
 assert(!/<link[^>]+href=["']https?:\/\//i.test(appHtml), "remote stylesheets are not allowed in app.html");
 assert(!/\bon\w+\s*=/i.test(appHtml), "inline event handlers are not allowed in app.html");
 assert(appJs.includes("feature.marketplace.browse"), "Fabushi Chrome must expose Marketplace through the desktop bridge");
+assert(appJs.includes("marketplace-install.js") && appJs.includes("marketplaceInstallAction"), "Fabushi Chrome must use the shared Marketplace install/update state contract");
+assert(appJs.includes("fetchPublicMarketplace") && appJs.includes("chrome-extension"), "Fabushi Chrome must discover approved platform-compatible Marketplace metadata without requiring the desktop Host");
 assert(appJs.includes("chatgpt-auto-confirm") && appJs.includes("import-userscript"), "Fabushi Chrome must preserve the existing bundled userscript runner UI");
 assert(appJs.includes("userscript-chatgpt-task-queue") && appJs.includes("marketplace/chatgpt-task-queue.user.js"), "Fabushi Chrome must expose the bundled Task Queue userscript through the same runner");
 assert(appJs.includes("fabushi.userscript.install") && appJs.includes("fabushi.userscript.setEnabled") && appJs.includes("fabushi.userscript.uninstall"), "userscript UI must expose install, enable/disable, and uninstall controls");
@@ -58,7 +60,10 @@ const userscript = await readFile(join(extension, "userscript/chatgpt-auto-confi
 assert(userscript.includes("// @match        https://chatgpt.com/*") && userscript.includes("// @match        https://chat.openai.com/*"), "bundled userscript must declare approved hosts");
 const taskQueue = await readFile(join(extension, "marketplace/chatgpt-task-queue.user.js"), "utf8");
 assert(taskQueue.includes("// @match        https://chatgpt.com/*") && taskQueue.includes("// @match        https://chat.openai.com/*"), "bundled Task Queue userscript must declare approved hosts");
-assert(!/https?:\/\/[^\s"']+\.js/i.test(`${serviceWorker}\n${appHtml}\n${appJs}\n${userscript}\n${taskQueue}`), "production extension must not load executable JavaScript from a remote URL");
+const remoteExecutableUrls = `${serviceWorker}\n${appHtml}\n${appJs}\n${userscript}\n${taskQueue}`
+  .match(/https?:\/\/[^\s"'`]+\.js(?:[^\s"'`]*)?/gi) || [];
+assert(remoteExecutableUrls.every((url) => /https:\/\/raw\.githubusercontent\.com\//i.test(url)), "remote executable code may only come from a pinned raw GitHub artifact");
+assert(appJs.includes("fetchVerifiedUserscript") && appJs.includes("crypto.subtle") && appJs.includes('redirect: "error"'), "GitHub userscripts must be fetched with digest verification and redirect protection");
 
 const platformBridge = await readFile(join(extension, "platform-bridge.js"), "utf8");
 const browserControl = await readFile(join(extension, "browser-control.js"), "utf8");
@@ -86,7 +91,7 @@ assert(desktopServer.includes("FORBIDDEN_EXTENSION_COMMANDS"), "desktop server m
 assert(desktopServer.includes("FABUSHI_CHROME_EXTENSION_ID") && desktopServer.includes("requires the published extension ID"), "desktop server must fail closed until the published Fabushi extension ID is configured");
 assert(desktopHost.includes("createChromePlatformServer") && desktopHost.includes("chromePlatformServer.broadcastEvent"), "desktop Host must own and forward the Chrome platform server");
 
-for (const relative of ["app.js", "platform-bridge.js", "browser-control.js", "account-browser-agent.js", "userscript-core.js", "userscript-runner.js", "userscript-content.js", "service-worker.js"]) execFileSync(process.execPath, ["--check", join(extension, relative)], { stdio: "inherit" });
+for (const relative of ["app.js", "marketplace-install.js", "platform-bridge.js", "browser-control.js", "account-browser-agent.js", "userscript-core.js", "userscript-runner.js", "userscript-content.js", "service-worker.js"]) execFileSync(process.execPath, ["--check", join(extension, relative)], { stdio: "inherit" });
 execFileSync(process.execPath, ["--check", join(root, "scripts", "chrome-platform-host.mjs")], { stdio: "inherit" });
 execFileSync(process.execPath, ["--check", join(root, "scripts", "package-chrome-extension.mjs")], { stdio: "inherit" });
 execFileSync(process.execPath, ["--check", join(root, "scripts", "chrome-extension-e2e.mjs")], { stdio: "inherit" });
@@ -95,4 +100,4 @@ execFileSync(process.execPath, ["--check", join(root, "..", "desktop", "electron
 console.log(`Fabushi Chrome platform validation passed: ${manifest.name} ${manifest.version}`);
 console.log("Command/event parity passed: list_tabs, claim_tab, cdp, cdp_auto_attach_frame, downloads, tab_action, create_tab, cleanup_tabs, detach");
 console.log("Credential boundary passed: desktop Host owns account session; extension receives only product results/events");
-console.log("Integrated userscript boundary passed: existing runner, bundled sources, explicit install controls, and no remote executable code");
+console.log("Integrated userscript boundary passed: existing runner, verified GitHub artifacts, explicit install controls, and no arbitrary remote executable code");

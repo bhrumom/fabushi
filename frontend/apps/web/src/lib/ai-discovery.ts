@@ -1,6 +1,7 @@
 import {
   MARKETPLACE_CATEGORY_LABELS,
   getMarketplaceApp,
+  getMarketplaceRelease,
   marketplaceApps,
   marketplaceContent,
   type MarketplaceApp,
@@ -113,6 +114,7 @@ export function appMachineUrl(app: Pick<MarketplaceApp, "slug">) {
 }
 
 export function serializeAppForAi(app: MarketplaceApp) {
+  const release = getMarketplaceRelease(app.id);
   return {
     "@type": ["SoftwareApplication", "WebApplication"],
     "@id": appEntityId(app),
@@ -129,6 +131,26 @@ export function serializeAppForAi(app: MarketplaceApp) {
     operatingSystems: ["Web", "macOS", "Windows", "Linux", "iOS", "Android"],
     version: app.version,
     updatedAt: app.updatedAt,
+    release: release ?? null,
+    installation: release
+      ? {
+        protocol: release.protocol,
+        strategy: "github-immutable",
+        source: {
+          repository: release.repository,
+          sourceRef: release.sourceRef,
+          manifestUrl: release.manifestUrl,
+          marketplaceHostsPackage: false,
+        },
+        update: {
+          check: "marketplace-release",
+          comparison: "version-then-artifact-sha256",
+          allowDowngrade: false,
+          rollback: "previous-active",
+        },
+        webExecution: "host-required",
+      }
+      : null,
     tags: app.tags,
     capabilities: app.capabilities,
     permissions: app.permissions,

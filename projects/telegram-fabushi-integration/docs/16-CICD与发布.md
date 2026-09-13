@@ -48,3 +48,11 @@ Release：
 - release manifest
 - SBOM
 - checksum
+
+## 2026-09-13 — GitHub immutable Marketplace delivery gate
+
+Marketplace 相关 PR 的快速门禁至少运行 backend pure/HTTP contract（依赖可用时）、Rust formatter/unit/contract、frontend typecheck/build、Chrome extension syntax/package checks 和项目治理校验。PR exact-head workflow 必须证明实际 checkout 的工作树 SHA 等于 PR product head；merge queue 必须证明实际 SHA 等于当前 merge-group SHA。
+
+合入 canonical `main` 后，对准确 SHA 使用可复用缓存执行 packaged Electron、Android、iOS、CLI 与任务相关 Marketplace/Chrome journeys。缓存只能加速，不能作为发布 provenance；必须记录 cache hit/miss、恢复 key、构建时长和 toolchain/source SHA。required journey 必须保留分步截图、完整操作视频、trace、HTML/test report/native logs，PASS/FAIL 均上传并与 SHA/version/platform/run/job/timestamp 绑定。
+
+Release 只能在这些 exact-main gates 全部通过且固定 catalog artifact 的 digest/size/压缩格式核验成功后发布。桌面 Release 需由同一 lineage 生成可更新的 DMG、ZIP、`latest-mac.yml`、blockmap 及 Windows/Linux 对应资产；版本必须单调可比较。旧客户端 updater journey 默认是 advisory，只有任务明确要求时才升级为必需门禁。

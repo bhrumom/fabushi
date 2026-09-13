@@ -1,11 +1,17 @@
 "use client";
 
-import { Check, ExternalLink, Plus } from "lucide-react";
+import { Check, Download, ExternalLink, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  installMarketplaceApp,
+  marketplaceAppInstallAction,
+  marketplaceInstallActionLabel,
+  readMarketplaceInstallRecords,
+  subscribeMarketplaceInstallState,
+} from "../../lib/marketplace-install-state";
 import { siteHref } from "../../lib/site-url";
 import styles from "./marketplace.module.css";
 
-const INSTALLED_KEY = "fabushi.installed-miniapps";
 const RECENT_KEY = "fabushi.marketplace.recent-apps.v1";
 
 function readList(key: string): string[] {
@@ -18,17 +24,19 @@ function readList(key: string): string[] {
 }
 
 export function AppInstallActions({ appId, appName }: { appId: string; appName: string }) {
-  const [installed, setInstalled] = useState(false);
+  const [installedRecords, setInstalledRecords] = useState(() => readMarketplaceInstallRecords());
 
   useEffect(() => {
-    setInstalled(readList(INSTALLED_KEY).includes(appId));
-  }, [appId]);
+    setInstalledRecords(readMarketplaceInstallRecords());
+    return subscribeMarketplaceInstallState(setInstalledRecords);
+  }, []);
 
+  const installed = installedRecords[appId];
+  const action = marketplaceAppInstallAction(appId, installed);
   const install = () => {
-    const next = [...new Set([...readList(INSTALLED_KEY), appId])];
-    window.localStorage.setItem(INSTALLED_KEY, JSON.stringify(next));
-    setInstalled(true);
-    window.dispatchEvent(new CustomEvent("fabushi:marketplace-installed", { detail: { ids: next } }));
+    if (action === "current" || action === "blocked" || action === "unavailable") return;
+    const record = installMarketplaceApp(appId);
+    if (record) setInstalledRecords(readMarketplaceInstallRecords());
   };
 
   const markOpened = () => {
@@ -43,12 +51,17 @@ export function AppInstallActions({ appId, appName }: { appId: string; appName: 
         className={styles.detailPrimary}
         type="button"
         onClick={install}
-        disabled={installed}
-        aria-label={installed ? `${appName} 已安装` : `安装 ${appName}`}
+        disabled={action === "current" || action === "blocked" || action === "unavailable"}
+        aria-label={`${marketplaceInstallActionLabel(action)} ${appName}`}
       >
-        {installed ? <Check /> : <Plus />}
-        {installed ? "已加入我的应用" : "安装应用"}
+        {action === "current" ? <Check /> : action === "update" || action === "reinstall" ? <RefreshCw /> : action === "unavailable" ? <Plus /> : <Download />}
+        {action === "current" ? "已安装 · 最新" : marketplaceInstallActionLabel(action)}
       </button>
+      {installed ? (
+        <small className={styles.detailHint}>
+          GitHub {installed.version} · SHA-256 {installed.artifactSha256 ? installed.artifactSha256.slice(0, 12) : "待校验"}
+        </small>
+      ) : null}
       <a
         className={styles.detailSecondary}
         href={siteHref(`/miniapps/${appId}`)}

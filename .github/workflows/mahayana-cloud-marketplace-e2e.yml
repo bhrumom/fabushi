@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mahayana-cloud-marketplace-e2e
@@ -186,10 +186,11 @@ jobs:
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "$PLATFORM_URL/health" | tee "$RUNNER_TEMP/platform-health.json"
           jq -e '.ok == true' "$RUNNER_TEMP/platform-health.json" >/dev/null
 
-      - name: Host and publish external Cloudflare plugin artifact
+      - name: Publish GitHub-hosted marketplace artifact
         id: publish
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           MAHAYANA_API_BASE_URL: ${{ steps.platform.outputs.url }}
           MAHAYANA_TEST_ACCOUNT_TOKEN: ${{ env.TEST_ACCOUNT_TOKEN }}
         run: |
@@ -211,22 +212,43 @@ jobs:
           package_sha="$(sha256sum "$source_archive" | awk '{print $1}')"
           package_size="$(stat -c '%s' "$source_archive")"
 
-          # Reuse the already-deployed development Worker. The artifact key
-          # is under its explicitly public `public/` prefix, so this E2E flow
-          # needs no per-run Worker and remains within the account's quota.
-          artifact_key="public/e2e/marketplace/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/plugin.tar.gz"
-          npx --yes wrangler@4 r2 object put "bushi-dev/$artifact_key" \
-            --file "$source_archive" --remote \
-            2>&1 | tee "$RUNNER_TEMP/artifact-r2-put.log"
-          encoded_key="$(jq -rn --arg value "$artifact_key" '$value|@uri')"
-          artifact_gateway="https://fabushi-flutter-web-dev.bhrumom.workers.dev/r2"
-          artifact_url="${artifact_gateway}?file=${encoded_key}"
-          printf 'reused_artifact_gateway=%s\n' "$artifact_gateway" > "$RUNNER_TEMP/artifact-gateway-deploy.log"
+          # The product and platform only accept immutable GitHub sources. Put
+          # the exact bytes produced by `plugin pack` into a disposable GitHub
+          # Release asset so admission, download, and install all exercise the
+          # same GitHub-hosted artifact contract used by real marketplace apps.
+          release_tag="marketplace-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          release_notes="$RUNNER_TEMP/marketplace-release-notes.md"
+          cat > "$release_notes" <<EOF
+          Disposable Marketplace E2E artifact.
+
+          Source SHA: $GITHUB_SHA
+          Workflow run: $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT
+          EOF
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Temporary GitHub release $release_tag already exists; refusing to mutate it." >&2
+            exit 1
+          fi
+          cp "$source_archive" "$RUNNER_TEMP/plugin.tar.gz"
+          gh release create "$release_tag" "$RUNNER_TEMP/plugin.tar.gz" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Marketplace E2E $release_tag" \
+            --notes-file "$release_notes" \
+            --prerelease \
+            --latest=false
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,targetCommitish,isPrerelease,assets,url \
+            > "$RUNNER_TEMP/github-release.json"
+          artifact_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}/plugin.tar.gz"
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 \
-            "$artifact_url" > "$RUNNER_TEMP/served-plugin.tar.gz"
+            --location "$artifact_url" > "$RUNNER_TEMP/served-plugin.tar.gz"
           test "$(sha256sum "$RUNNER_TEMP/served-plugin.tar.gz" | awk '{print $1}')" = "$package_sha"
           test "$(stat -c '%s' "$RUNNER_TEMP/served-plugin.tar.gz")" = "$package_size"
-          artifact_source="$(jq -cn --arg url "$artifact_url" '{type:"https",url:$url}')"
+          artifact_source="$(jq -cn \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg tag "$release_tag" \
+            '{type:"github-release",repository:$repository,tag:$tag,asset:"plugin.tar.gz"}')"
 
           "$cli" login test
           "$cli" plugin publish "$PLUGIN_DIR" --plugin-id "$PLUGIN_ID" --version "$PLUGIN_VERSION" \
@@ -260,6 +282,7 @@ jobs:
             --arg tree_hash "$source_tree" \
             --arg package_sha "$package_sha" \
             --argjson package_size "$package_size" \
+            --arg release_tag "$release_tag" \
             --arg artifact_url "$artifact_url" '
             .published == true and .approved == true and
             .storage == "external" and
@@ -278,15 +301,17 @@ jobs:
             .releaseManifest.pluginId == $id and
             .releaseManifest.version == $version and
             (.releaseManifest.artifacts | length) == 1 and
-            .releaseManifest.artifacts[0].source.type == "https" and
-            .releaseManifest.artifacts[0].source.url == $artifact_url and
+            .releaseManifest.artifacts[0].source.type == "github-release" and
+            .releaseManifest.artifacts[0].source.repository == $repository and
+            .releaseManifest.artifacts[0].source.tag == $release_tag and
+            .releaseManifest.artifacts[0].source.asset == "plugin.tar.gz" and
             .releaseManifest.artifacts[0].sha256 == $package_sha and
             .releaseManifest.artifacts[0].size == $package_size and
             .resolvedArtifacts[0] == $artifact_url and
             (.releaseManifestSha256 | test("^[0-9a-f]{64}$"))
           ' "$RUNNER_TEMP/publish.json" >/dev/null
           echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
-          echo "artifact_key=$artifact_key" >> "$GITHUB_OUTPUT"
+          echo "artifact_source=$artifact_source" >> "$GITHUB_OUTPUT"
 
       - name: Legacy hosted-site validation (retired by external artifacts)
         if: ${{ false }}
@@ -401,14 +426,13 @@ jobs:
         env:
           MAHAYANA_API_BASE_URL: ${{ steps.platform.outputs.url }}
           MAHAYANA_TEST_ACCOUNT_TOKEN: ${{ env.TEST_ACCOUNT_TOKEN }}
+          ARTIFACT_SOURCE: ${{ steps.publish.outputs.artifact_source }}
         run: |
           set -euo pipefail
           cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/$CARGO_PROFILE/mahayana"
-          artifact_url="${{ steps.publish.outputs.deployment_url }}"
-          artifact_source="$(jq -cn --arg url "$artifact_url" '{type:"https",url:$url}')"
           set +e
           "$cli" plugin publish "$PLUGIN_DIR" --plugin-id "$PLUGIN_ID" --version "$PLUGIN_VERSION" \
-            --artifact-source "$artifact_source" \
+            --artifact-source "$ARTIFACT_SOURCE" \
             >"$RUNNER_TEMP/duplicate-version.stdout" \
             2>"$RUNNER_TEMP/duplicate-version.stderr"
           duplicate_status="$?"
@@ -426,7 +450,11 @@ jobs:
           cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/$CARGO_PROFILE/mahayana"
           "$cli" marketplace browse \
             2> >(tee "$RUNNER_TEMP/browse.stderr" >&2) | tee "$RUNNER_TEMP/browse.json"
-          jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" --arg deployment "${{ steps.publish.outputs.deployment_url }}" '
+          jq -e \
+            --arg id "$PLUGIN_ID" \
+            --arg version "$PLUGIN_VERSION" \
+            --arg release_tag "${{ steps.publish.outputs.release_tag }}" \
+            --arg deployment "${{ steps.publish.outputs.deployment_url }}" '
             any(.plugins[];
               .pluginId == $id and .latestVersion == $version and
               .releaseStatus == "approved" and
@@ -439,8 +467,11 @@ jobs:
               .source.repositoryId == (env.GITHUB_REPOSITORY_ID | tonumber) and
               .source.commit == env.GITHUB_SHA and
               .releaseManifest.protocol == "mahayana.external-release.v1" and
-              .releaseManifest.artifacts[0].source.type == "https" and
-              .releaseManifest.artifacts[0].source.url == $deployment and
+              .releaseManifest.artifacts[0].source.type == "github-release" and
+              .releaseManifest.artifacts[0].source.repository == env.GITHUB_REPOSITORY and
+              .releaseManifest.artifacts[0].source.tag == $release_tag and
+              .releaseManifest.artifacts[0].source.asset == "plugin.tar.gz" and
+              .deploymentUrl == $deployment and
               (.releaseManifestSha256 | test("^[0-9a-f]{64}$")))
           ' "$RUNNER_TEMP/browse.json" >/dev/null
 
@@ -459,7 +490,7 @@ jobs:
             2> >(tee "$RUNNER_TEMP/install.stderr" >&2) | tee "$RUNNER_TEMP/install.json"
           jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" '
             .installed == true and .pluginId == $id and .version == $version and
-            .source == "independent-pages-or-worker" and .validation.valid == true
+            .source == "github-immutable-marketplace" and .validation.valid == true
           ' "$RUNNER_TEMP/install.json" >/dev/null
           test -f "$install_repo/.agents/plugins/plugins/$PLUGIN_ID/.codex-plugin/plugin.json"
           test -f "$install_repo/.agents/plugins/marketplace.json"
@@ -542,13 +573,19 @@ jobs:
           [ ! -e "$revoked_archive" ]
           [ ! -e "$revoked_install_repo/.agents/plugins/plugins/$PLUGIN_ID" ]
 
-      - name: Delete temporary external plugin artifact
-        if: always() && steps.publish.outputs.artifact_key != ''
+      - name: Delete temporary GitHub marketplace release
+        if: always() && steps.publish.outputs.release_tag != ''
         shell: bash
         env:
-          ARTIFACT_KEY: ${{ steps.publish.outputs.artifact_key }}
-        run: >-
-          npx --yes wrangler@4 r2 object delete "bushi-dev/$ARTIFACT_KEY" --remote
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.publish.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          else
+            echo "Temporary GitHub release $RELEASE_TAG is already absent."
+          fi
 
       - name: Record end-to-end evidence
         if: always()
@@ -560,10 +597,11 @@ jobs:
           path: |
             ${{ runner.temp }}/platform-deploy.log
             ${{ runner.temp }}/platform-health.json
-            ${{ runner.temp }}/artifact-r2-put.log
-            ${{ runner.temp }}/artifact-gateway-deploy.log
             ${{ runner.temp }}/source-plugin.tar.gz
+            ${{ runner.temp }}/plugin.tar.gz
             ${{ runner.temp }}/served-plugin.tar.gz
+            ${{ runner.temp }}/marketplace-release-notes.md
+            ${{ runner.temp }}/github-release.json
             ${{ runner.temp }}/publish.log
             ${{ runner.temp }}/publish.json
             ${{ runner.temp }}/plugin-index.html

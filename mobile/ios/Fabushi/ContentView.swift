@@ -1810,7 +1810,7 @@ return fingerprintParts.joined(separator: "|")
                 }
 
                 Section("本地插件市场") {
-                    Text("iOS 主壳使用 SwiftUI；MiniApp 使用受控 WebMCP Surface；插件安装、权限与后台运行由共享 Mahayana Rust Host 管理。")
+                    Text("iOS 主壳使用 SwiftUI；MiniApp 使用受控 WebMCP Surface；代码从 GitHub 固定版本拉取并由共享 Mahayana Rust Host 校验、安装、更新。")
                     TextField("搜索插件", text: $model.query)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -1846,7 +1846,10 @@ return fingerprintParts.joined(separator: "|")
                                 Text(plugin.pluginId).font(.caption.monospaced()).foregroundStyle(.secondary)
                                 Text(plugin.displayName).font(.headline)
                                 Text(plugin.description).foregroundStyle(.secondary)
-                                if let version = plugin.latestVersion { Text(version).font(.caption) }
+                                if let version = plugin.latestVersion {
+                                    Text("\(version) · GitHub \(plugin.sourceRef?.prefix(9) ?? \"待确认\")")
+                                        .font(.caption)
+                                }
                             }
                             .accessibilityElement(children: .combine)
                             .accessibilityIdentifier("plugin-\(plugin.pluginId)")

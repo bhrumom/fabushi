@@ -349,7 +349,7 @@ try {
   appPage.on("console", (message) => step("app-console", { type: message.type(), text: message.text() }));
   appPage.on("pageerror", (error) => step("app-pageerror", { error: error?.message || String(error) }));
   await appPage.goto(`${extensionOrigin}/app.html`, { waitUntil: "domcontentloaded" });
-  await appPage.getByText("Marketplace", { exact: true }).first().waitFor({ state: "visible", timeout: 10_000 });
+  await appPage.locator("#marketplace-view").waitFor({ state: "visible", timeout: 10_000 });
   await captureCheckpoint(appPage, join(evidenceRoot, "02-fabushi-shell.png"));
   step("fabushi-shell", { extensionId, origin: extensionOrigin });
   await appPage.locator('[data-view="browser"]').first().click();
