@@ -490,7 +490,7 @@ jobs:
             2> >(tee "$RUNNER_TEMP/install.stderr" >&2) | tee "$RUNNER_TEMP/install.json"
           jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" '
             .installed == true and .pluginId == $id and .version == $version and
-            .source == "independent-pages-or-worker" and .validation.valid == true
+            .source == "github-immutable-marketplace" and .validation.valid == true
           ' "$RUNNER_TEMP/install.json" >/dev/null
           test -f "$install_repo/.agents/plugins/plugins/$PLUGIN_ID/.codex-plugin/plugin.json"
           test -f "$install_repo/.agents/plugins/marketplace.json"
