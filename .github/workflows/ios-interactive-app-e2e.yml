@@ -204,7 +204,7 @@ jobs:
           name: fabushi-ios-simulator-test-${{ github.sha }}
           path: ios-interactive-evidence/test-build/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
 
       - id: install
         name: Install exact Simulator test build before protected account login
@@ -395,7 +395,7 @@ jobs:
           name: fabushi-ios-interactive-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: ios-interactive-evidence/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
       - name: Delete isolated Simulator
         if: always()

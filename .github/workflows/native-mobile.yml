@@ -312,7 +312,7 @@ jobs:
             mobile/android/app/build/outputs/apk/debug/*.apk
             mobile/android/app/build/outputs/androidTest-results/**
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 90
 
       - id: staticlib-source-key
         name: Freeze iOS Rust static-library source cache key
@@ -451,4 +451,4 @@ jobs:
           name: ios-native-xcresult
           path: ${{ runner.temp }}/FabushiTests.xcresult
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 90
