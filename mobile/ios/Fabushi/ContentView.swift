@@ -1847,7 +1847,7 @@ return fingerprintParts.joined(separator: "|")
                                 Text(plugin.displayName).font(.headline)
                                 Text(plugin.description).foregroundStyle(.secondary)
                                 if let version = plugin.latestVersion {
-                                    Text("\(version) · GitHub \(plugin.sourceRef?.prefix(9) ?? \"待确认\")")
+                                    Text("\(version) · GitHub \(plugin.sourceRef?.prefix(9) ?? "待确认")")
                                         .font(.caption)
                                 }
                             }
