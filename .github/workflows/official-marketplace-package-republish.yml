@@ -1,0 +1,144 @@
+name: Official Marketplace Package Republish
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/official-marketplace-package-republish.yml'
+      - 'scripts/repair-official-marketplace-packages.sh'
+      - 'marketplace/packages/**'
+      - '.agents/plugins/plugins/chatgpt-auto-confirm/index.html'
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 'Exact 40-character source commit to package'
+        required: false
+        type: string
+      package_version:
+        description: 'Monotonic Marketplace package version'
+        required: true
+        default: '1.0.1'
+        type: string
+      publish_release:
+        description: 'Publish the validated packages as an immutable prerelease'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  MARKETPLACE_SOURCE_REF: ${{ inputs.source_ref || github.event.pull_request.head.sha || github.sha }}
+  MARKETPLACE_PACKAGE_VERSION: ${{ inputs.package_version || '1.0.1' }}
+
+jobs:
+  package:
+    name: Build and validate repaired package set
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Rebuild and validate packages
+        env:
+          MARKETPLACE_OUTPUT_DIR: ${{ runner.temp }}/official-marketplace-packages
+        run: bash scripts/repair-official-marketplace-packages.sh
+
+      - name: Verify release manifest contract
+        env:
+          MARKETPLACE_OUTPUT_DIR: ${{ runner.temp }}/official-marketplace-packages
+        run: |
+          set -euo pipefail
+          manifest="$MARKETPLACE_OUTPUT_DIR/official-marketplace-release-manifest.json"
+          jq -e \
+            --arg source_ref "$MARKETPLACE_SOURCE_REF" \
+            --arg version "$MARKETPLACE_PACKAGE_VERSION" \
+            '.protocol == "fabushi.marketplace.install.v1" and .sourceRef == $source_ref and .version == $version and (.artifacts | length == 3) and all(.artifacts[]; (.artifactSha256 | test("^[0-9a-f]{64}$")) and .artifactSize > 0 and .format == "tar-gz" and .entry == "index.html")' \
+            "$manifest" >/dev/null
+
+      - name: Upload repaired package evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-marketplace-packages-${{ env.MARKETPLACE_SOURCE_REF }}
+          path: ${{ runner.temp }}/official-marketplace-packages
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    name: Publish immutable Marketplace package release
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          persist-credentials: false
+
+      - name: Rebuild packages for publication
+        env:
+          MARKETPLACE_OUTPUT_DIR: ${{ runner.temp }}/official-marketplace-packages
+        run: |
+          set -euo pipefail
+          release_tag="marketplace-v${MARKETPLACE_PACKAGE_VERSION}-${MARKETPLACE_SOURCE_REF:0:12}"
+          export MARKETPLACE_RELEASE_TAG="$release_tag"
+          bash scripts/repair-official-marketplace-packages.sh
+
+      - name: Publish immutable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKETPLACE_OUTPUT_DIR: ${{ runner.temp }}/official-marketplace-packages
+        run: |
+          set -euo pipefail
+          release_tag="marketplace-v${MARKETPLACE_PACKAGE_VERSION}-${MARKETPLACE_SOURCE_REF:0:12}"
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Immutable release already exists: $release_tag" >&2
+            exit 1
+          fi
+          gh release create "$release_tag" \
+            "$MARKETPLACE_OUTPUT_DIR"/*.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$MARKETPLACE_SOURCE_REF" \
+            --title "Fabushi Marketplace packages $MARKETPLACE_PACKAGE_VERSION" \
+            --notes "Repaired official Marketplace packages. Source SHA: $MARKETPLACE_SOURCE_REF" \
+            --prerelease \
+            --latest=false
+          gh release upload "$release_tag" \
+            "$MARKETPLACE_OUTPUT_DIR/official-marketplace-release-manifest.json" \
+            --repo "$GITHUB_REPOSITORY"
+
+      - name: Verify published bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKETPLACE_OUTPUT_DIR: ${{ runner.temp }}/official-marketplace-packages
+        run: |
+          set -euo pipefail
+          release_tag="marketplace-v${MARKETPLACE_PACKAGE_VERSION}-${MARKETPLACE_SOURCE_REF:0:12}"
+          manifest="$MARKETPLACE_OUTPUT_DIR/official-marketplace-release-manifest.json"
+          while IFS= read -r artifact; do
+            asset_name="$(jq -r '.assetName' <<< "$artifact")"
+            expected_sha="$(jq -r '.artifactSha256' <<< "$artifact")"
+            expected_size="$(jq -r '.artifactSize' <<< "$artifact")"
+            curl --fail --silent --show-error --location --retry 8 --retry-all-errors --retry-delay 2 \
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/$release_tag/$asset_name" \
+              > "$RUNNER_TEMP/$asset_name"
+            test "$(sha256sum "$RUNNER_TEMP/$asset_name" | awk '{print $1}')" = "$expected_sha"
+            test "$(stat -c '%s' "$RUNNER_TEMP/$asset_name")" = "$expected_size"
+            gzip -t "$RUNNER_TEMP/$asset_name"
+          done < <(jq -c '.artifacts[]' "$manifest")
+          {
+            echo '## Official Marketplace package release'
+            echo
+            echo "- Source SHA: `$MARKETPLACE_SOURCE_REF`"
+            echo "- Release: `$release_tag`"
+            jq -r '.artifacts[] | "- \(.pluginId) \(.version): \(.artifactSha256) (\(.artifactSize) bytes)"' "$manifest"
+          } >> "$GITHUB_STEP_SUMMARY"
