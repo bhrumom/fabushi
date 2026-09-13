@@ -4,7 +4,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const baselineMainSha = '9365b5e13f1fb5ac7b31f00049e487ab2174edbc';
+const baselineMainSha = 'c41e9305dd2c2af4f48139dadfefe71eef50068f';
 const referenceCropSha256 = '0a94bcf48630f4d872bab2e765df8df396026ac08d2b6c3b5fe64b112c1d268d';
 const packagedExecutable = process.env.FABUSHI_ELECTRON_EXECUTABLE?.trim() || '';
 const referenceScreenshot = process.env.OBF_REFERENCE_SCREENSHOT?.trim() || '';
