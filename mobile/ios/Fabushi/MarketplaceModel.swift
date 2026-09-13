@@ -591,7 +591,7 @@ final class MarketplaceModel {
             )
             let object = result.value as? [String: Any]
             let rows = object?["plugins"] as? [[String: Any]] ?? []
-            plugins = rows.compactMap { item in
+            plugins = rows.compactMap { (item: [String: Any]) -> MarketplacePlugin? in
                 guard let id = item["pluginId"] as? String, !id.isEmpty else { return nil }
                 let source = item["source"] as? [String: Any]
                 let commands = source?["commands"] as? [[String: Any]]
