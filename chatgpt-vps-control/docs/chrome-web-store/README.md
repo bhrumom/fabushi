@@ -68,3 +68,7 @@ Chrome source paths were unchanged in the latest follow-up commit.
 The post-main publisher reads the Chrome content-manifest version from the
 tested artifact and validates it as SemVer; it must not hard-code a historical
 Chrome version into the release gate.
+
+Changes to the release-train control plane intentionally retrigger this package
+workflow, so every accepted protected-main SHA has its own Chrome artifact and
+journey evidence even when the extension source files are unchanged.
