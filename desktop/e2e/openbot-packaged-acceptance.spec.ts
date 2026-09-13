@@ -69,7 +69,10 @@ function assertProductionEvidenceEnvironment(): void {
 }
 
 async function launchPackaged(appDataDir: string, videoDir: string): Promise<ElectronApplication> {
-  const launchEnv: NodeJS.ProcessEnv = { ...process.env, FABUSHI_APP_DATA: appDataDir };
+  const launchEnv: Record<string, string> = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  );
+  launchEnv.FABUSHI_APP_DATA = appDataDir;
   delete launchEnv.FABUSHI_FEATURE_HOST_MODE;
   delete launchEnv.FABUSHI_E2E;
   delete launchEnv.MAHAYANA_APP_HOST_BIN;
