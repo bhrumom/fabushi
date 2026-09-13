@@ -114,6 +114,17 @@ const COLORS: readonly BotMarkColor[] = [
   "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray",
 ];
 
+/**
+ * OpenBot makes coworkers immediately distinguishable by silhouette as well as
+ * color. Keep that affordance while retaining Fabushi's own stateful SVG
+ * renderer: the canonical Bot identity deterministically chooses one of every
+ * silhouette the engine already supports, so the same Bot never changes shape
+ * between the roster, header, transcript, or a later session.
+ */
+const SHAPES: readonly BotMarkShape[] = [
+  "blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop",
+];
+
 const AMBIENT_MOTION_STATES = new Set<BotMarkState>([
   "idle", "sleeping", "drowsy", "bored", "powering-down",
 ]);
@@ -205,16 +216,15 @@ function identityRandom(seed: number): () => number {
   };
 }
 
-/**
- * The default body remains visually stable for dense lists. Persisted shape
- * overrides still support richer persona silhouettes in profile/hero surfaces.
- */
-export function botMarkShape(_botId: string): BotMarkShape {
-  return "blob";
+export function botMarkShape(botId: string): BotMarkShape {
+  const identity = canonicalBotIdentity(botId);
+  const seed = (hashIdentity(identity) ^ Math.imul(2, 2654435769)) >>> 0;
+  const index = Math.floor(identityRandom((seed ^ 2246822519) >>> 0)() * SHAPES.length);
+  return SHAPES[index] ?? "blob";
 }
 
-export function botMarkShapeIndex(_botId: string): number {
-  return 0;
+export function botMarkShapeIndex(botId: string): number {
+  return Math.max(0, SHAPES.indexOf(botMarkShape(botId)));
 }
 
 export function botMarkColorId(botId: string): BotMarkColor {
