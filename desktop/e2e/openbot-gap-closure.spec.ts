@@ -132,7 +132,7 @@ test('OBF real event projection keeps coworker identity stable across surfaces a
     await expect(headerMark).toHaveAttribute('data-shape', rosterShape);
 
     await sendRuntimeTurn(page, 'Analyze the launch readiness, plan the work, use the available tools, and report the result.');
-    const completedStep = page.locator('[data-testid="agent-step"][data-status="completed"]').last();
+    const completedStep = page.locator('article[data-testid="agent-step"][data-status="completed"]').last();
     await expect(completedStep).toHaveCount(1);
     await expect(completedStep.locator('[data-engine="fabushi-motion-v3"]').first()).toHaveAttribute('data-shape', rosterShape);
 
