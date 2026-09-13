@@ -8,6 +8,8 @@ on:
       - 'mobile/ios/Fabushi/**'
       - 'mobile/ios/FabushiTests/**'
       - 'mobile/ios/project.yml'
+      - 'ai-backend/src/miniapp_marketplace_catalog.js'
+      - 'frontend/apps/web/src/lib/marketplace.ts'
       - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
   workflow_dispatch:
