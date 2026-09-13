@@ -4,6 +4,7 @@
 - **Project Key**: `TFI`
 - **Task**: `M8-MARKET-003`
 - **Branch**: `codex/tfi-miniapp-unified-install-update-20260913`
+- **Implementation commit**: `3cd8ba783`
 - **状态**: `IN_PROGRESS`
 - **创建日期**: `2026-09-13`
 
