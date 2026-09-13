@@ -106,15 +106,13 @@ jobs:
           fi
           gh release create "$release_tag" \
             "$MARKETPLACE_OUTPUT_DIR"/*.tar.gz \
+            "$MARKETPLACE_OUTPUT_DIR/official-marketplace-release-manifest.json" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$MARKETPLACE_SOURCE_REF" \
             --title "Fabushi Marketplace packages $MARKETPLACE_PACKAGE_VERSION" \
             --notes "Repaired official Marketplace packages. Source SHA: $MARKETPLACE_SOURCE_REF" \
             --prerelease \
             --latest=false
-          gh release upload "$release_tag" \
-            "$MARKETPLACE_OUTPUT_DIR/official-marketplace-release-manifest.json" \
-            --repo "$GITHUB_REPOSITORY"
 
       - name: Verify published bytes
         env:
