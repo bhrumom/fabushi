@@ -128,13 +128,6 @@ jobs:
           cargo check --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --target wasm32-unknown-unknown --package mahayana-platform-worker 2>&1 \
             | tee artifacts/marketplace-validation/platform-worker-check.log
 
-      - name: Test Mahayana marketplace packages
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo test --features mahayana-cli/codex-compat --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client 2>&1 \
-            | tee artifacts/marketplace-validation/cargo-test.log
-
       - name: Build Mahayana CLI E2E binary
         shell: bash
         run: |
@@ -185,6 +178,18 @@ jobs:
           set -euo pipefail
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "$PLATFORM_URL/health" | tee "$RUNNER_TEMP/platform-health.json"
           jq -e '.ok == true' "$RUNNER_TEMP/platform-health.json" >/dev/null
+
+      # Run the live product test driver only after this run's Worker and
+      # migrations are live. Otherwise the test can accidentally inspect a
+      # previous deployment and turn a valid migration into a false failure.
+      - name: Test Mahayana marketplace packages
+        shell: bash
+        env:
+          MAHAYANA_API_BASE_URL: ${{ steps.platform.outputs.url }}
+        run: |
+          set -o pipefail
+          cargo test --features mahayana-cli/codex-compat --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client 2>&1 \
+            | tee artifacts/marketplace-validation/cargo-test.log
 
       - name: Publish GitHub-hosted marketplace artifact
         id: publish
