@@ -1266,7 +1266,10 @@ fn verify_bytes(
 }
 
 fn compare_install_versions(candidate: &str, current: &str) -> Ordering {
-    let normalize = |value: &str| value.trim().strip_prefix('v').unwrap_or(value.trim());
+    fn normalize(value: &str) -> &str {
+        let trimmed = value.trim();
+        trimmed.strip_prefix('v').unwrap_or(trimmed)
+    }
     let candidate = normalize(candidate);
     let current = normalize(current);
     match (Version::parse(candidate), Version::parse(current)) {
