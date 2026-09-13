@@ -6,6 +6,7 @@
 - **Branch**: `codex/tfi-miniapp-unified-install-update-20260913`
 - **Implementation commit**: `3cd8ba783`
 - **Records commit**: `7c95a6f89`
+- **Test release target**: `1.2.58`
 - **状态**: `IN_PROGRESS`
 - **创建日期**: `2026-09-13`
 

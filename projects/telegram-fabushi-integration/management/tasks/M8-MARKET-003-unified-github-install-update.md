@@ -8,6 +8,7 @@
 - **Status**: `IN_PROGRESS`
 - **Started**: `2026-09-13`
 - **Updated**: `2026-09-13`
+- **Test release target**: `1.2.58` (the existing `v1.2.57` release is immutable and points to an earlier main SHA)
 - **Branch**: `codex/tfi-miniapp-unified-install-update-20260913`
 - **Source requirement**: `../../source/2026-09-13-unified-github-install-update.md`
 
@@ -68,12 +69,14 @@
 - 2026-09-13: Chrome Marketplace now fetches a userscript only after an explicit user action from the contract's `raw.githubusercontent.com` URL fixed to the declared repository commit, checks redirect policy, size, SHA-256 and UserScript markers, and passes source provenance into the userscript runtime. The bundled copy remains bootstrap/compatibility only.
 - 2026-09-13: Lightweight verification passed Chrome contract/platform tests `11/11`, backend pure marketplace tests `9/9`, JavaScript syntax checks, and `git diff --check`. The HTTP backend test was not run because this checkout has no `express` dependency; no dependency was installed.
 - 2026-09-13: Read-only package audit found pre-existing release-data integrity issues in the fixed catalog: the `chatgpt-auto-confirm`, `faliu-flashcards`, and `hermes-installer` archives fail gzip validation; the catalog SHA/size for `chatgpt-auto-confirm`, `faliu-flashcards`, and `hermes-installer` do not match the checked-in bytes. This is recorded as a CI/release blocker for those artifacts, not silently repaired locally.
+- 2026-09-13: Bumped the shared application/package metadata and release-control assertions from `1.2.57` to `1.2.58` so the requested test release remains update-comparable and cannot mutate the existing `v1.2.57` release.
 
 ## Branch / commit / PR / evidence
 
 - Branch: `codex/tfi-miniapp-unified-install-update-20260913`
 - Commit: `3cd8ba783` (`feat(marketplace): unify GitHub install and update flow`)
 - Records commit: `7c95a6f89` (`docs(marketplace): record implementation commit`)
+- Version commit: pending
 - PR: pending (本机未安装 GitHub CLI；分支待推送后创建)
 - CI/E2E/Release: pending
 - Evidence index: `../../evidence/M8-MARKET-003/README.md` (implementation evidence recorded; PR/main/post-main evidence pending)
