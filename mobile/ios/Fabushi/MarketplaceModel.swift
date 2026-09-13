@@ -44,8 +44,25 @@ struct MarketplacePlugin: Identifiable, Equatable, Sendable {
     let displayName: String
     let description: String
     let latestVersion: String?
-    let sourceRef: String? = nil
+    let sourceRef: String?
     let tools: [MiniAppToolContract]
+
+    init(
+        pluginId: String,
+        displayName: String,
+        description: String,
+        latestVersion: String?,
+        sourceRef: String? = nil,
+        tools: [MiniAppToolContract]
+    ) {
+        self.pluginId = pluginId
+        self.displayName = displayName
+        self.description = description
+        self.latestVersion = latestVersion
+        self.sourceRef = sourceRef
+        self.tools = tools
+    }
+
     var id: String { pluginId }
 }
 
