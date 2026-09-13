@@ -7,28 +7,22 @@ import {
   MARKETPLACE_CATEGORY_LABELS,
   getMarketplaceApp,
   getMarketplaceContent,
+  getMarketplaceRelease,
   marketplaceApps,
   searchMarketplace,
 } from "../../lib/marketplace";
+import {
+  installMarketplaceApp,
+  marketplaceAppInstallAction,
+  marketplaceInstallActionLabel,
+  readMarketplaceInstallRecords,
+} from "../../lib/marketplace-install-state";
 import { siteUrl } from "../../lib/site-url";
-
-const INSTALLED_KEY = "fabushi.installed-miniapps";
 
 function asPositiveLimit(value: unknown, fallback = 10) {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(1, Math.min(30, Math.floor(parsed)));
-}
-
-function readInstalledApps() {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(INSTALLED_KEY) ?? "[]");
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : [];
-  } catch {
-    return [];
-  }
 }
 
 export function MarketplaceWebMcp() {
@@ -70,6 +64,7 @@ export function MarketplaceWebMcp() {
                     subtitle: app.subtitle,
                     category: MARKETPLACE_CATEGORY_LABELS[app.category],
                     tags: app.tags,
+                    release: getMarketplaceRelease(app.id) ?? null,
                     detailsUrl: siteUrl(`/apps/${app.slug}`),
                     launchUrl: siteUrl(`/miniapps/${app.id}`),
                   })),
@@ -222,7 +217,7 @@ export function MarketplaceWebMcp() {
         name: "install_fabushi_app",
         title: "Install a Fabushi app",
         description:
-          "Add a Fabushi Mini App to the current user's installed workspace. This changes local marketplace state and always asks the user for confirmation before writing.",
+          "Install or update a Fabushi Mini App from its immutable GitHub release metadata. This records the verified release in the current user's workspace, requires a native Host for executable package installation, changes local marketplace state and always asks the user for confirmation before writing.",
         annotations: { readOnlyHint: false },
         inputSchema: {
           type: "object",
@@ -236,28 +231,56 @@ export function MarketplaceWebMcp() {
           const app = getMarketplaceApp(slug);
           if (!app) return { installed: false, error: "app_not_found", slug };
 
-          const installed = readInstalledApps();
-          if (installed.includes(app.id)) {
+          const records = readMarketplaceInstallRecords();
+          const previous = records[app.id];
+          const action = marketplaceAppInstallAction(app.id, previous);
+          if (action === "unavailable") {
+            return {
+              installed: Boolean(previous),
+              appId: app.id,
+              error: "github_release_unavailable",
+              message: "该应用还没有可校验的 GitHub 版本包",
+            };
+          }
+          if (action === "blocked") {
+            return {
+              installed: false,
+              appId: app.id,
+              error: "downgrade_blocked",
+              message: "市场版本低于当前版本，已阻止降级",
+            };
+          }
+          if (action === "current") {
             return {
               installed: true,
               alreadyInstalled: true,
               appId: app.id,
+              version: previous?.version,
+              source: previous ? { repository: previous.repository, sourceRef: previous.sourceRef } : undefined,
               launchUrl: siteUrl(`/miniapps/${app.id}`),
             };
           }
 
-          if (!window.confirm(`将 ${app.name} 安装到“我的应用”？`)) {
-            return { installed: false, cancelled: true, appId: app.id };
+          const label = marketplaceInstallActionLabel(action);
+          if (!window.confirm(`将 ${app.name} 的 GitHub 版本${action === "update" ? "更新" : "安装"}到“我的应用”？`)) {
+            return { installed: false, cancelled: true, appId: app.id, action: label };
           }
 
-          const next = [...new Set([...installed, app.id])];
-          window.localStorage.setItem(INSTALLED_KEY, JSON.stringify(next));
-          window.dispatchEvent(
-            new CustomEvent("fabushi:marketplace-installed", { detail: { ids: next } }),
-          );
+          const record = installMarketplaceApp(app.id, "github-metadata");
+          if (!record) return { installed: false, error: "github_release_unavailable", appId: app.id };
           return {
             installed: true,
+            updated: action === "update" || action === "reinstall",
             appId: app.id,
+            action: label,
+            version: record.version,
+            source: {
+              repository: record.repository,
+              sourceRef: record.sourceRef,
+              artifactSha256: record.artifactSha256,
+              verification: record.verification,
+            },
+            execution: "host-required",
             detailsUrl: siteUrl(`/apps/${app.slug}`),
             launchUrl: siteUrl(`/miniapps/${app.id}`),
           };

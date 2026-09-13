@@ -177,6 +177,17 @@
 
 当前状态：`SOURCE_RELEASED / PARENT_RECORD_PENDING / LIVE_EVIDENCE_PENDING`；仅限独立油猴脚本，不触发 Fabushi 应用构建门禁。
 
+## 2026-09-13 — M8-MARKET-003 全平台 GitHub 安装更新
+
+- [x] `M8-MARKET-003-R01` 将用户的 GitHub-first 要求持久化为源需求和受治理 task record，并完成开源优先调查。
+- [x] `M8-MARKET-003-R02` 后端/Rust/Host 统一 `fabushi.marketplace.install.v1`，固定 public GitHub commit，校验 artifact SHA-256/size，禁止市场托管包字节和静默降级，保留 previous-active/显式回滚。
+- [x] `M8-MARKET-003-R03` 桌面、Chrome、Web、Android、iOS、CLI 接入同一安装/更新状态；Web 的可执行包路径明确要求 Native Host，Chrome 用户脚本仅接受 pinned raw GitHub artifact。
+- [x] `M8-MARKET-003-R04` Marketplace 卡片与 WebMCP 暴露来源、版本、权限、发布说明/状态；新增 Node Chrome `11/11` 与 backend pure marketplace `9/9` 轻量回归。
+- [ ] `M8-MARKET-003-R05` PR-head CI、protected main、canonical-main readback、packaged Electron/mobile/CLI E2E 和完整视觉/调试证据。
+- [ ] `M8-MARKET-003-R06` 修复或重新发布固定 catalog 中 hash/size 不一致或损坏的历史包，并绑定 strictly newer GitHub Release。
+
+当前状态：`IMPLEMENTED / PR_PENDING`；本任务属于 Fabushi 应用交付，不能以本地源码检查替代 GitHub Actions 的构建、打包、E2E 和 Release 门禁。
+
 ## 2026-09-13 — TFI-USERSCRIPT-RECOVERY-007 任务目标附件输入
 
 - [x] `TFI-USR-FILE-001` 固化用户新增要求：任务目标支持图片、视频和其他文件；截图仅作为页面状态证据，不作为脚本指令。

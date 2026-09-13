@@ -20,6 +20,7 @@ const approvedFiles = [
   "app.html",
   "app.css",
   "app.js",
+  "marketplace-install.js",
   "service-worker.js",
   "platform-bridge.js",
   "browser-control.js",

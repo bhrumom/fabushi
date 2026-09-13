@@ -635,6 +635,11 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
     return { pluginId, removed: this.installedPlugins.delete(pluginId), permissionsRemoved: true };
   }
 
+  async pluginRollback(pluginId: string): Promise<InstalledPluginPointer | null> {
+    if (this.native) return this.native.pluginRollback(pluginId);
+    return this.installedPlugins.get(pluginId) ?? null;
+  }
+
   async pluginActive(pluginId: string): Promise<InstalledPluginPointer | null> {
     if (this.native) return this.native.pluginActive(pluginId);
     return this.installedPlugins.get(pluginId) ?? null;

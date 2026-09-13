@@ -434,6 +434,10 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     return mahayanaBridge().invoke<PluginUninstallResult>("feature.plugin.uninstall", { pluginId });
   }
 
+  pluginRollback(pluginId: string): Promise<InstalledPluginPointer | null> {
+    return mahayanaBridge().invoke<InstalledPluginPointer | null>("feature.plugin.rollback", { pluginId });
+  }
+
   pluginActive(pluginId: string): Promise<InstalledPluginPointer | null> {
     return mahayanaBridge().invoke<InstalledPluginPointer | null>("feature.plugin.active", { pluginId });
   }

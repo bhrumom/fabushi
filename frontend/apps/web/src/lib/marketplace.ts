@@ -56,6 +56,107 @@ export interface MarketplaceApp {
   content: readonly MarketplaceContentItem[];
 }
 
+export interface MarketplaceReleaseInfo {
+  protocol: "fabushi.marketplace.install.v1";
+  version: string;
+  releaseStatus: "approved";
+  releaseNotes: string;
+  repository: string;
+  sourceRef: string;
+  releaseUrl: string;
+  manifestUrl?: string;
+  artifactId: string;
+  artifactUrl: string;
+  artifactSha256: string;
+  artifactSize: number;
+  format: "tar-gz";
+  runtime: "local-web";
+  platforms: readonly string[];
+}
+
+export const MARKETPLACE_PACKAGE_COMMIT = "7b02d8d00e0646e9bf4e90a129cbf203fcff015d";
+export const MARKETPLACE_RELEASE_REPOSITORY = "https://github.com/bhrumom/fabushi";
+
+const MARKETPLACE_PACKAGE_ROOT = `${MARKETPLACE_RELEASE_REPOSITORY}/tree/${MARKETPLACE_PACKAGE_COMMIT}/marketplace/packages`;
+const MARKETPLACE_PACKAGE_RAW_ROOT = `https://raw.githubusercontent.com/bhrumom/fabushi/${MARKETPLACE_PACKAGE_COMMIT}/marketplace/packages`;
+
+const marketplaceRelease = (
+  id: string,
+  version: string,
+  artifactSha256: string,
+  artifactSize: number,
+): MarketplaceReleaseInfo => ({
+  protocol: "fabushi.marketplace.install.v1",
+  version,
+  releaseStatus: "approved",
+  releaseNotes: "固定到 GitHub commit；安装前校验 artifact SHA-256 和 size。",
+  repository: MARKETPLACE_RELEASE_REPOSITORY,
+  sourceRef: MARKETPLACE_PACKAGE_COMMIT,
+  releaseUrl: `${MARKETPLACE_PACKAGE_ROOT}/${id}/${encodeURIComponent(version)}`,
+  artifactId: `${id}-universal-ui`,
+  artifactUrl: `${MARKETPLACE_PACKAGE_RAW_ROOT}/${id}/${encodeURIComponent(version)}/app.tar.gz`,
+  artifactSha256,
+  artifactSize,
+  format: "tar-gz",
+  runtime: "local-web",
+  platforms: ["desktop", "mobile", "web", "cli", "ios", "android", "chrome-extension"],
+});
+
+export const MARKETPLACE_RELEASES: Readonly<Record<string, MarketplaceReleaseInfo>> = {
+  "bot-father": marketplaceRelease(
+    "bot-father",
+    "1.0.0",
+    "8439c9c7ffe03791177bb5b9cbfd425ffb794b741d9e17c9cc2cadc09fbb7880",
+    1805,
+  ),
+  "chatgpt-auto-confirm": marketplaceRelease(
+    "chatgpt-auto-confirm",
+    "1.0.0+codex.20260810093000",
+    "c668cb932b534499e31fb6ffeee72687a03e8348c4fb0865ca1887602db68c2f",
+    1822,
+  ),
+  "faliu-flashcards": marketplaceRelease(
+    "faliu-flashcards",
+    "1.0.0",
+    "7383d21f888b07045810a6dca515098e4dcdaae8d96b79be5401f2b96fdc40f5",
+    1738,
+  ),
+  "global-dharma": marketplaceRelease(
+    "global-dharma",
+    "1.0.0",
+    "43de877dc87b5dff306164eb143baad545ef40bea2247f28cbe21616829478be",
+    1827,
+  ),
+  "hermes-installer": marketplaceRelease(
+    "hermes-installer",
+    "1.0.0",
+    "95adcdb83440ed143874c402c222856de89dc5bfd7ec910dbeece089d88aeec4",
+    1741,
+  ),
+  "mahayana-assistant": marketplaceRelease(
+    "mahayana-assistant",
+    "1.0.0",
+    "e175196bd10827d7e22cec1aa56bcb15540b03ce17c8cb84a7beac8719434d7b",
+    1777,
+  ),
+  "platform-publish": marketplaceRelease(
+    "platform-publish",
+    "1.0.0",
+    "4ded6de4cada43998f5fae2f226c4bea50b3fbc62a609f13c87a2102efb10802",
+    1742,
+  ),
+  "douyin-batch-downloader": marketplaceRelease(
+    "douyin-batch-downloader",
+    "1.0.0",
+    "6784eb6ade91ef75ff61717a232dd154c7a3fb28c093ce330bc7ca4857ace473",
+    3069,
+  ),
+};
+
+export function getMarketplaceRelease(appId: string): MarketplaceReleaseInfo | undefined {
+  return MARKETPLACE_RELEASES[appId];
+}
+
 export const MARKETPLACE_CATEGORY_LABELS: Record<MarketplaceCategory, string> = {
   featured: "精选",
   automation: "自动化",
@@ -407,7 +508,7 @@ export const marketplaceApps: readonly MarketplaceApp[] = [
     permissions: ["读取任务确认状态", "经确认后继续任务", "本地审计记录"],
     pricing: { label: "免费安装", detail: "适合与大乘助手和开发工具配合使用。" },
     updatedAt: "2026-08-18",
-    version: "1.0.0",
+    version: "1.0.0+codex.20260810093000",
     content: [
       {
         id: "approval-scope-guide",

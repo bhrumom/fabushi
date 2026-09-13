@@ -204,6 +204,7 @@ impl AppHost {
             "feature.marketplace.release" => self.marketplace_release(params),
             "feature.plugin.install" => self.install_plugin(params),
             "feature.plugin.uninstall" => self.uninstall_plugin(params),
+            "feature.plugin.rollback" => self.rollback_plugin(params),
             "feature.plugin.active" => self.active_plugin(params),
             "feature.plugin.listInstalled" => self.list_installed_plugins(),
             "feature.plugin.uiDocument" => self.plugin_ui_document(params),
@@ -556,6 +557,15 @@ impl AppHost {
         let pointer = self
             .installer()?
             .active(plugin_id)
+            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        serde_json::to_value(pointer).map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    fn rollback_plugin(&self, params: Value) -> Result<Value, AppHostError> {
+        let plugin_id = string_param(&params, "pluginId")?;
+        let pointer = self
+            .installer()?
+            .rollback(plugin_id)
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
         serde_json::to_value(pointer).map_err(|error| AppHostError::Operation(error.to_string()))
     }

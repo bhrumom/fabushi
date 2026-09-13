@@ -44,6 +44,7 @@ struct MarketplacePlugin: Identifiable, Equatable, Sendable {
     let displayName: String
     let description: String
     let latestVersion: String?
+    let sourceRef: String? = nil
     let tools: [MiniAppToolContract]
     var id: String { pluginId }
 }
@@ -596,11 +597,16 @@ final class MarketplaceModel {
                 let commands = source?["commands"] as? [[String: Any]]
                     ?? item["commands"] as? [[String: Any]]
                     ?? []
+                let install = item["install"] as? [String: Any]
+                    ?? (item["releaseManifest"] as? [String: Any])?["install"] as? [String: Any]
+                let installSource = install?["source"] as? [String: Any]
+                let sourceRef = (installSource?["sourceRef"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                 return MarketplacePlugin(
                     pluginId: id,
                     displayName: item["displayName"] as? String ?? id,
                     description: item["description"] as? String ?? "无描述",
                     latestVersion: item["latestVersion"] as? String,
+                    sourceRef: sourceRef?.isEmpty == false ? sourceRef : nil,
                     tools: commands.compactMap(Self.toolContract(from:))
                 )
             }
@@ -625,6 +631,15 @@ final class MarketplaceModel {
             guard let release = (metadata.value as? [String: Any])?["releaseManifest"] as? [String: Any] else {
                 throw MahayanaHost.HostError.invalidResponse
             }
+            let install = (metadata.value as? [String: Any])?["install"] as? [String: Any]
+                ?? release["install"] as? [String: Any]
+            guard install?["protocol"] as? String == "fabushi.marketplace.install.v1",
+                  install?["strategy"] as? String == "github-immutable",
+                  let source = install?["source"] as? [String: Any],
+                  let sourceRef = source["sourceRef"] as? String,
+                  !sourceRef.isEmpty,
+                  source["marketplaceHostsPackage"] as? Bool != true
+            else { throw MahayanaHost.HostError.invalidResponse }
             let installed = try await host.request(
                 method: "feature.plugin.install",
                 params: ["release": release, "platform": "ios"]
