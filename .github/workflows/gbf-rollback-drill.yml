@@ -32,7 +32,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | test("^desktop-[0-9]+\\.[0-9]+\\.[0-9]+$")))] | first')"
+          # The repository has more than one page of immutable recovery Releases.
+          # Resolve the rollback target from every page so an older canonical stable
+          # Release cannot disappear from this drill merely because the first page
+          # is occupied by newer test/recovery publications.
+          release_json="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" | jq -c '[.[][] | select(.draft == false and .prerelease == false and (.tag_name | test("^desktop-[0-9]+\\.[0-9]+\\.[0-9]+$")))] | sort_by(.published_at // .created_at) | last // empty')"
           if [ -z "$release_json" ] || [ "$release_json" = "null" ]; then
             echo 'No canonical stable desktop GitHub release exists; desktop rollback cannot be honestly demonstrated.' >&2
             exit 1

@@ -312,7 +312,12 @@ jobs:
           chrome_checksums="$(find chrome-artifacts -type f -name 'SHA256SUMS.txt' -print -quit)"
           test -n "$chrome_zip" && test -n "$chrome_manifest" && test -n "$chrome_checksums"
           test "$(jq -r '.sourceSha' "$chrome_manifest")" = "$SOURCE_SHA"
-          test "$(jq -r '.version' "$chrome_manifest")" = "0.5.0"
+          chrome_version="$(jq -r '.version // empty' "$chrome_manifest")"
+          test -n "$chrome_version"
+          if ! [[ "$chrome_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Chrome package version is not SemVer: $chrome_version" >&2
+            exit 1
+          fi
 
           mkdir -p release-assets
           while IFS= read -r asset; do cp "$asset" release-assets/; done < <(
@@ -361,7 +366,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Validated exact-SHA updater assets for version $version / $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "Validated Fabushi Chrome 0.5.0 package from workflow run $CHROME_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+          echo "Validated Fabushi Chrome $chrome_version package from workflow run $CHROME_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort >> "$GITHUB_STEP_SUMMARY"
 
       - id: release
