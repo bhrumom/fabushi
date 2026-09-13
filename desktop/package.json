@@ -1,6 +1,6 @@
 {
   "name": "@fabushi/desktop",
-  "version": "1.2.61",
+  "version": "1.2.62",
   "description": "Fabushi Electron desktop client",
   "homepage": "https://fabushi.ombhrum.com/",
   "author": "bhrumom",
@@ -11,13 +11,14 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
     "prebuild:renderer": "node scripts/prepare-desktop-window-branding.mjs",
-    "build:renderer": "tsc --noEmit && vite build",
+    "build:renderer": "npm run test:openbot-parity && tsc --noEmit && vite build",
     "build:host": "cargo build --release -p mahayana-app-host-desktop --bin mahayana-app-host --manifest-path ../third_party/mahayana/mahayana-rs/Cargo.toml && node scripts/stage-host.mjs",
     "build:host:ci": "cargo build --profile ci -p mahayana-app-host-desktop --bin mahayana-app-host --manifest-path ../third_party/mahayana/mahayana-rs/Cargo.toml && node scripts/stage-host.mjs ci",
     "build": "npm run build:host && npm run build:renderer",
     "package": "npm run build:host && npm run build:renderer && electron-builder",
     "test:credential-gateway": "node --test electron/credential-gateway.test.cjs",
     "test:e2e": "playwright test",
+    "test:openbot-parity": "node scripts/assert-openbot-parity.mjs",
     "start": "electron ."
   },
   "dependencies": {
@@ -42,18 +43,42 @@
     "productName": "Fabushi",
     "executableName": "fabushi",
     "asar": true,
-    "directories": { "output": "release" },
-    "files": ["dist/**", "electron/**", "package.json"],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
     "extraResources": [
-      { "from": "resources/bin", "to": "bin" },
-      { "from": "resources/asr", "to": "asr", "filter": ["**/*"] },
-      { "from": "resources/computer-control", "to": "computer-control", "filter": ["**/*"] }
+      {
+        "from": "resources/bin",
+        "to": "bin"
+      },
+      {
+        "from": "resources/asr",
+        "to": "asr",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/computer-control",
+        "to": "computer-control",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "mac": {
       "category": "public.app-category.lifestyle",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "artifactName": "fabushi-${version}-macos-${arch}.${ext}",
       "entitlements": "resources/mac/entitlements.plist",
       "entitlementsInherit": "resources/mac/entitlements.plist",
@@ -63,19 +88,60 @@
       },
       "icon": "resources/icon.png"
     },
-    "win": { "target": ["nsis"], "artifactName": "fabushi-${version}-setup.${ext}", "icon": "resources/icon.png" },
-    "linux": { "category": "Utility", "maintainer": "bhrumom", "syncDesktopName": true, "target": ["AppImage", "deb"], "artifactName": "fabushi-${version}-${arch}.${ext}" },
-    "deb": { "packageName": "fabushi", "artifactName": "fabushi-${version}-${arch}.${ext}" },
-    "protocols": [{ "name": "Fabushi", "schemes": ["fabushi"] }],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "fabushi-${version}-setup.${ext}",
+      "icon": "resources/icon.png"
+    },
+    "linux": {
+      "category": "Utility",
+      "maintainer": "bhrumom",
+      "syncDesktopName": true,
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "artifactName": "fabushi-${version}-${arch}.${ext}"
+    },
+    "deb": {
+      "packageName": "fabushi",
+      "artifactName": "fabushi-${version}-${arch}.${ext}"
+    },
+    "protocols": [
+      {
+        "name": "Fabushi",
+        "schemes": [
+          "fabushi"
+        ]
+      }
+    ],
     "mas": {
-      "target": ["mas"], "category": "public.app-category.lifestyle", "hardenedRuntime": false, "gatekeeperAssess": false,
-      "entitlements": "resources/mas/entitlements.mas.plist", "entitlementsInherit": "resources/mas/entitlements.mas.inherit.plist",
+      "target": [
+        "mas"
+      ],
+      "category": "public.app-category.lifestyle",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "entitlements": "resources/mas/entitlements.mas.plist",
+      "entitlementsInherit": "resources/mas/entitlements.mas.inherit.plist",
       "provisioningProfile": "resources/mas/Fabushi_AppStore.provisionprofile",
-      "extendInfo": { "NSMicrophoneUsageDescription": "全球法布施使用麦克风进行语音输入和离线语音识别。" },
-      "forceCodeSigning": true, "icon": "resources/icon.png"
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "全球法布施使用麦克风进行语音输入和离线语音识别。"
+      },
+      "forceCodeSigning": true,
+      "icon": "resources/icon.png"
     },
     "afterSign": "scripts/notarize-after-sign.cjs",
     "copyright": "Copyright © 2026 Fabushi. All rights reserved.",
-    "publish": [{ "provider": "github", "owner": "bhrumom", "repo": "fabushi", "releaseType": "release" }]
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "bhrumom",
+        "repo": "fabushi",
+        "releaseType": "release"
+      }
+    ]
   }
 }
