@@ -176,3 +176,14 @@
 - [ ] `TFI-USR-LD-007` 已登录 Chrome 安装 `v2.9.10` 后保留加载中 → 完全加载 → 继续监督的截图、完整视频、trace/diagnostics。
 
 当前状态：`SOURCE_RELEASED / PARENT_RECORD_PENDING / LIVE_EVIDENCE_PENDING`；仅限独立油猴脚本，不触发 Fabushi 应用构建门禁。
+
+## 2026-09-13 — TFI-USERSCRIPT-RECOVERY-007 任务目标附件输入
+
+- [x] `TFI-USR-FILE-001` 固化用户新增要求：任务目标支持图片、视频和其他文件；截图仅作为页面状态证据，不作为脚本指令。
+- [x] `TFI-USR-FILE-002` 完成 open-source-first 调查，采用原生文件输入优先、`DataTransfer` paste 兜底和 IndexedDB local-first 设计，不引入私有上传 API 或外部运行时。
+- [x] `TFI-USR-FILE-003` source `2.9.11` 完成多文件选择、元数据/Blob 分离、上传确认、超时 fail-closed、任务恢复/持续轮次衔接和删除清理。
+- [x] `TFI-USR-FILE-004` source PR #11、PR CI、exact source-main CI、canonical source readback 与 Release `v2.9.11` 已完成；轻量回归 84/84 PASS。
+- [ ] `TFI-USR-FILE-005` 父记录 PR 经 protected main 合并并 canonical readback。
+- [ ] `TFI-USR-FILE-006` 已登录 Chrome 使用无敏感图片、短视频、普通文件完成选择 → 上传确认 → 发送的完整分步截图、视频、trace/diagnostics。
+
+当前状态：`SOURCE_RELEASED / PARENT_RECORD_PENDING / LIVE_EVIDENCE_PENDING`；仅限独立油猴脚本，不触发 Fabushi 应用构建门禁。
