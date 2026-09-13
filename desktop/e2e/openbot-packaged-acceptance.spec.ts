@@ -4,14 +4,14 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const baselineMainSha = 'c41e9305dd2c2af4f48139dadfefe71eef50068f';
 const referenceCropSha256 = '0a94bcf48630f4d872bab2e765df8df396026ac08d2b6c3b5fe64b112c1d268d';
 const packagedExecutable = process.env.FABUSHI_ELECTRON_EXECUTABLE?.trim() || '';
 const referenceScreenshot = process.env.OBF_REFERENCE_SCREENSHOT?.trim() || '';
 const realAcceptance = process.env.OBF_REAL_ACCEPTANCE === '1';
 const sourceSha = (process.env.OBF_SOURCE_SHA || process.env.GITHUB_SHA || '').trim().toLowerCase();
-const visualThreshold = Number(process.env.OBF_MAX_DIFF_PIXEL_RATIO || '0.08');
-const pixelThreshold = Number(process.env.OBF_PIXEL_COLOR_THRESHOLD || '0.15');
+const canonicalMainSha = (process.env.OBF_CANONICAL_MAIN_SHA || '').trim().toLowerCase();
+const visualThreshold = Number(process.env.OBF_MAX_DIFF_PIXEL_RATIO || '0');
+const pixelThreshold = Number(process.env.OBF_PIXEL_COLOR_THRESHOLD || '0');
 const coworkers = [
   ['Chief', 'Chief of staff'],
   ['Research', 'Research and evidence'],
@@ -57,8 +57,10 @@ function assertProductionEvidenceEnvironment(): void {
   if (!packagedExecutable) throw new Error('FABUSHI_ELECTRON_EXECUTABLE is required for packaged acceptance');
   if (!referenceScreenshot) throw new Error('OBF_REFERENCE_SCREENSHOT is required; static or synthetic replacement is forbidden');
   if (!/^[0-9a-f]{40}$/.test(sourceSha)) throw new Error('OBF_SOURCE_SHA or GITHUB_SHA must provide the exact 40-character source SHA');
-  if (!Number.isFinite(visualThreshold) || visualThreshold < 0 || visualThreshold > 1) throw new Error('OBF_MAX_DIFF_PIXEL_RATIO must be between 0 and 1');
-  if (!Number.isFinite(pixelThreshold) || pixelThreshold < 0 || pixelThreshold > 1) throw new Error('OBF_PIXEL_COLOR_THRESHOLD must be between 0 and 1');
+  if (!/^[0-9a-f]{40}$/.test(canonicalMainSha)) throw new Error('OBF_CANONICAL_MAIN_SHA must provide the exact post-merge canonical main SHA');
+  if (sourceSha !== canonicalMainSha) throw new Error(`Packaged source SHA ${sourceSha} does not equal canonical main ${canonicalMainSha}`);
+  if (visualThreshold !== 0) throw new Error('OBF_MAX_DIFF_PIXEL_RATIO must be exactly 0 for literal 1:1 acceptance');
+  if (pixelThreshold !== 0) throw new Error('OBF_PIXEL_COLOR_THRESHOLD must be exactly 0 for literal 1:1 acceptance');
   const inheritedMode = (process.env.FABUSHI_FEATURE_HOST_MODE || '').trim().toLowerCase();
   if (['test', 'mock', 'stub'].includes(inheritedMode)) {
     throw new Error(`Real packaged acceptance refuses FABUSHI_FEATURE_HOST_MODE=${inheritedMode}; mock/test host evidence is inadmissible`);
@@ -393,7 +395,7 @@ async function saveRuntimeEvidence(
   if (visualDiff) await writeFile(path.join(evidenceDir, 'visual-diff-report.json'), JSON.stringify(visualDiff, null, 2));
   if (identity) await writeFile(path.join(evidenceDir, 'identity.json'), JSON.stringify(identity, null, 2));
   await writeFile(path.join(evidenceDir, 'evidence-manifest.json'), JSON.stringify({
-    baselineMainSha,
+    canonicalMainSha,
     sourceSha,
     appVersion: appVersion || null,
     referenceCropSha256,
@@ -405,7 +407,7 @@ async function saveRuntimeEvidence(
   }, null, 2));
 }
 
-test('OBF exact packaged reference journey uses real Mahayana events and stays within the visual threshold', async ({}, testInfo) => {
+test('OBF exact-main packaged reference journey is pixel-identical and uses real Mahayana events', async ({}, testInfo) => {
   test.setTimeout(12 * 60_000);
   assertProductionEvidenceEnvironment();
   const referenceBytes = await readFile(referenceScreenshot);
@@ -507,7 +509,10 @@ test('OBF exact packaged reference journey uses real Mahayana events and stays w
     const actualBytes = await workspace.screenshot({ animations: 'disabled', caret: 'hide' });
     await writeFile(path.join(evidenceDir, 'fabushi-openbot-comparison.png'), actualBytes);
     const visualDiff = await measureVisualDiff(page, referenceBytes, actualBytes, geometryRegions(geometry));
-    expect(visualDiff.global.differingPixelRatio).toBeLessThanOrEqual(visualThreshold);
+    expect(visualDiff.global.differingPixels).toBe(0);
+    expect(visualDiff.global.differingPixelRatio).toBe(0);
+    expect(visualDiff.global.zeroDiff).toBeTruthy();
+    expect(visualDiff.residualRegions).toEqual([]);
 
     const identityBeforeRestart = {
       Chief: {
