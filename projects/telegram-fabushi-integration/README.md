@@ -30,6 +30,10 @@
 4. 工程事实以 GitHub commit / PR / CI run / release evidence 为准。
 5. 源计划是需求基线；若后续决策改变基线，必须新增 ADR 并更新变更日志。
 
+## 当前 userscript 附件连续性子门禁
+
+`TFI-USERSCRIPT-RECOVERY-010` 修复首次带附件发送后，在恢复、继续、异常重发及跨轮次发送中因 composer/document 或 dispatch context 变化而丢失附件的问题。source userscript `v2.9.19` 已发布并通过 98/98 轻量回归；parent records 合并回读与已登录 Chrome 的完整现场证据仍按 task record 跟踪。
+
 ## 建议阅读顺序
 
 `00 项目章程` → `01 范围` → `02 PRD` → `03 系统架构` → `04 领域模型与协议` → `13 测试策略` → `15 路线图` → `19 完成定义` → `management/01-WBS原子任务.md`。

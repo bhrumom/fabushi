@@ -177,6 +177,18 @@
 
 当前状态：`SOURCE_RELEASED / PARENT_RECORD_PENDING / LIVE_EVIDENCE_PENDING`；仅限独立油猴脚本，不触发 Fabushi 应用构建门禁。
 
+## 2026-09-13 — TFI-USERSCRIPT-RECOVERY-010 恢复/继续附件连续性
+
+- [x] `TFI-USR-ATTACH-001` 将附件确认绑定到 task token、当前 route 和当前 composer，context 变化时失效旧确认并保留 metadata/Blob。
+- [x] `TFI-USR-ATTACH-002` Work、验收、下一轮 Work、暂停/取消恢复和异常重发均在当前 composer 重新注入/确认，未确认时 fail-closed。
+- [x] `TFI-USR-ATTACH-003` 增加连续轮次、DOM/document 重建、暂停/取消恢复和失败重试回归；source `98/98` PASS。
+- [x] `TFI-USR-ATTACH-004` source PR #14、exact source-main CI、canonical source readback 和 Release `v2.9.19` 已完成。
+- [ ] `TFI-USR-ATTACH-005` 父仓库记录 PR 经 protected main 合并并 canonical readback。
+- [ ] `TFI-USR-ATTACH-006` 已登录 Chrome 安装 `v2.9.19` 后完成首次带附件 → 恢复/继续 → 下一轮仍带附件的分步截图、完整视频、trace/diagnostics。
+- [ ] `TFI-USR-ATTACH-007` 现场证据确认缺 Blob/上传失败/超时不会发送无附件目标，并记录可重试状态。
+
+当前状态：`SOURCE_RELEASED / PARENT_RECORD_PENDING / LIVE_EVIDENCE_PENDING`；仅限独立油猴脚本，不触发 Fabushi 应用构建门禁。
+
 ## 2026-09-13 — M8-MARKET-003 全平台 GitHub 安装更新
 
 - [x] `M8-MARKET-003-R01` 将用户的 GitHub-first 要求持久化为源需求和受治理 task record，并完成开源优先调查。
