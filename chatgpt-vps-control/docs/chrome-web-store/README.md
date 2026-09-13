@@ -64,3 +64,7 @@ For every Fabushi release train, the Chrome package and journey are bound to the
 same exact protected-main commit as the desktop and mobile artifacts. A release
 train must not reuse a Chrome artifact from an earlier commit merely because the
 Chrome source paths were unchanged in the latest follow-up commit.
+
+The post-main publisher reads the Chrome content-manifest version from the
+tested artifact and validates it as SemVer; it must not hard-code a historical
+Chrome version into the release gate.
