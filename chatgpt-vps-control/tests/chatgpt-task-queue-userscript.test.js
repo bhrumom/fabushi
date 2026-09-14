@@ -44,8 +44,8 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   assert.match(runner, /chrome\.tabs\.discard/);
   assert.match(runner, /userscript-memory-policy/);
   assert.match(runner, /requestTabMemoryCleanup/);
-  assert.match(packager, /"userscript-memory-policy\\.js"/);
-  assert.match(validator, /"userscript-memory-policy\\.js"/);
+  assert.ok(packager.includes('"userscript-memory-policy.js"'));
+  assert.ok(validator.includes('"userscript-memory-policy.js"'));
   assert.match(core, /forbiddenDirectives/);
   assert.match(core, /dynamic WebAssembly/);
   assert.match(content, /fabushi\.userscript\.pageReady/);
