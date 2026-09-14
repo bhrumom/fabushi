@@ -466,9 +466,19 @@ async function fetchPublicMarketplace(query = "") {
   const url = new URL("/v1/marketplace/plugins", MARKETPLACE_API_ROOT);
   url.searchParams.set("platform", "chrome-extension");
   if (query.trim()) url.searchParams.set("q", query.trim());
-  const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
-  if (!response.ok) throw new Error(`Marketplace 读取失败（${response.status}）。`);
-  return marketplaceItems(await response.json());
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Marketplace 读取失败（${response.status}）。`);
+    return marketplaceItems(await response.json());
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function isGithubArtifactUrl(value) {
@@ -977,9 +987,12 @@ async function initialize() {
   hideBanner();
   setDesktopConnection(false);
   setAuth({ loggedIn: false, standalone: true });
-  await Promise.allSettled([refreshUserscripts(), refreshMarketplace(""), refreshBrowserAccount()]);
+  // Show the local shell before optional network and Native Messaging
+  // discovery. A slow Marketplace/API response must never leave every view
+  // hidden or make the extension appear frozen during startup.
   loading.hidden = true;
   activateView("marketplace");
+  void Promise.allSettled([refreshUserscripts(), refreshBrowserAccount()]);
   void connectDesktopEnhancements();
 }
 
