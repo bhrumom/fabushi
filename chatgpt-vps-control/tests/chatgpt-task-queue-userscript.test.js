@@ -39,14 +39,14 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   assert.match(runner, /chrome\.runtime\.onInstalled/);
   assert.match(runner, /chrome\.tabs\.onUpdated/);
   assert.match(runner, /__fabushiDesktopRequest/);
-  assert.match(runner, /chrome\\.tabs\\.discard/);
+  assert.match(runner, /chrome\.tabs\.discard/);
   assert.match(runner, /userscript-memory-policy/);
   assert.match(runner, /requestTabMemoryCleanup/);
   assert.match(core, /forbiddenDirectives/);
   assert.match(core, /dynamic WebAssembly/);
   assert.match(content, /fabushi\.userscript\.pageReady/);
-  assert.match(content, /tab-memory\\.request/);
-  assert.match(content, /tab-memory\\.response/);
+  assert.match(content, /tab-memory\.request/);
+  assert.match(content, /tab-memory\.response/);
   assert.match(content, /fabushi\.userscript\.recovery\.request/);
   assert.match(content, /recovery-capability\.granted/);
   assert.match(recovery, /chrome\.alarms\.onAlarm/);
