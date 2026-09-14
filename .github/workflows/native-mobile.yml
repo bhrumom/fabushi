@@ -52,6 +52,7 @@ jobs:
       global: ${{ steps.filter.outputs.global }}
       android: ${{ steps.filter.outputs.android }}
       ios: ${{ steps.filter.outputs.ios }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Checkout full history for changed-path detection
         uses: actions/checkout@v5
@@ -107,6 +108,40 @@ jobs:
             echo "- android: $ANDROID_SCOPE"
             echo "- ios: $IOS_SCOPE"
           } >> "$GITHUB_STEP_SUMMARY"
+      - id: matrix
+        name: Select only affected native runners
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GLOBAL_SCOPE: ${{ steps.filter.outputs.global }}
+          ANDROID_SCOPE: ${{ steps.filter.outputs.android }}
+          IOS_SCOPE: ${{ steps.filter.outputs.ios }}
+        run: |
+          set -euo pipefail
+          matrix='[]'
+          if [ "$EVENT_NAME" = 'workflow_dispatch' ] || [ "$EVENT_NAME" = 'workflow_call' ]; then
+            matrix='[{"os":"ubuntu-latest","target":"android","check_name":"Native Android"},{"os":"macos-15","target":"ios","check_name":"Native iOS"}]'
+          elif [ "$EVENT_NAME" = 'pull_request' ] || [ "$EVENT_NAME" = 'merge_group' ]; then
+            if [ "$GLOBAL_SCOPE" = 'true' ] || [ "$ANDROID_SCOPE" = 'true' ]; then
+              matrix='[{"os":"ubuntu-latest","target":"android","check_name":"Native Android"}]'
+            elif [ "$IOS_SCOPE" = 'true' ]; then
+              matrix='[{"os":"macos-15","target":"ios","check_name":"Native iOS"}]'
+            fi
+          elif [ "$GLOBAL_SCOPE" = 'true' ]; then
+            matrix='[{"os":"ubuntu-latest","target":"android","check_name":"Native Android"},{"os":"macos-15","target":"ios","check_name":"Native iOS"}]'
+          elif [ "$ANDROID_SCOPE" = 'true' ] && [ "$IOS_SCOPE" = 'true' ]; then
+            matrix='[{"os":"ubuntu-latest","target":"android","check_name":"Native Android"},{"os":"macos-15","target":"ios","check_name":"Native iOS"}]'
+          elif [ "$ANDROID_SCOPE" = 'true' ]; then
+            matrix='[{"os":"ubuntu-latest","target":"android","check_name":"Native Android"}]'
+          elif [ "$IOS_SCOPE" = 'true' ]; then
+            matrix='[{"os":"macos-15","target":"ios","check_name":"Native iOS"}]'
+          fi
+          if [ "$matrix" = '[]' ]; then
+            # Keep matrix expansion valid; the platform job-level condition below skips this sentinel.
+            matrix='[{"os":"ubuntu-latest","target":"none","check_name":"Native mobile skipped"}]'
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "- selected runners: $matrix" >> "$GITHUB_STEP_SUMMARY"
 
   platform:
     needs: scope
@@ -114,13 +149,13 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'workflow_call' ||
       needs.scope.outputs.global == 'true' ||
-      (matrix.target == 'android' && needs.scope.outputs.android == 'true') ||
-      (matrix.target == 'ios' && needs.scope.outputs.ios == 'true')
+      needs.scope.outputs.android == 'true' ||
+      needs.scope.outputs.ios == 'true'
     name: ${{ matrix.check_name }}
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON((github.event_name == 'pull_request' || github.event_name == 'merge_group') && '[{"os":"ubuntu-latest","target":"android","check_name":"Native Android"}]' || '[{"os":"ubuntu-latest","target":"android","check_name":"Native Android"},{"os":"macos-15","target":"ios","check_name":"Native iOS"}]') }}
+        include: ${{ fromJSON(needs.scope.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -163,7 +198,7 @@ jobs:
           set -euo pipefail
           test -f mobile/android/settings.gradle.kts || test -f mobile/android/settings.gradle
           test -f mobile/ios/project.yml
-          echo 'Native PR fast checks passed on the single Android/Linux runner; emulator, simulator, and release packaging remain post-main gates.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Native PR fast checks passed on the single selected runner; emulator, simulator, and release packaging remain post-main gates.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Linux native host dependencies
         if: github.event_name != 'pull_request' && github.event_name != 'merge_group' && matrix.target == 'android'
