@@ -126,5 +126,5 @@
 - observed regression: the first main/merge-queue policy version referenced `matrix.target` in the platform job-level `if`; GitHub Actions does not expose `matrix` in that evaluation context, producing failed workflow runs with zero jobs.
 - fix branch: `codex/tfi-ci-native-matrix-fix-20260914`, based on main merge `7e8c493090ee9f8cd9aa754e9acd99f89fd9e25d`.
 - implementation: the scope job now emits a JSON matrix containing only affected Android/iOS runners; the platform job-level condition uses only `needs.scope.outputs`, and the strategy consumes `fromJSON(needs.scope.outputs.matrix)`. Manual dispatch and reusable workflow calls remain full-platform runs; PR/merge_group retain a single selected fast-path runner.
-- contract coverage: the native workflow contract test asserts dynamic matrix selection and rejects matrix context in the job-level condition.
+- contract coverage: the existing native workflow contract keeps the direct Android/iOS check names; the dynamic matrix behavior is validated by the GitHub Actions run so this CI-only fixture does not broaden product-scope triggers.
 - status: awaiting PR checks, protected merge, canonical-main readback, and the Chrome-only main proof.
