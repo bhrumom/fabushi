@@ -1,0 +1,57 @@
+name: MSR-204 gateway workspace integration
+
+on:
+  push:
+    branches:
+      - feat/msr-204-hermes-gateway-transcript
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-record:
+    if: ${{ contains(github.event.head_commit.message, '[msr-204-gateway-build]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/msr-204-hermes-gateway-transcript
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.90.0
+          components: rustfmt
+
+      - name: Format canonical Rust workspace
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt --all
+
+      - name: Let Cargo generate the canonical lock update
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo check -p mahayana-gateway -p mahayana-gateway-protocol -p mahayana-cli --bin mahayana-gateway
+
+      - name: Test gateway projection, replay and protocol
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test -p mahayana-gateway -p mahayana-gateway-protocol --locked
+
+      - name: Recheck gateway CLI under the generated lock
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo check -p mahayana-cli --bin mahayana-gateway --locked
+
+      - name: Commit generated lock and formatting only after verification
+        shell: bash
+        run: |
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add third_party/mahayana/mahayana-rs/Cargo.lock \
+            third_party/mahayana/mahayana-rs/mahayana-gateway \
+            third_party/mahayana/mahayana-rs/mahayana-gateway-protocol \
+            third_party/mahayana/mahayana-rs/mahayana-cli/src/bin/mahayana-gateway.rs
+          if git diff --cached --quiet; then
+            echo 'No generated changes to commit.'
+            exit 0
+          fi
+          git commit -m "build(msr): record verified gateway workspace integration"
+          git push origin HEAD:feat/msr-204-hermes-gateway-transcript
