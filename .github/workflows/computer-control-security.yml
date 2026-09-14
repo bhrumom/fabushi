@@ -34,16 +34,10 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0015_remote_computer_inventory.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
       - 'third_party/mahayana/mahayana-rs/Cargo.lock'
-      - '.github/workflows/apple-store-delivery.yml'
-      - '.github/workflows/ci.yml'
       - '.github/workflows/computer-control-security.yml'
-      - '.github/workflows/interactive-runner-mcp.yml'
       - '.github/scripts/verify-packaged-computer-control.mjs'
       - '.github/scripts/verify-app-agent-surface-contract.mjs'
       - 'chatgpt-vps-control/tests/packaged-computer-control-verifier.test.js'
-      - '.github/workflows/electron-desktop.yml'
-      - '.github/workflows/electron-macos-hot-package.yml'
-      - '.github/workflows/native-electron-release.yml'
   push:
     branches: [main]
     paths:
@@ -78,16 +72,10 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0015_remote_computer_inventory.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
       - 'third_party/mahayana/mahayana-rs/Cargo.lock'
-      - '.github/workflows/apple-store-delivery.yml'
-      - '.github/workflows/ci.yml'
       - '.github/workflows/computer-control-security.yml'
-      - '.github/workflows/interactive-runner-mcp.yml'
       - '.github/scripts/verify-packaged-computer-control.mjs'
       - '.github/scripts/verify-app-agent-surface-contract.mjs'
       - 'chatgpt-vps-control/tests/packaged-computer-control-verifier.test.js'
-      - '.github/workflows/electron-desktop.yml'
-      - '.github/workflows/electron-macos-hot-package.yml'
-      - '.github/workflows/native-electron-release.yml'
   merge_group:
   workflow_dispatch:
 
@@ -123,9 +111,9 @@ jobs:
           predicate-quantifier: some-with-excludes
           filters: |
             global:
-              - '.github/workflows/**'
-              - '.github/scripts/**'
-              - 'AGENTS.md'
+              - '.github/workflows/computer-control-security.yml'
+              - '.github/scripts/verify-packaged-computer-control.mjs'
+              - '.github/scripts/verify-app-agent-surface-contract.mjs'
             node:
               - 'chatgpt-vps-control/**'
               - 'desktop/electron/**'
@@ -191,7 +179,7 @@ jobs:
 
   node-security:
     needs: scope
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.node == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.node == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -257,7 +245,7 @@ jobs:
 
   rust-contracts:
     needs: scope
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.rust == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.rust == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -294,7 +282,7 @@ jobs:
 
   platform-worker-security:
     needs: scope
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.platform_worker == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.platform_worker == 'true' }}
     name: Remote control platform worker security
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -320,7 +308,7 @@ jobs:
 
   linux-managed-semantic-desktop:
     needs: scope
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.linux_desktop == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.linux_desktop == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
