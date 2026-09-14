@@ -5,8 +5,8 @@
 - Portfolio Project ID: `FAB-P0001`
 - Project Key / Task ID: `TFI / TFI-USERSCRIPT-RECOVERY-011`
 - Started: `2026-09-14T08:00:00+08:00`
-- Updated: `2026-09-14T09:30:00+08:00`
-- Status: `IN_PROGRESS`
+- Updated: `2026-09-14T09:36:20+08:00`
+- Status: `IN_PROGRESS / WEBS_STORE_BLOCKED / LIVE_CHROME_EVIDENCE_PENDING`
 
 ## Objective
 
@@ -70,7 +70,7 @@
   重复派发，原发送不确定时保留 token 并 fail-closed。
 - [x] A05：新增回归测试覆盖 stale/healthy/paused/multiple workspace、恢复票据幂等、
   URL/token/附件连续和卡住有界恢复；源语法检查与完整 source 测试通过。
-- [ ] A06：source PR、exact source-main CI、`v2.9.20` Release asset 与 SHA 可追溯。
+- [x] A06：source PR、exact source-main CI、`v2.9.20` Release asset 与 SHA 可追溯：source PR #15、source main `579c5204734afe21d366018d4ee16b5c6d3fb6ce`、exact-main CI `34794406863`、Release `v2.9.20`（asset `chatgpt-auto-confirm.user.js`）。
 - [ ] A07：真实 Chrome 崩溃/卡住旅程取得 checkpoint 截图、完整视频、trace/diagnostics；
   在证据完成前不将本任务标记为 passed。
 - [x] A08：脚本在活动/发送中/附件上传等待及可恢复 blocked 状态请求 `tab-recovery`；请求
@@ -91,10 +91,28 @@ IndexedDB 边界。宿主扩展采用 Chrome 官方 `tabs`/`alarms` 事件与持
 
 ## Implementation / delivery evidence
 
-当前工作树实现已完成，source branch、commit、PR、CI、Release、Chrome evidence、blocker
-和完成时间将在后续轮次追加；本任务的 packaged Fabushi delivery 对独立 userscript 部分
-为 `N/A`，但同一修复同时扩展了 `FAB-P0011/CWA` Chrome 宿主，因此 CWA-008 仍必须经过
-Fabushi 扩展的 protected-main、packaged/E2E 和发布门禁。
+source PR [#15](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/15)
+已合并；source canonical main 为
+`579c5204734afe21d366018d4ee16b5c6d3fb6ce`，exact-main CI run `34794406863` 成功，Release
+[`v2.9.20`](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.20)
+已绑定该 SHA 并包含安装资产。
+
+parent PR [#2594](https://github.com/bhrumom/fabushi/pull/2594) 已经 protected merge queue
+合并；本任务接受的 parent main SHA 为 `e60d40f4a97dcb319515abb2b46ef2845d4eb21b`，随后
+独立 PR #2593 已将 canonical main 前进到 `31fdeca90bc8012e144b3ada00ca439891606e2c`（包含
+并保留本任务 SHA）。该任务接受 SHA 的
+Chrome workflow `34795268685` 成功（artifact `10329366885`），Electron packaged gate
+`34795268724`、Native mobile gate `34795268715`、security/governance checks 均成功；
+post-main delivery `34796011272` 成功并发布 Release
+[`desktop-1.2.64`](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.64)，目标与该
+SHA 一致，包含桌面安装包、updater metadata 和 Chrome `0.6.0` 包。
+
+Chrome Web Store 正式提交 run `34796377000` / job `103830176952` 已完成 exact-source
+包校验，但因受保护环境 `chrome-webstore` 的 publisher、item、OAuth client、secret 和
+refresh token 均未配置，在调用商店 API 前 fail-closed；未产生商店提交。证据 artifact 为
+`10329509377`。本任务的 packaged Fabushi delivery 对独立 userscript 部分为 `N/A`，但同一
+修复扩展了 `FAB-P0011/CWA` Chrome 宿主，因此真实 Chrome 崩溃/卡住及附件/最终回复现场证据
+仍需补齐。
 
 ## Risks and next action
 
@@ -102,6 +120,8 @@ Fabushi 扩展的 protected-main、packaged/E2E 和发布门禁。
   集成扩展可进一步提供页面外 tab watchdog。
 - Risk: stale heartbeat 可能与后台页面节流混淆；采用较长 TTL、唯一候选和手动暂停屏障，
   不确定时保持原任务而不抢占。
-- Next: 完成 source `v2.9.20` 与 parent CWA-008 的 PR/required CI；随后驱动 protected main、
-  exact-main packaged crash-recovery journey、Release/扩展发布和真实 Chrome 证据。任何门禁
-  未完成前保持 `IN_PROGRESS`。
+- Blocker: Chrome Web Store publish workflow `34796377000` 在 API 调用前发现受保护环境凭据
+  为空；不能代填或把 GitHub Release 冒充为商店已上架。
+- Next: 配置 `chrome-webstore` 环境的发布凭据后，以 source SHA
+  `e60d40f4a97dcb319515abb2b46ef2845d4eb21b` 重跑 publish workflow；同时在已登录 Chrome
+  补齐崩溃/卡住、无链接恢复、最终回复→验收和附件连续性的截图、完整视频、trace/diagnostics。
