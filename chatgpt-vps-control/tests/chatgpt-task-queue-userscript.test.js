@@ -34,8 +34,8 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   const content = await source("userscript-content.js");
   const recovery = await source("userscript-recovery.js");
   const app = await source("app.js");
-  const packager = await readFile(resolve(extensionRoot, "../scripts/package-chrome-extension.mjs"), "utf8");
-  const validator = await readFile(resolve(extensionRoot, "../scripts/validate-chrome-extension.mjs"), "utf8");
+  const packager = await readFile(resolve(extensionRoot, "../../scripts/package-chrome-extension.mjs"), "utf8");
+  const validator = await readFile(resolve(extensionRoot, "../../scripts/validate-chrome-extension.mjs"), "utf8");
   for (const message of ["fabushi.userscript.list", "fabushi.userscript.install", "fabushi.userscript.setEnabled", "fabushi.userscript.uninstall", "fabushi.userscript.pageReady", "fabushi.userscript.request", "fabushi.userscript.memory.request"]) assert.match(runner, new RegExp(message.replaceAll(".", "\\.")));
   assert.match(runner, /chrome\.runtime\.onStartup/);
   assert.match(runner, /chrome\.runtime\.onInstalled/);
