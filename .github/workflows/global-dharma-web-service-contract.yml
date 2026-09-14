@@ -22,6 +22,7 @@ on:
       - 'app-version.json'
       - '.github/workflows/global-dharma-web-service-contract.yml'
       - '.github/workflows/macos-global-dharma-packaged-e2e.yml'
+  merge_group:
   workflow_dispatch:
 
 permissions:
