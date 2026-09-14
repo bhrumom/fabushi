@@ -14,7 +14,7 @@ const extensionRoot = resolve(repositoryRoot, "chatgpt-vps-control");
 const packageRoot = join(extensionRoot, "dist", "chrome-extension");
 const packageZip = process.env.FABUSHI_CHROME_ZIP
   ? resolve(process.env.FABUSHI_CHROME_ZIP)
-  : join(packageRoot, "fabushi-chrome-0.6.2.zip");
+  : join(packageRoot, "fabushi-chrome-0.6.3.zip");
 const evidenceRoot = resolve(process.env.FABUSHI_CHROME_EVIDENCE_DIR || join(packageRoot, "evidence"));
 const journeyId = "CWA-007-chrome-packaged-browser-control";
 const sourceSha = String(process.env.GITHUB_SHA || "unknown");
@@ -237,7 +237,7 @@ const report = {
   journeyId,
   sourceSha,
   runId,
-  version: "0.6.2",
+  version: "0.6.3",
   platform: process.platform,
   startedAt,
   steps,
