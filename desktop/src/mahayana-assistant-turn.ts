@@ -1,4 +1,5 @@
 import type { RuntimeEvent } from '../../frontend/apps/web/src/lib/mahayana-host/contracts';
+import type { MahayanaGatewayEventEnvelope } from '../../frontend/apps/web/src/lib/mahayana-host/gateway-events';
 
 export type AssistantTurnStatus = 'running' | 'completed' | 'failed' | 'interrupted';
 export type AssistantPartStatus = 'streaming' | 'running' | 'completed' | 'failed';
@@ -38,40 +39,6 @@ export type AssistantTurn = {
   updatedAtMs: number;
   status: AssistantTurnStatus;
   parts: AssistantTurnPart[];
-};
-
-export type GatewayEventPayload = Record<string, unknown>;
-
-/**
- * Product-owned gateway envelope inspired by Hermes' event-driven TUI gateway.
- *
- * The renderer is intentionally not authoritative for agent behavior: it only
- * folds ordered events into display parts. Rust/session state owns replay,
- * sequence, approval/tool execution and persistence.
- */
-export type MahayanaGatewayEventEnvelope = {
-  protocolVersion: 1;
-  sessionId: string;
-  turnId: string;
-  seq: number;
-  timestamp: string;
-  replayEpoch: string;
-  type:
-    | 'message.start'
-    | 'message.delta'
-    | 'message.interim'
-    | 'message.complete'
-    | 'reasoning.delta'
-    | 'thinking.delta'
-    | 'tool.generating'
-    | 'tool.start'
-    | 'tool.complete'
-    | 'approval.request'
-    | 'clarify.request'
-    | 'subagent.start'
-    | 'subagent.progress'
-    | 'subagent.complete';
-  payload: GatewayEventPayload;
 };
 
 export type AssistantTurnEvent = RuntimeEvent | MahayanaGatewayEventEnvelope;
