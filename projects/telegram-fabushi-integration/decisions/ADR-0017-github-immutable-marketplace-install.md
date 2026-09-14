@@ -1,6 +1,6 @@
 # ADR-0017 — Marketplace 采用 GitHub 不可变版本安装更新合同
 
-- **状态**：Accepted for M8-MARKET-003 implementation; delivery gates pending
+- **状态**：Accepted; M8-MARKET-003 delivery gates passed
 - **日期**：2026-09-13
 - **项目**：`FAB-P0001` / `TFI`
 
@@ -32,4 +32,6 @@
 
 ## 验收与回滚
 
-Node/Rust/Chrome/frontend/mobile/CLI 合同检查、负向测试、PR exact-head CI、protected-main、canonical-main packaged E2E 和必需视觉/trace/report evidence 是任务完成门禁。回滚优先切换到最后一个 digest/size 与实际字节一致的 GitHub Release；不得用可变 branch 或市场缓存代替回滚 provenance。
+Node/Rust/Chrome/frontend/mobile/CLI 合同检查、负向测试、PR exact-head CI、protected-main、canonical-main packaged E2E 和必需视觉/trace/report evidence 已在 accepted product SHA `f6a0d99c85a481999298a18cada6a9f10718a360` 上通过。固定 catalog 的三项损坏历史包由 CI 重建为 `1.0.1` 并发布到 [marketplace-v1.0.1-cc23420c56c9](https://github.com/bhrumom/fabushi/releases/tag/marketplace-v1.0.1-cc23420c56c9)；桌面测试版本 [desktop-1.2.65](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65) 于 `2026-09-14T02:50:58Z` 以同一 SHA 发布，包含 updater metadata、blockmap 和跨平台安装包。回滚优先切换到最后一个 digest/size 与实际字节一致的 GitHub Release；不得用可变 branch 或市场缓存代替回滚 provenance。
+
+Optional old-client updater discovery/download/install/relaunch regression was not run. It remains advisory under the repository completion contract and was not promoted to a required acceptance gate for this task. The public Chrome Web Store submission was not attempted because protected store credentials were unavailable; the exact final Chrome package was produced and retained by CI.
