@@ -2,12 +2,8 @@ import {
   Bot,
   CheckCircle2,
   ChevronDown,
-  Circle,
-  Clock3,
-  Cpu,
   FileText,
   LoaderCircle,
-  RotateCcw,
   ShieldAlert,
   Square,
   Terminal,
@@ -17,20 +13,18 @@ import React, { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   ApprovalResolution,
-  CommandAccepted,
-  RuntimeCommand,
   RuntimeEvent,
 } from '../../frontend/apps/web/src/lib/mahayana-host/contracts';
 import {
   MAHAYANA_COMMAND_EVENT_NAME,
   MAHAYANA_RUNTIME_EVENT_NAME,
-  type MahayanaCommandBridgeContext,
   type MahayanaCommandBridgeDetail,
 } from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
 import {
   agentWorkbenchReducer,
   type AgentApprovalProjection,
   type AgentCardProjection,
+  type AgentObservationProjection,
   type AgentRunProjection,
   type AgentStepProjection,
   type AgentToolResultProjection,
@@ -49,11 +43,13 @@ type ActivePeerContext = {
   label?: string;
 };
 
-type ReportActivity =
+type TurnPart =
+  | { type: 'message'; id: string; timestampMs: number; text: string }
   | { type: 'step'; id: string; timestampMs: number; step: AgentStepProjection }
   | { type: 'tool'; id: string; timestampMs: number; tool: AgentToolResultProjection }
   | { type: 'approval'; id: string; timestampMs: number; approval: AgentApprovalProjection }
-  | { type: 'artifact'; id: string; timestampMs: number; card: AgentCardProjection };
+  | { type: 'artifact'; id: string; timestampMs: number; card: AgentCardProjection }
+  | { type: 'observation'; id: string; timestampMs: number; observation: AgentObservationProjection };
 
 function emptySnapshot(): AgentWorkbenchSnapshot {
   return {
@@ -69,17 +65,6 @@ function readSnapshot(): AgentWorkbenchSnapshot {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null') as Partial<AgentWorkbenchSnapshot> | null;
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.runs)) return emptySnapshot();
-    const runs = parsed.runs
-      .filter((run): run is AgentRunProjection => Boolean(run && typeof run === 'object' && run.id))
-      .map((run) => ({
-        ...run,
-        steps: Array.isArray(run.steps) ? run.steps : [],
-        messages: Array.isArray(run.messages) ? run.messages : [],
-        approvals: Array.isArray(run.approvals) ? run.approvals : [],
-        cards: Array.isArray(run.cards) ? run.cards : [],
-        observations: Array.isArray(run.observations) ? run.observations : [],
-        toolResults: Array.isArray(run.toolResults) ? run.toolResults : [],
-      }));
     return {
       version: 1,
       activeConversationKey: typeof parsed.activeConversationKey === 'string' && parsed.activeConversationKey
@@ -88,7 +73,17 @@ function readSnapshot(): AgentWorkbenchSnapshot {
       knownBotIds: Array.isArray(parsed.knownBotIds)
         ? parsed.knownBotIds.filter((id): id is string => typeof id === 'string')
         : ['mahayana-assistant'],
-      runs,
+      runs: parsed.runs
+        .filter((run): run is AgentRunProjection => Boolean(run && typeof run === 'object' && run.id))
+        .map((run) => ({
+          ...run,
+          steps: Array.isArray(run.steps) ? run.steps : [],
+          messages: Array.isArray(run.messages) ? run.messages : [],
+          approvals: Array.isArray(run.approvals) ? run.approvals : [],
+          cards: Array.isArray(run.cards) ? run.cards : [],
+          observations: Array.isArray(run.observations) ? run.observations : [],
+          toolResults: Array.isArray(run.toolResults) ? run.toolResults : [],
+        })),
     };
   } catch {
     return emptySnapshot();
@@ -108,8 +103,7 @@ function activePeerButton(): HTMLButtonElement | null {
 
 function actorIdFromBotMark(botId: string | undefined): string | undefined {
   if (!botId) return undefined;
-  const prefixes = ['peer:bot:', 'peer:agent:'];
-  const prefix = prefixes.find((candidate) => botId.startsWith(candidate));
+  const prefix = ['peer:bot:', 'peer:agent:'].find((candidate) => botId.startsWith(candidate));
   return prefix ? botId.slice(prefix.length) || undefined : undefined;
 }
 
@@ -125,9 +119,7 @@ function contextFromActivePeer(): ActivePeerContext | null {
   if (rawKey.startsWith('legacy:conversation:')) {
     return { key: rawKey.slice('legacy:conversation:'.length), agentId, label };
   }
-  if (rawKey.startsWith('selfhosted:')) {
-    return { key: rawKey, agentId, label };
-  }
+  if (rawKey.startsWith('selfhosted:')) return { key: rawKey, agentId, label };
   if (rawKey.startsWith('legacy:bot:') || rawKey.startsWith('account:bot:')) {
     return { key: agentId || rawKey.split(':').slice(2).join(':'), agentId, label };
   }
@@ -137,91 +129,12 @@ function contextFromActivePeer(): ActivePeerContext | null {
 function runForPeer(runs: AgentRunProjection[], peer: ActivePeerContext | null): AgentRunProjection | undefined {
   if (!peer) return undefined;
   const reversed = [...runs].reverse();
-  const exact = reversed.find((run) => run.conversationKey === peer.key);
-  if (exact) return exact;
-  if (peer.agentId) {
-    const byAgent = reversed.find((run) => run.agentId === peer.agentId);
-    if (byAgent) return byAgent;
-  }
-  return undefined;
+  return reversed.find((run) => run.conversationKey === peer.key)
+    || (peer.agentId ? reversed.find((run) => run.agentId === peer.agentId) : undefined);
 }
 
-function reportHeadline(run: AgentRunProjection): string {
-  if (run.status === 'waiting-for-approval') return '等待你的批准';
-  if (run.status === 'completed') return '工作完成';
-  if (run.status === 'failed') return '执行失败';
-  if (run.status === 'interrupted') return '任务已暂停';
-  const running = [...run.steps].reverse().find((step) => step.status === 'running');
-  if (running) return running.title;
-  return run.status === 'queued' ? '正在规划任务' : '正在执行任务';
-}
-
-function statusLabel(run: AgentRunProjection): string {
-  const copy: Record<AgentRunProjection['status'], string> = {
-    queued: '规划中',
-    running: '执行中',
-    'waiting-for-approval': '待批准',
-    completed: '已完成',
-    failed: '失败',
-    interrupted: '已暂停',
-  };
-  return copy[run.status];
-}
-
-function durationLabel(run: AgentRunProjection): string {
-  const end = run.completedAtMs || Date.now();
-  const seconds = Math.max(0, Math.round((end - run.startedAtMs) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-}
-
-function activityForRun(run: AgentRunProjection): ReportActivity[] {
-  const activity: ReportActivity[] = [
-    ...run.steps.map((step): ReportActivity => ({
-      type: 'step',
-      id: `step:${step.id}`,
-      timestampMs: step.startedAtMs,
-      step,
-    })),
-    ...run.toolResults.map((tool): ReportActivity => ({
-      type: 'tool',
-      id: `tool:${tool.id}`,
-      timestampMs: tool.createdAtMs,
-      tool,
-    })),
-    ...run.approvals.map((approval): ReportActivity => ({
-      type: 'approval',
-      id: `approval:${approval.approvalId}`,
-      timestampMs: approval.requestedAtMs,
-      approval,
-    })),
-    ...run.cards.map((card): ReportActivity => ({
-      type: 'artifact',
-      id: `artifact:${card.id}`,
-      timestampMs: card.createdAtMs,
-      card,
-    })),
-  ];
-  return activity.sort((left, right) => left.timestampMs - right.timestampMs);
-}
-
-function jsonPreview(value: unknown): string {
-  try {
-    const text = JSON.stringify(value, null, 2);
-    return text.length > 1600 ? `${text.slice(0, 1600)}\n…` : text;
-  } catch {
-    return String(value);
-  }
-}
-
-function StepStatusIcon({ status }: { status: AgentStepProjection['status'] }) {
-  if (status === 'completed') return <CheckCircle2 size={15} />;
-  if (status === 'failed') return <XCircle size={15} />;
-  return <LoaderCircle className={styles.spin} size={15} />;
-}
-
-function latestAssistantText(run: AgentRunProjection): string {
-  return [...run.messages].reverse().find((message) => message.role === 'assistant' && message.text.trim())?.text.trim() || '';
+function latestAssistantMessage(run: AgentRunProjection) {
+  return [...run.messages].reverse().find((message) => message.role === 'assistant' && message.text.trim());
 }
 
 function peerMessageArticles(messageArea: HTMLElement): HTMLElement[] {
@@ -232,13 +145,13 @@ function peerMessageArticles(messageArea: HTMLElement): HTMLElement[] {
 
 function matchingAssistantArticle(messageArea: HTMLElement, run: AgentRunProjection | undefined): HTMLElement | null {
   if (!run) return null;
-  const targetText = latestAssistantText(run);
+  const targetText = latestAssistantMessage(run)?.text.trim() || '';
   if (!targetText) return null;
   const normalizedTarget = targetText.replace(/\s+/gu, ' ').trim();
-  const candidates = peerMessageArticles(messageArea).reverse();
-  return candidates.find((article) => {
+  return peerMessageArticles(messageArea).reverse().find((article) => {
     const text = article.querySelector('p')?.textContent?.replace(/\s+/gu, ' ').trim() || '';
-    return text === normalizedTarget || (normalizedTarget.length > 80 && text.startsWith(normalizedTarget.slice(0, 80)));
+    return text === normalizedTarget
+      || (normalizedTarget.length > 80 && text.startsWith(normalizedTarget.slice(0, 80)));
   }) || null;
 }
 
@@ -264,53 +177,98 @@ function setFinalOutputArticle(article: HTMLElement | null): void {
   if (article) article.dataset.agentFinalOutput = 'true';
 }
 
-function emitCommand(detail: MahayanaCommandBridgeDetail): void {
-  window.dispatchEvent(new CustomEvent<MahayanaCommandBridgeDetail>(MAHAYANA_COMMAND_EVENT_NAME, { detail }));
-}
-
-function nextRequestId(prefix: string): string {
-  const suffix = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `${prefix}-${suffix}`;
-}
-
-async function executeAgentCommand(
-  command: Extract<RuntimeCommand, { type: 'chat.send' }>,
-  context: MahayanaCommandBridgeContext,
-): Promise<CommandAccepted> {
-  if (!window.mahayana?.invoke) throw new Error('Mahayana Electron bridge is unavailable');
-  const normalized = { ...command, mode: 'agent' as const };
-  emitCommand({ phase: 'dispatch', command: normalized, context });
+function jsonPreview(value: unknown): string {
   try {
-    const accepted = await window.mahayana.invoke<CommandAccepted>('feature.execute', { command: normalized });
-    emitCommand({ phase: 'accepted', command: normalized, accepted, context });
-    return accepted;
-  } catch (error) {
-    emitCommand({
-      phase: 'failed',
-      command: normalized,
-      error: error instanceof Error ? error.message : String(error),
-      context,
-    });
-    throw error;
+    const text = JSON.stringify(value, null, 2);
+    return text.length > 1600 ? `${text.slice(0, 1600)}\n…` : text;
+  } catch {
+    return String(value);
   }
 }
 
-function InlineActivity({
-  item,
+function visibleStep(step: AgentStepProjection): boolean {
+  // Routing and runtime bookkeeping remain available in the diagnostic event
+  // stream but are not assistant prose. Hermes-style chat surfaces only the
+  // work that helps a user follow the turn.
+  return step.kind !== 'model' && step.kind !== 'runtime';
+}
+
+function stepTitle(step: AgentStepProjection): string {
+  if (step.kind === 'plan' && step.title === 'Mahayana 已接管任务') return '正在思考';
+  return step.title;
+}
+
+function turnParts(run: AgentRunProjection): TurnPart[] {
+  const finalAssistantId = latestAssistantMessage(run)?.id;
+  const parts: TurnPart[] = [
+    ...run.messages
+      .filter((message) => message.role === 'assistant' && message.id !== finalAssistantId && message.text.trim())
+      .map((message): TurnPart => ({
+        type: 'message',
+        id: `message:${message.id}`,
+        timestampMs: message.createdAtMs,
+        text: message.text,
+      })),
+    ...run.steps
+      .filter(visibleStep)
+      .map((step): TurnPart => ({
+        type: 'step',
+        id: `step:${step.id}`,
+        timestampMs: step.startedAtMs,
+        step,
+      })),
+    ...run.toolResults.map((tool): TurnPart => ({
+      type: 'tool',
+      id: `tool:${tool.id}`,
+      timestampMs: tool.createdAtMs,
+      tool,
+    })),
+    ...run.approvals.map((approval): TurnPart => ({
+      type: 'approval',
+      id: `approval:${approval.approvalId}`,
+      timestampMs: approval.requestedAtMs,
+      approval,
+    })),
+    ...run.cards.map((card): TurnPart => ({
+      type: 'artifact',
+      id: `artifact:${card.id}`,
+      timestampMs: card.createdAtMs,
+      card,
+    })),
+    ...run.observations.map((observation): TurnPart => ({
+      type: 'observation',
+      id: `observation:${observation.kind}:${observation.id}`,
+      timestampMs: run.updatedAtMs,
+      observation,
+    })),
+  ];
+  return parts.sort((left, right) => left.timestampMs - right.timestampMs);
+}
+
+function StepIcon({ status }: { status: AgentStepProjection['status'] }) {
+  if (status === 'completed') return <CheckCircle2 size={14} />;
+  if (status === 'failed') return <XCircle size={14} />;
+  return <LoaderCircle className={styles.spin} size={14} />;
+}
+
+function TurnPartView({
+  part,
   onResolveApproval,
 }: {
-  item: ReportActivity;
+  part: TurnPart;
   onResolveApproval: (approvalId: string, decision: ApprovalResolution['decision']) => void;
 }) {
-  if (item.type === 'step') {
-    const { step } = item;
+  if (part.type === 'message') {
+    return <p className={styles.assistantSegment} data-testid="agent-inline-message-part">{part.text}</p>;
+  }
+
+  if (part.type === 'step') {
+    const { step } = part;
     return (
-      <div className={styles.activity} data-testid="agent-inline-step" data-status={step.status} data-kind={step.kind}>
-        <span className={styles.rail}><StepStatusIcon status={step.status} /></span>
-        <div className={styles.activityCopy}>
-          <strong>{step.title}</strong>
+      <div className={styles.partRow} data-testid="agent-inline-step" data-status={step.status} data-kind={step.kind}>
+        <span className={styles.partIcon}><StepIcon status={step.status} /></span>
+        <div className={styles.partCopy}>
+          <strong>{stepTitle(step)}</strong>
           {step.detail ? <small>{step.detail}</small> : null}
           {typeof step.progress === 'number' && typeof step.total === 'number' && step.total > 0 ? (
             <span className={styles.progress} aria-label={`${step.progress}/${step.total}`}>
@@ -318,30 +276,33 @@ function InlineActivity({
             </span>
           ) : null}
         </div>
-        <time>{new Date(step.updatedAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
       </div>
     );
   }
 
-  if (item.type === 'tool') {
+  if (part.type === 'tool') {
     return (
-      <div className={styles.activity} data-testid="agent-inline-tool" data-status="completed" data-kind="tool">
-        <span className={styles.rail}><CheckCircle2 size={15} /></span>
-        <details className={styles.detailBlock}>
-          <summary><Terminal size={14} /><strong>调用工具 · {item.tool.server}</strong><span>{item.tool.tool}</span><ChevronDown size={13} /></summary>
-          <pre>{jsonPreview(item.tool.result)}</pre>
+      <div className={styles.partRow} data-testid="agent-inline-tool" data-status="completed" data-kind="tool">
+        <span className={styles.partIcon}><CheckCircle2 size={14} /></span>
+        <details className={styles.toolDetail}>
+          <summary>
+            <Terminal size={13} />
+            <strong>{part.tool.tool}</strong>
+            <span>{part.tool.server}</span>
+            <ChevronDown size={12} />
+          </summary>
+          <pre>{jsonPreview(part.tool.result)}</pre>
         </details>
-        <time>{new Date(item.tool.createdAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
       </div>
     );
   }
 
-  if (item.type === 'approval') {
-    const approval = item.approval;
+  if (part.type === 'approval') {
+    const approval = part.approval;
     return (
-      <div className={styles.activity} data-testid="agent-inline-approval" data-status={approval.decision ? 'completed' : 'running'} data-kind="approval">
-        <span className={styles.rail}><ShieldAlert size={15} /></span>
-        <div className={styles.approvalCopy}>
+      <div className={styles.partRow} data-testid="agent-inline-approval" data-status={approval.decision ? 'completed' : 'running'} data-kind="approval">
+        <span className={styles.partIcon}><ShieldAlert size={14} /></span>
+        <div className={styles.partCopy}>
           <strong>{approval.subject || approval.capability}</strong>
           <small>{approval.detail || approval.reason}</small>
           {approval.proposedRule ? <code>{approval.proposedRule}</code> : null}
@@ -353,28 +314,42 @@ function InlineActivity({
             </span>
           )}
         </div>
-        <time>{new Date(approval.requestedAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+      </div>
+    );
+  }
+
+  if (part.type === 'observation') {
+    return (
+      <div className={styles.partRow} data-testid="agent-inline-observation" data-status={part.observation.status || 'running'} data-kind={part.observation.kind}>
+        <span className={styles.partIcon}><Bot size={14} /></span>
+        <div className={styles.partCopy}>
+          <strong>{part.observation.label}</strong>
+          {part.observation.detail ? <small>{part.observation.detail}</small> : null}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={styles.activity} data-testid="agent-inline-artifact" data-status="completed" data-kind="artifact">
-      <span className={styles.rail}><FileText size={15} /></span>
-      <details className={styles.detailBlock}>
-        <summary><FileText size={14} /><strong>生成交付物</strong><span>{item.card.card.kind}</span><ChevronDown size={13} /></summary>
-        <pre>{jsonPreview(item.card.card)}</pre>
+    <div className={styles.partRow} data-testid="agent-inline-artifact" data-status="completed" data-kind="artifact">
+      <span className={styles.partIcon}><FileText size={14} /></span>
+      <details className={styles.toolDetail}>
+        <summary>
+          <FileText size={13} />
+          <strong>生成交付物</strong>
+          <span>{part.card.card.kind}</span>
+          <ChevronDown size={12} />
+        </summary>
+        <pre>{jsonPreview(part.card.card)}</pre>
       </details>
-      <time>{new Date(item.card.createdAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
     </div>
   );
 }
 
-function InlineReport({ run, peer }: { run: AgentRunProjection; peer: ActivePeerContext | null }) {
+function AssistantTurnParts({ run }: { run: AgentRunProjection }) {
   const [actionError, setActionError] = useState<string | null>(null);
-  const activity = useMemo(() => activityForRun(run), [run]);
+  const parts = useMemo(() => turnParts(run), [run]);
   const active = run.status === 'queued' || run.status === 'running' || run.status === 'waiting-for-approval';
-  const canResume = Boolean(run.prompt && (run.status === 'failed' || run.status === 'interrupted'));
 
   const interrupt = () => {
     if (!run.operationId || !window.mahayana?.invoke) return;
@@ -390,83 +365,30 @@ function InlineReport({ run, peer }: { run: AgentRunProjection; peer: ActivePeer
       .catch((error) => setActionError(error instanceof Error ? error.message : String(error)));
   };
 
-  const resume = () => {
-    setActionError(null);
-    const command: Extract<RuntimeCommand, { type: 'chat.send' }> = {
-      type: 'chat.send',
-      requestId: nextRequestId('inline-resume-agent'),
-      text: run.prompt,
-      agentId: run.agentId,
-      conversationId: run.conversationId,
-      mode: 'agent',
-    };
-    void executeAgentCommand(command, {
-      conversationKey: run.conversationKey,
-      conversationId: run.conversationId,
-      agentId: run.agentId,
-    }).catch((error) => setActionError(error instanceof Error ? error.message : String(error)));
-  };
-
   return (
     <section
-      className={styles.report}
+      className={styles.turnParts}
       data-testid="agent-inline-report"
+      data-agent-transcript-parts="true"
       data-status={run.status}
       data-run-id={run.id}
     >
-      <header className={styles.reportHeader}>
-        <span className={styles.liveGlyph} data-active={active || undefined}>
-          {active ? <LoaderCircle className={styles.spin} size={16} /> : run.status === 'completed' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
-        </span>
-        <div className={styles.headerCopy}>
-          <strong>{reportHeadline(run)}</strong>
-          <small>
-            Mahayana 多步骤工作
-            {peer?.label ? ` · ${peer.label}` : ''}
-          </small>
-        </div>
-        <span className={styles.statusPill} data-status={run.status}>{statusLabel(run)}</span>
-      </header>
-
-      <div className={styles.runtimeMeta}>
-        <span><Cpu size={12} />{run.provider || 'mahayana'}{run.model ? ` / ${run.model}` : ''}</span>
-        <span><Bot size={12} />{run.mode || 'agent'}</span>
-        <span><Clock3 size={12} />{durationLabel(run)}</span>
-      </div>
-
-      <div className={styles.feed} data-testid="agent-inline-feed">
-        {activity.map((item) => <InlineActivity key={item.id} item={item} onResolveApproval={resolveApproval} />)}
-        {!activity.length ? (
-          <div className={styles.activity} data-testid="agent-inline-step" data-status="running" data-kind="planning">
-            <span className={styles.rail}><LoaderCircle className={styles.spin} size={15} /></span>
-            <div className={styles.activityCopy}><strong>正在建立执行计划</strong><small>等待 Mahayana runtime 返回第一个真实步骤</small></div>
+      <div className={styles.partFeed} data-testid="agent-inline-feed">
+        {parts.map((part) => <TurnPartView key={part.id} part={part} onResolveApproval={resolveApproval} />)}
+        {!parts.length && active ? (
+          <div className={styles.partRow} data-testid="agent-inline-step" data-status="running" data-kind="thinking">
+            <span className={styles.partIcon}><LoaderCircle className={styles.spin} size={14} /></span>
+            <div className={styles.partCopy}><strong>正在思考</strong></div>
           </div>
         ) : null}
       </div>
-
-      {run.observations.length ? (
-        <div className={styles.parallel} data-testid="agent-inline-parallel">
-          {run.observations.map((item) => (
-            <span key={`${item.kind}:${item.id}`} data-kind={item.kind}>
-              {item.kind === 'subagent' ? <Bot size={12} /> : item.kind === 'async-task' ? <Terminal size={12} /> : <Circle size={10} />}
-              <strong>{item.label}</strong>
-              {item.status ? <small>{item.status}</small> : null}
-            </span>
-          ))}
-        </div>
-      ) : null}
-
-      {run.status === 'completed' ? <div className={styles.resultBridge}><CheckCircle2 size={14} /><span>执行完成，最终结果如下</span></div> : null}
       {run.error ? <div className={styles.error}><XCircle size={14} /><span>{run.error}</span></div> : null}
       {actionError ? <div className={styles.error}><XCircle size={14} /><span>{actionError}</span></div> : null}
-
-      <footer className={styles.footer}>
-        <span>{run.usage ? `${run.usage.totalTokens.toLocaleString()} tokens` : '实时 RuntimeEvent'}</span>
-        <span className={styles.actions}>
-          {active && run.interruptible && run.operationId ? <button type="button" data-testid="agent-inline-stop" onClick={interrupt}><Square size={12} />停止</button> : null}
-          {canResume ? <button type="button" data-testid="agent-inline-resume" onClick={resume}><RotateCcw size={12} />继续任务</button> : null}
-        </span>
-      </footer>
+      {active && run.interruptible && run.operationId ? (
+        <button type="button" className={styles.stopButton} data-testid="agent-inline-stop" onClick={interrupt}>
+          <Square size={11} />停止
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -481,6 +403,14 @@ export default function MahayanaAgentInlineReport() {
   const [portal, setPortal] = useState<HTMLElement | null>(null);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // The native durable-state bridge remains authoritative when storage is unavailable.
+    }
+  }, [snapshot]);
 
   useEffect(() => {
     const onCommand = (event: Event) => {
@@ -505,7 +435,6 @@ export default function MahayanaAgentInlineReport() {
       if (disposed) return;
       const nextPeer = contextFromActivePeer();
       setPeer((current) => current?.key === nextPeer?.key && current?.agentId === nextPeer?.agentId && current?.label === nextPeer?.label ? current : nextPeer);
-
       const workspace = document.querySelector<HTMLElement>('[data-testid="messenger-workspace"]');
       const messageArea = workspace?.querySelector<HTMLElement>('[class*="messageArea"]') || null;
       const selectedRun = runForPeer(snapshotRef.current.runs, nextPeer);
@@ -521,8 +450,8 @@ export default function MahayanaAgentInlineReport() {
           return record.attributeName === 'class' && (record.target as HTMLElement).id !== REPORT_PORTAL_ID;
         }
         if (record.type !== 'childList') return false;
-        const changed = [...record.addedNodes, ...record.removedNodes];
-        return changed.some((node) => !(node instanceof HTMLElement) || node.id !== REPORT_PORTAL_ID);
+        return [...record.addedNodes, ...record.removedNodes]
+          .some((node) => !(node instanceof HTMLElement) || node.id !== REPORT_PORTAL_ID);
       });
       if (relevant) refresh();
     });
@@ -550,5 +479,5 @@ export default function MahayanaAgentInlineReport() {
 
   const run = useMemo(() => runForPeer(snapshot.runs, peer), [peer, snapshot.runs]);
   if (!portal || !run) return null;
-  return createPortal(<InlineReport run={run} peer={peer} />, portal);
+  return createPortal(<AssistantTurnParts run={run} />, portal);
 }
