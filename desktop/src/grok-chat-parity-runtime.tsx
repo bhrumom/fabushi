@@ -153,32 +153,6 @@ function installParityStyle(): void {
     [data-testid="agent-thinking"] > div > strong { font-size: 11px !important; font-weight: 560 !important; color: rgba(255,255,255,.48) !important; }
     [data-testid="agent-thinking"] > div > span { display: none !important; }
 
-    #mahayana-agent-inline-report-portal {
-      min-height: 1px !important;
-      height: 1px !important;
-      overflow: visible !important;
-      pointer-events: none !important;
-    }
-    #mahayana-agent-inline-report-portal:has([data-testid="agent-inline-approval"][data-status="running"]) {
-      height: auto !important;
-      min-height: 0 !important;
-      pointer-events: auto !important;
-    }
-    #mahayana-agent-inline-report-portal [data-agent-inline-testid="agent-inline-report"]:not(:has([data-testid="agent-inline-approval"][data-status="running"])),
-    #mahayana-agent-inline-report-portal [data-testid="agent-inline-report"]:not(:has([data-testid="agent-inline-approval"][data-status="running"])) {
-      position: absolute !important;
-      left: -10000px !important;
-      top: 0 !important;
-      width: 1px !important;
-      height: 1px !important;
-      overflow: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-    #mahayana-agent-inline-report-portal [data-agent-inline-testid="agent-inline-report"]:has([data-testid="agent-inline-approval"][data-status="running"]) > header,
-    #mahayana-agent-inline-report-portal [data-agent-inline-testid="agent-inline-report"]:has([data-testid="agent-inline-approval"][data-status="running"]) > footer { display: none !important; }
-    #mahayana-agent-inline-report-portal [data-agent-inline-testid="agent-inline-feed"] > :not([data-testid="agent-inline-approval"]) { display: none !important; }
-
     article[class*="_messagePeer_"] > p { line-height: 1.58 !important; }
     article[class*="_messagePeer_"] > p code {
       padding: 1px 5px;
