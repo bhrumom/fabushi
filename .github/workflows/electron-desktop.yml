@@ -116,7 +116,7 @@ jobs:
   platform:
     needs: scope
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.electron == 'true' }}
-    name: ${{ matrix.check_name || 'Electron Linux' }}
+    name: ${{ matrix.check_name }}
     strategy:
       fail-fast: false
       matrix:
