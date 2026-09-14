@@ -51,3 +51,11 @@
 ## 建议阅读顺序
 
 `00 项目章程` → `01 范围` → `02 PRD` → `03 系统架构` → `04 领域模型与协议` → `13 测试策略` → `15 路线图` → `19 完成定义` → `management/01-WBS原子任务.md`。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-012 任务级控制修复
+
+用户反馈的独立 userscript 工作台问题已拆分为任务级控制：顶部选中任务时只暂停当前任务；设置中保留独立的暂停全部/继续全部；每条当前任务行提供详情、暂停/继续/恢复和安全删除入口。
+
+- source PR [#16](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/16) 已创建，当前 head `53102aad173091cd8629caf4a1e761f7ad2d64d7`。
+- source 2.9.21 在本地轻量检查中 `node --check` 通过，userscript regression `108/108` 通过。
+- 当前仍为 IN_PROGRESS：PR CI、protected source main、Release 和真实 Chrome 视觉/trace 证据待闭合；本轮没有将新版本标记为已公开上线。

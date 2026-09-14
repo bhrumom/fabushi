@@ -51,6 +51,11 @@ active_work:
     state: IN_PROGRESS
   - task: TFI-USERSCRIPT-RECOVERY-010
     state: IN_PROGRESS
+  - task: TFI-USERSCRIPT-RECOVERY-012
+    branch: codex/task-controls-2.9.21
+    source_pr: 16
+    source_head_sha: 53102aad173091cd8629caf4a1e761f7ad2d64d7
+    state: IN_PROGRESS
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001

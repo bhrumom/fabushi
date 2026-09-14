@@ -223,3 +223,14 @@
 - [ ] `TFI-USR-FILE-006` 已登录 Chrome 使用无敏感图片、短视频、普通文件完成选择 → 上传确认 → 发送的完整分步截图、视频、trace/diagnostics。
 
 当前状态：`SOURCE_RELEASED / PARENT_RECORD_PENDING / LIVE_EVIDENCE_PENDING`；仅限独立油猴脚本，不触发 Fabushi 应用构建门禁。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-012 任务级控制与详情
+
+- [x] `TFI-USR-TASK-001` 固化用户反馈、根因与开源优先调查；截图只作为故障证据。
+- [x] `TFI-USR-TASK-002` 单任务暂停/继续/取消与全局暂停分离，异步暂停不会误转为需要处理。
+- [x] `TFI-USR-TASK-003` 任务行增加详情、暂停/继续/恢复和安全删除入口；详情保留目标、日志、会话和附件信息。
+- [x] `TFI-USR-TASK-004` 新增任务隔离与 UI 回归，source 2.9.21 轻量回归 108/108 通过。
+- [ ] `TFI-USR-TASK-005` source PR #16 的 CI、protected main、Release `v2.9.21` 与 canonical source readback。
+- [ ] `TFI-USR-TASK-006` 登录态 Chrome 完成单项暂停/继续、其他任务连续运行、详情和删除的分步截图、完整视频、trace/diagnostics。
+
+当前状态：`IN_PROGRESS / SOURCE_PR_OPEN / LIVE_EVIDENCE_PENDING`；仅限独立 userscript，不触发 Fabushi 应用构建门禁。
