@@ -34,6 +34,8 @@
 
 `TFI-USERSCRIPT-RECOVERY-010` 修复首次带附件发送后，在恢复、继续、异常重发及跨轮次发送中因 composer/document 或 dispatch context 变化而丢失附件的问题。source userscript `v2.9.19` 已发布并通过 98/98 轻量回归；parent records 已通过 PR #2587/#2588 合并并从 `main@baf13113...` 回读，已登录 Chrome 的完整现场证据仍按 task record 跟踪。
 
+`TFI-USERSCRIPT-RECOVERY-011` 已完成 source `v2.9.20`、宿主 `tab-recovery` watchdog 和 GitHub Release/Chrome 包交付：它区分最终 Work 回复与“停止回答”，把 final 传给下一轮验收，并在恢复/继续时保持任务 token、轮次和附件连续。Fabushi Chrome Web Store 的既有 `0.6.0` 草稿已于 `2026-09-14T11:44:35+08:00` 提交审核，当前状态为“待审核”；公开 listing、安装回读、真实崩溃/卡住旅程和完整现场证据仍按 `TFI-USERSCRIPT-RECOVERY-011` / `CWA-008` 跟踪。
+
 ## 当前已验证的 Marketplace 交付
 
 `M8-MARKET-003` 已将 Mini App/插件统一为 GitHub-first、油猴式的安装更新路径：市场只发布审核后的版本元数据，客户端按不可变 commit/Release artifact 下载并校验 SHA-256 与 size；Desktop、Chrome、Web、Android、iOS 和 CLI 共用安装、更新、阻止降级与显式回滚语义。官方固定目录中三项损坏/错配历史包已由受控 CI 重新打包为 `1.0.1` 并发布。

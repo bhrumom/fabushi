@@ -2,7 +2,7 @@
 
 - Project ID: FAB-P0011
 - Project Key: CWA
-- Status: active / implementation in progress
+- Status: active / implementation delivered; Web Store review and live recovery evidence pending
 - Canonical path: projects/fabushi-chrome-web-app/
 - Authoritative repository: bhrumom/fabushi, branch main
 - Allocation baseline: canonical main `656d05e8d66bfed241f5b9d871a062abfbf2f952`
@@ -19,9 +19,9 @@ Fabushi 0.6.0 扩展同时承载产品 UI、桌面账户桥、现有 Chrome 的 
 The task branch contains the first-class MV3 package, two isolated native bridges,
 generation-bound tab claims, the legacy command/event contract tests, the bundled Task
 Queue userscript, and the explicit userscript `tab-recovery` capability/watchdog. Lightweight
-static/security/contract checks are green; the next gate is protected merge plus
-canonical-main packaged Electron/Chrome E2E. Release and local profile migration remain
-pending.
+static/security/contract checks, protected merge, canonical-main packaged delivery and the
+exact GitHub Release are green. The Chrome Web Store draft is submitted and currently pending
+external review; live recovery evidence and public listing/install proof remain pending.
 
 CWA-007 adds independent Fabushi account login and account-scoped official MCP
 browser registration in the 0.6.0 change stream. PR, CI, canonical package/E2E,
