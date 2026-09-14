@@ -88,6 +88,7 @@ on:
       - '.github/workflows/electron-desktop.yml'
       - '.github/workflows/electron-macos-hot-package.yml'
       - '.github/workflows/native-electron-release.yml'
+  merge_group:
   workflow_dispatch:
 
 concurrency:
