@@ -84,7 +84,7 @@ package 或 E2E。
 Parent PR [#2594](https://github.com/bhrumom/fabushi/pull/2594) 已通过 protected merge queue
 合并；本任务接受的 main SHA 为 `e60d40f4a97dcb319515abb2b46ef2845d4eb21b`，随后独立
 PR #2593、#2595 及后续 canonical main 变更已将当前 canonical main 前进到
-`6d9fc672f8163b1a4246e46e59691d0110ee9f0b`（包含并保留本任务 SHA）。该任务接受 SHA 的 Chrome
+`9c2557731d33de830045d117e41726fb3b40a170`（records PR #2602 通过 protected queue 合并，包含并保留本任务 SHA）。该任务接受 SHA 的 Chrome
 package/journey run `34795268685` 成功，artifact `10329366885`；Electron packaged gate
 `34795268724`、Native mobile gate `34795268715`、Computer control security gate
 `34795268693`、Project portfolio governance `34795268701`、CI `34795233447` 均成功。

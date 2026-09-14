@@ -5,7 +5,7 @@
 - Project: `FAB-P0011 / CWA`
 - Task: `CWA-008`
 - Accepted task main: `e60d40f4a97dcb319515abb2b46ef2845d4eb21b`
-- Current canonical main readback: `6d9fc672f8163b1a4246e46e59691d0110ee9f0b` (descendant of the accepted task SHA)
+- Current canonical main readback: `9c2557731d33de830045d117e41726fb3b40a170` (records PR #2602 merged through the protected queue; descendant of the accepted task SHA)
 - Version: Desktop `1.2.64`; Chrome package `0.6.0`
 - Recorded: `2026-09-14T11:44:35+08:00`
 
@@ -40,6 +40,10 @@ The dashboard warns that the broad host permission may require deeper review. Th
 is not yet publicly `PUBLISHED`; the review must finish before public listing/install evidence
 can be recorded. The HTTP 400 is treated as a likely duplicate-existing-draft condition based
 on the API failure plus the dashboard's existing `0.6.0` draft, not as a successful upload.
+
+Records PR [#2602](https://github.com/bhrumom/fabushi/pull/2602) merged through the protected
+queue as canonical main `9c2557731d33de830045d117e41726fb3b40a170`; this readback updates the
+evidence index without changing the packaged product or its Release.
 
 ## Remaining acceptance
 
