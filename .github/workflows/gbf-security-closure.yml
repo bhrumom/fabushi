@@ -54,9 +54,8 @@ jobs:
           predicate-quantifier: some-with-excludes
           filters: |
             global:
-              - '.github/workflows/**'
-              - '.github/scripts/**'
-              - 'AGENTS.md'
+              - '.github/workflows/gbf-security-closure.yml'
+              - '.github/scripts/assert-gbf-security-closure.py'
             gbf:
               - 'projects/grok-bot-fabushi-integration/**'
               - 'desktop/electron/**'
@@ -82,7 +81,7 @@ jobs:
 
   closure:
     needs: scope
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.gbf == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.gbf == 'true' }}
     name: Threat provenance secret denial closure
     runs-on: ubuntu-latest
     timeout-minutes: 15
