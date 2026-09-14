@@ -24,6 +24,7 @@ import {
   agentWorkbenchReducer,
   type AgentApprovalProjection,
   type AgentCardProjection,
+  type AgentMessageProjection,
   type AgentObservationProjection,
   type AgentRunProjection,
   type AgentStepProjection,
@@ -36,6 +37,7 @@ const STORAGE_KEY = 'fabushi.desktop.mahayana-agent-workbench.v1';
 const REPORT_PORTAL_ID = 'mahayana-agent-inline-report-portal';
 
 type ReducerAction = Parameters<typeof agentWorkbenchReducer>[1];
+type InlineAgentMessageProjection = AgentMessageProjection & { sourceText?: string };
 
 type ActivePeerContext = {
   key: string;
@@ -90,6 +92,93 @@ function readSnapshot(): AgentWorkbenchSnapshot {
   }
 }
 
+function eventTimestampMs(event: RuntimeEvent): number {
+  const parsed = Date.parse(event.timestamp);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function sealAssistantStream(snapshot: AgentWorkbenchSnapshot, operationId: string): AgentWorkbenchSnapshot {
+  let changed = false;
+  const runs = snapshot.runs.map((run) => {
+    let runChanged = false;
+    const messages = run.messages.map((message, index) => {
+      if (message.role !== 'assistant' || message.operationId !== operationId || !message.streaming) return message;
+      changed = true;
+      runChanged = true;
+      return {
+        ...message,
+        id: `sealed:${operationId}:${message.createdAtMs}:${index}`,
+        streaming: false,
+      };
+    });
+    return runChanged ? { ...run, messages } : run;
+  });
+  return changed ? { ...snapshot, runs } : snapshot;
+}
+
+function stripSealedPrefix(fullText: string, sealedTexts: string[]): string {
+  if (!sealedTexts.length) return fullText;
+  let cursor = 0;
+  for (const segment of sealedTexts) {
+    if (!segment) continue;
+    const index = fullText.indexOf(segment, cursor);
+    if (index < 0 || fullText.slice(cursor, index).trim()) return fullText;
+    cursor = index + segment.length;
+  }
+  return fullText.slice(cursor).replace(/^\s+/u, '');
+}
+
+function normalizeCompletedAssistant(
+  snapshot: AgentWorkbenchSnapshot,
+  event: Extract<RuntimeEvent, { type: 'chat.message' }>,
+): AgentWorkbenchSnapshot {
+  if (event.role !== 'assistant' || !event.operationId) return snapshot;
+  const timestampMs = eventTimestampMs(event);
+  let changed = false;
+  const runs = snapshot.runs.map((run) => {
+    const messages = run.messages as InlineAgentMessageProjection[];
+    let targetIndex = -1;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === 'assistant' && message.operationId === event.operationId) {
+        targetIndex = index;
+        break;
+      }
+    }
+    if (targetIndex < 0) return run;
+
+    const earlier = messages
+      .slice(0, targetIndex)
+      .filter((message) => message.role === 'assistant' && message.operationId === event.operationId && message.text.trim());
+    const tail = stripSealedPrefix(event.text, earlier.map((message) => message.text));
+    const target = messages[targetIndex];
+    const nextTarget: InlineAgentMessageProjection = {
+      ...target,
+      text: tail || (earlier.length ? '' : event.text),
+      sourceText: event.text,
+      createdAtMs: timestampMs,
+      streaming: false,
+    };
+    const nextMessages = [...messages];
+    nextMessages[targetIndex] = nextTarget;
+    changed = true;
+    return { ...run, messages: nextMessages };
+  });
+  return changed ? { ...snapshot, runs } : snapshot;
+}
+
+function assistantTurnReducer(state: AgentWorkbenchSnapshot, action: ReducerAction): AgentWorkbenchSnapshot {
+  let prepared = state;
+  if (action.type === 'runtime-event' && action.event.type === 'agent.step' && action.event.operationId) {
+    prepared = sealAssistantStream(state, action.event.operationId);
+  }
+  const reduced = agentWorkbenchReducer(prepared, action);
+  if (action.type === 'runtime-event' && action.event.type === 'chat.message') {
+    return normalizeCompletedAssistant(reduced, action.event);
+  }
+  return reduced;
+}
+
 function directBotMark(parent: HTMLElement): HTMLElement | null {
   return Array.from(parent.children).find((child) =>
     child instanceof HTMLElement && child.dataset.engine === 'fabushi-motion-v3',
@@ -133,8 +222,12 @@ function runForPeer(runs: AgentRunProjection[], peer: ActivePeerContext | null):
     || (peer.agentId ? reversed.find((run) => run.agentId === peer.agentId) : undefined);
 }
 
+function messageSourceText(message: AgentMessageProjection): string {
+  return ((message as InlineAgentMessageProjection).sourceText || message.text).trim();
+}
+
 function latestAssistantMessage(run: AgentRunProjection) {
-  return [...run.messages].reverse().find((message) => message.role === 'assistant' && message.text.trim());
+  return [...run.messages].reverse().find((message) => message.role === 'assistant' && messageSourceText(message));
 }
 
 function peerMessageArticles(messageArea: HTMLElement): HTMLElement[] {
@@ -145,7 +238,7 @@ function peerMessageArticles(messageArea: HTMLElement): HTMLElement[] {
 
 function matchingAssistantArticle(messageArea: HTMLElement, run: AgentRunProjection | undefined): HTMLElement | null {
   if (!run) return null;
-  const targetText = latestAssistantMessage(run)?.text.trim() || '';
+  const targetText = latestAssistantMessage(run) ? messageSourceText(latestAssistantMessage(run)!) : '';
   if (!targetText) return null;
   const normalizedTarget = targetText.replace(/\s+/gu, ' ').trim();
   return peerMessageArticles(messageArea).reverse().find((article) => {
@@ -187,9 +280,6 @@ function jsonPreview(value: unknown): string {
 }
 
 function visibleStep(step: AgentStepProjection): boolean {
-  // Routing and runtime bookkeeping remain available in the diagnostic event
-  // stream but are not assistant prose. Hermes-style chat surfaces only the
-  // work that helps a user follow the turn.
   return step.kind !== 'model' && step.kind !== 'runtime';
 }
 
@@ -199,10 +289,9 @@ function stepTitle(step: AgentStepProjection): string {
 }
 
 function turnParts(run: AgentRunProjection): TurnPart[] {
-  const finalAssistantId = latestAssistantMessage(run)?.id;
   const parts: TurnPart[] = [
     ...run.messages
-      .filter((message) => message.role === 'assistant' && message.id !== finalAssistantId && message.text.trim())
+      .filter((message) => message.role === 'assistant' && message.text.trim())
       .map((message): TurnPart => ({
         type: 'message',
         id: `message:${message.id}`,
@@ -394,11 +483,7 @@ function AssistantTurnParts({ run }: { run: AgentRunProjection }) {
 }
 
 export default function MahayanaAgentInlineReport() {
-  const [snapshot, dispatch] = useReducer(
-    (state: AgentWorkbenchSnapshot, action: ReducerAction) => agentWorkbenchReducer(state, action),
-    undefined,
-    readSnapshot,
-  );
+  const [snapshot, dispatch] = useReducer(assistantTurnReducer, undefined, readSnapshot);
   const [peer, setPeer] = useState<ActivePeerContext | null>(null);
   const [portal, setPortal] = useState<HTMLElement | null>(null);
   const snapshotRef = useRef(snapshot);
