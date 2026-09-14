@@ -48,8 +48,8 @@
 - host 仓库：`bhrumom/fabushi`
 - host 基线：`main@b07ccff486d9c0f2b659460ac3a79a654c9eb3dc`
 - host 分支：`codex/tfi-userscript-memory-20260914`
-- source PR/CI/merge：PR #17 已创建；CI/protected merge/source-main readback 待完成
-- host PR/CI/merge：PR #2607 已创建，head `0c16f0a52872e2efea9ed80c8de031ab1e70c081`；CI/protected merge/canonical readback 待完成
+- source PR/CI/merge：PR #17 已通过 CI 并合并；source main `882cadf0cc35d00a29b93450990d758b4034a5c0`，版本 2.9.22
+- host PR/CI/merge：PR #2607 已合并至 main（merge `f7f9871b153efbe26d040e68e8d28eea46af2130`）；follow-up PR #2608 head `025cf0c04077ebd1affd5c25fa1f12a8489a1040` 待 CI/protected merge
 - Release/Chrome Web Store：本轮未授权，待完成门禁及用户明确发布授权
 - local heavy build/test：禁止；GitHub Actions 是重型验证权威
 
@@ -63,3 +63,7 @@ source userscript 与 host MV3 消息桥接已完成，项目 WBS/验收/风险/
 - 诊断端：优先读取 Chromium `performance.memory`；连续两次 high pressure 才请求宿主；手动按钮与 `memory_status` / `cleanup_memory` 工具复用同一安全链路。
 - 宿主端：新增 `tab-memory.request` 能力；只接受已启用的 ChatGPT 自动确认脚本，使用 `sender.tab.id` 再读取真实标签页；活动页、草稿、待上传附件、发送/上传/导航/授权任务和冷却期均拒绝 discard。
 - 交付端：本轮没有公开 Release/Chrome Web Store 授权；host/application 重型构建与 E2E 必须走 GitHub Actions。
+
+## 最新状态
+
+首轮 host PR 已合并，但后续验证发现两个交付问题：Chrome release validator/packager/E2E 仍固定版本 `0.6.0`，以及 runner 只定义了内存清理函数却未在 `chrome.runtime.onMessage` 分发 `fabushi.userscript.memory.request`。两项均已在 follow-up PR #2608 修复，任务保持 IN_PROGRESS，等待该 PR 的 CI/protected merge 与 post-main 交付门禁。

@@ -246,3 +246,13 @@
 - [ ] `TFI-USR-MEM-007` exact-main packaged/Chrome 现场证据及按授权执行的发布回读。
 
 当前状态：`IN_PROGRESS / SOURCE_PR_OPEN / HOST_PR_OPEN / LIVE_EVIDENCE_PENDING`；不运行本地重型构建或应用 E2E。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-013 merge/readback update
+
+- [x] source PR #17 已合并；canonical source main `882cadf0cc35d00a29b93450990d758b4034a5c0`，版本 2.9.22。
+- [x] host PR #2607 已合并；canonical host main merge SHA `f7f9871b153efbe26d040e68e8d28eea46af2130`。
+- [x] 发现并修复 host runner 未分发 `fabushi.userscript.memory.request` 的接线遗漏，并同步 `0.6.1` 校验/打包/E2E/测试版本契约。
+- [ ] host follow-up PR #2608 CI/protected merge 与 canonical readback。
+- [ ] exact-main packaged/Chrome 证据、公开发布授权及 Release/Web Store 回读。
+
+当前状态：`IN_PROGRESS / SOURCE_MERGED / HOST_FOLLOWUP_OPEN / LIVE_EVIDENCE_PENDING`。

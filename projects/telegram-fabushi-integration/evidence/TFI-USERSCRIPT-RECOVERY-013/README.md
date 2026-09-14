@@ -31,3 +31,10 @@ userscript source 与 Chrome MV3 host 均属于可运行产品输入；不能以
 - source 端 `npm test`、userscript syntax check 与 diff check 已通过；轻量回归为 111/111。
 - host 端静态 contract/policy 已写入 PR，尚待 GitHub Actions；本地不执行重型构建/E2E。
 - 后续 evidence 必须绑定 exact source/host main SHA、版本、workflow run/job、浏览器时间、任务标识，并保留分步截图、完整视频、trace/report/diagnostics。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-013 merge/readback evidence
+
+- source main readback：`882cadf0cc35d00a29b93450990d758b4034a5c0`，userscript 2.9.22。
+- host first main readback：`f7f9871b153efbe26d040e68e8d28eea46af2130`；follow-up head：`025cf0c04077ebd1affd5c25fa1f12a8489a1040`。
+- 首轮 CI 的 Chrome Web Store job 因旧 `0.6.0` 版本门禁失败；安全 closure 检查通过。修复已在 follow-up #2608。
+- 后续 evidence 仍必须绑定 follow-up 接受后的 exact main SHA、workflow run/job、版本、浏览器时间和任务标识，并保留分步截图、完整视频、trace/report/diagnostics。
