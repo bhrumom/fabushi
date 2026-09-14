@@ -183,7 +183,7 @@
 - [x] `TFI-USR-CRASH-002` 保持 Work/验收/下一轮的 URL、token、phase/round 和 IndexedDB attachment IDs 连续，恢复后的当前 composer 重新注入并确认附件后才发送。
 - [x] `TFI-USR-CRASH-003` 修复“最终回复被误判成停止回答”的交接：识别自然语言 Work final，向下一轮验收会话传递完整 final reply，不重复派发。
 - [x] `TFI-USR-CRASH-004` 修复需要处理状态的恢复计时复用，恢复后使用独立确认窗口；不确定发送保留 token/附件，明确唯一 URL 后不重复点击 Send。
-- [x] `TFI-USR-CRASH-005` source PR #15、exact-main CI、Release `v2.9.20` 及 parent PR #2594、packaged/post-main/Release 证据已完成；records PR #2602 合并后当前 canonical main 为 `9c2557731d33de830045d117e41726fb3b40a170`。
+- [x] `TFI-USR-CRASH-005` source PR #15、exact-main CI、Release `v2.9.20` 及 parent PR #2594、packaged/post-main/Release 证据已完成；records PR #2603 合并后当前 canonical main 为 `387ae731c3677d9d3023d400f1da60d7ac958a4f`。
 - [x] `TFI-USR-CRASH-006` Chrome Web Store 受保护凭据/API 已配置；既有 `0.6.0` 草稿已通过已登录 Developer Dashboard 提交，后台当前为“待审核”。
 - [ ] `TFI-USR-CRASH-007` 完成已登录 Chrome 的崩溃/error page → 原标签或单次接管 → 附件连续 → final→验收完整截图、视频、trace/diagnostics。
 - [ ] `TFI-USR-CRASH-008` 将自动 Web Store 发布流程改为识别已有同版本草稿并幂等复用，避免 HTTP 400 被误判为上传成功。

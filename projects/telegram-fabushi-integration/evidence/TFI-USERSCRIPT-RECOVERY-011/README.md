@@ -5,7 +5,7 @@
 - Project: `FAB-P0001 / TFI`
 - Task: `TFI-USERSCRIPT-RECOVERY-011`
 - Accepted task parent main: `e60d40f4a97dcb319515abb2b46ef2845d4eb21b`
-- Current canonical parent main readback: `9c2557731d33de830045d117e41726fb3b40a170` (records PR #2602 merged through the protected queue; descendant of the accepted task SHA)
+- Current canonical parent main readback: `387ae731c3677d9d3023d400f1da60d7ac958a4f` (records PR #2603 merged through the protected queue; descendant of the accepted task SHA)
 - Source main: `579c5204734afe21d366018d4ee16b5c6d3fb6ce`
 - Recorded: `2026-09-14T11:44:35+08:00`
 
