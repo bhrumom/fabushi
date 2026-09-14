@@ -1,8 +1,11 @@
+#[path = "../gateway.rs"]
+mod gateway;
+
+use gateway::GATEWAY_PROTOCOL_VERSION;
+use gateway::GatewayState;
+use gateway::ReplayLimits;
+use gateway::event_notification;
 use mahayana_core::RuntimeEvent;
-use mahayana_gateway::GATEWAY_PROTOCOL_VERSION;
-use mahayana_gateway::GatewayState;
-use mahayana_gateway::ReplayLimits;
-use mahayana_gateway::event_notification;
 use mahayana_runtime::mahayana_runtime_close;
 use mahayana_runtime::mahayana_runtime_create;
 use mahayana_runtime::mahayana_runtime_execute;
@@ -92,6 +95,7 @@ fn run() -> Result<(), String> {
                         break;
                     }
                 };
+
                 let runtime_event = match serde_json::from_value::<RuntimeEvent>(event.clone()) {
                     Ok(event) => event,
                     Err(error) => {
@@ -111,6 +115,7 @@ fn run() -> Result<(), String> {
                         continue;
                     }
                 };
+
                 let projected = match pump_state.lock() {
                     Ok(mut state) => state.ingest_runtime_event(&runtime_event, now_ms()),
                     Err(_) => break,
@@ -124,8 +129,7 @@ fn run() -> Result<(), String> {
         })
         .map_err(|error| error.to_string())?;
 
-    let stdin = io::stdin();
-    for line in stdin.lock().lines() {
+    for line in io::stdin().lock().lines() {
         let line = line.map_err(|error| error.to_string())?;
         let line = line.trim();
         if line.is_empty() {
@@ -214,11 +218,11 @@ fn handle_request(
                 .and_then(Value::as_str)
                 .filter(|text| !text.trim().is_empty())
                 .ok_or_else(|| RpcFailure::invalid("prompt.submit requires non-empty text"))?;
+
+            // Keep receive() out until the accepted operation has been bound to
+            // its session. A very fast model cannot race completion ahead of the
+            // turn/session registration.
             let (turn_id, start_event) = {
-                // Keep the runtime receive pump out until the accepted operation
-                // has been registered with the gateway. This removes the race in
-                // which a very fast completion could arrive before turn->session
-                // ownership is known.
                 let runtime = runtime
                     .lock()
                     .map_err(|_| RpcFailure::internal("runtime mutex poisoned"))?;
@@ -247,17 +251,13 @@ fn handle_request(
                 );
                 (turn_id, start_event)
             };
-            write_value(output, &event_notification(&start_event))
-                .map_err(RpcFailure::internal)?;
-            Ok(json!({
-                "session_id": session_id,
-                "turn_id": turn_id,
-            }))
+            write_value(output, &event_notification(&start_event)).map_err(RpcFailure::internal)?;
+            Ok(json!({ "session_id": session_id, "turn_id": turn_id }))
         }
-        "session.list" => {
-            let result = runtime_execute(runtime, json!({ "@type": "mahayana.conversation.list" }))?;
-            Ok(result)
-        }
+        "session.list" => runtime_execute(
+            runtime,
+            json!({ "@type": "mahayana.conversation.list" }),
+        ),
         "session.history" => {
             let session_id = string_param(params, "session_id", "sessionId")?;
             let limit = params
@@ -276,12 +276,11 @@ fn handle_request(
         }
         "session.interrupt" => {
             let turn_id = string_param(params, "turn_id", "turnId")?;
-            let result = runtime
+            runtime
                 .lock()
                 .map_err(|_| RpcFailure::internal("runtime mutex poisoned"))?
                 .interrupt(turn_id)
-                .map_err(RpcFailure::internal)?;
-            Ok(result)
+                .map_err(RpcFailure::internal)
         }
         "approval.respond" => {
             let approval_id = string_param(params, "approval_id", "approvalId")?;
@@ -294,12 +293,11 @@ fn handle_request(
                     "decision must be accept, acceptForSession, decline, or cancel",
                 ));
             }
-            let result = runtime
+            runtime
                 .lock()
                 .map_err(|_| RpcFailure::internal("runtime mutex poisoned"))?
                 .resolve_approval(approval_id, decision)
-                .map_err(RpcFailure::internal)?;
-            Ok(result)
+                .map_err(RpcFailure::internal)
         }
         "session.events.since" => {
             let session_id = string_param(params, "session_id", "sessionId")?;
@@ -326,8 +324,7 @@ fn handle_request(
                     "events": [],
                 }));
             }
-            serde_json::to_value(state.replay_since(session_id, last_seen))
-                .map_err(|error| RpcFailure::internal(error.to_string()))
+            Ok(state.replay_since(session_id, last_seen).to_value())
         }
         _ => Err(RpcFailure {
             code: -32601,
