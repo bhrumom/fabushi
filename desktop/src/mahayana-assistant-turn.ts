@@ -90,6 +90,71 @@ function sealStreamingParts(parts: AssistantTurnPart[]): AssistantTurnPart[] {
   });
 }
 
+function visibleText(parts: AssistantTurnPart[]): string {
+  return parts
+    .filter((part): part is Extract<AssistantTurnPart, { kind: 'text' }> => part.kind === 'text')
+    .map((part) => part.text)
+    .join('');
+}
+
+/**
+ * Reconcile a legacy final assistant message without collapsing the ordered
+ * transcript. Hermes can seal interim assistant text, run tools, and then
+ * continue speaking in the same turn. The old renderer used to replace every
+ * text fragment with the final message, which destroyed that ordering.
+ */
+function reconcileLegacyFinalText(turn: AssistantTurn, finalText: string): AssistantTurnPart[] {
+  const parts = sealStreamingParts(turn.parts.filter((part) => part.id !== partId(turn, 'thinking')));
+  if (!finalText) return parts;
+
+  const emittedText = visibleText(parts);
+  if (!emittedText) {
+    return [
+      ...parts,
+      {
+        id: partId(turn, 'final-text'),
+        kind: 'text',
+        text: finalText,
+        status: 'completed',
+      },
+    ];
+  }
+
+  // The final message commonly repeats the complete token stream. Keep the
+  // already-ordered parts instead of duplicating the response.
+  if (finalText === emittedText || emittedText.endsWith(finalText)) return parts;
+
+  // If the final message is the complete answer and the current transcript is
+  // its prefix, append only the not-yet-seen suffix. This preserves any tool
+  // parts that occurred between earlier and later assistant text.
+  if (finalText.startsWith(emittedText)) {
+    const suffix = finalText.slice(emittedText.length);
+    return suffix
+      ? [
+          ...parts,
+          {
+            id: partId(turn, 'final-text-suffix'),
+            kind: 'text',
+            text: suffix,
+            status: 'completed',
+          },
+        ]
+      : parts;
+  }
+
+  // Some legacy providers emit only the post-tool completion here. Preserve
+  // the earlier ordered transcript and append that completion as the next part.
+  return [
+    ...parts,
+    {
+      id: partId(turn, 'final-text'),
+      kind: 'text',
+      text: finalText,
+      status: 'completed',
+    },
+  ];
+}
+
 function legacyOperationId(event: RuntimeEvent): string | undefined {
   return 'operationId' in event && typeof event.operationId === 'string'
     ? event.operationId
@@ -125,17 +190,9 @@ function reduceLegacyRuntimeEvent(turn: AssistantTurn, event: RuntimeEvent, now:
         }),
       };
     case 'model.routed':
-      return {
-        ...turn,
-        updatedAtMs: now,
-        parts: replaceOrAppendPart(turn, {
-          id: partId(turn, 'model-route'),
-          kind: 'activity',
-          title: event.model === 'auto' ? '选择模型' : `模型：${event.model}`,
-          detail: `${event.provider} · ${event.mode}`,
-          status: 'completed',
-        }),
-      };
+      // Model routing is operational metadata. Hermes-style chat does not
+      // expose provider/router selection as a separate transcript row.
+      return { ...turn, updatedAtMs: now };
     case 'agent.step':
       return {
         ...turn,
@@ -164,16 +221,7 @@ function reduceLegacyRuntimeEvent(turn: AssistantTurn, event: RuntimeEvent, now:
       return {
         ...turn,
         updatedAtMs: now,
-        parts: [
-          ...sealStreamingParts(turn.parts.filter((part) => part.id !== partId(turn, 'thinking')))
-            .filter((part) => part.kind !== 'text'),
-          {
-            id: partId(turn, 'final-text'),
-            kind: 'text',
-            text: event.text,
-            status: 'completed',
-          },
-        ],
+        parts: reconcileLegacyFinalText(turn, event.text),
       };
     case 'operation.completed':
       return {
@@ -319,13 +367,33 @@ function reduceGatewayEvent(turn: AssistantTurn, event: MahayanaGatewayEventEnve
           : 'completed';
       const finalText = partText(payload.text ?? payload.content);
       const parts = sealStreamingParts(turn.parts);
+      const emittedText = visibleText(parts);
+      const completedParts = !finalText || finalText === emittedText || emittedText.endsWith(finalText)
+        ? parts
+        : finalText.startsWith(emittedText)
+          ? [
+              ...parts,
+              {
+                id: partId(turn, `complete:${event.seq}`),
+                kind: 'text' as const,
+                text: finalText.slice(emittedText.length),
+                status: 'completed' as const,
+              },
+            ].filter((part) => part.kind !== 'text' || part.text.length > 0)
+          : [
+              ...parts,
+              {
+                id: partId(turn, `complete:${event.seq}`),
+                kind: 'text' as const,
+                text: finalText,
+                status: 'completed' as const,
+              },
+            ];
       return {
         ...turn,
         updatedAtMs: now,
         status: completedStatus,
-        parts: finalText
-          ? [...parts, { id: partId(turn, `complete:${event.seq}`), kind: 'text', text: finalText, status: 'completed' }]
-          : parts,
+        parts: completedParts,
       };
     }
     default:
