@@ -48,10 +48,10 @@
 - userscript PR: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/19
 - userscript canonical source main: 71a2279b887cc7429b7ca4c547a7099f8b63c55a (source PR #19, squash-merged).
 - userscript CI: GitHub Actions run 34838068938, job 103956394607, 114/114 tests passed; syntax validation passed.
-- userscript release: v2.9.24 publication is pending; release asset must match the canonical source main bytes below.
+- userscript release: [v2.9.24](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.24) published from canonical source main; asset size/hash verified.
 - parent branch: codex/release-0.6.2-renderer-guard-20260914
-- parent branch latest known head: 94798e5d6b9a1d33e4e40862888f4142533de615
-- parent PR: pending creation after source canonical-main SHA is known.
+- parent PR #2623: merged to canonical main as b4d2d85fcd510c51d3dce646311d19c81e6c7403.
+- release-diagnostics PR #2624: merged to canonical main as 1e63a8cf14697107af62948d713cff120679694f.
 - source artifact verified from canonical source main: UTF-8 SHA-256 d82d987adb996a77dc224ca797750782a02a902221f5a76628bc571357636c41, 214840 bytes.
 
 ## Verification and delivery evidence
@@ -60,15 +60,21 @@
 - Local heavy build/test: intentionally not run; repository policy requires GitHub Actions.
 - Source CI: passed — run 34838068938 / job 103956394607, 114/114.
 - Parent PR CI / Chrome package / packaged journey: pending.
-- Canonical main readback, release tag/assets, Web Store publish/install readback: pending.
-- Canonical-main E2E evidence bundle: pending; it must contain labelled screenshots at meaningful steps, complete journey video, trace/report/logs and SHA/version/run identity for pass or fail.
+- Canonical main readback: verified at 1e63a8cf14697107af62948d713cff120679694f; manifest version 0.6.2 and source pin/hash/size match.
+- Chrome package/journey run 34839358565 (b4d2d85fcd510c51d3dce646311d19c81e6c7403) passed; artifact retained for 90 days with ZIP, content manifest and SHA256SUMS.
+- Post-main delivery run 34840407940 passed and published the exact-main desktop Release `desktop-1.2.65-b4d2d85fcd51`, including Chrome 0.6.2 ZIP/manifest/checksum assets.
+- Final workflow-diagnostic Chrome package run 34841147270 (source 1e63a8cf14697107af62948d713cff120679694f) passed; package SHA-256 c3d206172376a76c09b6f8185981f1bfe8371f9c213f11b2b5d4a83c08ced109.
+- Canonical-main Chrome E2E evidence: `fabushi-chrome-web-store-1e63a8cf14697107af62948d713cff120679694f` contains labelled screenshots, complete WebM journey segments, trace.zip, Playwright HTML report and JSON/native logs.
+- Web Store publisher runs 34840738917 and 34841285781 both stopped at upload HTTP 400; final redacted API response is `FAILED_PRECONDITION / NOT_UPDATEABLE`: the item already has a submission in review. Current Chrome unpacked extension is 0.4.1 at `~/Downloads/fabushi-0.3.0`; local reload awaits user confirmation.
 
 ## Risks / blockers
 
 - ChatGPT renderer changes remain an external UI risk; selectors remain semantic and recovery is bounded.
 - Web Store review can delay current Chrome auto-update; maintain an explicit pending state.
-- If source CI exposes stale timers or fixture issues, fix through the source PR before merge; do not waive a failing required check.
+- Existing Web Store submission must finish or be explicitly cancelled before 0.6.2 can be uploaded; cancellation is not performed automatically.
+- Current Chrome unpacked extension is intentionally not claimed as updated until the exact 0.6.2 files are reloaded and its version is read back.
+- ChatGPT renderer changes remain an external UI risk; selectors remain semantic and recovery is bounded.
 
 ## Next action
 
-Create the parent PR from 94798e5d6b9a1d33e4e40862888f4142533de615, then pass protected-main checks and the canonical Chrome packaged journey before merging.
+Next: resolve the existing Web Store review (wait or explicitly cancel it), then submit 0.6.2; after user confirmation, reload the exact CI package in the current Chrome unpacked extension and read back version 0.6.2.
