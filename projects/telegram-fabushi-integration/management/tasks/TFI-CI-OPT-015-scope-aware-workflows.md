@@ -86,3 +86,11 @@
 - fixture: documentation-only change under chatgpt-vps-control/chrome-platform/.
 - expected result: Electron Linux must remain a named skipped check; Computer Control Rust/platform-worker/Linux desktop, GBF closure and Global Dharma service jobs must remain skipped; Chrome package and Node security remain selected.
 - status: awaiting final Actions readback.
+
+
+## 2026-09-14 — Chrome-only scope proof final
+
+- proof branch: codex/tfi-ci-scope-proof-chrome-only-final-20260914
+- only changed boundary: chatgpt-vps-control/chrome-platform/README.md.
+- expected final Actions evidence: Chrome package and Node security selected; Rust contracts, platform-worker, Linux managed desktop, Electron platform, GBF closure, and Global Dharma service jobs skipped; Electron desktop result remains successful.
+- status: awaiting final Actions readback and protected merge.
