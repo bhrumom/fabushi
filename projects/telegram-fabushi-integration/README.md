@@ -73,3 +73,13 @@
 source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/17) 已合并，canonical source main 为 `882cadf0cc35d00a29b93450990d758b4034a5c0`，userscript 为 2.9.22。host PR [#2607](https://github.com/bhrumom/fabushi/pull/2607) 已进入父仓库 main，merge SHA 为 `f7f9871b153efbe26d040e68e8d28eea46af2130`；随后发现并修复了运行时消息分发遗漏及 0.6.1 版本门禁同步问题，后续 PR [#2608](https://github.com/bhrumom/fabushi/pull/2608) 当前开放。
 
 任务仍保持 IN_PROGRESS：后续 PR CI/protected merge、exact-main packaged/Chrome 证据和公开发布授权未完成。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-014 Renderer 崩溃保护与发布回读
+
+本轮已将多任务切页的导航控制从 userscript 页面内逻辑提升为 Fabushi Chrome 宿主能力：脚本请求 `tab-navigation-guard` permit，宿主按任务代次、阶段、轮次、goalRevision 校验，并对普通导航执行冷却、in-flight 去重、崩溃/unloaded fail-closed 与有限恢复；脚本继续负责结束会话后的新验收路由和恢复票据。
+
+- userscript PR #19 已合并，v2.9.24 Release 已发布：<https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.24>。
+- Fabushi PR #2623 已合并到 `main@b4d2d85fcd510c51d3dce646311d19c81e6c7403`；发布诊断 PR #2624 已合并到 `main@1e63a8cf14697107af62948d713cff120679694f`。
+- Chrome 0.6.2 的 exact-main 打包/模拟用户旅程、跨平台安全与 post-main 交付均已通过；证据含步骤截图、完整视频、trace、HTML/report 和日志。
+- 当前仍为 IN_PROGRESS：Chrome Web Store 条目已有提交处于审核中，API 返回 `FAILED_PRECONDITION/NOT_UPDATEABLE`，因此未重复取消或覆盖已有审核；当前 Chrome 未打包副本仍显示 0.4.1，等待用户确认后重载精确 CI 包并回读 0.6.2。
+- 权威任务记录：`management/tasks/TFI-USERSCRIPT-RECOVERY-014-renderer-crash-guard.md`。
