@@ -14,7 +14,7 @@ const extensionRoot = resolve(repositoryRoot, "chatgpt-vps-control");
 const packageRoot = join(extensionRoot, "dist", "chrome-extension");
 const packageZip = process.env.FABUSHI_CHROME_ZIP
   ? resolve(process.env.FABUSHI_CHROME_ZIP)
-  : join(packageRoot, "fabushi-chrome-0.6.0.zip");
+  : join(packageRoot, "fabushi-chrome-0.6.1.zip");
 const evidenceRoot = resolve(process.env.FABUSHI_CHROME_EVIDENCE_DIR || join(packageRoot, "evidence"));
 const journeyId = "CWA-007-chrome-packaged-browser-control";
 const sourceSha = String(process.env.GITHUB_SHA || "unknown");
@@ -237,7 +237,7 @@ const report = {
   journeyId,
   sourceSha,
   runId,
-  version: "0.6.0",
+  version: "0.6.1",
   platform: process.platform,
   startedAt,
   steps,
@@ -356,11 +356,18 @@ try {
   await appPage.getByText("当前 Chrome", { exact: true }).waitFor({ state: "visible", timeout: 5_000 });
   await captureCheckpoint(appPage, join(evidenceRoot, "03-browser-view.png"));
   step("browser-view");
-  const browserStatus = await appPage.evaluate(() => new Promise((resolvePromise) => {
-    chrome.runtime.sendMessage({ type: "fabushi.browser.status" }, (response) => {
-      const runtimeError = chrome.runtime.lastError;
-      resolvePromise({ response: response || null, error: runtimeError?.message || null });
-    });
+  const browserStatus = await appPage.evaluate(() => new Promise((resolvePromise, rejectPromise) => {
+    const timer = setTimeout(() => rejectPromise(new Error("Timed out waiting for the packaged browser-status response.")), 15_000);
+    try {
+      chrome.runtime.sendMessage({ type: "fabushi.browser.status" }, (response) => {
+        clearTimeout(timer);
+        const runtimeError = chrome.runtime.lastError;
+        resolvePromise({ response: response || null, error: runtimeError?.message || null });
+      });
+    } catch (error) {
+      clearTimeout(timer);
+      rejectPromise(error);
+    }
   }));
   step("browser-status", browserStatus);
 
@@ -396,7 +403,7 @@ try {
   for (const manifestPath of nativeManifestPaths) await rm(manifestPath, { force: true }).catch(() => {});
   report.finishedAt = new Date().toISOString();
   await writeFile(join(evidenceRoot, "journey-report.json"), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
-  const html = `<!doctype html><meta charset="utf-8"><title>${journeyId}</title><h1>${journeyId}</h1><p>source=${sourceSha} run=${runId} version=0.6.0</p><p>status=${journeyError ? "failed" : "passed"}</p><pre>${JSON.stringify(report, null, 2).replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</pre>`;
+  const html = `<!doctype html><meta charset="utf-8"><title>${journeyId}</title><h1>${journeyId}</h1><p>source=${sourceSha} run=${runId} version=0.6.1</p><p>status=${journeyError ? "failed" : "passed"}</p><pre>${JSON.stringify(report, null, 2).replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</pre>`;
   await writeFile(join(evidenceRoot, "playwright-report.html"), html, { mode: 0o600 });
   await rm(tempRoot, { recursive: true, force: true }).catch(() => {});
 }

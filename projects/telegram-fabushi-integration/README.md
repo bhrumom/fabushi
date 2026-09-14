@@ -67,3 +67,9 @@
 - source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/17)（head `3d23d8cc78931dceecb4d647706766470224f81b`）和 host PR [#2607](https://github.com/bhrumom/fabushi/pull/2607) 已创建。
 - userscript 2.9.22 本地轻量回归 `111/111` 通过；host 端已加入专用 `tab-memory.request`、安全策略和 `chrome.tabs.discard()` 桥接。
 - 当前仍为 IN_PROGRESS：source/host CI、protected main、canonical packaged/Chrome 证据和用户明确的公开发布授权待闭合；本轮没有宣称公开上线。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-013 merge/readback update
+
+source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/17) 已合并，canonical source main 为 `882cadf0cc35d00a29b93450990d758b4034a5c0`，userscript 为 2.9.22。host PR [#2607](https://github.com/bhrumom/fabushi/pull/2607) 已进入父仓库 main，merge SHA 为 `f7f9871b153efbe26d040e68e8d28eea46af2130`；随后发现并修复了运行时消息分发遗漏及 0.6.1 版本门禁同步问题，后续 PR [#2608](https://github.com/bhrumom/fabushi/pull/2608) 当前开放。
+
+任务仍保持 IN_PROGRESS：后续 PR CI/protected merge、exact-main packaged/Chrome 证据和公开发布授权未完成。
