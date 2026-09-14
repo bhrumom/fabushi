@@ -24,7 +24,7 @@ async function mustExist(relative) {
 const requiredPermissions = ["alarms", "debugger", "downloads", "nativeMessaging", "scripting", "storage", "tabGroups", "tabs", "userScripts", "webNavigation"];
 assert(manifest.manifest_version === 3, "manifest_version must be 3");
 assert(manifest.name === "Fabushi" && manifest.short_name === "Fabushi", "the shipped extension must use the Fabushi identity");
-assert(manifest.version === "0.6.0", "Fabushi Chrome release must be version 0.6.0");
+assert(manifest.version === "0.6.1", "Fabushi Chrome release must be version 0.6.1");
 assert(manifest.minimum_chrome_version === "120", "Chrome 120 is the supported minimum for MV3 debugger/userScripts behavior");
 assert(manifest.action?.default_popup === "app.html", "action.default_popup must be app.html");
 assert(manifest.background?.service_worker === "service-worker.js", "background.service_worker must be service-worker.js");
