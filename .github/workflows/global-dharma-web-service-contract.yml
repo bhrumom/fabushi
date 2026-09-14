@@ -17,11 +17,13 @@ on:
       - 'ai-backend/**'
       - 'fabushi/web/tests/global-dharma-*.test.js'
       - 'frontend/apps/web/src/app/miniapps/[id]/**'
-      - 'projects/telegram-fabushi-integration/**'
-      - 'projects/fabushi-account-access-control/**'
       - 'app-version.json'
       - '.github/workflows/global-dharma-web-service-contract.yml'
       - '.github/workflows/macos-global-dharma-packaged-e2e.yml'
+
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - 'frontend/pnpm-workspace.yaml'
   merge_group:
   workflow_dispatch:
 
@@ -56,9 +58,8 @@ jobs:
           predicate-quantifier: some-with-excludes
           filters: |
             global:
-              - '.github/workflows/**'
-              - '.github/scripts/**'
-              - 'AGENTS.md'
+              - '.github/workflows/global-dharma-web-service-contract.yml'
+              - '.github/workflows/macos-global-dharma-packaged-e2e.yml'
               - 'app-version.json'
             backend:
               - 'ai-backend/**'
@@ -87,7 +88,7 @@ jobs:
 
   backend-contract:
     needs: scope
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.backend == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.backend == 'true' }}
     name: Backend MCP/runtime/account contract
     runs-on: ubuntu-24.04
     timeout-minutes: 12
@@ -131,7 +132,7 @@ jobs:
 
   web-build:
     needs: scope
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.web == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.web == 'true' }}
     name: Web Mini App production build
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -164,7 +165,7 @@ jobs:
 
   commerce-contract:
     needs: scope
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.commerce == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.commerce == 'true' }}
     name: CNY 1080 order/webhook/refund/restore contract
     runs-on: ubuntu-24.04
     timeout-minutes: 5
