@@ -382,7 +382,7 @@ impl RuntimeProjection {
                         "reasoning.delta",
                         json!({
                             "text": detail.as_deref().unwrap_or(title),
-                            "status": activity_status(*status),
+                            "status": activity_status(status),
                         }),
                     );
                 }
@@ -399,7 +399,7 @@ impl RuntimeProjection {
                         "name": title,
                         "kind": kind,
                         "detail": detail,
-                        "status": activity_status(*status),
+                        "status": activity_status(status),
                         "metadata": metadata,
                     }),
                 )
@@ -452,7 +452,7 @@ impl RuntimeProjection {
     }
 }
 
-fn activity_status(status: RuntimeActivityStatus) -> &'static str {
+fn activity_status(status: &RuntimeActivityStatus) -> &'static str {
     match status {
         RuntimeActivityStatus::Running => "running",
         RuntimeActivityStatus::Completed => "completed",
@@ -584,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_sequence_after_cache_generation_reset_is_not_silently_accepted() {
+    fn evicted_session_always_requires_authoritative_history_refetch() {
         let limits = ReplayLimits {
             max_events_per_session: 4,
             max_bytes_per_session: 1024 * 1024,
@@ -594,10 +594,10 @@ mod tests {
         replay.push(draft("s1", "t1", 1));
         replay.push(draft("s2", "t2", 2));
         let forgotten = replay.since("s1", 1);
-        assert!(!forgotten.truncated);
+        assert!(forgotten.truncated);
         replay.push(draft("s3", "t3", 3));
-        // The tombstone for s1 may be gone, but a client carrying a non-zero
-        // sequence can never receive a false complete replay.
+        // Even after the bounded tombstone for s1 is gone, a non-zero client
+        // sequence cannot receive a false "complete" replay.
         assert!(replay.since("s1", 1).truncated);
     }
 
