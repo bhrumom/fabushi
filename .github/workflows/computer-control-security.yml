@@ -146,6 +146,7 @@ jobs:
               - '!chatgpt-vps-control/tests/browser-extension.test.js'
               - '!chatgpt-vps-control/tests/chrome-platform.test.js'
               - '!chatgpt-vps-control/tests/extension-entry.test.js'
+              - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
               - 'desktop/**'
               - 'frontend/apps/web/src/app/**'
               - 'frontend/apps/web/src/components/fabushi-app-agent-surface.tsx'
