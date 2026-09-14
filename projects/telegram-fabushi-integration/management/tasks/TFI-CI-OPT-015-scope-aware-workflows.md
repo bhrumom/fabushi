@@ -120,3 +120,11 @@
 - 风险：顶层 main path 过窄会漏掉需要发布的产品边界。处置：PR/merge_group 保留稳定 scope/result；共享输入（版本、协议、宿主桥接）加入对应边界白名单；workflow_dispatch 可人工全量兜底；Actions proof 逐项回读。
 - 风险：post-main 是 workflow_run 触发，无法直接读取上游 scope outputs。处置：先根据上游 Electron run 是否包含实际平台 job 选择是否进入 exact-main gate，并让 gate 对未选中的独立边界不等待缺失结果。
 - status: IN_PROGRESS
+
+## 2026-09-14 — Native matrix expansion fix
+
+- observed regression: the first main/merge-queue policy version referenced `matrix.target` in the platform job-level `if`; GitHub Actions does not expose `matrix` in that evaluation context, producing failed workflow runs with zero jobs.
+- fix branch: `codex/tfi-ci-native-matrix-fix-20260914`, based on main merge `7e8c493090ee9f8cd9aa754e9acd99f89fd9e25d`.
+- implementation: the scope job now emits a JSON matrix containing only affected Android/iOS runners; the platform job-level condition uses only `needs.scope.outputs`, and the strategy consumes `fromJSON(needs.scope.outputs.matrix)`. Manual dispatch and reusable workflow calls remain full-platform runs; PR/merge_group retain a single selected fast-path runner.
+- contract coverage: the native workflow contract test asserts dynamic matrix selection and rejects matrix context in the job-level condition.
+- status: awaiting PR checks, protected merge, canonical-main readback, and the Chrome-only main proof.
