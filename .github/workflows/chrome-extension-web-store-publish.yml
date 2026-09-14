@@ -129,12 +129,26 @@ jobs:
           access_token="$(jq -r '.access_token // empty' <<<"$token_response")"
           test -n "$access_token"
           item_name="publishers/$CHROME_WEBSTORE_PUBLISHER_ID/items/$CHROME_WEBSTORE_EXTENSION_ID"
-          upload_response="$(curl --fail-with-body --silent --show-error --request POST \
+          mkdir -p web-store-evidence
+          upload_response_file="$(mktemp)"
+          upload_http_status="$(curl --silent --show-error --request POST \
             --header "Authorization: Bearer $access_token" \
             --header 'Content-Type: application/zip' \
             --data-binary "@$ZIP_PATH" \
+            --output "$upload_response_file" \
+            --write-out '%{http_code}' \
             "https://chromewebstore.googleapis.com/upload/v2/$item_name:upload")"
-          mkdir -p web-store-evidence
+          if [[ ! "$upload_http_status" =~ ^2 ]]; then
+            if jq -e . "$upload_response_file" >/dev/null 2>&1; then
+              jq --arg status "$upload_http_status" '{httpStatus:($status | tonumber),apiResponse:.}' "$upload_response_file" > web-store-evidence/upload-error.json
+              jq -c --arg status "$upload_http_status" '{httpStatus:($status | tonumber),apiResponse:(if .error then {error:.error} else . end)}' "$upload_response_file" >&2
+            else
+              jq -n --arg status "$upload_http_status" --arg body "$(head -c 2000 "$upload_response_file")" '{httpStatus:($status | tonumber),body:$body}' > web-store-evidence/upload-error.json
+              echo "Chrome Web Store upload failed with HTTP $upload_http_status and a non-JSON response." >&2
+            fi
+            exit 1
+          fi
+          upload_response="$(<"$upload_response_file")"
           jq '{name,itemId,crxVersion,uploadState}' <<<"$upload_response" > web-store-evidence/upload.json
           upload_state="$(jq -r '.uploadState // empty' <<<"$upload_response")"
           for attempt in $(seq 1 90); do
