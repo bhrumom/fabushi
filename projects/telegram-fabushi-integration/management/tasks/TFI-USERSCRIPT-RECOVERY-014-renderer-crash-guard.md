@@ -46,18 +46,19 @@
 
 - userscript branch: codex/release-2.9.24-renderer-guard-20260914
 - userscript PR: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/19
-- userscript head at task record creation: a091f07cda7745098797dbabdd58dd0f2b6a1fc3
-- userscript CI: run 34836902030 was in progress when recorded; previous run 34835595632 was cancelled after exposing two fixture defects, now corrected in a091f07c.
+- userscript canonical source main: 71a2279b887cc7429b7ca4c547a7099f8b63c55a (source PR #19, squash-merged).
+- userscript CI: GitHub Actions run 34838068938, job 103956394607, 114/114 tests passed; syntax validation passed.
+- userscript release: v2.9.24 publication is pending; release asset must match the canonical source main bytes below.
 - parent branch: codex/release-0.6.2-renderer-guard-20260914
-- parent branch latest known head: 9579f6fc6dbf86bc2dd4995671b67f484a1eacc3
+- parent branch latest known head: 94798e5d6b9a1d33e4e40862888f4142533de615
 - parent PR: pending creation after source canonical-main SHA is known.
-- source artifact expected before canonical-main readback: UTF-8 SHA-256 d82d987adb996a77dc224ca797750782a02a902221f5a76628bc571357636c41, 214840 bytes. These values are provisional until re-read from source main.
+- source artifact verified from canonical source main: UTF-8 SHA-256 d82d987adb996a77dc224ca797750782a02a902221f5a76628bc571357636c41, 214840 bytes.
 
 ## Verification and delivery evidence
 
 - Lightweight inspection: source/host files, manifest, packaging allowlist, validator, bridge and task records reviewed.
 - Local heavy build/test: intentionally not run; repository policy requires GitHub Actions.
-- Source CI: pending.
+- Source CI: passed — run 34838068938 / job 103956394607, 114/114.
 - Parent PR CI / Chrome package / packaged journey: pending.
 - Canonical main readback, release tag/assets, Web Store publish/install readback: pending.
 - Canonical-main E2E evidence bundle: pending; it must contain labelled screenshots at meaningful steps, complete journey video, trace/report/logs and SHA/version/run identity for pass or fail.
@@ -70,4 +71,4 @@
 
 ## Next action
 
-Wait for source PR #19 CI run 34836902030; merge only after green, read canonical source main, then update parent immutable userscript pin and open parent PR.
+Create the parent PR from 94798e5d6b9a1d33e4e40862888f4142533de615, then pass protected-main checks and the canonical Chrome packaged journey before merging.
