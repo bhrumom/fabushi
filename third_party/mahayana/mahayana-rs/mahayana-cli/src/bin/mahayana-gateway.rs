@@ -287,18 +287,20 @@ fn handle_request(
                 .get("decision")
                 .and_then(Value::as_str)
                 .ok_or_else(|| RpcFailure::invalid("approval.respond requires decision"))?;
-            if !matches!(
-                decision,
-                "accept" | "acceptForSession" | "decline" | "cancel"
-            ) {
-                return Err(RpcFailure::invalid(
-                    "decision must be accept, acceptForSession, decline, or cancel",
-                ));
-            }
+            let native_decision = match decision {
+                "allow-once" | "accept" => "allow-once",
+                "allow-session" | "acceptForSession" => "allow-session",
+                "deny" | "decline" | "cancel" => "deny",
+                _ => {
+                    return Err(RpcFailure::invalid(
+                        "decision must be allow-once/accept, allow-session/acceptForSession, or deny/decline/cancel",
+                    ));
+                }
+            };
             runtime
                 .lock()
                 .map_err(|_| RpcFailure::internal("runtime mutex poisoned"))?
-                .resolve_approval(approval_id, decision)
+                .resolve_approval(approval_id, native_decision)
                 .map_err(RpcFailure::internal)
         }
         "session.events.since" => {
