@@ -302,3 +302,12 @@
 | 人工打开历史会话时明确暂停原因 | 已实现/待主线回读 | source v2.9.26 manual inspection log regression；待 Chrome 包含该源码 |
 | Chrome 宿主与 bundled userscript 版本一致 | 进行中 | parent PR #2628：Chrome 0.6.4，固定 source commit/hash/size；等待 protected main |
 | exact-main 发布/现场安装回读 | 未开始 | 待 parent merge 后运行 Chrome package、packaged journey、证据归档与 Release |
+
+
+## 2026-09-14 — TFI-CI-OPT-015 按变更范围选择自动化检查
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-CI-OPT-015 | FAB-P0001 / TFI | 为安全、桌面、GBF 与 Global Dharma 工作流增加 changed-path scope，跳过未受影响的重矩阵并保留稳定检查名 | IN_PROGRESS | task record；开源调查 dorny/paths-filter；workflow implementation branch | PR Actions 验证 scope、skipped 聚合、merge_group 与 main push 行为 |
+
+验收约束：Chrome-only 变更不启动 Computer Control Rust/platform-worker/Linux desktop、Electron PR journey、GBF closure 与无关 Global Dharma 依赖；workflow/scope/security boundary 变更保守全量；main 发布路径不变。

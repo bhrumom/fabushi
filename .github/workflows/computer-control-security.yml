@@ -88,6 +88,7 @@ on:
       - '.github/workflows/electron-desktop.yml'
       - '.github/workflows/electron-macos-hot-package.yml'
       - '.github/workflows/native-electron-release.yml'
+  merge_group:
   workflow_dispatch:
 
 concurrency:
@@ -98,7 +99,99 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    name: Detect affected Computer Control scopes
+    runs-on: ubuntu-latest
+    outputs:
+      global: ${{ steps.filter.outputs.global }}
+      node: ${{ steps.filter.outputs.node }}
+      rust: ${{ steps.filter.outputs.rust }}
+      platform_worker: ${{ steps.filter.outputs.platform_worker }}
+      linux_desktop: ${{ steps.filter.outputs.linux_desktop }}
+    steps:
+      - name: Checkout full history for changed-path detection
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect changed Computer Control scopes
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        with:
+          token: ''
+          base: ${{ github.event_name == 'push' && github.event.before || '' }}
+          predicate-quantifier: some-with-excludes
+          filters: |
+            global:
+              - '.github/workflows/**'
+              - '.github/scripts/**'
+              - 'AGENTS.md'
+            node:
+              - 'chatgpt-vps-control/**'
+              - 'desktop/electron/**'
+              - 'desktop/src/app-agent-surface.ts'
+              - 'desktop/src/main.tsx'
+              - 'desktop/e2e/app-agent-surface.spec.ts'
+              - 'desktop/package.json'
+              - 'desktop/tsconfig.json'
+              - 'desktop/vite.config.ts'
+              - 'frontend/apps/web/src/app/**'
+              - 'frontend/apps/web/src/components/fabushi-app-agent-surface.tsx'
+              - 'frontend/apps/web/src/lib/app-agent-surface/**'
+              - 'frontend/apps/web/src/lib/fabushi-runtime/native-desktop.ts'
+              - 'frontend/apps/web/src/lib/remote-computer/**'
+              - 'frontend/packages/mcp-app-sdk/**'
+              - 'frontend/packages/shared/**'
+            rust:
+              - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+              - 'third_party/mahayana/mahayana-rs/**/Cargo.toml'
+              - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+              - 'third_party/mahayana/mahayana-rs/mahayana-computer/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
+            platform_worker:
+              - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
+            linux_desktop:
+              - 'chatgpt-vps-control/**'
+              - '!chatgpt-vps-control/chrome-platform/**'
+              - '!chatgpt-vps-control/tests/browser-extension.test.js'
+              - '!chatgpt-vps-control/tests/chrome-platform.test.js'
+              - '!chatgpt-vps-control/tests/extension-entry.test.js'
+              - 'desktop/**'
+              - 'frontend/apps/web/src/app/**'
+              - 'frontend/apps/web/src/components/fabushi-app-agent-surface.tsx'
+              - 'frontend/apps/web/src/lib/app-agent-surface/**'
+              - 'frontend/apps/web/src/lib/fabushi-runtime/native-desktop.ts'
+              - 'frontend/apps/web/src/lib/remote-computer/**'
+              - 'frontend/packages/mcp-app-sdk/**'
+              - 'frontend/packages/shared/**'
+              - 'frontend/apps/web/src/lib/mahayana-host/contracts.ts'
+              - 'third_party/mahayana/mahayana-rs/mahayana-computer/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
+      - name: Summarize detected Computer Control scope
+        shell: bash
+        env:
+          GLOBAL_SCOPE: ${{ steps.filter.outputs.global }}
+          NODE_SCOPE: ${{ steps.filter.outputs.node }}
+          RUST_SCOPE: ${{ steps.filter.outputs.rust }}
+          PLATFORM_WORKER_SCOPE: ${{ steps.filter.outputs.platform_worker }}
+          LINUX_DESKTOP_SCOPE: ${{ steps.filter.outputs.linux_desktop }}
+        run: |
+          {
+            echo '### Computer Control changed scope'
+            echo "- global: $GLOBAL_SCOPE"
+            echo "- node: $NODE_SCOPE"
+            echo "- rust: $RUST_SCOPE"
+            echo "- platform_worker: $PLATFORM_WORKER_SCOPE"
+            echo "- linux_desktop: $LINUX_DESKTOP_SCOPE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   node-security:
+    needs: scope
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.node == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -163,6 +256,8 @@ jobs:
         run: npm audit --omit=dev
 
   rust-contracts:
+    needs: scope
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.rust == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -198,6 +293,8 @@ jobs:
         run: cargo test --locked -p mahayana-host-protocol -p mahayana-computer -p mahayana-feature-host
 
   platform-worker-security:
+    needs: scope
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.platform_worker == 'true' }}
     name: Remote control platform worker security
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -222,6 +319,8 @@ jobs:
         run: cargo check --locked --target wasm32-unknown-unknown -p mahayana-platform-worker
 
   linux-managed-semantic-desktop:
+    needs: scope
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.linux_desktop == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -253,6 +352,7 @@ jobs:
     name: Computer control security result
     if: always()
     needs:
+      - scope
       - node-security
       - rust-contracts
       - platform-worker-security
@@ -261,6 +361,7 @@ jobs:
     steps:
       - name: Require every Computer Control security job
         env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
           NODE_SECURITY_RESULT: ${{ needs.node-security.result }}
           RUST_CONTRACTS_RESULT: ${{ needs.rust-contracts.result }}
           PLATFORM_WORKER_RESULT: ${{ needs.platform-worker-security.result }}
@@ -268,14 +369,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ "$SCOPE_RESULT" != success ]; then
+            echo "Computer Control scope detection finished with $SCOPE_RESULT." >&2
+            exit 1
+          fi
           for result in \
             "$NODE_SECURITY_RESULT" \
             "$RUST_CONTRACTS_RESULT" \
             "$PLATFORM_WORKER_RESULT" \
             "$LINUX_DESKTOP_RESULT"; do
-            if [ "$result" != success ]; then
-              echo "Computer Control security dependency finished with $result." >&2
-              exit 1
-            fi
+            case "$result" in
+              success|skipped) ;;
+              *)
+                echo "Computer Control security dependency finished with $result." >&2
+                exit 1
+                ;;
+            esac
           done
-          echo 'All Computer Control security jobs passed.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'All selected Computer Control security jobs passed or were safely skipped.' >> "$GITHUB_STEP_SUMMARY"
