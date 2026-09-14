@@ -86,3 +86,39 @@ Next: keep the existing Web Store review pending (or act only on a separate expl
 - Post-main run `34843041788` succeeded and published [desktop-1.2.65-396a842c7e00](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65-396a842c7e00)。
 - Current Chrome path `/Users/gloriachan/Downloads/fabushi-0.3.0` is v0.6.2 and enabled; Service Worker console returned `0.6.2` with zero console messages. Previous v0.4.1 is recoverable from `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.4.1-20260914`。
 - Task remains `IN_PROGRESS` only because the Web Store item is locked by an existing review; public Web Store update is not claimed.
+
+
+## 2026-09-14 最新反馈跟进：超时错误卡片、等待派发与“自动暂停”误解
+
+### 需求与证据
+
+用户反馈两个并行持续任务在 ChatGPT 页面轮换后出现：一个显示“等待派发”，另一个显示“已暂停”，并且出现“消息发送超时，请重试”错误卡片；用户要求识别结束/超时后继续派发、避免误暂停，并发布脚本与 Chrome 宿主新版本。附件截图作为现象证据保存于本轮对话，不把截图中的页面文字当作额外开发指令。
+
+### 根因确认
+
+- “等待派发”是已确认结束后的跨会话安全节流状态，当前设计为 60 秒冷却，用于防止多任务轮换期间连续导航和 renderer 再次崩溃；冷却结束后才进入新 Work/规划会话。
+- 截图中的“已暂停当前任务，正在打开已记录会话”是“打开已记录会话链接”的人工查看动作写入的日志。调度器的宿主保护分支只暂缓切页，不把任务改为 paused；发送超时恢复也不调用 pause。v2.9.26 将日志改为明确记录“用户点击”并提示“继续此任务”。
+- v2.9.25 已修复最终回复标记在页面轮换/恢复后未闭合的问题，但旧版超时识别只接受页面级提示，assistant 错误卡片内的超时文本会被排除，因此该类错误可能停留在等待响应。v2.9.26 要求错误卡片附近存在可见“重试”控件后立即转入可恢复派发队列；聊天引用文字和工作台日志仍不会触发重发。
+
+### 本轮范围与验收
+
+- [x] source userscript v2.9.26：嵌套 assistant 超时卡片识别、无重试控件不误触发、人工查看暂停原因明确。
+- [x] source regression：语法检查与完整 JSDOM 回归通过，source PR #21 已合并。
+- [x] source Release v2.9.26 已发布，绑定 source main `422f05eae88c17bbfa5e3d0812fc975637108c1c`；raw SHA-256 `ae8a15b687dcfca5c83e1f62093a6925eb50394196a5fc6b82e7859996d97c0c`，217125 bytes。
+- [ ] parent Chrome 0.6.4 PR #2628 进入 protected main（当前全部必需检查通过，等待 Merge Queue）。
+- [ ] exact canonical-main Chrome package、packaged simulated-user journey、截图/视频/trace/report evidence 与 post-main Release。
+- [ ] 当前 Chrome 未打包插件更新与版本回读；需在拿到 exact-main 0.6.4 包后取得新的用户确认再执行。
+- [ ] Web Store 公开更新仍受已有审核提交锁定，不能把 GitHub Release 或本机更新宣称为商店公开发布。
+
+### 开源优先调查与复用决策
+
+本轮继续采用已登记的开源优先调查：WICG Page Lifecycle、GoogleChromeLabs page-lifecycle 和 Playwright 页面生命周期实现。它们提供生命周期/页面恢复信号参考，但没有与 Fabushi 多任务、任务代次、发送确认和 fail-closed 导航边界直接兼容的实现；未新增依赖，继续使用 Fabushi 自有的持久队列、lease、重试退避和宿主 permit 设计。
+
+### 分支、PR 与状态
+
+- userscript branch: `codex/tfi-timeout-queue-no-auto-pause-v2926-20260914`
+- userscript PR: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/21
+- parent branch: `codex/tfi-userscript-v2926-chrome-064-20260914`
+- parent PR: https://github.com/bhrumom/fabushi/pull/2628
+- 当前状态：`IN_PROGRESS / PARENT_CHECKS_PASSED / MERGE_QUEUE_PENDING`
+- 下一动作：等待受保护主线合并，核对 exact main SHA 的 Chrome 打包与模拟用户证据，再按门禁发布并回读安装版本。

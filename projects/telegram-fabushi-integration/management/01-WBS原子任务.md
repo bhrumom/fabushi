@@ -291,3 +291,14 @@
 - [ ] Web Store 现有审核提交仍锁定 item，公开 0.6.2 发布等待审核完成或单独明确的取消决定。
 
 当前状态：`IN_PROGRESS / LOCAL_CHROME_0.6.2_VERIFIED / WEB_STORE_REVIEW_PENDING`。
+
+
+## 2026-09-14 TFI-USERSCRIPT-RECOVERY-014 最新反馈跟进
+
+| 原子任务 | 状态 | 证据/下一步 |
+| --- | --- | --- |
+| assistant 错误卡片中的发送超时识别 | 已实现/待主线回读 | source v2.9.26、source PR #21、source CI 34849096867；parent PR #2628 待 Merge Queue |
+| 发送超时进入新派发队列且不自动暂停 | 已实现/待主线回读 | `inspect → queueNoFinalReplyRetry` 回归；Chrome 0.6.4 packaged journey 待 exact main |
+| 人工打开历史会话时明确暂停原因 | 已实现/待主线回读 | source v2.9.26 manual inspection log regression；待 Chrome 包含该源码 |
+| Chrome 宿主与 bundled userscript 版本一致 | 进行中 | parent PR #2628：Chrome 0.6.4，固定 source commit/hash/size；等待 protected main |
+| exact-main 发布/现场安装回读 | 未开始 | 待 parent merge 后运行 Chrome package、packaged journey、证据归档与 Release |
