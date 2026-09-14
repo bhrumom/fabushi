@@ -100,7 +100,7 @@ source PR [#15](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 parent PR [#2594](https://github.com/bhrumom/fabushi/pull/2594) 已经 protected merge queue
 合并；本任务接受的 parent main SHA 为 `e60d40f4a97dcb319515abb2b46ef2845d4eb21b`，随后
 独立 PR #2593、#2595 及后续 canonical main 变更已将当前 canonical main 前进到
-`9c2557731d33de830045d117e41726fb3b40a170`（records PR #2602 通过 protected queue 合并，包含并保留本任务 SHA）。该任务接受 SHA 的
+`387ae731c3677d9d3023d400f1da60d7ac958a4f`（records PR #2603 通过 protected queue 合并，包含并保留本任务 SHA）。该任务接受 SHA 的
 Chrome workflow `34795268685` 成功（artifact `10329366885`），Electron packaged gate
 `34795268724`、Native mobile gate `34795268715`、security/governance checks 均成功；
 post-main delivery `34796011272` 成功并发布 Release
