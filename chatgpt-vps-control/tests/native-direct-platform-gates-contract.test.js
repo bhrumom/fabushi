@@ -30,7 +30,9 @@ test('formal release source gate names the real native platform checks directly'
 
 test('post-main delivery waits on direct Android and iOS checks, not an aggregate runner', async () => {
   const source = await read(postMainPath);
-  assert.match(source, /required_checks=\('Native Android' 'Native iOS'\)/u);
+  assert.match(source, /required_checks=\(\)/u);
+  assert.match(source, /ANDROID_REQUIRED:[\\s\\S]*Native Android/u);
+  assert.match(source, /IOS_REQUIRED:[\\s\\S]*Native iOS/u);
   assert.match(source, /- Native Android: success/u);
   assert.match(source, /- Native iOS: success/u);
   assert.doesNotMatch(source, /required_checks=.*Native mobile result/u);
