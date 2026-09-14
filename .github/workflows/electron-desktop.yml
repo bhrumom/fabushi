@@ -35,6 +35,40 @@ on:
       - '.github/scripts/verify-packaged-computer-control.mjs'
   push:
     branches: [main]
+    paths:
+      - 'chatgpt-vps-control/**'
+      - '!chatgpt-vps-control/chrome-platform/**'
+      - '!chatgpt-vps-control/tests/browser-extension.test.js'
+      - '!chatgpt-vps-control/tests/chrome-platform.test.js'
+      - '!chatgpt-vps-control/tests/extension-entry.test.js'
+      - 'desktop/**'
+      - 'frontend/apps/host/**'
+      - 'frontend/apps/web/src/app/host/**'
+      - 'frontend/apps/web/src/app/remote-computer/**'
+      - 'frontend/apps/web/src/lib/fabushi-runtime/**'
+      - 'frontend/apps/web/src/components/fabushi-app-agent-surface.tsx'
+      - 'frontend/apps/web/src/lib/app-agent-surface/**'
+      - 'frontend/packages/mcp-app-sdk/**'
+      - 'frontend/apps/web/src/lib/mahayana-host/**'
+      - 'frontend/apps/web/src/lib/remote-computer/**'
+      - 'frontend/packages/shared/**'
+      - 'contracts/automation/cross-platform-journeys.json'
+      - 'third_party/mahayana/codex-rs/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host-desktop/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
+      - '.github/scripts/assert-native-electron-canonical.sh'
+      - '.github/scripts/assert-electron-feature-host-bridge.sh'
+      - '.github/scripts/assert-fabushi-desktop-architecture.py'
+      - '.github/scripts/assert-native-desktop-edge-parity.py'
+      - '.github/workflows/electron-desktop.yml'
+      - '.github/scripts/verify-packaged-computer-control.mjs'
   merge_group:
   workflow_dispatch:
 
@@ -67,9 +101,19 @@ jobs:
           predicate-quantifier: some-with-excludes
           filters: |
             global:
-              - '.github/workflows/**'
-              - '.github/scripts/**'
-              - 'AGENTS.md'
+              - '.github/workflows/electron-desktop.yml'
+              - '.github/scripts/assert-native-electron-canonical.sh'
+              - '.github/scripts/assert-electron-feature-host-bridge.sh'
+              - '.github/scripts/assert-fabushi-desktop-architecture.py'
+              - '.github/scripts/assert-native-desktop-edge-parity.py'
+              - '.github/scripts/assert-auth-entry-flow.py'
+              - '.github/scripts/assert-bot-mark-motion.py'
+              - '.github/scripts/assert-product-ui-contracts.py'
+              - '.github/scripts/assert-native-capability-semantics.py'
+              - '.github/scripts/build-offline-asr-engine.mjs'
+              - '.github/scripts/notarize-macos-dmg.sh'
+              - '.github/scripts/verify-electron-macos-package.sh'
+              - '.github/scripts/verify-packaged-computer-control.mjs'
             electron:
               - 'chatgpt-vps-control/**'
               - '!chatgpt-vps-control/chrome-platform/**'
@@ -115,7 +159,7 @@ jobs:
 
   platform:
     needs: scope
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.electron == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.electron == 'true' }}
     name: ${{ matrix.check_name }}
     strategy:
       fail-fast: false
