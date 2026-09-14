@@ -47,13 +47,28 @@ const accountDetail = $("#account-detail");
 const accountAvatar = $("#account-avatar");
 const search = $("#search");
 
-function runtimeMessage(message) {
+function runtimeMessage(message, timeoutMs = 30_000) {
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response) => {
-      const runtimeError = chrome.runtime.lastError;
-      if (runtimeError) reject(new Error(runtimeError.message));
-      else resolve(response);
-    });
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      reject(new Error(`Chrome 消息超时：${String(message?.type || "request")}`));
+    }, Math.max(1_000, Math.min(Number(timeoutMs) || 30_000, 120_000)));
+    const finish = (callback) => (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback(value);
+    };
+    try {
+      chrome.runtime.sendMessage(message, finish((response) => {
+        const runtimeError = chrome.runtime.lastError;
+        if (runtimeError) reject(new Error(runtimeError.message));
+        else resolve(response);
+      }));
+    } catch (error) {
+      finish(reject)(error);
+    }
   });
 }
 
