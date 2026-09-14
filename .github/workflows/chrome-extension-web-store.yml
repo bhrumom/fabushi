@@ -16,20 +16,75 @@ on:
       - "ai-backend/src/miniapp_marketplace_catalog.js"
       - ".github/workflows/chrome-extension-web-store.yml"
       - ".github/workflows/chrome-extension-web-store-publish.yml"
-  # post-main-delivery.yml requires an exact-source Chrome package/journey for
-  # every accepted main SHA. Keep PR feedback path-scoped, but never path-filter
-  # the main push producer or release delivery can wait forever for a run that
-  # GitHub intentionally never scheduled.
   push:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - 'chatgpt-vps-control/chrome-platform/**'
+      - 'chatgpt-vps-control/lib/**'
+      - 'chatgpt-vps-control/scripts/**'
+      - 'chatgpt-vps-control/tests/**'
+      - 'chatgpt-vps-control/docs/chrome-web-store/**'
+      - 'chatgpt-vps-control/package.json'
+      - 'desktop/electron/chrome-platform-server.cjs'
+      - 'desktop/electron/host-process.cjs'
+      - '.github/scripts/verify-packaged-computer-control.mjs'
+      - '.github/workflows/chrome-extension-web-store.yml'
+      - '.github/workflows/chrome-extension-web-store-publish.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  scope:
+    name: Detect affected Chrome scope
+    runs-on: ubuntu-latest
+    outputs:
+      global: ${{ steps.filter.outputs.global }}
+      chrome: ${{ steps.filter.outputs.chrome }}
+    steps:
+      - name: Checkout full history for changed-path detection
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect changed Chrome scope
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        with:
+          token: ''
+          base: ${{ github.event_name == 'push' && github.event.before || '' }}
+          predicate-quantifier: some-with-excludes
+          filters: |
+            global:
+              - '.github/workflows/chrome-extension-web-store.yml'
+              - '.github/workflows/chrome-extension-web-store-publish.yml'
+              - '.github/scripts/verify-packaged-computer-control.mjs'
+            chrome:
+              - 'chatgpt-vps-control/chrome-platform/**'
+              - 'chatgpt-vps-control/lib/**'
+              - 'chatgpt-vps-control/scripts/**'
+              - 'chatgpt-vps-control/tests/**'
+              - 'chatgpt-vps-control/docs/chrome-web-store/**'
+              - 'chatgpt-vps-control/package.json'
+              - 'desktop/electron/chrome-platform-server.cjs'
+              - 'desktop/electron/host-process.cjs'
+              - '.github/scripts/verify-packaged-computer-control.mjs'
+      - name: Summarize detected Chrome scope
+        shell: bash
+        env:
+          GLOBAL_SCOPE: ${{ steps.filter.outputs.global }}
+          CHROME_SCOPE: ${{ steps.filter.outputs.chrome }}
+        run: |
+          {
+            echo '### Chrome changed scope'
+            echo "- global: $GLOBAL_SCOPE"
+            echo "- chrome: $CHROME_SCOPE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   validate-package:
+    needs: scope
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.chrome == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:

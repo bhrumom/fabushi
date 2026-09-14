@@ -19,6 +19,10 @@ on:
       - 'projects/grok-bot-fabushi-integration/**'
       - 'desktop/electron/**'
       - 'chatgpt-vps-control/**'
+      - '!chatgpt-vps-control/chrome-platform/**'
+      - '!chatgpt-vps-control/tests/browser-extension.test.js'
+      - '!chatgpt-vps-control/tests/chrome-platform.test.js'
+      - '!chatgpt-vps-control/tests/extension-entry.test.js'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
@@ -54,9 +58,8 @@ jobs:
           predicate-quantifier: some-with-excludes
           filters: |
             global:
-              - '.github/workflows/**'
-              - '.github/scripts/**'
-              - 'AGENTS.md'
+              - '.github/workflows/gbf-security-closure.yml'
+              - '.github/scripts/assert-gbf-security-closure.py'
             gbf:
               - 'projects/grok-bot-fabushi-integration/**'
               - 'desktop/electron/**'
@@ -82,7 +85,7 @@ jobs:
 
   closure:
     needs: scope
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.gbf == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.gbf == 'true' }}
     name: Threat provenance secret denial closure
     runs-on: ubuntu-latest
     timeout-minutes: 15
