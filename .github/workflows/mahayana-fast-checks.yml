@@ -61,8 +61,14 @@ jobs:
         with:
           components: rustfmt
 
-      - name: Verify formatting before native package setup
+      - name: Verify workspace formatting before native package setup
         run: cargo fmt --all -- --check
+
+      - name: Verify isolated gateway protocol formatting
+        run: cargo fmt --manifest-path mahayana-gateway-protocol/Cargo.toml -- --check
+
+      - name: Test isolated gateway protocol contract
+        run: cargo test --manifest-path mahayana-gateway-protocol/Cargo.toml
 
       - name: Install Linux native capture/input dependencies
         shell: bash
@@ -142,10 +148,9 @@ jobs:
           -p mahayana-native-agent
           --profile ci
 
-      - name: Test protocol and MiniApp bridge
+      - name: Test product protocol and MiniApp bridge
         run: >-
           cargo test
-          -p mahayana-gateway-protocol
           -p mahayana-miniapp-protocol
           -p mahayana-miniapp-bridge
           -p mahayana-host-protocol
