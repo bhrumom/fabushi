@@ -32,7 +32,7 @@
 
 ## 当前 userscript 附件连续性子门禁
 
-`TFI-USERSCRIPT-RECOVERY-010` 修复首次带附件发送后，在恢复、继续、异常重发及跨轮次发送中因 composer/document 或 dispatch context 变化而丢失附件的问题。source userscript `v2.9.19` 已发布并通过 98/98 轻量回归；parent records 已通过 PR #2587/#2588 合并并从 `main@baf13113...` 回读，已登录 Chrome 的完整现场证据仍按 task record 跟踪。
+`TFI-USERSCRIPT-RECOVERY-010` 修复首次带附件发送后，在恢复、继续、异常重发及跨轮次发送中因 composer/document 或 dispatch context 变化而丢失附件的问题。当前延伸任务 `TFI-USERSCRIPT-RECOVERY-011` 将 `v2.9.20` 的页面/脚本恢复状态与 Chrome 宿主 `tab-recovery` 能力连接起来，修复崩溃标签页、无链接阻塞恢复和最终 Work 回复转交验收的问题；source 与 parent 的受保护发布和真实 Chrome 证据仍按 task record 跟踪。
 
 ## 建议阅读顺序
 

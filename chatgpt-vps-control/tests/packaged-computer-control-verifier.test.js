@@ -33,6 +33,7 @@ const required = [
   "chrome-platform/extension/service-worker.js",
   "chrome-platform/extension/platform-bridge.js",
   "chrome-platform/extension/browser-control.js",
+  "chrome-platform/extension/userscript-recovery.js",
   "chrome-platform/extension/userscript-core.js",
   "chrome-platform/extension/userscript-runner.js",
   "chrome-platform/extension/userscript-content.js",

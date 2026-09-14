@@ -25,6 +25,7 @@ const approvedFiles = [
   "platform-bridge.js",
   "browser-control.js",
   "account-browser-agent.js",
+  "userscript-recovery.js",
   "userscript-core.js",
   "userscript-runner.js",
   "userscript-content.js",

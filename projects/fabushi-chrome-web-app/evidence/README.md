@@ -17,3 +17,9 @@ artifact `10289707648` ([artifact](https://github.com/bhrumom/fabushi/actions/ru
 It contains the 0.5.0 ZIP, SHA/content manifests, labelled screenshots, complete WebM journey
 video, Playwright trace/HTML report, native event log and timestamped report. Canonical-main
 post-merge evidence is still required.
+
+CWA-008 evidence is currently worktree/PR-level only. The lightweight contract suite passed
+the host lease, metadata minimization, crash-tab recovery, deliberate-close guard and unsafe
+URL/blocked-task rejection cases. Exact canonical-main package, protected merge, packaged
+Chrome crash/recovery journey, screenshots, complete video, trace/report/log bundle, and
+Release target/assets remain required before this task can be marked complete.
