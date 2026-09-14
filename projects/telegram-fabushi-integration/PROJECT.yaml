@@ -56,6 +56,14 @@ active_work:
     source_pr: 16
     source_head_sha: 53102aad173091cd8629caf4a1e761f7ad2d64d7
     state: IN_PROGRESS
+  - task: TFI-USERSCRIPT-RECOVERY-013
+    branch: codex/tfi-userscript-memory-20260914
+    source_branch: codex/memory-pressure-2.9.22
+    source_pr: 17
+    source_head_sha: 3d23d8cc78931dceecb4d647706766470224f81b
+    host_pr: 2607
+    host_head_sha: 0c16f0a52872e2efea9ed80c8de031ab1e70c081
+    state: IN_PROGRESS
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001

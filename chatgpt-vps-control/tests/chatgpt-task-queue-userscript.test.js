@@ -34,14 +34,18 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   const content = await source("userscript-content.js");
   const recovery = await source("userscript-recovery.js");
   const app = await source("app.js");
-  for (const message of ["fabushi.userscript.list", "fabushi.userscript.install", "fabushi.userscript.setEnabled", "fabushi.userscript.uninstall", "fabushi.userscript.pageReady", "fabushi.userscript.request"]) assert.match(runner, new RegExp(message.replaceAll(".", "\\.")));
+  for (const message of ["fabushi.userscript.list", "fabushi.userscript.install", "fabushi.userscript.setEnabled", "fabushi.userscript.uninstall", "fabushi.userscript.pageReady", "fabushi.userscript.request", "fabushi.userscript.memory.request"]) assert.match(runner, new RegExp(message.replaceAll(".", "\\.")));
   assert.match(runner, /chrome\.runtime\.onStartup/);
   assert.match(runner, /chrome\.runtime\.onInstalled/);
   assert.match(runner, /chrome\.tabs\.onUpdated/);
   assert.match(runner, /__fabushiDesktopRequest/);
+  assert.match(runner, /chrome\\.tabs\\.discard/);
+  assert.match(runner, /userscript-memory-policy/);
   assert.match(core, /forbiddenDirectives/);
   assert.match(core, /dynamic WebAssembly/);
   assert.match(content, /fabushi\.userscript\.pageReady/);
+  assert.match(content, /tab-memory\\.request/);
+  assert.match(content, /tab-memory\\.response/);
   assert.match(content, /fabushi\.userscript\.recovery\.request/);
   assert.match(content, /recovery-capability\.granted/);
   assert.match(recovery, /chrome\.alarms\.onAlarm/);
@@ -52,4 +56,43 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   assert.doesNotMatch(recovery, /goal|prompt|file\s*:/i);
   assert.match(app, /userscript-chatgpt-task-queue/);
   assert.match(app, /fabushi\.userscript\.install/);
+});
+
+
+test("memory host policy is fail-closed for active, unsafe and unapproved tabs", async () => {
+  const { validateMemoryRequest } = await import("../chrome-platform/extension/userscript-memory-policy.js");
+  const record = { sourcePluginId: "chatgpt-auto-confirm", enabled: true };
+  const base = {
+    pluginId: "chatgpt-auto-confirm",
+    payload: {
+      capability: "tab-memory-discard",
+      pressure: "high",
+      safeToDiscard: true,
+      userInitiated: false,
+    },
+  };
+  assert.equal(validateMemoryRequest(base, {
+    record,
+    tab: { id: 7, url: "https://chatgpt.com/c/test", active: true },
+  }).reason, "active-tab");
+  assert.equal(validateMemoryRequest({
+    ...base,
+    payload: { ...base.payload, hasDraft: true },
+  }, {
+    record,
+    tab: { id: 7, url: "https://chatgpt.com/c/test", active: false },
+  }).reason, "unsafe-state");
+  assert.equal(validateMemoryRequest(base, {
+    record,
+    tab: { id: 7, url: "https://example.com/", active: false },
+  }).reason, "unapproved-page");
+  assert.equal(validateMemoryRequest(base, {
+    record,
+    tab: { id: 7, url: "https://chatgpt.com/c/test", active: false },
+    cooldownRemaining: 2500,
+  }).reason, "cooldown");
+  assert.equal(validateMemoryRequest(base, {
+    record,
+    tab: { id: 7, url: "https://chatgpt.com/c/test", active: false },
+  }).canDiscard, true);
 });
