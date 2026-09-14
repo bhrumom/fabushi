@@ -34,6 +34,8 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   const content = await source("userscript-content.js");
   const recovery = await source("userscript-recovery.js");
   const app = await source("app.js");
+  const packager = await readFile(resolve(extensionRoot, "../scripts/package-chrome-extension.mjs"), "utf8");
+  const validator = await readFile(resolve(extensionRoot, "../scripts/validate-chrome-extension.mjs"), "utf8");
   for (const message of ["fabushi.userscript.list", "fabushi.userscript.install", "fabushi.userscript.setEnabled", "fabushi.userscript.uninstall", "fabushi.userscript.pageReady", "fabushi.userscript.request", "fabushi.userscript.memory.request"]) assert.match(runner, new RegExp(message.replaceAll(".", "\\.")));
   assert.match(runner, /chrome\.runtime\.onStartup/);
   assert.match(runner, /chrome\.runtime\.onInstalled/);
@@ -42,6 +44,8 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   assert.match(runner, /chrome\.tabs\.discard/);
   assert.match(runner, /userscript-memory-policy/);
   assert.match(runner, /requestTabMemoryCleanup/);
+  assert.match(packager, /"userscript-memory-policy\\.js"/);
+  assert.match(validator, /"userscript-memory-policy\\.js"/);
   assert.match(core, /forbiddenDirectives/);
   assert.match(core, /dynamic WebAssembly/);
   assert.match(content, /fabushi\.userscript\.pageReady/);

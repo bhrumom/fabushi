@@ -28,6 +28,7 @@ const approvedFiles = [
   "userscript-recovery.js",
   "userscript-core.js",
   "userscript-runner.js",
+  "userscript-memory-policy.js",
   "userscript-content.js",
   "userscript.css",
   "userscript/chatgpt-auto-confirm.user.js",

@@ -35,7 +35,7 @@ assert(Array.isArray(manifest.content_scripts) && manifest.content_scripts.some(
 assert(releaseReadme.includes(`Production candidate: **${manifest.version}**`), "Chrome Web Store README production candidate must match manifest.version");
 assert(releaseReadme.includes("Every Chrome Web Store update must increment"), "release docs must preserve the monotonic version gate");
 
-for (const relative of [manifest.action.default_popup, manifest.background.service_worker, "app.css", "app.js", "marketplace-install.js", "platform-bridge.js", "browser-control.js", "account-browser-agent.js", "userscript-recovery.js", "userscript-core.js", "userscript-runner.js", "userscript-content.js", "userscript.css", "userscript/chatgpt-auto-confirm.user.js", "marketplace/chatgpt-task-queue.user.js"]) await mustExist(relative);
+for (const relative of [manifest.action.default_popup, manifest.background.service_worker, "app.css", "app.js", "marketplace-install.js", "platform-bridge.js", "browser-control.js", "account-browser-agent.js", "userscript-recovery.js", "userscript-core.js", "userscript-runner.js", "userscript-memory-policy.js", "userscript-content.js", "userscript.css", "userscript/chatgpt-auto-confirm.user.js", "marketplace/chatgpt-task-queue.user.js"]) await mustExist(relative);
 const serviceWorker = await readFile(join(extension, manifest.background.service_worker), "utf8");
 assert(serviceWorker.includes('import "./platform-bridge.js"'), "service worker must load the product bridge");
 assert(serviceWorker.includes('import "./browser-control.js"'), "service worker must load the browser-control bridge");
