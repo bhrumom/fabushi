@@ -16,36 +16,13 @@ on:
       - "ai-backend/src/miniapp_marketplace_catalog.js"
       - ".github/workflows/chrome-extension-web-store.yml"
       - ".github/workflows/chrome-extension-web-store-publish.yml"
+  # post-main-delivery.yml requires an exact-source Chrome package/journey for
+  # every accepted main SHA. Keep PR feedback path-scoped, but never path-filter
+  # the main push producer or release delivery can wait forever for a run that
+  # GitHub intentionally never scheduled.
   push:
     branches:
       - main
-    paths:
-      - "chatgpt-vps-control/chrome-platform/**"
-      - "chatgpt-vps-control/lib/browser-extension-install.js"
-      - "chatgpt-vps-control/lib/device-gateway.js"
-      - "chatgpt-vps-control/lib/runtime-install.js"
-      - "chatgpt-vps-control/scripts/browser-extension-host.mjs"
-      - "chatgpt-vps-control/scripts/chrome-platform-host.mjs"
-      - "chatgpt-vps-control/scripts/chrome-extension-e2e.mjs"
-      - "chatgpt-vps-control/tests/browser-extension.test.js"
-      - "chatgpt-vps-control/tests/device-gateway-account.test.js"
-      - "chatgpt-vps-control/tests/chrome-platform.test.js"
-      - "chatgpt-vps-control/tests/extension-entry.test.js"
-      - "chatgpt-vps-control/tests/chatgpt-task-queue-userscript.test.js"
-      - "chatgpt-vps-control/tests/chrome-extension-e2e-contract.test.js"
-      - "chatgpt-vps-control/scripts/validate-chrome-extension.mjs"
-      - "chatgpt-vps-control/scripts/package-chrome-extension.mjs"
-      - "chatgpt-vps-control/docs/chrome-web-store/**"
-      - "chatgpt-vps-control/package.json"
-      - "desktop/electron/chrome-platform-server.cjs"
-      - "desktop/electron/host-process.cjs"
-      - "desktop/src/app-agent-surface.ts"
-      - "desktop/package.json"
-      - "desktop/package-lock.json"
-      - "app-version.json"
-      - ".github/workflows/chrome-extension-web-store.yml"
-      - ".github/workflows/chrome-extension-web-store-publish.yml"
-      - "ai-backend/src/miniapp_marketplace_catalog.js"
   workflow_dispatch:
 
 permissions:
