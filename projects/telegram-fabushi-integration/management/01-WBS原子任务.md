@@ -267,3 +267,9 @@
 - [ ] 官方 MCP remote Runner 手测：连接器内部错误恢复后，用同一测试账号完成 list → describe → `ci_session_status` → 手动内存验收 → note → finish。
 
 当前状态：`IN_PROGRESS / SOURCE_RELEASED / HOST_CHROME_EXACT_MAIN_PASSED / REMOTE_MANUAL_PENDING`。
+
+## 2026-09-14 — 新增 WBS 原子任务
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-014 | FAB-P0001 / TFI | 宿主受控导航、renderer 崩溃恢复、source 2.9.24 与 Chrome 0.6.2 发布 | IN_PROGRESS | source main 71a2279b；source CI run 34838068938 114/114；parent branch codex/release-0.6.2-renderer-guard-20260914 | parent PR/保护主线、exact-main Chrome package/journey、Web Store 与安装版本回读 |
