@@ -22,6 +22,7 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+  merge_group:
   workflow_dispatch:
 
 concurrency:
