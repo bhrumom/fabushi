@@ -5,8 +5,8 @@
 - Portfolio Project ID: `FAB-P0001`
 - Project Key / Task ID: `TFI / TFI-USERSCRIPT-RECOVERY-011`
 - Started: `2026-09-14T08:00:00+08:00`
-- Updated: `2026-09-14T09:36:20+08:00`
-- Status: `IN_PROGRESS / WEBS_STORE_BLOCKED / LIVE_CHROME_EVIDENCE_PENDING`
+- Updated: `2026-09-14T11:44:35+08:00`
+- Status: `IN_PROGRESS / WEBS_STORE_PENDING_REVIEW / LIVE_CHROME_EVIDENCE_PENDING`
 
 ## Objective
 
@@ -99,20 +99,22 @@ source PR [#15](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 
 parent PR [#2594](https://github.com/bhrumom/fabushi/pull/2594) 已经 protected merge queue
 合并；本任务接受的 parent main SHA 为 `e60d40f4a97dcb319515abb2b46ef2845d4eb21b`，随后
-独立 PR #2593 已将 canonical main 前进到 `31fdeca90bc8012e144b3ada00ca439891606e2c`（包含
-并保留本任务 SHA）。该任务接受 SHA 的
+独立 PR #2593、#2595 及后续 canonical main 变更已将当前 canonical main 前进到
+`6d9fc672f8163b1a4246e46e59691d0110ee9f0b`（包含并保留本任务 SHA）。该任务接受 SHA 的
 Chrome workflow `34795268685` 成功（artifact `10329366885`），Electron packaged gate
 `34795268724`、Native mobile gate `34795268715`、security/governance checks 均成功；
 post-main delivery `34796011272` 成功并发布 Release
 [`desktop-1.2.64`](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.64)，目标与该
 SHA 一致，包含桌面安装包、updater metadata 和 Chrome `0.6.0` 包。
 
-Chrome Web Store 正式提交 run `34796377000` / job `103830176952` 已完成 exact-source
-包校验，但因受保护环境 `chrome-webstore` 的 publisher、item、OAuth client、secret 和
-refresh token 均未配置，在调用商店 API 前 fail-closed；未产生商店提交。证据 artifact 为
-`10329509377`。本任务的 packaged Fabushi delivery 对独立 userscript 部分为 `N/A`，但同一
+Chrome Web Store 受保护环境已配置发布凭据，Google Cloud Chrome Web Store API 已启用。
+重试 `34802232279` 在 API 启用前返回 403；`34802669055` 的 exact-source 包校验通过但
+上传返回 HTTP 400。后台核对显示现有 Fabushi 草稿已经包含版本 `0.6.0`，随后通过已登录
+Developer Dashboard 提交该草稿；页面在 `2026-09-14T11:44:35+08:00` 明确显示“待审核”，
+并提示 `<all_urls>` 可能触发深入审核。脱敏证据 artifact 为 `10331873115` 和
+`10332215035`。本任务的 packaged Fabushi delivery 对独立 userscript 部分为 `N/A`，但同一
 修复扩展了 `FAB-P0011/CWA` Chrome 宿主，因此真实 Chrome 崩溃/卡住及附件/最终回复现场证据
-仍需补齐。
+与商店公开上架证据仍需补齐。
 
 ## Risks and next action
 
@@ -120,8 +122,7 @@ refresh token 均未配置，在调用商店 API 前 fail-closed；未产生商�
   集成扩展可进一步提供页面外 tab watchdog。
 - Risk: stale heartbeat 可能与后台页面节流混淆；采用较长 TTL、唯一候选和手动暂停屏障，
   不确定时保持原任务而不抢占。
-- Blocker: Chrome Web Store publish workflow `34796377000` 在 API 调用前发现受保护环境凭据
-  为空；不能代填或把 GitHub Release 冒充为商店已上架。
-- Next: 配置 `chrome-webstore` 环境的发布凭据后，以 source SHA
-  `e60d40f4a97dcb319515abb2b46ef2845d4eb21b` 重跑 publish workflow；同时在已登录 Chrome
-  补齐崩溃/卡住、无链接恢复、最终回复→验收和附件连续性的截图、完整视频、trace/diagnostics。
+- Blocker: Chrome Web Store 版本 `0.6.0` 已进入外部“待审核”，尚未公开上架；自动上传流程
+  对已有同版本草稿的幂等处理仍需补齐。
+- Next: 等待并核验商店审核结果及公开 listing/安装版本；同时在已登录 Chrome 补齐崩溃/卡住、
+  无链接恢复、最终回复→验收和附件连续性的截图、完整视频、trace/diagnostics。

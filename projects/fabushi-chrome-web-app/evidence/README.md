@@ -21,6 +21,6 @@ post-merge evidence is still required.
 CWA-008 canonical delivery evidence is indexed in `evidence/CWA-008/README.md`. The lightweight
 contract suite passed the host lease, metadata minimization, crash-tab recovery, deliberate-close
 guard and unsafe URL/blocked-task rejection cases. Exact canonical-main package, protected merge,
-post-main packaged delivery and Release passed; the task-specific live Chrome crash/recovery
-journey and Web Store publication remain open. The Web Store publish workflow fail-closed before
-the API call because the protected environment secrets were empty.
+post-main packaged delivery and GitHub Release passed. The Chrome Web Store draft was submitted
+through the developer dashboard and is currently pending external review; the task-specific live
+Chrome crash/recovery journey and public Web Store listing/install evidence remain open.

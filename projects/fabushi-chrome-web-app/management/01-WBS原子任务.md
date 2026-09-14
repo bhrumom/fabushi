@@ -10,4 +10,4 @@
 | CWA-006 | Package, release and migrate Chrome profiles | CWA-005 + protected main | exact SHA CI/E2E/Release/profile evidence | in-progress | protected PR checks |
 
 | CWA-007 | Official Chrome login and same-account MCP browser control | CWA-006/AAC/gateway | CWA-R009..R012; exact-SHA CI/release | in-progress | Review auth transport and implement |
-| CWA-008 | Userscript tab-recovery capability and crash watchdog | CWA-006 + TFI-USERSCRIPT-RECOVERY-011 | CWA-R013..R018; exact-SHA package/E2E/release | in-progress / Web Store blocked | Configure protected Web Store credentials; capture live crash-recovery evidence |
+| CWA-008 | Userscript tab-recovery capability and crash watchdog | CWA-006 + TFI-USERSCRIPT-RECOVERY-011 | CWA-R013..R018; exact-SHA package/E2E/release | in-progress / Web Store pending review | Await review; capture live crash-recovery evidence and public listing proof |

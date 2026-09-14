@@ -177,6 +177,19 @@
 
 当前状态：`SOURCE_RELEASED / PARENT_RECORD_PENDING / LIVE_EVIDENCE_PENDING`；仅限独立油猴脚本，不触发 Fabushi 应用构建门禁。
 
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-011 标签页崩溃/卡住自动恢复
+
+- [x] `TFI-USR-CRASH-001` 固化 renderer 崩溃页、卡住页和 stale heartbeat 的页面外恢复边界，采用 source `v2.9.20` 与宿主 `tab-recovery` capability lease。
+- [x] `TFI-USR-CRASH-002` 保持 Work/验收/下一轮的 URL、token、phase/round 和 IndexedDB attachment IDs 连续，恢复后的当前 composer 重新注入并确认附件后才发送。
+- [x] `TFI-USR-CRASH-003` 修复“最终回复被误判成停止回答”的交接：识别自然语言 Work final，向下一轮验收会话传递完整 final reply，不重复派发。
+- [x] `TFI-USR-CRASH-004` 修复需要处理状态的恢复计时复用，恢复后使用独立确认窗口；不确定发送保留 token/附件，明确唯一 URL 后不重复点击 Send。
+- [x] `TFI-USR-CRASH-005` source PR #15、exact-main CI、Release `v2.9.20` 及 parent PR #2594、packaged/post-main/Release 证据已完成；当前 canonical main 为 `6d9fc672f8163b1a4246e46e59691d0110ee9f0b` 的后代。
+- [x] `TFI-USR-CRASH-006` Chrome Web Store 受保护凭据/API 已配置；既有 `0.6.0` 草稿已通过已登录 Developer Dashboard 提交，后台当前为“待审核”。
+- [ ] `TFI-USR-CRASH-007` 完成已登录 Chrome 的崩溃/error page → 原标签或单次接管 → 附件连续 → final→验收完整截图、视频、trace/diagnostics。
+- [ ] `TFI-USR-CRASH-008` 将自动 Web Store 发布流程改为识别已有同版本草稿并幂等复用，避免 HTTP 400 被误判为上传成功。
+
+当前状态：`IN_PROGRESS / WEBS_STORE_PENDING_REVIEW / LIVE_CHROME_EVIDENCE_PENDING`；GitHub Release 已完成，Chrome Web Store 外部审核和真实现场证据仍是退出门禁。
+
 ## 2026-09-13 — TFI-USERSCRIPT-RECOVERY-010 恢复/继续附件连续性
 
 - [x] `TFI-USR-ATTACH-001` 将附件确认绑定到 task token、当前 route 和当前 composer，context 变化时失效旧确认并保留 metadata/Blob。

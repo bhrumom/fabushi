@@ -5,8 +5,8 @@
 - Portfolio Project ID: `FAB-P0011`
 - Project Key / Task ID: `CWA / CWA-008`
 - Started: `2026-09-14T08:00:00+08:00`
-- Updated: `2026-09-14T09:36:20+08:00`
-- Status: `IN_PROGRESS / WEBS_STORE_BLOCKED / LIVE_CHROME_EVIDENCE_PENDING`
+- Updated: `2026-09-14T11:44:35+08:00`
+- Status: `IN_PROGRESS / WEBS_STORE_PENDING_REVIEW / LIVE_CHROME_EVIDENCE_PENDING`
 
 ## Objective
 
@@ -63,8 +63,8 @@
   blocked，用户明确选择当前唯一会话时可绑定 URL且不重发，Work final 仍进入验收 prompt。
 - [ ] A06：Chrome focused CI、protected merge、canonical-main packaged crash-recovery
   journey，以及截图/完整视频/trace/report/logs evidence 全部绑定 exact SHA。
-- [ ] A07：精确 canonical main SHA 的 packaged Fabushi Release/Web Store delivery 已验证；
-  在此前保持 `IN_PROGRESS`。
+- [ ] A07：精确 canonical main SHA 的 packaged Fabushi Release 已验证；Chrome Web Store
+  版本 `0.6.0` 已提交审核但尚未公开发布，在审核完成前保持 `IN_PROGRESS`。
 
 ## Open-source-first survey and reuse decision
 
@@ -83,8 +83,8 @@ package 或 E2E。
 
 Parent PR [#2594](https://github.com/bhrumom/fabushi/pull/2594) 已通过 protected merge queue
 合并；本任务接受的 main SHA 为 `e60d40f4a97dcb319515abb2b46ef2845d4eb21b`，随后独立
-PR #2593 已将 canonical main 前进到 `31fdeca90bc8012e144b3ada00ca439891606e2c`（包含并
-保留本任务 SHA）。该任务接受 SHA 的 Chrome
+PR #2593、#2595 及后续 canonical main 变更已将当前 canonical main 前进到
+`6d9fc672f8163b1a4246e46e59691d0110ee9f0b`（包含并保留本任务 SHA）。该任务接受 SHA 的 Chrome
 package/journey run `34795268685` 成功，artifact `10329366885`；Electron packaged gate
 `34795268724`、Native mobile gate `34795268715`、Computer control security gate
 `34795268693`、Project portfolio governance `34795268701`、CI `34795233447` 均成功。
@@ -92,15 +92,17 @@ post-main delivery run `34796011272` / publish job `103829791736` 成功，发�
 [`desktop-1.2.64`](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.64) 目标 SHA
 正确，包含 macOS/Windows/Linux updater 资产及 Chrome `0.6.0` 精确包。
 
-Chrome Web Store workflow `34796377000` / job `103830176952` 成功校验 exact-main 包和
-SHA（版本 `0.6.0`、archive SHA-256
-`67f8d8fa5e292c45a361f89f68009e5ea175ede83c2b4d088f42498b66f8b117`），但在 API 调用前因
-`chrome-webstore` 受保护环境的 publisher/item/OAuth 凭据为空而 fail-closed；没有上传或
-发布商店版本。该次红色提交证据 artifact 为 `10329509377`。
+Chrome Web Store 发布凭据已写入受保护的 `chrome-web-store` 环境，Google Cloud 中的
+Chrome Web Store API 也已启用。精确包校验后，首次带凭据运行
+`34802232279` 因 API 尚未启用返回 403；启用后重试 `34802669055` 的包来源、版本和
+SHA 校验成功，但上传接口返回 400。Chrome Web Store 开发者后台随后核对到现有 Fabushi
+草稿已经包含版本 `0.6.0`，因此通过后台提交了该现有草稿；提交结果明确为“待审核”，并提示
+因 `host_permissions: <all_urls>` 可能进入深入审核。两次失败运行的脱敏证据分别为
+artifact `10331873115` 和 `10332215035`。
 
 Live Chrome crash/error-page 与附件/最终回复连续性现场证据仍未取得；因此 CWA-008 仍保持
-`IN_PROGRESS`，不把 GitHub Release 或轻量测试冒充 Chrome Web Store 已上架或真实崩溃旅程
-通过。
+`IN_PROGRESS / WEBS_STORE_PENDING_REVIEW / LIVE_CHROME_EVIDENCE_PENDING`，不把“待审核”
+冒充 Chrome Web Store 已公开上架或把轻量测试冒充真实崩溃旅程通过。
 
 ## Risks and next action
 
@@ -110,9 +112,8 @@ Live Chrome crash/error-page 与附件/最终回复连续性现场证据仍未�
   读取同源任务/IndexedDB。
 - Risk: 误把不确定发送当作可重发；token 保留、恢复确认窗口独立、用户明确恢复才允许当前
   唯一路由绑定。
-- Blocker: Chrome Web Store 正式提交需要由 release owner 配置受保护环境
-  `chrome-webstore` 的五项凭据；当前 workflow 已安全停止且未调用商店 API。
-- Next: 配置凭据后使用 exact main SHA
-  `e60d40f4a97dcb319515abb2b46ef2845d4eb21b` 重跑 Web Store workflow；随后补齐真实 Chrome
+- Blocker: Chrome Web Store 版本 `0.6.0` 已提交，当前状态为外部“待审核”；自动上传流程对
+  已存在的同版本草稿仍需做幂等处理，不能把 HTTP 400 当作可重复上传成功。
+- Next: 保留后台审核状态证据，审核通过后核验公开 listing/安装版本；同时补齐真实 Chrome
   崩溃/卡住恢复、附件连续和 final→acceptance 的逐步截图、完整视频、trace/report/logs，
   再关闭 CWA-R013..R018 的剩余现场门禁。
