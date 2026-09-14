@@ -18,6 +18,15 @@ reviewed_at=2026-08-22
 concepts=objective-oracles,attempt-journal,checkpoint-rewind,managed-worktrees,permission-memory,loop-protection,paused-workflows,subagent-guardrails,headless-acp,hooks-plugins,active-foreign-sessions,session-search,circuit-breaker,goal-queue-steering
 boundary=mahayana-owned-clean-contracts
 
+[source.hermes-agent]
+repository=https://github.com/NousResearch/hermes-agent.git
+license=MIT
+role=gateway-transcript-and-agent-capability-design-reference
+reviewed_commit=09b74dea642782da2bc24ecc3fafd340de8fc982
+reviewed_at=2026-09-14
+concepts=single-dispatcher-stdio-websocket,json-rpc,typed-gateway-events,per-session-seq,replay-epoch,bounded-replay,slow-client-isolation,message-interim,reasoning-parts,tool-lifecycle,approval-clarify-secret,subagents,terminal,browser,voice,acp,http-sse
+boundary=mahayana-owned-rust-contracts-no-hermes-runtime-dependency
+
 [product.mahayana]
 rule=public-contracts-and-state-machines-are-mahayana-owned
 vendor_types_allowed=adapter-boundaries-only
