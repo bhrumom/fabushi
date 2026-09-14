@@ -41,6 +41,7 @@ on:
       - "desktop/electron/host-process.cjs"
       - ".github/workflows/chrome-extension-web-store.yml"
       - ".github/workflows/chrome-extension-web-store-publish.yml"
+      - "ai-backend/src/miniapp_marketplace_catalog.js"
   workflow_dispatch:
 
 permissions:
