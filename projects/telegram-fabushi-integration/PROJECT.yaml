@@ -100,8 +100,16 @@ latest_release:
     host_pr: 2623
     host_merge_sha: b4d2d85fcd510c51d3dce646311d19c81e6c7403
     release_diagnostics_pr: 2624
-    records_branch: codex/tfi-userscript-release-readback-20260914
-    canonical_main_sha: 1e63a8cf14697107af62948d713cff120679694f
+    records_branch: codex/tfi-local-chrome-release-evidence-20260914
+    canonical_main_sha: 396a842c7e00b8ad7c236d84cabc9230ed88d391
     chrome_version: 0.6.2
+    chrome_package_run: 34842044140
+    chrome_package_artifact: fabushi-chrome-web-store-396a842c7e00b8ad7c236d84cabc9230ed88d391
+    chrome_package_sha256: fcb28edd264facb0940bc1a61366954743f72ced557a72ae79cf96e5325b58ce
+    post_main_run: 34843041788
+    desktop_release: desktop-1.2.65-396a842c7e00
+    local_chrome_path: /Users/gloriachan/Downloads/fabushi-0.3.0
+    local_chrome_version: 0.6.2
+    local_chrome_backup: /Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.4.1-20260914
     state: IN_PROGRESS
-    blocker: Chrome Web Store item has an existing submission in review; current unpacked Chrome extension is 0.4.1 pending confirmed reload
+    blocker: Chrome Web Store item has an existing submission in review; public 0.6.2 upload remains blocked (NOT_UPDATEABLE)

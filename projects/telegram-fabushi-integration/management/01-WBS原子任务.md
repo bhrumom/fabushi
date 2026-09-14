@@ -282,3 +282,12 @@
 | 宿主 tab-navigation-guard 与 renderer crash/unloaded 防护 | 已实现/已验证 | 父 PR #2623 → main b4d2d85；Chrome run 34839358565 |
 | 精确主 SHA 打包、证据与发布物 | 已通过 | post-main run 34840407940；Chrome 0.6.2 包含截图、视频、trace、HTML/report、日志 |
 | Web Store 提交与当前 Chrome 更新 | 进行中 | publisher runs 34840738917/34841285781：条目已有审核中提交；当前 Chrome 0.4.1 待确认重载 |
+
+## 2026-09-14 TFI-USERSCRIPT-RECOVERY-014 最终发布与本机回读
+
+- [x] source v2.9.24、host Chrome 0.6.2、parent protected-main 与 exact-main packaged journey 完成。
+- [x] final canonical main `396a842c7e00b8ad7c236d84cabc9230ed88d391` 的 Chrome package run `34842044140` 与 post-main run `34843041788` 完成；Release 含 Chrome ZIP/manifest/checksum。
+- [x] 当前 Chrome 未打包扩展已重载并回读 v0.6.2；旧版备份可回滚。
+- [ ] Web Store 现有审核提交仍锁定 item，公开 0.6.2 发布等待审核完成或单独明确的取消决定。
+
+当前状态：`IN_PROGRESS / LOCAL_CHROME_0.6.2_VERIFIED / WEB_STORE_REVIEW_PENDING`。

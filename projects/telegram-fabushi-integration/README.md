@@ -81,5 +81,12 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 - userscript PR #19 已合并，v2.9.24 Release 已发布：<https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.24>。
 - Fabushi PR #2623 已合并到 `main@b4d2d85fcd510c51d3dce646311d19c81e6c7403`；发布诊断 PR #2624 已合并到 `main@1e63a8cf14697107af62948d713cff120679694f`。
 - Chrome 0.6.2 的 exact-main 打包/模拟用户旅程、跨平台安全与 post-main 交付均已通过；证据含步骤截图、完整视频、trace、HTML/report 和日志。
-- 当前仍为 IN_PROGRESS：Chrome Web Store 条目已有提交处于审核中，API 返回 `FAILED_PRECONDITION/NOT_UPDATEABLE`，因此未重复取消或覆盖已有审核；当前 Chrome 未打包副本仍显示 0.4.1，等待用户确认后重载精确 CI 包并回读 0.6.2。
+- 当前仍为 IN_PROGRESS：Chrome Web Store 条目已有提交处于审核中，API 返回 `FAILED_PRECONDITION/NOT_UPDATEABLE`，因此未重复取消或覆盖已有审核；当前 Chrome 未打包副本已在用户确认后替换并重载，扩展页与 Service Worker 控制台回读为 0.6.2，旧版备份保留在 `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.4.1-20260914`。
 - 权威任务记录：`management/tasks/TFI-USERSCRIPT-RECOVERY-014-renderer-crash-guard.md`。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-014 最终 main 发布与 Chrome 本机回读
+
+- 最终 canonical main 为 `396a842c7e00b8ad7c236d84cabc9230ed88d391`；Chrome exact-main package run `34842044140` 成功，ZIP 为 113355 bytes，SHA-256 `fcb28edd264facb0940bc1a61366954743f72ced557a72ae79cf96e5325b58ce`。
+- post-main run `34843041788` 成功，GitHub Release [desktop-1.2.65-396a842c7e00](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65-396a842c7e00) 已绑定该 SHA，并包含 Chrome 0.6.2 包、内容清单和 SHA256SUMS。
+- 用户确认后，当前 Chrome 未打包扩展目录已从 v0.4.1 替换为精确 CI 包并重载；扩展详情页与 Service Worker 控制台均回读 v0.6.2。旧版可从 `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.4.1-20260914` 回滚。
+- Web Store 仍保持 `IN_PROGRESS / PENDING_REVIEW`：已有提交占用 item，未取消审核，也未把本地未打包扩展升级误报为商店公开发布。
