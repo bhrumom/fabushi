@@ -43,15 +43,23 @@
 
 - source 仓库：`bhrumom/fabushi-chatgpt-auto-confirm-userscript`
 - source 基线：`main@a6a8a74b339176d044d2a8090ae996ec9c17b739`（2.9.21）
-- source 分支：待创建
+- source 分支：`codex/memory-pressure-2.9.22`
+- source PR：[#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/17)，head `3d23d8cc78931dceecb4d647706766470224f81b`，当前 OPEN
 - host 仓库：`bhrumom/fabushi`
 - host 基线：`main@b07ccff486d9c0f2b659460ac3a79a654c9eb3dc`
 - host 分支：`codex/tfi-userscript-memory-20260914`
-- source PR/CI/merge：待完成
-- host PR/CI/merge：待完成
+- source PR/CI/merge：PR #17 已创建；CI/protected merge/source-main readback 待完成
+- host PR/CI/merge：PR #2607 已创建，head `0c16f0a52872e2efea9ed80c8de031ab1e70c081`；CI/protected merge/canonical readback 待完成
 - Release/Chrome Web Store：本轮未授权，待完成门禁及用户明确发布授权
 - local heavy build/test：禁止；GitHub Actions 是重型验证权威
 
 ## 当前下一步
 
-先完成 source userscript 与 host MV3 消息桥接，再补齐本项目 WBS/验收/风险/依赖/状态/变更和证据索引，提交 source/host PR；通过 protected merge 和 required CI 后再决定是否需要发布/现场验收。
+source userscript 与 host MV3 消息桥接已完成，项目 WBS/验收/风险/依赖/状态/变更和证据索引已补齐；下一步是通过 source/host protected merge 和 required CI，随后执行 exact-main packaged/Chrome 现场验收，再按用户授权决定是否发布。
+
+## 本轮实现摘要
+
+- 脚本端：任务消息限制为 80 条/条 12,000 字符/总计约 320,000 字符；附件 dispatch input 改为 WeakRef；统一生命周期监听并释放 idle preview URL/观察上下文。
+- 诊断端：优先读取 Chromium `performance.memory`；连续两次 high pressure 才请求宿主；手动按钮与 `memory_status` / `cleanup_memory` 工具复用同一安全链路。
+- 宿主端：新增 `tab-memory.request` 能力；只接受已启用的 ChatGPT 自动确认脚本，使用 `sender.tab.id` 再读取真实标签页；活动页、草稿、待上传附件、发送/上传/导航/授权任务和冷却期均拒绝 discard。
+- 交付端：本轮没有公开 Release/Chrome Web Store 授权；host/application 重型构建与 E2E 必须走 GitHub Actions。

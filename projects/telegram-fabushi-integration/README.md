@@ -59,3 +59,11 @@
 - source PR [#16](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/16) 已创建，当前 head `53102aad173091cd8629caf4a1e761f7ad2d64d7`。
 - source 2.9.21 在本地轻量检查中 `node --check` 通过，userscript regression `108/108` 通过。
 - 当前仍为 IN_PROGRESS：PR CI、protected source main、Release 和真实 Chrome 视觉/trace 证据待闭合；本轮没有将新版本标记为已公开上线。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-013 内存感知与宿主回收
+
+本轮将“脚本无法直接释放整个标签页进程内存”的边界落实为双层机制：脚本有界清理自身日志、弱引用和临时资源；Chromium MV3 宿主在安全时机调用标签页卸载能力，激活后沿用既有恢复链路。
+
+- source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/17)（head `3d23d8cc78931dceecb4d647706766470224f81b`）和 host PR [#2607](https://github.com/bhrumom/fabushi/pull/2607) 已创建。
+- userscript 2.9.22 本地轻量回归 `111/111` 通过；host 端已加入专用 `tab-memory.request`、安全策略和 `chrome.tabs.discard()` 桥接。
+- 当前仍为 IN_PROGRESS：source/host CI、protected main、canonical packaged/Chrome 证据和用户明确的公开发布授权待闭合；本轮没有宣称公开上线。

@@ -24,3 +24,10 @@ userscript source 与 Chrome MV3 host 均属于可运行产品输入；不能以
 ## 安全边界
 
 宿主请求不携带目标文本、会话链接、恢复 token、附件元数据或附件字节；宿主使用消息发送方的 tab id，不信任页面 payload 中的 tab id。活动标签页、危险操作和冷却状态 fail-closed。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-013 evidence update
+
+- source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/17)，head `3d23d8cc78931dceecb4d647706766470224f81b`，版本 2.9.22；host PR [#2607](https://github.com/bhrumom/fabushi/pull/2607)，head `0c16f0a52872e2efea9ed80c8de031ab1e70c081`。
+- source 端 `npm test`、userscript syntax check 与 diff check 已通过；轻量回归为 111/111。
+- host 端静态 contract/policy 已写入 PR，尚待 GitHub Actions；本地不执行重型构建/E2E。
+- 后续 evidence 必须绑定 exact source/host main SHA、版本、workflow run/job、浏览器时间、任务标识，并保留分步截图、完整视频、trace/report/diagnostics。

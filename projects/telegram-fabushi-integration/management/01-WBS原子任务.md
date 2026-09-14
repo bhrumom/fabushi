@@ -234,3 +234,15 @@
 - [ ] `TFI-USR-TASK-006` 登录态 Chrome 完成单项暂停/继续、其他任务连续运行、详情和删除的分步截图、完整视频、trace/diagnostics。
 
 当前状态：`IN_PROGRESS / SOURCE_PR_OPEN / LIVE_EVIDENCE_PENDING`；仅限独立 userscript，不触发 Fabushi 应用构建门禁。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-013 内存感知与宿主标签页回收
+
+- [x] `TFI-USR-MEM-001` 记录 5.7GB 现象、JS heap 与 renderer/RSS 边界，并完成 Chromium/成熟开源方案调查。
+- [x] `TFI-USR-MEM-002` userscript 增加任务日志有界化、弱引用附件输入、监听器/临时 URL 生命周期清理与内存压力诊断。
+- [x] `TFI-USR-MEM-003` userscript 增加连续高压采样、手动清理入口、脱敏 `tab-memory.request` 与 `memory_status/cleanup_memory` 工具。
+- [x] `TFI-USR-MEM-004` MV3 host 增加能力校验、真实 sender tab 校验、安全状态屏障、冷却和 `chrome.tabs.discard()`。
+- [x] `TFI-USR-MEM-005` source PR #17、host PR #2607 与任务证据索引已建立；source 111/111 本地轻量回归通过。
+- [ ] `TFI-USR-MEM-006` source/host CI、protected main 与 canonical readback。
+- [ ] `TFI-USR-MEM-007` exact-main packaged/Chrome 现场证据及按授权执行的发布回读。
+
+当前状态：`IN_PROGRESS / SOURCE_PR_OPEN / HOST_PR_OPEN / LIVE_EVIDENCE_PENDING`；不运行本地重型构建或应用 E2E。
