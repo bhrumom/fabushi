@@ -210,7 +210,11 @@ impl ReplayStore {
                     .collect(),
             };
         }
-        let latest_seq = self.forgotten_latest.get(session_id).copied().unwrap_or_default();
+        let latest_seq = self
+            .forgotten_latest
+            .get(session_id)
+            .copied()
+            .unwrap_or_default();
         ReplaySlice {
             replay_epoch: self.epoch.clone(),
             session_id: session_id.to_string(),
@@ -223,7 +227,11 @@ impl ReplayStore {
 
     fn ensure_session(&mut self, session_id: &str) {
         if self.sessions.contains_key(session_id) {
-            if let Some(index) = self.session_order.iter().position(|item| item == session_id) {
+            if let Some(index) = self
+                .session_order
+                .iter()
+                .position(|item| item == session_id)
+            {
                 self.session_order.remove(index);
             }
             self.session_order.push_back(session_id.to_string());
@@ -278,7 +286,8 @@ pub struct RuntimeProjection {
 
 impl RuntimeProjection {
     pub fn register_turn(&mut self, turn_id: impl Into<String>, session_id: impl Into<String>) {
-        self.sessions_by_turn.insert(turn_id.into(), session_id.into());
+        self.sessions_by_turn
+            .insert(turn_id.into(), session_id.into());
     }
 
     fn forget_turn(&mut self, turn_id: &str) {
@@ -308,7 +317,10 @@ impl RuntimeProjection {
                     json!({ "text": delta }),
                 )]
             }
-            RuntimeEvent::MessageCompleted { operation_id, message } => {
+            RuntimeEvent::MessageCompleted {
+                operation_id,
+                message,
+            } => {
                 self.register_turn(operation_id.0.clone(), message.conversation_id.0.clone());
                 if message.role != MessageRole::Assistant {
                     return Vec::new();
@@ -325,7 +337,10 @@ impl RuntimeProjection {
                     }),
                 )]
             }
-            RuntimeEvent::ModelUsageUpdated { operation_id, usage } => self.turn_draft(
+            RuntimeEvent::ModelUsageUpdated {
+                operation_id,
+                usage,
+            } => self.turn_draft(
                 operation_id.0.as_str(),
                 timestamp_ms,
                 "session.usage",
@@ -388,7 +403,9 @@ impl RuntimeProjection {
                 }
                 let event_type = match status {
                     RuntimeActivityStatus::Running => "tool.start",
-                    RuntimeActivityStatus::Completed | RuntimeActivityStatus::Failed => "tool.complete",
+                    RuntimeActivityStatus::Completed | RuntimeActivityStatus::Failed => {
+                        "tool.complete"
+                    }
                 };
                 self.turn_draft(
                     operation_id.0.as_str(),
@@ -559,7 +576,11 @@ mod tests {
         assert!(!slice.truncated);
         assert_eq!(slice.latest_seq, 3);
         assert_eq!(
-            slice.events.iter().map(|event| event.seq).collect::<Vec<_>>(),
+            slice
+                .events
+                .iter()
+                .map(|event| event.seq)
+                .collect::<Vec<_>>(),
             vec![2, 3]
         );
     }
