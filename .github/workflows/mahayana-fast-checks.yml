@@ -5,7 +5,9 @@ on:
     paths:
       - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
+      - frontend/apps/web/src/lib/mahayana-host/gateway-events.ts
       - scripts/check-mahayana-source-boundary.py
+      - .github/scripts/check-mahayana-gateway-event-drift.py
       - .github/workflows/mahayana-fast-checks.yml
   push:
     branches:
@@ -13,7 +15,9 @@ on:
     paths:
       - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
+      - frontend/apps/web/src/lib/mahayana-host/gateway-events.ts
       - scripts/check-mahayana-source-boundary.py
+      - .github/scripts/check-mahayana-gateway-event-drift.py
       - .github/workflows/mahayana-fast-checks.yml
   workflow_dispatch:
 
@@ -42,10 +46,15 @@ jobs:
           sparse-checkout: |
             /native/mahayana-messaging/**
             /third_party/mahayana/**
+            /frontend/apps/web/src/lib/mahayana-host/gateway-events.ts
             /scripts/check-mahayana-source-boundary.py
+            /.github/scripts/check-mahayana-gateway-event-drift.py
 
       - name: Verify Mahayana source ownership boundary
         run: python3 ../../../scripts/check-mahayana-source-boundary.py
+
+      - name: Verify Rust and TypeScript gateway event catalogs match
+        run: python3 ../../../.github/scripts/check-mahayana-gateway-event-drift.py
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
