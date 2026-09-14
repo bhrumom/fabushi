@@ -136,6 +136,7 @@ jobs:
       - name: Test protocol and MiniApp bridge
         run: >-
           cargo test
+          -p mahayana-gateway-protocol
           -p mahayana-miniapp-protocol
           -p mahayana-miniapp-bridge
           -p mahayana-host-protocol
