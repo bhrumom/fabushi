@@ -227,31 +227,11 @@
   animation: inline-agent-spin 900ms linear infinite;
 }
 
+/* Once an assistant article is bound to this Mahayana run, the ordered turn
+   parts become the single visual representation. The original flat Messenger
+   article remains in the DOM as a compatibility/persistence projection only. */
 :global(article[data-agent-final-output='true']) {
-  width: min(820px, calc(100% - 36px)) !important;
-  max-width: min(820px, calc(100% - 36px)) !important;
-  margin: 0 auto 18px !important;
-  padding: 2px 2px 4px !important;
-  align-self: stretch !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-:global(article[data-agent-final-output='true'] > p) {
-  margin: 0 !important;
-  color: rgba(255, 255, 255, 0.86) !important;
-  font-size: 12.5px !important;
-  line-height: 1.62 !important;
-  white-space: pre-wrap;
-}
-
-:global(article[data-agent-final-output='true'] > small) {
-  margin-top: 7px !important;
-  display: flex !important;
-  justify-content: flex-end;
-  color: rgba(255, 255, 255, 0.24) !important;
+  display: none !important;
 }
 
 @keyframes inline-agent-spin {
@@ -259,8 +239,7 @@
 }
 
 @media (max-width: 760px) {
-  .turnParts,
-  :global(article[data-agent-final-output='true']) {
+  .turnParts {
     width: calc(100% - 20px) !important;
     max-width: calc(100% - 20px) !important;
   }
