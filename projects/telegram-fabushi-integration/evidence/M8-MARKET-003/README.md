@@ -5,6 +5,7 @@
 - **Task**: `M8-MARKET-003`
 - **Product implementation branch**: `codex/tfi-miniapp-unified-install-update-20260913`
 - **Records branch**: `codex/tfi-market-003-record-closure-20260914`
+- **Records PR / canonical records SHA**: [#2600](https://github.com/bhrumom/fabushi/pull/2600) → `b0ac0efb822398b658464ab1b559fd4ca41f004d`
 - **Implementation / repair commits**: `3cd8ba783`, `cc23420c56c98f7857b731832281c212203ce60c`, `85b3a8b258269e9d4e234e648d086653146ffc82`
 - **Accepted product SHA**: `f6a0d99c85a481999298a18cada6a9f10718a360`
 - **Test release**: `1.2.65`
@@ -72,6 +73,6 @@ The earlier exact-main Electron failure (`stale_app_surface_generation`) was ret
 
 ## 结果
 
-`M8-MARKET-003` 的 `PR → protected main → exact canonical SHA → packaged E2E/evidence → Release` 已闭合。Release [desktop-1.2.65](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65) 于 `2026-09-14T02:50:58Z` 发布，`target_commitish` 精确等于 `f6a0d99c85a481999298a18cada6a9f10718a360`，并包含 macOS DMG/ZIP、`latest-mac.yml`、blockmap、Windows/Linux 安装包与 updater metadata、SHA256 manifests 及 Chrome 包/content manifest。
+`M8-MARKET-003` 的 `PR → protected main → exact canonical SHA → packaged E2E/evidence → Release` 已闭合。产品 Release [desktop-1.2.65](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65) 于 `2026-09-14T02:50:58Z` 发布，`target_commitish` 精确等于 `f6a0d99c85a481999298a18cada6a9f10718a360`，并包含 macOS DMG/ZIP、`latest-mac.yml`、blockmap、Windows/Linux 安装包与 updater metadata、SHA256 manifests 及 Chrome 包/content manifest。随后项目记录 PR [#2600](https://github.com/bhrumom/fabushi/pull/2600) 合并为 canonical records `main@b0ac0efb822398b658464ab1b559fd4ca41f004d`。
 
 最终 Release 自引用检查通过：`SHA256SUMS.txt` 与 `fabushi-chrome-SHA256SUMS.txt` 均不把自身列入校验；Linux/macOS/Windows delivery manifests 的版本、source SHA 一致为 `1.2.65` / `f6a0d99c…`。旧客户端 updater 下载/安装/重启回归未运行，因为它按本任务策略属于 advisory、非必需门禁；Chrome Web Store 真实公开提交同样未尝试，受保护凭据缺失不影响本次测试 Release。
