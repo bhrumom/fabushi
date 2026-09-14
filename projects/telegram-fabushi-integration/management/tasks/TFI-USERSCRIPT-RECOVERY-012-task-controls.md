@@ -42,16 +42,16 @@
 
 - 源仓库：`bhrumom/fabushi-chatgpt-auto-confirm-userscript`
 - 基线：`main@579c5204734afe21d366018d4ee16b5c6d3fb6ce`（2.9.20）
-- 分支：待创建（建议 `codex/task-controls-2.9.21`）
-- commit / PR：待实现
-- source CI / exact-main readback：待实现
+- 分支：`codex/task-controls-2.9.21`
+- source PR [#16](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/16) 已合并；合并后的 source main：`a6a8a74b339176d044d2a8090ae996ec9c17b739`
+- source PR CI：workflow run `34807761856` / job `103862862189`，`userscript` PASS；source main 已回读为 `a6a8a74b339176d044d2a8090ae996ec9c17b739`，raw-main 版本 `2.9.21`
 - Release：用户尚未要求本轮公开发布，待明确发布后执行；不得把未发布状态写成已上线。
 - Chrome 现场截图/完整视频/trace：待 source Release 后安装现场验收。
 - Fabushi packaged delivery：`N/A`，原因是本轮只改独立 userscript，不改变 Fabushi 可打包应用。
 
 ## 当前下一步
 
-完成状态/UI 改造和轻量回归；随后提交 source PR，等待 CI/评审并回写本任务证据。发布新版本前保留用户确认边界。
+代码、source PR/CI 和 source main 回读已完成；下一步是获得明确发布授权后创建 `v2.9.21` Release，并进行真实 Chrome 现场验收。
 
 
 ## 实现结果（2026-09-14）
@@ -60,4 +60,12 @@
 - 已完成防回归：暂停/取消中的异步检查不再继续副作用，也不会把人为暂停误写为 blocked；单任务继续不会恢复其他暂停任务。
 - source branch：codex/task-controls-2.9.21；source PR：#16；commit：53102aad173091cd8629caf4a1e761f7ad2d64d7。
 - 轻量验证：node --check 通过；npm test 108/108 通过。
-- 当前状态仍为 IN_PROGRESS：source PR/CI、protected main、source Release 和真实 Chrome 证据尚未闭合；公开发布未获本轮单独授权。
+- 当前状态仍为 IN_PROGRESS：source PR #16 已合并，source Release 和真实 Chrome 证据尚未闭合；公开发布未获本轮单独授权。
+
+
+## 合并后 source-main 回读（2026-09-14）
+
+- source PR [#16](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/16) 已通过检查并以 squash merge 合并。
+- canonical source main：`a6a8a74b339176d044d2a8090ae996ec9c17b739`；userscript raw-main header 已确认版本 `2.9.21`。
+- PR CI：run `34807761856` / job `103862862189`，`userscript` conclusion=`success`。
+- 仍待完成：用户明确授权后的 GitHub Release `v2.9.21`、Release/raw-main 资产回读，以及登录态 Chrome 的截图/完整视频/trace。Fabushi packaged delivery 继续为 `N/A`。

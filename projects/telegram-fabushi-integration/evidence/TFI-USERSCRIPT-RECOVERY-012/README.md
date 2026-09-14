@@ -1,6 +1,6 @@
 # TFI-USERSCRIPT-RECOVERY-012 证据索引
 
-本目录保存任务级暂停、详情和删除修复的持久化证据。当前状态：`IMPLEMENTING`。
+本目录保存任务级暂停、详情和删除修复的持久化证据。当前状态：`IN_PROGRESS`。
 
 ## 已确认
 
@@ -11,8 +11,8 @@
 
 ## 待补证据
 
-- source branch / commit / PR / review。
-- source PR CI 与 exact-main CI run/job。
+- source Release tag、source-main 发布资产和真实 Chrome 现场证据。
+- （已完成）source PR CI 与 source-main exact readback。
 - 轻量回归报告（含测试总数）。
 - source Release tag、target SHA 和 raw-main 版本。
 - 登录态 Chrome 中的逐步截图、完整操作视频、trace/diagnostics；这些必须绑定 source main SHA、版本、浏览器时间和任务标识。
@@ -30,3 +30,11 @@ Fabushi packaged build/Electron/mobile post-main delivery 对本轮为 `N/A`；�
 - 本地轻量验证：`node --check chatgpt-auto-confirm.user.js` PASS；`npm test` PASS，108/108。
 - 新增回归覆盖：选中任务顶部暂停、设置中的全局暂停、行级详情、行级暂停/继续/恢复、取消隔离、活跃任务删除禁用、暂停/取消后单项删除以及异步暂停不转 blocked。
 - source PR CI：待回读；source protected main、Release `v2.9.21`、raw-main、真实 Chrome 视觉/视频/trace：待完成。
+
+
+## 合并后回读（2026-09-14）
+
+- source PR [#16](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/16) 已合并。
+- canonical source main：`a6a8a74b339176d044d2a8090ae996ec9c17b739`；raw-main userscript 版本：`2.9.21`。
+- CI：run `34807761856` / job `103862862189`，`userscript=success`。
+- 待完成门禁：明确发布授权、Release `v2.9.21` 与资产/版本回读、登录态 Chrome 逐步截图/完整视频/trace。
