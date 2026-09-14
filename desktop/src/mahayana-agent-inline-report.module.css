@@ -229,8 +229,12 @@
 
 /* Once an assistant article is bound to this Mahayana run, the ordered turn
    parts become the single visual representation. The original flat Messenger
-   article remains in the DOM as a compatibility/persistence projection only. */
-:global(article[data-agent-final-output='true']) {
+   article remains in the DOM as a compatibility/persistence projection only.
+   The adjacent-sibling rule keeps the original streaming row suppressed even
+   after an interim segment is sealed and the newest segment no longer equals
+   the flat Messenger text byte-for-byte. */
+:global(article[data-agent-final-output='true']),
+:global(#mahayana-agent-inline-report-portal + article[class*='_messagePeer_']) {
   display: none !important;
 }
 
