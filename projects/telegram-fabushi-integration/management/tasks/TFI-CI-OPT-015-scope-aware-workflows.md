@@ -78,3 +78,11 @@
 - test change: chatgpt-vps-control/chrome-platform/README.md plus this task record; no Rust, Worker, Electron, GBF, backend, Web Mini App or commerce source changed.
 - expected selection: Chrome package and Computer Control Node security remain relevant; Computer Control Rust/platform-worker/Linux desktop, Electron platform, GBF closure and Global Dharma backend/web/commerce are skipped while their workflow/scope/result contexts remain present.
 - status: awaiting Actions scope/skipped evidence.
+
+
+## 2026-09-14 — Chrome-only scope proof r2
+
+- base main: e525adb298066ab4e234cacca51525f921bb6736 (policy plus stable Electron skipped-name fallback).
+- fixture: documentation-only change under chatgpt-vps-control/chrome-platform/.
+- expected result: Electron Linux must remain a named skipped check; Computer Control Rust/platform-worker/Linux desktop, GBF closure and Global Dharma service jobs must remain skipped; Chrome package and Node security remain selected.
+- status: awaiting final Actions readback.
