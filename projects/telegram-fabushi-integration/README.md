@@ -90,3 +90,11 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 - post-main run `34843041788` 成功，GitHub Release [desktop-1.2.65-396a842c7e00](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65-396a842c7e00) 已绑定该 SHA，并包含 Chrome 0.6.2 包、内容清单和 SHA256SUMS。
 - 用户确认后，当前 Chrome 未打包扩展目录已从 v0.4.1 替换为精确 CI 包并重载；扩展详情页与 Service Worker 控制台均回读 v0.6.2。旧版可从 `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.4.1-20260914` 回滚。
 - Web Store 仍保持 `IN_PROGRESS / PENDING_REVIEW`：已有提交占用 item，未取消审核，也未把本地未打包扩展升级误报为商店公开发布。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-016 公平持续调度与执行器自愈
+
+本轮针对“等待冷却不续做、多个任务不轮换、打开会话即暂停、页面换代后假运行”的用户反馈，采用按任务可运行时间调度的 delayed-set 语义：一个任务的导航保护/退避/发送节流只延迟它自己，其他可运行任务继续轮询；全部延迟时只睡到最早唤醒点。打开已记录会话只写入代际绑定的 inspect ticket，不再改变任务状态。旧页面 Web Lock 短暂存在时，新实例进行有界接管并自动恢复扫描。
+
+- source userscript PR [#22](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/22) 与版本对齐 PR [#23](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/23) 已合并；canonical source main `480ebe61ba039f15e7023bbc0253ea23c373aba0`，Release `v2.9.30`，资产 `224113` bytes / SHA-256 `d15040a5d420b0fa4cc38b195f178143a2d22a166e3357f88c7159c6b7a3b14a`；source CI 已通过。
+- parent clean branch 已同步该精确脚本，并将 Chrome 扩展从 canonical `0.6.4` 递增到 `0.6.5`，同时更新 Marketplace 的 sourceRef、版本、大小和哈希；父 PR、protected main、exact-main packaged journey、证据和 Release 仍待完成。
+- 任务记录：`management/tasks/TFI-USERSCRIPT-RECOVERY-016-fair-continuous-scheduler.md`；当前状态 `IN_PROGRESS`，不把 source Release 或本地静态检查当作产品交付完成。

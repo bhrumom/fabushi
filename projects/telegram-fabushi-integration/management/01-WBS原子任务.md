@@ -311,3 +311,12 @@
 | TFI-CI-OPT-015 | FAB-P0001 / TFI | 为安全、桌面、GBF 与 Global Dharma 工作流增加 changed-path scope，跳过未受影响的重矩阵并保留稳定检查名 | IN_PROGRESS | task record；开源调查 dorny/paths-filter；workflow implementation branch | PR Actions 验证 scope、skipped 聚合、merge_group 与 main push 行为 |
 
 验收约束：Chrome-only 变更不启动 Computer Control Rust/platform-worker/Linux desktop、Electron PR journey、GBF closure 与无关 Global Dharma 依赖；workflow/scope/security boundary 变更保守全量；main 发布路径不变。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-016 公平持续调度
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-016 | FAB-P0001 / TFI | 按任务 eligibility/最早唤醒点公平轮换；区分限流、导航保护和普通退避；查看会话不中断；旧 runner lock 有界接管 | IN_PROGRESS | source main `480ebe61` / v2.9.30 / PR #22/#23；source CI 通过；parent branch 已同步，Chrome 0.6.5 | parent PR Actions/protected main；exact-main Chrome package + simulated-user evidence + Release |
+
+- `TFI-USR-SCHED-R01..R06` 已在 source 侧实现并有 focused/full regression；parent bundle/Chrome packaged journey 尚未验证。
+- 本任务继续保留单页前台写操作互斥，不以并行任务为由允许同一 composer 的发送、上传、授权或未确认派发并发。
