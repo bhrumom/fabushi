@@ -9,5 +9,5 @@
 | CWA-005 | Add command parity/generation/Marketplace catalog | CWA-003/004 | contract/security tests | PR-passed | canonical CI |
 | CWA-006 | Package, release and migrate Chrome profiles | CWA-005 + protected main | exact SHA CI/E2E/Release/profile evidence | in-progress | protected PR checks |
 
-| CWA-007 | Official Chrome login and same-account MCP browser control | CWA-006/AAC/gateway | CWA-R009..R012; exact-SHA CI/release | in-progress | Review auth transport and implement |
+| CWA-007 | Official Chrome login and same-account MCP browser control plus GitHub Actions remote manual test | CWA-006/AAC/gateway/interactive Runner | CWA-R009..R012, CWA-R019..R021; exact-SHA CI/release/remote evidence | in-progress | Restore connector access, run remote Runner manual gate |
 | CWA-008 | Userscript tab-recovery capability and crash watchdog | CWA-006 + TFI-USERSCRIPT-RECOVERY-011 | CWA-R013..R018; exact-SHA package/E2E/release | in-progress / Web Store pending review | Await review; capture live crash-recovery evidence and public listing proof |
