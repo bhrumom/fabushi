@@ -17,10 +17,11 @@ Fabushi 0.6.0 扩展同时承载产品 UI、桌面账户桥、现有 Chrome 的 
 ## Verified state and next gate
 
 The task branch contains the first-class MV3 package, two isolated native bridges,
-generation-bound tab claims, the legacy command/event contract tests, and the bundled Task
-Queue userscript. The PR Chrome packaged journey and static/security checks are green; the
-next gate is protected merge plus canonical-main packaged Electron/Chrome E2E. Release and
-local profile migration remain pending.
+generation-bound tab claims, the legacy command/event contract tests, the bundled Task
+Queue userscript, and the explicit userscript `tab-recovery` capability/watchdog. Lightweight
+static/security/contract checks are green; the next gate is protected merge plus
+canonical-main packaged Electron/Chrome E2E. Release and local profile migration remain
+pending.
 
 CWA-007 adds independent Fabushi account login and account-scoped official MCP
 browser registration in the 0.6.0 change stream. PR, CI, canonical package/E2E,
@@ -35,4 +36,4 @@ Out of scope: copying official ChatGPT bookmarks/history/sidebar features or del
 Computer Use runtime/native accessibility helpers.
 
 Start with SOURCE_OF_TRUTH.md, then PROJECT.yaml, docs, management records, ADRs,
-evidence and runbooks. Active tasks are CWA-006 and CWA-007 under management/tasks/.
+evidence and runbooks. Active tasks are CWA-006, CWA-007 and CWA-008 under management/tasks/.

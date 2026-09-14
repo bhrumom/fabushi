@@ -32,6 +32,7 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   const runner = await source("userscript-runner.js");
   const core = await source("userscript-core.js");
   const content = await source("userscript-content.js");
+  const recovery = await source("userscript-recovery.js");
   const app = await source("app.js");
   for (const message of ["fabushi.userscript.list", "fabushi.userscript.install", "fabushi.userscript.setEnabled", "fabushi.userscript.uninstall", "fabushi.userscript.pageReady", "fabushi.userscript.request"]) assert.match(runner, new RegExp(message.replaceAll(".", "\\.")));
   assert.match(runner, /chrome\.runtime\.onStartup/);
@@ -41,6 +42,14 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   assert.match(core, /forbiddenDirectives/);
   assert.match(core, /dynamic WebAssembly/);
   assert.match(content, /fabushi\.userscript\.pageReady/);
+  assert.match(content, /fabushi\.userscript\.recovery\.request/);
+  assert.match(content, /recovery-capability\.granted/);
+  assert.match(recovery, /chrome\.alarms\.onAlarm/);
+  assert.match(recovery, /chrome\.tabs\.onUpdated/);
+  assert.match(recovery, /chrome\.tabs\.onRemoved/);
+  assert.match(recovery, /chrome-error/);
+  assert.match(recovery, /tab-recovery/);
+  assert.doesNotMatch(recovery, /goal|prompt|file\s*:/i);
   assert.match(app, /userscript-chatgpt-task-queue/);
   assert.match(app, /fabushi\.userscript\.install/);
 });

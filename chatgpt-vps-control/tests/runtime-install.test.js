@@ -40,6 +40,7 @@ async function createRuntimeSource(root) {
     "service-worker.js",
     "platform-bridge.js",
     "browser-control.js",
+    "userscript-recovery.js",
     "userscript-core.js",
     "userscript-runner.js",
     "userscript-content.js",

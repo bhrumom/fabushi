@@ -9,3 +9,9 @@ detach、下载超时和平台请求失败，但不记录密码、Cookie、token
 记录 cache hit/miss、来源 SHA、包校验和、测试与 evidence artifact。运行恢复步骤
 见 runbooks/chrome-migration.md；无独立生产 dashboard 时以桌面 Host lifecycle 和
 CI evidence 为权威遥测。
+
+userscript recovery 的可观测字段限于 capability grant/deny、lease expiry、检测原因、
+原标签 reload/takeover 动作、恢复次数和最终状态；不记录目标正文、prompt、附件字节或
+凭证。当前目标为检测到异常后一次有界恢复，连续失败进入可见任务状态并保留 token，禁止
+watchdog 无界刷新或重开。精确延迟、成功率和误恢复率在 canonical-main packaged journey
+与真实 Chrome 样本后建立基线。

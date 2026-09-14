@@ -45,6 +45,8 @@ active_work:
     state: IN_PROGRESS
   - task: TFI-USERSCRIPT-RECOVERY-010
     state: IN_PROGRESS
+  - task: TFI-USERSCRIPT-RECOVERY-011
+    state: IN_PROGRESS
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001
