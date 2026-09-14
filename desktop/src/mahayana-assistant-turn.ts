@@ -104,7 +104,7 @@ function visibleText(parts: AssistantTurnPart[]): string {
  * text fragment with the final message, which destroyed that ordering.
  */
 function reconcileLegacyFinalText(turn: AssistantTurn, finalText: string): AssistantTurnPart[] {
-  const parts = sealStreamingParts(turn.parts.filter((part) => part.id !== partId(turn, 'thinking')));
+  const parts = sealStreamingParts(turn.parts);
   if (!finalText) return parts;
 
   const emittedText = visibleText(parts);
@@ -185,7 +185,7 @@ function reduceLegacyRuntimeEvent(turn: AssistantTurn, event: RuntimeEvent, now:
         parts: replaceOrAppendPart(turn, {
           id: partId(turn, 'thinking'),
           kind: 'reasoning',
-          text: event.label || '正在思考',
+          text: event.label && event.label !== 'chat-response' ? event.label : '正在思考',
           status: 'streaming',
         }),
       };
@@ -211,7 +211,7 @@ function reduceLegacyRuntimeEvent(turn: AssistantTurn, event: RuntimeEvent, now:
         updatedAtMs: now,
         status: 'running',
         parts: appendStreamingText(
-          { ...turn, parts: turn.parts.filter((part) => part.id !== partId(turn, 'thinking')) },
+          { ...turn, parts: sealStreamingParts(turn.parts) },
           'text',
           event.delta,
         ),
@@ -228,14 +228,14 @@ function reduceLegacyRuntimeEvent(turn: AssistantTurn, event: RuntimeEvent, now:
         ...turn,
         updatedAtMs: now,
         status: 'completed',
-        parts: sealStreamingParts(turn.parts.filter((part) => part.id !== partId(turn, 'thinking'))),
+        parts: sealStreamingParts(turn.parts),
       };
     case 'operation.interrupted':
       return {
         ...turn,
         updatedAtMs: now,
         status: 'interrupted',
-        parts: sealStreamingParts(turn.parts.filter((part) => part.id !== partId(turn, 'thinking'))),
+        parts: sealStreamingParts(turn.parts),
       };
     case 'operation.failed':
       return {
@@ -243,7 +243,7 @@ function reduceLegacyRuntimeEvent(turn: AssistantTurn, event: RuntimeEvent, now:
         updatedAtMs: now,
         status: 'failed',
         parts: [
-          ...sealStreamingParts(turn.parts.filter((part) => part.id !== partId(turn, 'thinking'))),
+          ...sealStreamingParts(turn.parts),
           {
             id: partId(turn, 'failure'),
             kind: 'activity',
