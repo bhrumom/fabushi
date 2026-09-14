@@ -94,3 +94,29 @@
 - only changed boundary: chatgpt-vps-control/chrome-platform/README.md.
 - expected final Actions evidence: Chrome package and Node security selected; Rust contracts, platform-worker, Linux managed desktop, Electron platform, GBF closure, and Global Dharma service jobs skipped; Electron desktop result remains successful.
 - status: awaiting final Actions readback and protected merge.
+
+## 2026-09-14 — 用户追加：main push 同样按范围选择
+
+用户明确指出 main 仍在运行大量无关 CI，要求 main 与 PR/merge_group 使用相同的变更范围选择。此前实现保留了 `push` 全量旁路，这与最新要求不一致，本轮撤销该旁路。
+
+- source: `projects/telegram-fabushi-integration/source/2026-09-14-ci-scope-aware-main.md`
+- implementation branch: `codex/tfi-ci-scope-main-015-20260914`
+- base main: `a1237b382f1a83aa52bd021abe7a17aad2a22802`
+- selected policy: `pull_request` / `merge_group` / `push(main)` 均使用 scope 输出；只有显式 `workflow_dispatch` 保留全量。
+- top-level main paths are narrowed for Electron, Native mobile and Chrome so an unrelated main commit does not create a downstream product workflow merely to skip it.
+- post-main delivery selection is being made tolerant of an upstream Electron workflow whose platform matrix was skipped; it must not wait for Native/Chrome artifacts that were never selected.
+
+### 本轮验收新增标准
+
+- [ ] main Chrome-only push: Chrome package/旅程和必要 Node 检查可运行；Rust 三 OS、platform-worker、Linux managed desktop、Electron platform、GBF、Native mobile、Global Dharma 服务重 job 不运行。
+- [ ] main Electron-only / Native-only / Global-Dharma-only push: 只启动对应边界；其他产品矩阵保持 skipped 或不被顶层调度。
+- [ ] main 纯项目/记录变更不会触发 Electron、Native mobile、Chrome package 等产品构建。
+- [ ] 被 scope 跳过的 Electron workflow 不会触发 post-main 去等待不存在的 Native/Chrome artifact；确有 Electron 构建时仍保持 exact-SHA 发布门禁。
+- [ ] GitHub Actions main push 实际回读至少一轮 Chrome-only 或非目标变更，记录 selected/skipped job、workflow run、canonical main SHA 和下游触发结果。
+- [ ] 本地只做静态审阅；所有构建、原生测试、E2E、发布验证仍由 GitHub Actions 执行。
+
+## 风险与处置
+
+- 风险：顶层 main path 过窄会漏掉需要发布的产品边界。处置：PR/merge_group 保留稳定 scope/result；共享输入（版本、协议、宿主桥接）加入对应边界白名单；workflow_dispatch 可人工全量兜底；Actions proof 逐项回读。
+- 风险：post-main 是 workflow_run 触发，无法直接读取上游 scope outputs。处置：先根据上游 Electron run 是否包含实际平台 job 选择是否进入 exact-main gate，并让 gate 对未选中的独立边界不等待缺失结果。
+- status: IN_PROGRESS
