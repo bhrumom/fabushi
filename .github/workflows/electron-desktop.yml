@@ -35,6 +35,7 @@ on:
       - '.github/scripts/verify-packaged-computer-control.mjs'
   push:
     branches: [main]
+  merge_group:
   workflow_dispatch:
 
 concurrency:
