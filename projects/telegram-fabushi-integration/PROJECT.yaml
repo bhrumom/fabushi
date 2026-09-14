@@ -31,6 +31,11 @@ status_model:
   - E2E_VERIFIED
   - RELEASED
 active_work:
+  - task: M8-MARKET-003
+    branch: codex/tfi-miniapp-unified-install-update-20260913
+    records_branch: codex/tfi-market-003-record-closure-20260914
+    state: RELEASED
+    product_source_sha: f6a0d99c85a481999298a18cada6a9f10718a360
   - task: M3-DESKTOP-001
     branch: feat/telegram-m3-desktop-ux
     state: IN_PROGRESS
@@ -44,8 +49,6 @@ active_work:
   - task: TFI-USERSCRIPT-RECOVERY-007
     state: IN_PROGRESS
   - task: TFI-USERSCRIPT-RECOVERY-010
-    state: IN_PROGRESS
-  - task: TFI-USERSCRIPT-RECOVERY-011
     state: IN_PROGRESS
 completed_stage_evidence:
   M0: PR-1987
@@ -61,12 +64,10 @@ governance:
   protected_merge_queue_required: true
 
 latest_release:
-  version: 1.1.0
-  date: 2026-09-01
-  release_train: M11-MOBILE-001
-  product_source_sha: 82ddb78653ecdc47c95bf1a372389adff9f24d09
-  release_control_sha: 3f7cddc0bc09802d9a3d142cab7f9a56c573c07c
-  desktop_tag: desktop-1.1.0-3f7cddc0bc09
-  android_tag: android-v1.1.0-262432005
-  apple_tag: apple-v1.1.0-2026.8.3133
-  evidence: projects/telegram-fabushi-integration/evidence/M11-MOBILE-001/README.md
+  version: 1.2.65
+  date: 2026-09-14
+  release_train: M8-MARKET-003
+  product_source_sha: f6a0d99c85a481999298a18cada6a9f10718a360
+  release_control_sha: f6a0d99c85a481999298a18cada6a9f10718a360
+  desktop_tag: desktop-1.2.65
+  evidence: projects/telegram-fabushi-integration/evidence/M8-MARKET-003/README.md

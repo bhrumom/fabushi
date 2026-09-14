@@ -11,4 +11,4 @@ ADR 用于记录会长期影响代码结构、协议或平台边界的决策。�
 | ADR-0005 | AI Agent 是通信网络一等公民 | Accepted |
 | ADR-0006 | Mini App 使用权限清单、签名上下文和沙箱 bridge | Accepted |
 | ADR-0007 | 支付采用 PaymentIntent + Provider Adapter + Ledger | Accepted |
-| ADR-0017 | Marketplace 采用 GitHub 不可变版本安装更新合同 | Accepted / M8-MARKET-003 delivery pending |
+| ADR-0017 | Marketplace 采用 GitHub 不可变版本安装更新合同 | Accepted / M8-MARKET-003 released |

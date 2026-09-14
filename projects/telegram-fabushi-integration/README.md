@@ -32,7 +32,18 @@
 
 ## 当前 userscript 附件连续性子门禁
 
-`TFI-USERSCRIPT-RECOVERY-010` 修复首次带附件发送后，在恢复、继续、异常重发及跨轮次发送中因 composer/document 或 dispatch context 变化而丢失附件的问题。当前延伸任务 `TFI-USERSCRIPT-RECOVERY-011` 将 `v2.9.20` 的页面/脚本恢复状态与 Chrome 宿主 `tab-recovery` 能力连接起来，修复崩溃标签页、无链接阻塞恢复和最终 Work 回复转交验收的问题；source 与 parent 的受保护发布和真实 Chrome 证据仍按 task record 跟踪。
+`TFI-USERSCRIPT-RECOVERY-010` 修复首次带附件发送后，在恢复、继续、异常重发及跨轮次发送中因 composer/document 或 dispatch context 变化而丢失附件的问题。source userscript `v2.9.19` 已发布并通过 98/98 轻量回归；parent records 已通过 PR #2587/#2588 合并并从 `main@baf13113...` 回读，已登录 Chrome 的完整现场证据仍按 task record 跟踪。
+
+## 当前已验证的 Marketplace 交付
+
+`M8-MARKET-003` 已将 Mini App/插件统一为 GitHub-first、油猴式的安装更新路径：市场只发布审核后的版本元数据，客户端按不可变 commit/Release artifact 下载并校验 SHA-256 与 size；Desktop、Chrome、Web、Android、iOS 和 CLI 共用安装、更新、阻止降级与显式回滚语义。官方固定目录中三项损坏/错配历史包已由受控 CI 重新打包为 `1.0.1` 并发布。
+
+- 产品主线：`main@f6a0d99c85a481999298a18cada6a9f10718a360`
+- 测试版本：`1.2.65`，GitHub Release [desktop-1.2.65](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65)
+- 发布目标：Release target SHA 与上述 canonical main 一致；包含 macOS DMG/ZIP、`latest-mac.yml`、blockmap、Windows/Linux 安装包及 Chrome 包。
+- 精确主线交付：Electron `34800013097`、Native mobile `34800013089`、Chrome `34800013075`、post-main `34800500558` 均成功；完整证据索引见 `evidence/M8-MARKET-003/README.md`。
+
+本条只关闭 `M8-MARKET-003` 这一交付子门禁；更广泛的 M8 Mini App 权限、审核、沙箱和跨端能力仍按各自任务记录管理。
 
 ## 建议阅读顺序
 

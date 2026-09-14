@@ -177,19 +177,6 @@
 
 当前状态：`SOURCE_RELEASED / PARENT_RECORD_PENDING / LIVE_EVIDENCE_PENDING`；仅限独立油猴脚本，不触发 Fabushi 应用构建门禁。
 
-## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-011 标签页崩溃/卡住与最终回复交接
-
-- [x] `TFI-USR-CRASH-001` 固化崩溃标签页、恢复失败后反复回到“需要处理”、最终 Work 回复未交给验收、以及附件在恢复发送中丢失的现场问题。
-- [x] `TFI-USR-CRASH-002` 完成开源优先调查，采用 Chrome `tabs`/`webNavigation` 生命周期信号和 Playwright 页面崩溃语义作为设计输入；未复制代码或引入不兼容依赖。
-- [x] `TFI-USR-CRASH-003` source `v2.9.20` 增加工作区心跳、恢复票据、明确的宿主 `tab-recovery` 请求、无链接阻塞恢复、恢复确认时间窗和最终回复→验收交接回归。
-- [x] `TFI-USR-CRASH-004` parent CWA-008 增加 metadata-only 宿主租约、原标签页优先/单次接管、崩溃/丢弃/stale 监测和主动关闭保护；轻量 Node 合同测试通过。
-- [x] `TFI-USR-CRASH-005` source PR #15、exact-main CI `34794406863`、单调 `v2.9.20` Release 和 source canonical readback已完成。
-- [x] `TFI-USR-CRASH-006` parent PR #2594、protected merge queue、canonical-main `e60d40f4a97dcb319515abb2b46ef2845d4eb21b` readback、准确 SHA 的 packaged Chrome/Electron/mobile 验收和 `desktop-1.2.64` Release 已完成；Chrome Web Store 正式提交因受保护环境凭据为空而阻塞。
-- [ ] `TFI-USR-CRASH-007` 已登录 Chrome 中完成崩溃/卡住 → 自动恢复、无链接 → 手动恢复、最终回复 → 下一轮验收、附件连续性的分步截图、完整视频和 trace/diagnostics。
-
-当前状态：`RELEASED / WEBS_STORE_BLOCKED / LIVE_CHROME_EVIDENCE_PENDING`；source/parent
-发布与准确 SHA 的 packaged delivery 已通过，Chrome Web Store 凭据和真实浏览器现场证据仍未闭合。
-
 ## 2026-09-13 — TFI-USERSCRIPT-RECOVERY-010 恢复/继续附件连续性
 
 - [x] `TFI-USR-ATTACH-001` 将附件确认绑定到 task token、当前 route 和当前 composer，context 变化时失效旧确认并保留 metadata/Blob。
@@ -208,10 +195,10 @@
 - [x] `M8-MARKET-003-R02` 后端/Rust/Host 统一 `fabushi.marketplace.install.v1`，固定 public GitHub commit，校验 artifact SHA-256/size，禁止市场托管包字节和静默降级，保留 previous-active/显式回滚。
 - [x] `M8-MARKET-003-R03` 桌面、Chrome、Web、Android、iOS、CLI 接入同一安装/更新状态；Web 的可执行包路径明确要求 Native Host，Chrome 用户脚本仅接受 pinned raw GitHub artifact。
 - [x] `M8-MARKET-003-R04` Marketplace 卡片与 WebMCP 暴露来源、版本、权限、发布说明/状态；新增 Node Chrome `11/11` 与 backend pure marketplace `9/9` 轻量回归。
-- [ ] `M8-MARKET-003-R05` PR-head CI、protected main、canonical-main readback、packaged Electron/mobile/CLI E2E 和完整视觉/调试证据。
-- [ ] `M8-MARKET-003-R06` 修复或重新发布固定 catalog 中 hash/size 不一致或损坏的历史包，并绑定 strictly newer GitHub Release。
+- [x] `M8-MARKET-003-R05` PR-head CI、protected main、canonical-main readback、packaged Electron/mobile/CLI E2E 和完整视觉/调试证据；准确主线 `f6a0d99c…` 的 Electron、Native mobile、Chrome 与 post-main 运行全部通过，证据 90 天保留。
+- [x] `M8-MARKET-003-R06` 修复或重新发布固定 catalog 中 hash/size 不一致或损坏的历史包，并绑定 strictly newer GitHub Release；三项历史包以 CI 重建为 `1.0.1`，桌面测试版为 `1.2.65`。
 
-当前状态：`IMPLEMENTED / PR_PENDING`；本任务属于 Fabushi 应用交付，不能以本地源码检查替代 GitHub Actions 的构建、打包、E2E 和 Release 门禁。
+当前状态：`RELEASED`；产品交付证据绑定 `main@f6a0d99c85a481999298a18cada6a9f10718a360` 与 [desktop-1.2.65](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65)。本地只做轻量检查，构建、打包、E2E 和 Release 均由 GitHub Actions 完成。
 
 ## 2026-09-13 — TFI-USERSCRIPT-RECOVERY-007 任务目标附件输入
 
