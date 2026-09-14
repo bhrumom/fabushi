@@ -256,3 +256,14 @@
 - [ ] exact-main packaged/Chrome 证据、公开发布授权及 Release/Web Store 回读。
 
 当前状态：`IN_PROGRESS / SOURCE_MERGED / HOST_FOLLOWUP_OPEN / LIVE_EVIDENCE_PENDING`。
+
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-013 发布/主线回读
+
+- [x] source exact-main CI 与 source main readback：`faf68931dfa5c915feb316ea2a8da1de45384b96` / `34813245918` / userscript `2.9.23`。
+- [x] 按明确授权发布 source Release `v2.9.23`，资产 SHA-256 `80bea8ea03d18bd258bd4a326d150786b01cb52d2a731db7a04c7d4ffcaee7e4`。
+- [x] host package preflight 与 canonical-main Chrome packaged journey：main `13188628da46b88db843c9c5b4d59100233e3a21`，workflow `34817384069` 成功，证据 artifact `10337146244`。
+- [ ] Electron/mobile/security 其余 post-main 门禁与最终任务回读。
+- [ ] 官方 MCP remote Runner 手测：连接器内部错误恢复后，用同一测试账号完成 list → describe → `ci_session_status` → 手动内存验收 → note → finish。
+
+当前状态：`IN_PROGRESS / SOURCE_RELEASED / HOST_CHROME_EXACT_MAIN_PASSED / REMOTE_MANUAL_PENDING`。
