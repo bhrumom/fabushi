@@ -358,19 +358,61 @@ mod tests {
     fn event_catalog_matches_enum_names() {
         let variants = [
             GatewayEvent::MessageStart(MessageStartPayload::default()),
-            GatewayEvent::MessageDelta(MessageDeltaPayload { text: "a".into(), rendered: None }),
+            GatewayEvent::MessageDelta(MessageDeltaPayload {
+                text: "a".into(),
+                rendered: None,
+            }),
             GatewayEvent::MessageInterim(MessageInterimPayload::default()),
             GatewayEvent::MessageComplete(MessageCompletePayload::default()),
             GatewayEvent::ReasoningDelta(StreamDeltaPayload { text: "r".into() }),
             GatewayEvent::ThinkingDelta(StreamDeltaPayload { text: "t".into() }),
-            GatewayEvent::ToolGenerating(ToolGeneratingPayload { tool_id: "1".into(), name: "read".into(), description: None }),
-            GatewayEvent::ToolStart(ToolStartPayload { tool_id: "1".into(), name: "read".into(), args: None, description: None }),
-            GatewayEvent::ToolComplete(ToolCompletePayload { tool_id: "1".into(), name: None, result: None, error: None }),
-            GatewayEvent::ApprovalRequest(ApprovalRequestPayload { request_id: "a".into(), title: "approve".into(), description: None, tool_id: None, metadata: None }),
-            GatewayEvent::ClarifyRequest(ClarifyRequestPayload { request_id: "c".into(), question: "?".into(), options: vec![] }),
-            GatewayEvent::SubagentStart(SubagentPayload { subagent_id: "s".into(), title: None, detail: None, status: None }),
-            GatewayEvent::SubagentProgress(SubagentPayload { subagent_id: "s".into(), title: None, detail: None, status: None }),
-            GatewayEvent::SubagentComplete(SubagentPayload { subagent_id: "s".into(), title: None, detail: None, status: None }),
+            GatewayEvent::ToolGenerating(ToolGeneratingPayload {
+                tool_id: "1".into(),
+                name: "read".into(),
+                description: None,
+            }),
+            GatewayEvent::ToolStart(ToolStartPayload {
+                tool_id: "1".into(),
+                name: "read".into(),
+                args: None,
+                description: None,
+            }),
+            GatewayEvent::ToolComplete(ToolCompletePayload {
+                tool_id: "1".into(),
+                name: None,
+                result: None,
+                error: None,
+            }),
+            GatewayEvent::ApprovalRequest(ApprovalRequestPayload {
+                request_id: "a".into(),
+                title: "approve".into(),
+                description: None,
+                tool_id: None,
+                metadata: None,
+            }),
+            GatewayEvent::ClarifyRequest(ClarifyRequestPayload {
+                request_id: "c".into(),
+                question: "?".into(),
+                options: vec![],
+            }),
+            GatewayEvent::SubagentStart(SubagentPayload {
+                subagent_id: "s".into(),
+                title: None,
+                detail: None,
+                status: None,
+            }),
+            GatewayEvent::SubagentProgress(SubagentPayload {
+                subagent_id: "s".into(),
+                title: None,
+                detail: None,
+                status: None,
+            }),
+            GatewayEvent::SubagentComplete(SubagentPayload {
+                subagent_id: "s".into(),
+                title: None,
+                detail: None,
+                status: None,
+            }),
         ];
         let names: Vec<_> = variants.iter().map(GatewayEvent::kind).collect();
         assert_eq!(names, GATEWAY_EVENT_NAMES);
@@ -407,26 +449,77 @@ mod tests {
     #[test]
     fn replay_cursor_rejects_gaps_and_stale_events_but_accepts_new_epoch() {
         let mut cursor = GatewayReplayCursor::default();
-        cursor.observe(&envelope(10, GatewayEvent::MessageStart(MessageStartPayload::default()))).unwrap();
-        cursor.observe(&envelope(11, GatewayEvent::MessageDelta(MessageDeltaPayload { text: "a".into(), rendered: None }))).unwrap();
+        cursor
+            .observe(&envelope(
+                10,
+                GatewayEvent::MessageStart(MessageStartPayload::default()),
+            ))
+            .unwrap();
+        cursor
+            .observe(&envelope(
+                11,
+                GatewayEvent::MessageDelta(MessageDeltaPayload {
+                    text: "a".into(),
+                    rendered: None,
+                }),
+            ))
+            .unwrap();
         assert_eq!(
-            cursor.observe(&envelope(13, GatewayEvent::MessageDelta(MessageDeltaPayload { text: "b".into(), rendered: None }))),
-            Err(GatewaySequenceError::Gap { expected: 12, actual: 13 })
+            cursor.observe(&envelope(
+                13,
+                GatewayEvent::MessageDelta(MessageDeltaPayload {
+                    text: "b".into(),
+                    rendered: None,
+                })
+            )),
+            Err(GatewaySequenceError::Gap {
+                expected: 12,
+                actual: 13
+            })
         );
         assert_eq!(
-            cursor.observe(&envelope(10, GatewayEvent::MessageDelta(MessageDeltaPayload { text: "c".into(), rendered: None }))),
-            Err(GatewaySequenceError::Stale { expected: 12, actual: 10 })
+            cursor.observe(&envelope(
+                10,
+                GatewayEvent::MessageDelta(MessageDeltaPayload {
+                    text: "c".into(),
+                    rendered: None,
+                })
+            )),
+            Err(GatewaySequenceError::Stale {
+                expected: 12,
+                actual: 10
+            })
         );
 
-        let mut restarted = envelope(2, GatewayEvent::MessageStart(MessageStartPayload::default()));
+        let mut restarted = envelope(
+            2,
+            GatewayEvent::MessageStart(MessageStartPayload::default()),
+        );
         restarted.replay_epoch = "epoch-b".into();
         cursor.observe(&restarted).unwrap();
     }
 
     #[test]
     fn non_stream_events_require_token_flush() {
-        assert!(!GatewayEvent::MessageDelta(MessageDeltaPayload { text: "x".into(), rendered: None }).requires_stream_flush());
-        assert!(GatewayEvent::ToolStart(ToolStartPayload { tool_id: "t".into(), name: "read".into(), args: None, description: None }).requires_stream_flush());
-        assert!(GatewayEvent::MessageComplete(MessageCompletePayload::default()).requires_stream_flush());
+        assert!(
+            !GatewayEvent::MessageDelta(MessageDeltaPayload {
+                text: "x".into(),
+                rendered: None
+            })
+            .requires_stream_flush()
+        );
+        assert!(
+            GatewayEvent::ToolStart(ToolStartPayload {
+                tool_id: "t".into(),
+                name: "read".into(),
+                args: None,
+                description: None
+            })
+            .requires_stream_flush()
+        );
+        assert!(
+            GatewayEvent::MessageComplete(MessageCompletePayload::default())
+                .requires_stream_flush()
+        );
     }
 }
