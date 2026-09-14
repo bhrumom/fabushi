@@ -67,3 +67,13 @@ source userscript 与 host MV3 消息桥接已完成，项目 WBS/验收/风险/
 ## 最新状态
 
 首轮 host PR 已合并，但后续验证发现两个交付问题：Chrome release validator/packager/E2E 仍固定版本 `0.6.0`，以及 runner 只定义了内存清理函数却未在 `chrome.runtime.onMessage` 分发 `fabushi.userscript.memory.request`。两项均已在 follow-up PR #2608 修复，任务保持 IN_PROGRESS，等待该 PR 的 CI/protected merge 与 post-main 交付门禁。
+
+
+## 2026-09-14 当前发布与主线回读
+
+- source main 已回读为 `faf68931dfa5c915feb316ea2a8da1de45384b96`，userscript 版本为 `2.9.23`；source exact-main Test run `34813245918` 成功。
+- 按用户本轮明确发布授权，公开 [Release v2.9.23](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.23) 已发布；release id `388200671`，asset `562815404`，`204587` bytes，SHA-256 `80bea8ea03d18bd258bd4a326d150786b01cb52d2a731db7a04c7d4ffcaee7e4`，与 exact source 下载一致。
+- host canonical main 已回读为 `13188628da46b88db843c9c5b4d59100233e3a21`。PR #2616 将 `userscript-memory-policy.js` 纳入生产包；PR #2618 修正打包回归断言并已合并。
+- canonical-main Chrome workflow `34817384069` 成功，artifact `10337146244`（SHA-256 `a3fd9f277e5430c02c8c83b2b36c61e0d783221eefc16ee63bba9221ecd53e3c`）包含分步截图、连续视频、Playwright report、trace 和 native journey report；Electron/mobile/security 其余主线门禁仍需继续回读。
+- 官方 MCP `/health` 返回 HTTP 200，但当前 `fabushi test` 连接器账号入口仍返回 `-32603 Internal error`；没有安全可用的测试账号/device 身份，因此 remote Runner 手测尚未执行。
+- 当前状态：`IN_PROGRESS / SOURCE_RELEASED / HOST_MAIN_CHROME_E2E_PASSED / REMOTE_MANUAL_PENDING`。本轮只发布 userscript Release；未发布 Chrome Web Store 新版本，也未宣称远程手测通过。
