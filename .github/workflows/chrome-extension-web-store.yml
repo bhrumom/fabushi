@@ -8,6 +8,7 @@ on:
       - "chatgpt-vps-control/lib/**"
       - "chatgpt-vps-control/scripts/**"
       - "chatgpt-vps-control/tests/**"
+      - "!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js"
       - "chatgpt-vps-control/docs/chrome-web-store/**"
       - "chatgpt-vps-control/package.json"
       - "desktop/electron/chrome-platform-server.cjs"
@@ -23,6 +24,7 @@ on:
       - 'chatgpt-vps-control/lib/**'
       - 'chatgpt-vps-control/scripts/**'
       - 'chatgpt-vps-control/tests/**'
+      - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
       - 'chatgpt-vps-control/docs/chrome-web-store/**'
       - 'chatgpt-vps-control/package.json'
       - 'desktop/electron/chrome-platform-server.cjs'
@@ -65,6 +67,7 @@ jobs:
               - 'chatgpt-vps-control/lib/**'
               - 'chatgpt-vps-control/scripts/**'
               - 'chatgpt-vps-control/tests/**'
+              - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
               - 'chatgpt-vps-control/docs/chrome-web-store/**'
               - 'chatgpt-vps-control/package.json'
               - 'desktop/electron/chrome-platform-server.cjs'

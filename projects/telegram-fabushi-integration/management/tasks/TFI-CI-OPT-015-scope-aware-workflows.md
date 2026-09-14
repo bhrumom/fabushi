@@ -128,3 +128,10 @@
 - implementation: the scope job now emits a JSON matrix containing only affected Android/iOS runners; the platform job-level condition uses only `needs.scope.outputs`, and the strategy consumes `fromJSON(needs.scope.outputs.matrix)`. Manual dispatch and reusable workflow calls remain full-platform runs; PR/merge_group retain a single selected fast-path runner.
 - contract coverage: the native workflow contract test asserts dynamic matrix selection and rejects matrix context in the job-level condition.
 - status: awaiting PR checks, protected merge, canonical-main readback, and the Chrome-only main proof.
+
+## 2026-09-15 — CI-only contract fixture boundary
+
+- implementation branch: `codex/tfi-ci-boundary-negative-tests-20260915`
+- product-boundary filters now exclude `chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js` from Electron, GBF, Chrome package and Linux managed desktop paths; Computer Control Node security remains selected for JavaScript coverage.
+- this prevents a future CI contract-only edit from starting unrelated product matrices; the existing Chrome-only main proof remains the end-to-end scope evidence.
+- status: awaiting PR checks, protected merge, and canonical-main readback.

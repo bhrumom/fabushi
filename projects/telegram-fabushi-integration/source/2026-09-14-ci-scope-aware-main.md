@@ -24,3 +24,7 @@
 - 收窄各 workflow 的 main push 顶层 paths，避免无关 main commit 甚至创建重 workflow_run；PR/merge_group 的 scope/result 稳定性继续保留。
 - 共享 CI 控制文件只在确实属于对应边界时触发对应 workflow；不再把所有 `.github/workflows/**` 当成所有产品矩阵的全局变更。
 - 不在本地运行构建、Cargo/npm 重型测试或 E2E；用 GitHub Actions 验证 main 的实际 skipped/selected 结果。
+
+## 2026-09-15 — CI-only contract fixture boundary
+
+The native direct-platform-gates contract is a CI control-plane test, not Electron, GBF, Chrome-product, or Linux-desktop implementation. Product workflow path filters therefore exclude `chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js` from those product scopes, while the shared Computer Control Node security scope remains eligible for JavaScript checks. This keeps a change to the contract test from creating unrelated product workflows.
