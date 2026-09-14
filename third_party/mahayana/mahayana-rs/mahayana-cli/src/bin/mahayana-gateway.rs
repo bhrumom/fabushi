@@ -399,9 +399,7 @@ impl RuntimeHandle {
             "workspaceRoots": [cwd],
             "useCodexAccount": use_codex_account,
         });
-        if use_codex_account
-            && let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME")
-        {
+        if use_codex_account && let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME") {
             config["codexHome"] = serde_json::to_value(PathBuf::from(codex_home))
                 .map_err(|error| error.to_string())?;
         }
