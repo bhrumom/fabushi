@@ -99,7 +99,14 @@ active_work:
     source_version: 2.9.30
     chrome_version: 0.6.5
     state: IN_PROGRESS
-    blocker: parent PR and exact-main packaged/E2E/Release gates pending
+    parent_pr: 2638
+    workflow_fix_pr: 2639
+    parent_main_sha: 80ef6f15f42e1399f13327889c1dde13edff8097
+    exact_main_runs: [34880495486, 34881462209, 34881675501]
+    chrome_artifact: 10362084424
+    desktop_release: desktop-1.2.65-80ef6f15f42e
+    state: IN_PROGRESS
+    blocker: current Chrome Tampermonkey update requires user confirmation; live two-task rotation evidence pending
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001

@@ -316,7 +316,7 @@
 
 | Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
 |---|---|---|---|---|---|
-| TFI-USERSCRIPT-RECOVERY-016 | FAB-P0001 / TFI | 按任务 eligibility/最早唤醒点公平轮换；区分限流、导航保护和普通退避；查看会话不中断；旧 runner lock 有界接管 | IN_PROGRESS | source main `480ebe61` / v2.9.30 / PR #22/#23；source CI 通过；parent branch 已同步，Chrome 0.6.5 | parent PR Actions/protected main；exact-main Chrome package + simulated-user evidence + Release |
+| TFI-USERSCRIPT-RECOVERY-016 | FAB-P0001 / TFI | 按任务 eligibility/最早唤醒点公平轮换；区分限流、导航保护和普通退避；查看会话不中断；旧 runner lock 有界接管 | IN_PROGRESS / LIVE_CHROME_CONFIRMATION_PENDING | source main `480ebe61` / v2.9.30 / PR #22/#23；parent PR #2638/#2639 已合并至 `main@80ef6f15`；Electron `34880495486`、Chrome `34881462209`、post-main `34881675501` 成功；Release 已发布 | 当前 Chrome Tampermonkey 更新确认与登录态双任务连续轮换证据；Web Store 状态独立跟踪 |
 
-- `TFI-USR-SCHED-R01..R06` 已在 source 侧实现并有 focused/full regression；parent bundle/Chrome packaged journey 尚未验证。
+- `TFI-USR-SCHED-R01..R06` 已在 source 侧实现并有 focused/full regression；Chrome 0.6.5 packaged journey 与完整 evidence bundle 已由 artifact `10362084424` 验证。
 - 本任务继续保留单页前台写操作互斥，不以并行任务为由允许同一 composer 的发送、上传、授权或未确认派发并发。
