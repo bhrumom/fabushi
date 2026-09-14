@@ -56,14 +56,16 @@ Kubernetes workqueue、BullMQ delayed jobs、Temporal durable timers 的调查�
 - source `codex/fair-scheduler-2.9.29-20260915` 已实现并合并为 canonical source main `480ebe61ba039f15e7023bbc0253ea23c373aba0`，Release `v2.9.30`；source PR #22（调度修复）和 #23（运行时版本对齐）均通过 CI。Release asset `chatgpt-auto-confirm.user.js` 为 224113 bytes，SHA-256 `d15040a5d420b0fa4cc38b195f178143a2d22a166e3357f88c7159c6b7a3b14a`。
 - source full regression：`120/120 PASS`；另通过 `node --check` 与 `git diff --check`。本机验证只使用已有 jsdom 依赖的轻量夹具，不构建或运行 Fabushi 应用。
 - parent clean branch 已将 bundled userscript 与 source asset 做字节级同步；Marketplace fallback 已固定 `sourceRef=480ebe61ba039f15e7023bbc0253ea23c373aba0`、version `2.9.30`、size `224113`、SHA-256 `d15040a5…`。Chrome manifest/package/validator/test/E2E contract 已从 `0.6.4` 推进到 `0.6.5`。
-- parent PR、protected-main merge、exact-main Chrome package/simulated-user evidence、post-main Release 与登录 Chrome 现场证据尚未完成；因此任务继续为 `IN_PROGRESS`。
+- parent PR #2638 已合并至 `main@c40442aff3d9241434c387bbf877c966aba7cdd1`；为修复主线 Electron workflow 的既有 YAML 结构问题，PR #2639 已合并至 `main@80ef6f15f42e1399f13327889c1dde13edff8097`。
+- exact-main Electron run `34880495486`、Chrome workflow dispatch run `34881462209` 与 post-main delivery run `34881675501` 均成功。Chrome artifact `10362084424` 保留 0.6.5 ZIP（115937 bytes，SHA-256 `c77acc4a14742e5925b9bae91eb7f1db4eee28b64d685c74de9293cf43c709ab`）、逐步 PNG、两段完整视频、trace、HTML/report、journey/native logs；该 run 的 userscript 资产仍为 224113 bytes / `d15040a5…`。最终桌面 Release [desktop-1.2.65-80ef6f15f42e](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65-80ef6f15f42e) 已绑定同一 canonical main SHA；因最终提交只修复 Electron workflow，scope selector 合理跳过重复的 Chrome Release 附件，Chrome 0.6.5 包仍由 exact-main Actions artifact 留存。
+- 线上独立 userscript [Release v2.9.30](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.30) 已发布并可直接下载；当前 Chrome 的 Tampermonkey 更新页已识别 v2.9.30，但本机“更新”按钮尚未在用户确认后点击。因此任务状态更新为 `IN_PROGRESS / ONLINE_RELEASED / PARENT_MAIN_DELIVERED / LIVE_CHROME_CONFIRMATION_PENDING`，不把线上发布误报为当前浏览器已安装。
 
 ## 下一步
 
-提交 parent PR 并等待 required checks/protected merge；随后对精确 canonical main 运行 Chrome package、模拟用户旅程和 post-main Release，最后在用户确认后回读当前登录 Chrome 的双任务连续轮换。
+等用户确认后在当前 Chrome 的 Tampermonkey 更新页点击“更新”，再回读 2.9.30 版本与双任务连续轮换/查看会话不中断现场证据；Web Store 公开商店状态继续独立跟踪。
 
 ## 时间
 
 - started_at：2026-09-15T01:05:00+08:00
-- updated_at：2026-09-15T01:30:00+08:00
+- updated_at：2026-09-15T02:45:00+08:00
 - completed_at：N/A（任务进行中）
