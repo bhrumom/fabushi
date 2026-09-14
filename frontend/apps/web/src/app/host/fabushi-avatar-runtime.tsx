@@ -247,11 +247,20 @@ function spring(value: number, frequency: number, damping: number): SpringChanne
 }
 
 function stepSpring(channel: SpringChannel, dtSeconds: number): void {
-  const dt = clamp(dtSeconds, 0, 1 / 30);
+  const totalDt = clamp(dtSeconds, 0, 1 / 15);
+  const maxStep = 1 / 240;
+  const steps = Math.max(1, Math.ceil(totalDt / maxStep));
+  const dt = totalDt / steps;
   const omega = channel.frequency * TAU;
-  const acceleration = omega * omega * (channel.target - channel.x) - 2 * channel.damping * omega * channel.v;
-  channel.v += acceleration * dt;
-  channel.x += channel.v * dt;
+  for (let index = 0; index < steps; index += 1) {
+    const acceleration = omega * omega * (channel.target - channel.x) - 2 * channel.damping * omega * channel.v;
+    channel.v += acceleration * dt;
+    channel.x += channel.v * dt;
+  }
+  if (Math.abs(channel.target - channel.x) < 0.0001 && Math.abs(channel.v) < 0.001) {
+    channel.x = channel.target;
+    channel.v = 0;
+  }
 }
 
 function createDynamics(): AvatarDynamics {
@@ -345,7 +354,7 @@ export const FabushiAvatarRuntime = forwardRef<FabushiAvatarRuntimeHandle, Fabus
     const pointerGaze = useRef({ x: 0, y: 0 });
     const dynamicsRef = useRef<AvatarDynamics>(createDynamics());
     const motion = MOTION[state] ?? DEFAULT_MOTION;
-    const eyePose = eyePoseForState(state, motion);
+    const eyePose = useMemo(() => eyePoseForState(state, motion), [motion, state]);
     const overlayKind = overlayKindForState(state);
     const palette = COLORS[color] ?? COLORS.gray;
     const phaseOffset = useMemo(() => seededUnit(identity, "phase") * TAU, [identity]);
