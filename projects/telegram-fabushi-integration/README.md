@@ -39,6 +39,7 @@
 `M8-MARKET-003` 已将 Mini App/插件统一为 GitHub-first、油猴式的安装更新路径：市场只发布审核后的版本元数据，客户端按不可变 commit/Release artifact 下载并校验 SHA-256 与 size；Desktop、Chrome、Web、Android、iOS 和 CLI 共用安装、更新、阻止降级与显式回滚语义。官方固定目录中三项损坏/错配历史包已由受控 CI 重新打包为 `1.0.1` 并发布。
 
 - 产品主线：`main@f6a0d99c85a481999298a18cada6a9f10718a360`
+- 项目记录主线：PR [#2600](https://github.com/bhrumom/fabushi/pull/2600) 已合并，canonical records `main@b0ac0efb822398b658464ab1b559fd4ca41f004d` 已回读。
 - 测试版本：`1.2.65`，GitHub Release [desktop-1.2.65](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65)
 - 发布目标：Release target SHA 与上述 canonical main 一致；包含 macOS DMG/ZIP、`latest-mac.yml`、blockmap、Windows/Linux 安装包及 Chrome 包。
 - 精确主线交付：Electron `34800013097`、Native mobile `34800013089`、Chrome `34800013075`、post-main `34800500558` 均成功；完整证据索引见 `evidence/M8-MARKET-003/README.md`。

@@ -36,6 +36,7 @@ active_work:
     records_branch: codex/tfi-market-003-record-closure-20260914
     state: RELEASED
     product_source_sha: f6a0d99c85a481999298a18cada6a9f10718a360
+    records_main_sha: b0ac0efb822398b658464ab1b559fd4ca41f004d
   - task: M3-DESKTOP-001
     branch: feat/telegram-m3-desktop-ux
     state: IN_PROGRESS

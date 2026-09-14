@@ -90,6 +90,7 @@
 - Chrome Web Store: exact-source package dry-run [34796574040](https://github.com/bhrumom/fabushi/actions/runs/34796574040) passed for an earlier accepted product SHA. No public submission was attempted because protected store credentials were unavailable; the final Chrome package was nevertheless produced by exact final push run `34800013075`. Public-store submission is outside this test Release gate.
 - Optional updater regression: not run; old-client discovery/download/install/relaunch is advisory by repository policy and was not promoted to a required acceptance criterion for this task.
 - Records branch for this closure: `codex/tfi-market-003-record-closure-20260914`; this docs-only follow-up has product delivery `N/A` because it changes only governed project records, not runnable sources or package inputs.
+- Records PR: [#2600](https://github.com/bhrumom/fabushi/pull/2600), merged as records commit `b0ac0efb822398b658464ab1b559fd4ca41f004d`; canonical project records were re-read from `main` after merge.
 - Evidence index: `../../evidence/M8-MARKET-003/README.md`.
 
 ## Completion / next action
