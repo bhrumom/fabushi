@@ -26,6 +26,79 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  scope:
+    name: Select affected exact-main delivery
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    outputs:
+      selected: ${{ steps.upstream.outputs.selected }}
+      android: ${{ steps.scope.outputs.android }}
+      ios: ${{ steps.scope.outputs.ios }}
+      chrome: ${{ steps.scope.outputs.chrome }}
+    steps:
+      - id: upstream
+        name: Inspect selected Electron platform jobs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ELECTRON_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ELECTRON_RUN_ID/jobs?per_page=100")"
+          selected="$(jq -r '[.jobs[] | select((.name == "Electron macOS" or .name == "Electron Windows" or .name == "Electron Linux") and .conclusion == "success")] | length > 0' <<<"$jobs")"
+          echo "selected=$selected" >> "$GITHUB_OUTPUT"
+          echo "- Upstream Electron run: `$ELECTRON_RUN_ID`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Actual Electron platform job selected: `$selected`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout exact upstream source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - id: scope
+        name: Select only required post-main companion gates
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          DESKTOP_SELECTED: ${{ steps.upstream.outputs.selected }}
+        run: |
+          set -euo pipefail
+          android=false
+          ios=false
+          chrome=false
+          if [ "$DESKTOP_SELECTED" = true ]; then
+            parent="$(git rev-list --parents -n 1 "$SOURCE_SHA" | awk '{print $2}')"
+            test -n "$parent"
+            while IFS= read -r path; do
+              case "$path" in
+                mobile/android/*|contracts/automation/cross-platform-journeys.json|app-version.json|third_party/mahayana/codex-rs/*|third_party/mahayana/mahayana-rs/Cargo.toml|third_party/mahayana/mahayana-rs/Cargo.lock|third_party/mahayana/mahayana-rs/mahayana-app-host/*|third_party/mahayana/mahayana-rs/mahayana-app-host-mobile/*|third_party/mahayana/mahayana-rs/mahayana-host-protocol/*|third_party/mahayana/mahayana-rs/mahayana-product/*|third_party/mahayana/mahayana-rs/mahayana-plugin-runtime/*|third_party/mahayana/mahayana-rs/mahayana-js-runtime/*)
+                  android=true
+                  ;;
+                mobile/ios/*)
+                  ios=true
+                  ;;
+                chatgpt-vps-control/chrome-platform/*|chatgpt-vps-control/lib/*|chatgpt-vps-control/scripts/*|chatgpt-vps-control/tests/*|chatgpt-vps-control/docs/chrome-web-store/*|chatgpt-vps-control/package.json|desktop/electron/chrome-platform-server.cjs|desktop/electron/host-process.cjs|.github/scripts/verify-packaged-computer-control.mjs)
+                  chrome=true
+                  ;;
+              esac
+            done < <(git diff --name-only "$parent" "$SOURCE_SHA")
+          fi
+          echo "android=$android" >> "$GITHUB_OUTPUT"
+          echo "ios=$ios" >> "$GITHUB_OUTPUT"
+          echo "chrome=$chrome" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Post-main selected companion scopes'
+            echo "- android: $android"
+            echo "- ios: $ios"
+            echo "- chrome: $chrome"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   contract:
     name: Post-main delivery contract
     if: github.event_name == 'pull_request'
@@ -71,11 +144,11 @@ jobs:
           echo 'Post-main delivery control-plane invariants are present.'
 
   gate:
-    name: Require exact-main desktop and mobile E2E
+    needs: scope
+    name: Require exact-main selected product E2E
     if: >-
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main'
+      needs.scope.result == 'success' &&
+      needs.scope.outputs.selected == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 130
     outputs:
@@ -84,6 +157,9 @@ jobs:
       electron_conclusion: ${{ steps.meta.outputs.electron_conclusion }}
       native_run_id: ${{ steps.wait-native.outputs.native_run_id }}
       chrome_run_id: ${{ steps.wait-chrome.outputs.chrome_run_id }}
+      android_required: ${{ needs.scope.outputs.android }}
+      ios_required: ${{ needs.scope.outputs.ios }}
+      chrome_required: ${{ needs.scope.outputs.chrome }}
     steps:
       - id: meta
         name: Bind delivery to the completed Electron main run
@@ -146,16 +222,26 @@ jobs:
           test "$ELECTRON_CONCLUSION" = success
 
       - id: wait-native
-        name: Wait for Android and iOS platform checks on the same main SHA
+        name: Wait for selected native platform checks on the same main SHA
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
+          ANDROID_REQUIRED: ${{ needs.scope.outputs.android }}
+          IOS_REQUIRED: ${{ needs.scope.outputs.ios }}
         run: |
           set -euo pipefail
           deadline=$((SECONDS + 7200))
           native_run_id=''
-          required_checks=('Native Android' 'Native iOS')
+          required_checks=()
+          if [ "$ANDROID_REQUIRED" = true ]; then required_checks+=('Native Android'); fi
+          if [ "$IOS_REQUIRED" = true ]; then required_checks+=('Native iOS'); fi
+          if [ "${#required_checks[@]}" -eq 0 ]; then
+            echo 'No native platform change selected; native E2E is not required for this source SHA.'
+            echo 'native_run_id=not-required' >> "$GITHUB_OUTPUT"
+            echo "- Native companion gates: not required" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           while [ "$SECONDS" -lt "$deadline" ]; do
             # A busy main SHA can have more than 100 check-runs. Fetch every page so
             # release gating cannot miss successful native checks outside page one.
@@ -180,9 +266,9 @@ jobs:
             done
             if [ "$all_done" = true ]; then
               echo "native_run_id=$native_run_id" >> "$GITHUB_OUTPUT"
-              echo "- Native Android: success" >> "$GITHUB_STEP_SUMMARY"
-              echo "- Native iOS: success" >> "$GITHUB_STEP_SUMMARY"
-              echo "- Native workflow run: ${native_run_id:-unknown}" >> "$GITHUB_STEP_SUMMARY"
+              if [ "$ANDROID_REQUIRED" = true ]; then echo "- Native Android: success"; else echo "- Native Android: not required"; fi >> "$GITHUB_STEP_SUMMARY"
+              if [ "$IOS_REQUIRED" = true ]; then echo "- Native iOS: success"; else echo "- Native iOS: not required"; fi >> "$GITHUB_STEP_SUMMARY"
+              echo "- Native workflow run: ${native_run_id:-not-required}" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 20
@@ -191,7 +277,8 @@ jobs:
           exit 1
 
       - id: wait-chrome
-        name: Wait for the exact-main Chrome package and journey
+        name: Wait for the selected exact-main Chrome package and journey
+        if: needs.scope.outputs.chrome == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -276,6 +363,7 @@ jobs:
           run-id: ${{ needs.gate.outputs.electron_run_id }}
 
       - name: Download tested Chrome package and journey evidence from exact run
+        if: needs.gate.outputs.chrome_required == 'true'
         uses: actions/download-artifact@v8
         with:
           name: fabushi-chrome-web-store-${{ needs.gate.outputs.source_sha }}
@@ -289,6 +377,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ needs.gate.outputs.source_sha }}
           CHROME_RUN_ID: ${{ needs.gate.outputs.chrome_run_id }}
+          CHROME_REQUIRED: ${{ needs.gate.outputs.chrome_required }}
         run: |
           set -euo pipefail
           mac_manifest="$(find electron-artifacts/mac -type f -name 'fabushi-delivery-mac.json' -print -quit)"
@@ -307,19 +396,23 @@ jobs:
             test "$(jq -r '.sha' "$manifest")" = "$SOURCE_SHA"
           done
 
-          chrome_zip="$(find chrome-artifacts -type f -name 'fabushi-chrome-*.zip' -print -quit)"
-          chrome_manifest="$(find chrome-artifacts -type f -name 'fabushi-chrome-*.content-manifest.json' -print -quit)"
-          chrome_checksums="$(find chrome-artifacts -type f -name 'SHA256SUMS.txt' -print -quit)"
-          test -n "$chrome_zip" && test -n "$chrome_manifest" && test -n "$chrome_checksums"
-          test "$(jq -r '.sourceSha' "$chrome_manifest")" = "$SOURCE_SHA"
-          chrome_version="$(jq -r '.version // empty' "$chrome_manifest")"
-          test -n "$chrome_version"
-          if ! [[ "$chrome_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Chrome package version is not SemVer: $chrome_version" >&2
-            exit 1
+          mkdir -p release-assets
+          if [ "$CHROME_REQUIRED" = true ]; then
+            chrome_zip="$(find chrome-artifacts -type f -name 'fabushi-chrome-*.zip' -print -quit)"
+            chrome_manifest="$(find chrome-artifacts -type f -name 'fabushi-chrome-*.content-manifest.json' -print -quit)"
+            chrome_checksums="$(find chrome-artifacts -type f -name 'SHA256SUMS.txt' -print -quit)"
+            test -n "$chrome_zip" && test -n "$chrome_manifest" && test -n "$chrome_checksums"
+            test "$(jq -r '.sourceSha' "$chrome_manifest")" = "$SOURCE_SHA"
+            chrome_version="$(jq -r '.version // empty' "$chrome_manifest")"
+            test -n "$chrome_version"
+            if ! [[ "$chrome_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Chrome package version is not SemVer: $chrome_version" >&2
+              exit 1
+            fi
+          else
+            echo 'Chrome package/journey is not selected for this source SHA.'
           fi
 
-          mkdir -p release-assets
           while IFS= read -r asset; do cp "$asset" release-assets/; done < <(
             find electron-artifacts -type f \( \
               -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o \
@@ -328,9 +421,11 @@ jobs:
               -name 'fabushi-delivery-*.json' \
             \) -print | sort
           )
-          cp "$chrome_zip" release-assets/
-          cp "$chrome_manifest" release-assets/
-          cp "$chrome_checksums" release-assets/fabushi-chrome-SHA256SUMS.txt
+          if [ "$CHROME_REQUIRED" = true ]; then
+            cp "$chrome_zip" release-assets/
+            cp "$chrome_manifest" release-assets/
+            cp "$chrome_checksums" release-assets/fabushi-chrome-SHA256SUMS.txt
+          fi
 
           test -n "$(find release-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)"
           test -n "$(find release-assets -maxdepth 1 -type f -name '*macos-*.zip' -print -quit)"
