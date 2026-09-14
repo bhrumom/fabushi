@@ -66,6 +66,7 @@ function chatGPTURL(value, { allowRecoveryHash = false } = {}) {
 function isCrashTab(tab) {
   return !tab
     || tab.discarded === true
+    || tab.status === "unloaded"
     || /^chrome-error:\/\//i.test(String(tab.url || tab.pendingUrl || ""))
     || CRASH_TITLE_PATTERN.test(String(tab.title || ""));
 }
@@ -151,11 +152,8 @@ async function requestNavigationGuard(message, sender) {
     const state = await readState();
     const key = String(tabId);
     const record = pruneRecord(state.tabs[key] || emptyRecord(tabId, now), now);
-    const currentPath = (() => {
-      try { return new URL(String(tab.url || tab.pendingUrl || ""), "https://chatgpt.com").pathname; } catch { return ""; }
-    })();
-    const targetPath = new URL(request.targetURL).pathname;
-    if (currentPath === targetPath && !request.recovery) {
+    const currentURL = chatGPTURL(tab.url || tab.pendingUrl, { allowRecoveryHash: request.recovery });
+    if (currentURL === request.targetURL && !request.recovery) {
       record.lastCommittedAt = now;
       record.updatedAt = now;
       state.tabs[key] = record;
