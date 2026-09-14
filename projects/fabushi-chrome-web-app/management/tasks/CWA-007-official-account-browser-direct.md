@@ -39,3 +39,10 @@ inspection were performed locally; no local app build/test was run.
 Stable Web Store extension ID and production gateway deployment remain external release
 dependencies. Next: inspect PR #2563 CI/review, merge through protected main, deploy the
 gateway and execute exact-SHA packaged same-account E2E/Release. All delivery gates remain pending.
+
+
+## 2026-09-14 增量：官方 MCP 远程 Runner 手测
+
+最新需求已纳入本任务：官方测试账号登录、同账号 MCP device 发现，以及 GitHub Actions 远程浏览器的 exact-SHA 手动验收，对应新增 CWA-R019、CWA-R020、CWA-R021。实现沿用现有 `account-browser-agent.js` 的短期账号会话与 `/browser-agent` 注册，不新增浏览器引擎或重复协议。
+
+当前连接器暴露了账号/设备/工具调用接口，但账号和设备列表调用返回 `-32603 Internal error`；官方 `/health` 端点可达。测试账号凭据仍只由 GitHub Actions 受保护 secrets 提供，未写入代码或项目记录。远程 Runner 手测、内存清理/宿主 discard 的逐步截图视频 trace/session note 尚未完成，任务保持 `IN_PROGRESS / REMOTE_MANUAL_PENDING`。
