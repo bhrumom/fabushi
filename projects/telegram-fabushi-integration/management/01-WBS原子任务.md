@@ -183,11 +183,12 @@
 - [x] `TFI-USR-CRASH-002` 完成开源优先调查，采用 Chrome `tabs`/`webNavigation` 生命周期信号和 Playwright 页面崩溃语义作为设计输入；未复制代码或引入不兼容依赖。
 - [x] `TFI-USR-CRASH-003` source `v2.9.20` 增加工作区心跳、恢复票据、明确的宿主 `tab-recovery` 请求、无链接阻塞恢复、恢复确认时间窗和最终回复→验收交接回归。
 - [x] `TFI-USR-CRASH-004` parent CWA-008 增加 metadata-only 宿主租约、原标签页优先/单次接管、崩溃/丢弃/stale 监测和主动关闭保护；轻量 Node 合同测试通过。
-- [ ] `TFI-USR-CRASH-005` source PR、exact-main CI、单调 `v2.9.20` Release 和 source canonical readback。
-- [ ] `TFI-USR-CRASH-006` parent PR、protected merge queue、canonical-main readback、准确 SHA 的 packaged Chrome 验收和 Release。
+- [x] `TFI-USR-CRASH-005` source PR #15、exact-main CI `34794406863`、单调 `v2.9.20` Release 和 source canonical readback已完成。
+- [x] `TFI-USR-CRASH-006` parent PR #2594、protected merge queue、canonical-main `e60d40f4a97dcb319515abb2b46ef2845d4eb21b` readback、准确 SHA 的 packaged Chrome/Electron/mobile 验收和 `desktop-1.2.64` Release 已完成；Chrome Web Store 正式提交因受保护环境凭据为空而阻塞。
 - [ ] `TFI-USR-CRASH-007` 已登录 Chrome 中完成崩溃/卡住 → 自动恢复、无链接 → 手动恢复、最终回复 → 下一轮验收、附件连续性的分步截图、完整视频和 trace/diagnostics。
 
-当前状态：`IMPLEMENTED / DELIVERY OPEN`；轻量检查已通过，线上 source/parent 发布及真实浏览器证据仍未闭合。
+当前状态：`RELEASED / WEBS_STORE_BLOCKED / LIVE_CHROME_EVIDENCE_PENDING`；source/parent
+发布与准确 SHA 的 packaged delivery 已通过，Chrome Web Store 凭据和真实浏览器现场证据仍未闭合。
 
 ## 2026-09-13 — TFI-USERSCRIPT-RECOVERY-010 恢复/继续附件连续性
 

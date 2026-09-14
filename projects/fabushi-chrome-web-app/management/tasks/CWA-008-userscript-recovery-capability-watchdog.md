@@ -5,8 +5,8 @@
 - Portfolio Project ID: `FAB-P0011`
 - Project Key / Task ID: `CWA / CWA-008`
 - Started: `2026-09-14T08:00:00+08:00`
-- Updated: `2026-09-14T09:30:00+08:00`
-- Status: `IN_PROGRESS`
+- Updated: `2026-09-14T09:36:20+08:00`
+- Status: `IN_PROGRESS / WEBS_STORE_BLOCKED / LIVE_CHROME_EVIDENCE_PENDING`
 
 ## Objective
 
@@ -81,7 +81,26 @@ Node syntax/static checks、Chrome focused contract tests `10/10` 及 watchdog u
 `5/5`（合并回归套件 `15/15`）；TFI source regression 在最终 patch 后重新执行并记录实际结果。未执行本地 app build、
 package 或 E2E。
 
-Branch / commit / PR / CI / merge / post-main Release / Web Store evidence 待后续回填。
+Parent PR [#2594](https://github.com/bhrumom/fabushi/pull/2594) 已通过 protected merge queue
+合并；本任务接受的 main SHA 为 `e60d40f4a97dcb319515abb2b46ef2845d4eb21b`，随后独立
+PR #2593 已将 canonical main 前进到 `31fdeca90bc8012e144b3ada00ca439891606e2c`（包含并
+保留本任务 SHA）。该任务接受 SHA 的 Chrome
+package/journey run `34795268685` 成功，artifact `10329366885`；Electron packaged gate
+`34795268724`、Native mobile gate `34795268715`、Computer control security gate
+`34795268693`、Project portfolio governance `34795268701`、CI `34795233447` 均成功。
+post-main delivery run `34796011272` / publish job `103829791736` 成功，发布的
+[`desktop-1.2.64`](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.64) 目标 SHA
+正确，包含 macOS/Windows/Linux updater 资产及 Chrome `0.6.0` 精确包。
+
+Chrome Web Store workflow `34796377000` / job `103830176952` 成功校验 exact-main 包和
+SHA（版本 `0.6.0`、archive SHA-256
+`67f8d8fa5e292c45a361f89f68009e5ea175ede83c2b4d088f42498b66f8b117`），但在 API 调用前因
+`chrome-webstore` 受保护环境的 publisher/item/OAuth 凭据为空而 fail-closed；没有上传或
+发布商店版本。该次红色提交证据 artifact 为 `10329509377`。
+
+Live Chrome crash/error-page 与附件/最终回复连续性现场证据仍未取得；因此 CWA-008 仍保持
+`IN_PROGRESS`，不把 GitHub Release 或轻量测试冒充 Chrome Web Store 已上架或真实崩溃旅程
+通过。
 
 ## Risks and next action
 
@@ -91,5 +110,9 @@ Branch / commit / PR / CI / merge / post-main Release / Web Store evidence 待�
   读取同源任务/IndexedDB。
 - Risk: 误把不确定发送当作可重发；token 保留、恢复确认窗口独立、用户明确恢复才允许当前
   唯一路由绑定。
-- Next: 完成 source 与 parent PR/required CI，protected merge 后驱动 exact-main packaged
-  crash-recovery journey、Release/Web Store 及真实 Chrome evidence。
+- Blocker: Chrome Web Store 正式提交需要由 release owner 配置受保护环境
+  `chrome-webstore` 的五项凭据；当前 workflow 已安全停止且未调用商店 API。
+- Next: 配置凭据后使用 exact main SHA
+  `e60d40f4a97dcb319515abb2b46ef2845d4eb21b` 重跑 Web Store workflow；随后补齐真实 Chrome
+  崩溃/卡住恢复、附件连续和 final→acceptance 的逐步截图、完整视频、trace/report/logs，
+  再关闭 CWA-R013..R018 的剩余现场门禁。
