@@ -70,3 +70,11 @@
 - 风险：过滤规则过窄会漏掉真实影响，过宽会继续浪费矩阵；对 workflow、scope、脚本、全局工具链和安全边界采用保守全量，并以 Actions 实际 run 验证。
 - 风险：merge_group 的 changed-base 语义必须由 GitHub Actions 回读确认；scope job 使用完整 checkout 和空 token 的 git diff 路径。
 - 下一动作：更新四个 workflow，增加 scope job、受控 job if 和 skipped-tolerant result；提交 PR 后先验证保守全量，再用后续非目标变更 run 验证跳过效果。
+
+
+## 2026-09-14 — Chrome-only scope proof follow-up
+
+- proof branch: codex/tfi-ci-scope-proof-chrome-only-20260914
+- test change: chatgpt-vps-control/chrome-platform/README.md plus this task record; no Rust, Worker, Electron, GBF, backend, Web Mini App or commerce source changed.
+- expected selection: Chrome package and Computer Control Node security remain relevant; Computer Control Rust/platform-worker/Linux desktop, Electron platform, GBF closure and Global Dharma backend/web/commerce are skipped while their workflow/scope/result contexts remain present.
+- status: awaiting Actions scope/skipped evidence.
