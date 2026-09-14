@@ -90,3 +90,18 @@ latest_release:
   release_control_sha: f6a0d99c85a481999298a18cada6a9f10718a360
   desktop_tag: desktop-1.2.65
   evidence: projects/telegram-fabushi-integration/evidence/M8-MARKET-003/README.md
+
+  - task: TFI-USERSCRIPT-RECOVERY-014
+    branch: codex/release-0.6.2-renderer-guard-20260914
+    source_branch: codex/release-2.9.24-renderer-guard-20260914
+    source_pr: 19
+    source_main_sha: 71a2279b887cc7429b7ca4c547a7099f8b63c55a
+    source_version: 2.9.24
+    host_pr: 2623
+    host_merge_sha: b4d2d85fcd510c51d3dce646311d19c81e6c7403
+    release_diagnostics_pr: 2624
+    records_branch: codex/tfi-userscript-release-readback-20260914
+    canonical_main_sha: 1e63a8cf14697107af62948d713cff120679694f
+    chrome_version: 0.6.2
+    state: IN_PROGRESS
+    blocker: Chrome Web Store item has an existing submission in review; current unpacked Chrome extension is 0.4.1 pending confirmed reload
