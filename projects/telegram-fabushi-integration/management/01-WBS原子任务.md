@@ -273,3 +273,12 @@
 | Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
 |---|---|---|---|---|---|
 | TFI-USERSCRIPT-RECOVERY-014 | FAB-P0001 / TFI | 宿主受控导航、renderer 崩溃恢复、source 2.9.24 与 Chrome 0.6.2 发布 | IN_PROGRESS | source main 71a2279b；source CI run 34838068938 114/114；parent branch codex/release-0.6.2-renderer-guard-20260914 | parent PR/保护主线、exact-main Chrome package/journey、Web Store 与安装版本回读 |
+
+## 2026-09-14 TFI-USERSCRIPT-RECOVERY-014 交付回读
+
+| 原子任务 | 状态 | 证据 |
+| --- | --- | --- |
+| 脚本会话结束后创建新验收路由 | 已实现/已验证 | 源码 PR #19、canonical source main 71a2279、CI 34838068938（114/114） |
+| 宿主 tab-navigation-guard 与 renderer crash/unloaded 防护 | 已实现/已验证 | 父 PR #2623 → main b4d2d85；Chrome run 34839358565 |
+| 精确主 SHA 打包、证据与发布物 | 已通过 | post-main run 34840407940；Chrome 0.6.2 包含截图、视频、trace、HTML/report、日志 |
+| Web Store 提交与当前 Chrome 更新 | 进行中 | publisher runs 34840738917/34841285781：条目已有审核中提交；当前 Chrome 0.4.1 待确认重载 |
