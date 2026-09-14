@@ -461,7 +461,11 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Validated exact-SHA updater assets for version $version / $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "Validated Fabushi Chrome $chrome_version package from workflow run $CHROME_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$CHROME_REQUIRED" = true ]; then
+            echo "Validated Fabushi Chrome $chrome_version package from workflow run $CHROME_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Chrome package/journey was not required for this source SHA.'
+          fi
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort >> "$GITHUB_STEP_SUMMARY"
 
       - id: release
