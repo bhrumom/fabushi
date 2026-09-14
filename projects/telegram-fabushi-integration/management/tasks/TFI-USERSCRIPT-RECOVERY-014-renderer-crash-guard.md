@@ -59,22 +59,30 @@
 - Lightweight inspection: source/host files, manifest, packaging allowlist, validator, bridge and task records reviewed.
 - Local heavy build/test: intentionally not run; repository policy requires GitHub Actions.
 - Source CI: passed — run 34838068938 / job 103956394607, 114/114.
-- Parent PR CI / Chrome package / packaged journey: pending.
-- Canonical main readback: verified at 1e63a8cf14697107af62948d713cff120679694f; manifest version 0.6.2 and source pin/hash/size match.
+- Parent PR CI / Chrome package / packaged journey: passed — final exact-main Chrome package run 34842044140; evidence artifact contains labelled screenshots, complete WebM segments, trace.zip, Playwright HTML report and JSON/native logs.
+- Canonical main readback: verified at 396a842c7e00b8ad7c236d84cabc9230ed88d391; manifest version 0.6.2 and source pin/hash/size match.
 - Chrome package/journey run 34839358565 (b4d2d85fcd510c51d3dce646311d19c81e6c7403) passed; artifact retained for 90 days with ZIP, content manifest and SHA256SUMS.
 - Post-main delivery run 34840407940 passed and published the exact-main desktop Release `desktop-1.2.65-b4d2d85fcd51`, including Chrome 0.6.2 ZIP/manifest/checksum assets.
 - Final workflow-diagnostic Chrome package run 34841147270 (source 1e63a8cf14697107af62948d713cff120679694f) passed; package SHA-256 c3d206172376a76c09b6f8185981f1bfe8371f9c213f11b2b5d4a83c08ced109.
 - Canonical-main Chrome E2E evidence: `fabushi-chrome-web-store-1e63a8cf14697107af62948d713cff120679694f` contains labelled screenshots, complete WebM journey segments, trace.zip, Playwright HTML report and JSON/native logs.
-- Web Store publisher runs 34840738917 and 34841285781 both stopped at upload HTTP 400; final redacted API response is `FAILED_PRECONDITION / NOT_UPDATEABLE`: the item already has a submission in review. Current Chrome unpacked extension is 0.4.1 at `~/Downloads/fabushi-0.3.0`; local reload awaits user confirmation.
+- Web Store publisher runs 34840738917 and 34841285781 both stopped at upload HTTP 400; final redacted API response is `FAILED_PRECONDITION / NOT_UPDATEABLE`: the item already has a submission in review. After explicit user confirmation, the current Chrome unpacked extension at `/Users/gloriachan/Downloads/fabushi-0.3.0` was replaced and reloaded; the extension page and Service Worker console read back v0.6.2. The previous v0.4.1 directory is preserved at `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.4.1-20260914`.
 
 ## Risks / blockers
 
 - ChatGPT renderer changes remain an external UI risk; selectors remain semantic and recovery is bounded.
 - Web Store review can delay current Chrome auto-update; maintain an explicit pending state.
 - Existing Web Store submission must finish or be explicitly cancelled before 0.6.2 can be uploaded; cancellation is not performed automatically.
-- Current Chrome unpacked extension is intentionally not claimed as updated until the exact 0.6.2 files are reloaded and its version is read back.
+- Current Chrome unpacked extension update is complete: exact final-main CI files are installed and the browser readback is v0.6.2; the previous v0.4.1 directory remains available for rollback.
 - ChatGPT renderer changes remain an external UI risk; selectors remain semantic and recovery is bounded.
 
 ## Next action
 
-Next: resolve the existing Web Store review (wait or explicitly cancel it), then submit 0.6.2; after user confirmation, reload the exact CI package in the current Chrome unpacked extension and read back version 0.6.2.
+Next: keep the existing Web Store review pending (or act only on a separate explicit cancellation decision), then submit 0.6.2 after the item becomes editable; monitor the installed v0.6.2 unpacked extension.
+
+## 最终 main / Chrome 本机回读补充
+
+- Final canonical main: `396a842c7e00b8ad7c236d84cabc9230ed88d391`。
+- Chrome package run: `34842044140`；artifact `fabushi-chrome-web-store-396a842c7e00b8ad7c236d84cabc9230ed88d391`；ZIP SHA-256 `fcb28edd264facb0940bc1a61366954743f72ced557a72ae79cf96e5325b58ce`。
+- Post-main run `34843041788` succeeded and published [desktop-1.2.65-396a842c7e00](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65-396a842c7e00)。
+- Current Chrome path `/Users/gloriachan/Downloads/fabushi-0.3.0` is v0.6.2 and enabled; Service Worker console returned `0.6.2` with zero console messages. Previous v0.4.1 is recoverable from `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.4.1-20260914`。
+- Task remains `IN_PROGRESS` only because the Web Store item is locked by an existing review; public Web Store update is not claimed.
