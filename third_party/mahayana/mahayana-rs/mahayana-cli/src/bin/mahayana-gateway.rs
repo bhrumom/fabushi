@@ -146,11 +146,11 @@ fn run() -> Result<(), String> {
             }
         };
         let id = request.get("id").cloned();
-        let method = request.get("method").and_then(Value::as_str).unwrap_or_default();
-        let params = request
-            .get("params")
-            .cloned()
-            .unwrap_or_else(|| json!({}));
+        let method = request
+            .get("method")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let params = request.get("params").cloned().unwrap_or_else(|| json!({}));
         let response = match handle_request(method, &params, &runtime, &state, &output) {
             Ok(result) => id.clone().map(|id| rpc_result(id, result)),
             Err(error) => id
@@ -254,10 +254,9 @@ fn handle_request(
             write_value(output, &event_notification(&start_event)).map_err(RpcFailure::internal)?;
             Ok(json!({ "session_id": session_id, "turn_id": turn_id }))
         }
-        "session.list" => runtime_execute(
-            runtime,
-            json!({ "@type": "mahayana.conversation.list" }),
-        ),
+        "session.list" => {
+            runtime_execute(runtime, json!({ "@type": "mahayana.conversation.list" }))
+        }
         "session.history" => {
             let session_id = string_param(params, "session_id", "sessionId")?;
             let limit = params
@@ -288,7 +287,10 @@ fn handle_request(
                 .get("decision")
                 .and_then(Value::as_str)
                 .ok_or_else(|| RpcFailure::invalid("approval.respond requires decision"))?;
-            if !matches!(decision, "accept" | "acceptForSession" | "decline" | "cancel") {
+            if !matches!(
+                decision,
+                "accept" | "acceptForSession" | "decline" | "cancel"
+            ) {
                 return Err(RpcFailure::invalid(
                     "decision must be accept, acceptForSession, decline, or cancel",
                 ));
@@ -397,7 +399,9 @@ impl RuntimeHandle {
             "workspaceRoots": [cwd],
             "useCodexAccount": use_codex_account,
         });
-        if use_codex_account && let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME") {
+        if use_codex_account
+            && let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME")
+        {
             config["codexHome"] = serde_json::to_value(PathBuf::from(codex_home))
                 .map_err(|error| error.to_string())?;
         }
@@ -443,13 +447,11 @@ impl RuntimeHandle {
     }
 
     fn resolve_approval(&self, approval_id: &str, decision: &str) -> Result<Value, String> {
-        let request = CString::new(
-            json!({ "approvalId": approval_id, "decision": decision }).to_string(),
-        )
-        .map_err(|error| error.to_string())?;
-        let response = unsafe {
-            take_json(mahayana_runtime_resolve_approval(self.0, request.as_ptr()))
-        }?;
+        let request =
+            CString::new(json!({ "approvalId": approval_id, "decision": decision }).to_string())
+                .map_err(|error| error.to_string())?;
+        let response =
+            unsafe { take_json(mahayana_runtime_resolve_approval(self.0, request.as_ptr())) }?;
         unwrap_ffi(response)
     }
 }
