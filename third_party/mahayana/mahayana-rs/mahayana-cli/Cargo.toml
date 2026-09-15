@@ -35,6 +35,7 @@ flate2.workspace = true
 mahayana-core.workspace = true
 mahayana-feature-host = { workspace = true, features = ["production"] }
 mahayana-gateway.workspace = true
+mahayana-gateway-peer.workspace = true
 mahayana-gateway-protocol.workspace = true
 mahayana-host.workspace = true
 mahayana-host-protocol.workspace = true
