@@ -127,3 +127,11 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 ## 2026-09-15 — 本机 Marketplace 更新错误修复
 
 本机点击线上更新时复现 `marketplaceItemId is not defined`；已确认是 popup 安装校验路径漏导入共享 helper，修复已加入并将 Chrome 包版本递增到 `0.6.8`。当前状态：修复待 CI/主线/打包证据，尚未把本机失败点击或 GitHub artifact 描述成已安装。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-018 导航许可活锁修复
+
+用户继续反馈“最终回复已出现但持续目标仍等待派发”，以及“导航保护每 30 秒重复且从不派发”。已确认当前 `v2.9.30` userscript 发出的宿主导航消息漏了 `pluginId/scriptId` envelope 字段；宿主的 fail-closed 校验因此每次返回无效请求，脚本把没有重试时长的拒绝统一解释为 30 秒，形成无限循环。另修正许可在真实目标路由提交前提前消费冷却的竞态。
+
+- source PR [#24](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/24) 已合并为 source main `5f7d1f26a9883e6806ec855f5f2177ad737aa07e`，发布 `v2.9.31`；资产 225544 bytes，SHA-256 `1e025a9b64bcba225059a0768fb08b5bcf818f902f8c7c4e5980505958e6fe2a`。
+- parent 分支同步精确 source、补齐 content bridge 的旧版本 envelope 兼容、增加导航 lease cancel，并把 Chrome 版本递增至 `0.6.9`；Platform Worker projection 同步 v2.9.31/hash/size。
+- 当前状态：`IN_PROGRESS / SOURCE_RELEASED / PARENT_CI_PENDING`；尚未把 parent 包或当前 Chrome 安装描述为已更新，待 protected main、exact-main packaged journey、生产目录回读和 Release。

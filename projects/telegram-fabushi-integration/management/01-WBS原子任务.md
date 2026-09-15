@@ -344,3 +344,9 @@
 | Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
 |---|---|---|---|---|---|
 | TFI-USERSCRIPT-RECOVERY-017 | FAB-P0001 / TFI | 修复 Chrome popup 点击 Marketplace 更新时的 `marketplaceItemId is not defined` | IN_PROGRESS / FIX_PR_PENDING | 本机截图回读；`app.js` 已补共享 helper import；Chrome 版本已递增到 0.6.8；轻量语法/差异检查通过 | 提交 PR，跑 exact-main Chrome package/packaged E2E，之后替换本机包 |
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-018 导航许可活锁与最终回复续派
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-018 | FAB-P0001 / TFI | 修复导航申请漏插件身份导致的无限 30 秒保护循环，并保证最终回复后的 review 继续派发 | IN_PROGRESS / SOURCE_RELEASED / PARENT_CI_PENDING | source main `5f7d1f26` / Release v2.9.31 / 121-assertion regression；parent branch 已同步 source、host lease 与 Worker projection，Chrome 0.6.9 | parent PR、Platform Control Plane/Chrome CI、protected main、exact-main packaged evidence、生产 catalog 回读与 Release |
