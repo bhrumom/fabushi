@@ -350,3 +350,9 @@
 | Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
 |---|---|---|---|---|---|
 | TFI-USERSCRIPT-RECOVERY-018 | FAB-P0001 / TFI | 修复导航申请漏插件身份导致的无限 30 秒保护循环，并保证最终回复后的 review 继续派发 | IN_PROGRESS / SOURCE_RELEASED / PARENT_CI_PENDING | source main `5f7d1f26` / Release v2.9.31 / 121-assertion regression；parent branch 已同步 source、host lease 与 Worker projection，Chrome 0.6.9 | parent PR、Platform Control Plane/Chrome CI、protected main、exact-main packaged evidence、生产 catalog 回读与 Release |
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-019 最终回复、停滞刷新与验收 JSON 恢复
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-019 | FAB-P0001 / TFI | 以复制+点赞/点踩按钮确认最终回复；连续 3 分钟无变化时受控刷新；对验收 JSON 做有界恢复并发布 source 新版本 | IN_PROGRESS / GOVERNANCE_INTAKE | 用户需求与截图边界已写入 source/task record；开源优先调查已记录；实现与 source/parent CI 待执行 | source v2.9.32、Release、parent bundled/Marketplace pin、exact-main Chrome packaged evidence 与线上回读 |
