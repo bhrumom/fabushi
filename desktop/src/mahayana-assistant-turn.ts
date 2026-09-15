@@ -221,6 +221,7 @@ function reduceLegacyRuntimeEvent(turn: AssistantTurn, event: RuntimeEvent, now:
       return {
         ...turn,
         updatedAtMs: now,
+        status: 'completed',
         parts: reconcileLegacyFinalText(turn, event.text),
       };
     case 'operation.completed':

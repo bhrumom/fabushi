@@ -211,7 +211,11 @@ impl ReplayStore {
 
     fn ensure_session(&mut self, session_id: &str) {
         if self.sessions.contains_key(session_id) {
-            if let Some(index) = self.session_order.iter().position(|item| item == session_id) {
+            if let Some(index) = self
+                .session_order
+                .iter()
+                .position(|item| item == session_id)
+            {
                 self.session_order.remove(index);
             }
             self.session_order.push_back(session_id.to_string());
@@ -229,7 +233,11 @@ impl ReplayStore {
 
         let mut session = SessionReplay::default();
         session.next_seq = self.forgotten_latest.remove(session_id).unwrap_or_default();
-        if let Some(index) = self.forgotten_order.iter().position(|item| item == session_id) {
+        if let Some(index) = self
+            .forgotten_order
+            .iter()
+            .position(|item| item == session_id)
+        {
             self.forgotten_order.remove(index);
         }
         session.evicted_through = session.next_seq;
@@ -239,7 +247,11 @@ impl ReplayStore {
 
     fn remember_forgotten(&mut self, session_id: String, latest_seq: u64) {
         self.forgotten_latest.insert(session_id.clone(), latest_seq);
-        if let Some(index) = self.forgotten_order.iter().position(|item| item == &session_id) {
+        if let Some(index) = self
+            .forgotten_order
+            .iter()
+            .position(|item| item == &session_id)
+        {
             self.forgotten_order.remove(index);
         }
         self.forgotten_order.push_back(session_id);
@@ -260,7 +272,8 @@ struct RuntimeProjection {
 
 impl RuntimeProjection {
     fn register_turn(&mut self, turn_id: impl Into<String>, session_id: impl Into<String>) {
-        self.sessions_by_turn.insert(turn_id.into(), session_id.into());
+        self.sessions_by_turn
+            .insert(turn_id.into(), session_id.into());
     }
 
     fn session_for_turn(&self, turn_id: &str) -> Option<&str> {
@@ -400,23 +413,34 @@ impl RuntimeProjection {
                         args: metadata.clone(),
                         description: detail.clone(),
                     }),
-                    RuntimeActivityStatus::Completed => GatewayEvent::ToolComplete(ToolCompletePayload {
-                        tool_id: step_id.clone(),
-                        name: Some(title.clone()),
-                        result: metadata.clone().or_else(|| detail.clone().map(Value::String)),
-                        error: None,
-                    }),
-                    RuntimeActivityStatus::Failed => GatewayEvent::ToolComplete(ToolCompletePayload {
-                        tool_id: step_id.clone(),
-                        name: Some(title.clone()),
-                        result: metadata.clone(),
-                        error: Some(detail.clone().unwrap_or_else(|| format!("{title} failed"))),
-                    }),
+                    RuntimeActivityStatus::Completed => {
+                        GatewayEvent::ToolComplete(ToolCompletePayload {
+                            tool_id: step_id.clone(),
+                            name: Some(title.clone()),
+                            result: metadata
+                                .clone()
+                                .or_else(|| detail.clone().map(Value::String)),
+                            error: None,
+                        })
+                    }
+                    RuntimeActivityStatus::Failed => {
+                        GatewayEvent::ToolComplete(ToolCompletePayload {
+                            tool_id: step_id.clone(),
+                            name: Some(title.clone()),
+                            result: metadata.clone(),
+                            error: Some(
+                                detail.clone().unwrap_or_else(|| format!("{title} failed")),
+                            ),
+                        })
+                    }
                 };
                 self.turn_draft(operation_id.0.as_str(), timestamp_ms, gateway_event)
             }
             RuntimeEvent::OperationCompleted { operation_id } => {
-                let draft = if self.message_completed_turns.contains(operation_id.0.as_str()) {
+                let draft = if self
+                    .message_completed_turns
+                    .contains(operation_id.0.as_str())
+                {
                     Vec::new()
                 } else {
                     self.turn_draft(

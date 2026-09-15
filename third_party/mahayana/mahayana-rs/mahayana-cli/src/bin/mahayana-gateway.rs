@@ -1,7 +1,5 @@
 use mahayana_core::RuntimeEvent;
-use mahayana_gateway::{
-    GatewayRuntime, GatewayState, ReplayLimits, RpcFailure, dispatch_request,
-};
+use mahayana_gateway::{GatewayRuntime, GatewayState, ReplayLimits, RpcFailure, dispatch_request};
 use mahayana_gateway_protocol::JsonRpcEventNotification;
 use mahayana_runtime::{
     mahayana_runtime_close, mahayana_runtime_create, mahayana_runtime_execute,
@@ -198,9 +196,7 @@ impl RuntimeHandle {
             "workspaceRoots": [cwd],
             "useCodexAccount": use_codex_account,
         });
-        if use_codex_account
-            && let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME")
-        {
+        if use_codex_account && let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME") {
             config["codexHome"] = serde_json::to_value(PathBuf::from(codex_home))
                 .map_err(|error| error.to_string())?;
         }
@@ -246,13 +242,11 @@ impl RuntimeHandle {
     }
 
     fn resolve_approval_value(&self, approval_id: &str, decision: &str) -> Result<Value, String> {
-        let request = CString::new(
-            json!({ "approvalId": approval_id, "decision": decision }).to_string(),
-        )
-        .map_err(|error| error.to_string())?;
-        let response = unsafe {
-            take_json(mahayana_runtime_resolve_approval(self.0, request.as_ptr()))
-        }?;
+        let request =
+            CString::new(json!({ "approvalId": approval_id, "decision": decision }).to_string())
+                .map_err(|error| error.to_string())?;
+        let response =
+            unsafe { take_json(mahayana_runtime_resolve_approval(self.0, request.as_ptr())) }?;
         unwrap_ffi(response)
     }
 }

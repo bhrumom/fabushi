@@ -52,7 +52,14 @@ import type {
   SandboxRuntime,
   UpdateState,
 } from '../../frontend/apps/web/src/lib/mahayana-host/contracts';
-import { ElectronMahayanaHostTransport, isElectronMahayanaHostAvailable, MAHAYANA_ACCOUNT_SESSION_RESET_EVENT, readCachedConversationMessages } from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
+import {
+  ElectronMahayanaHostTransport,
+  isElectronMahayanaHostAvailable,
+  MAHAYANA_ACCOUNT_SESSION_RESET_EVENT,
+  MAHAYANA_COMMAND_EVENT_NAME,
+  readCachedConversationMessages,
+  type MahayanaCommandBridgeDetail,
+} from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
 import { MockMahayanaHostTransport } from '../../frontend/apps/web/src/lib/mahayana-host/mock-transport';
 import { invokeNativeDesktop, subscribeNativeDesktopEvents } from '../../frontend/apps/web/src/lib/fabushi-runtime/native-desktop';
 import type { InstalledPluginPointer, MahayanaHostTransport, MarketplacePluginSummary } from '../../frontend/apps/web/src/lib/mahayana-host/transport';
@@ -1127,6 +1134,34 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     const unsubscribe = transport.subscribe((event) => {
       if (!closed) handleRuntimeEvent(event);
     });
+    const onCommandBridge = (event: Event) => {
+      const detail = (event as CustomEvent<MahayanaCommandBridgeDetail>).detail;
+      if (!detail || detail.command.type !== 'chat.send') return;
+      const conversationKey = detail.context?.conversationKey;
+      if (!conversationKey || activePeerKeyRef.current !== conversationKey) return;
+
+      if (detail.phase === 'dispatch') {
+        agentRequestPendingRef.current = true;
+        setPendingSend(true);
+        return;
+      }
+      if (detail.phase === 'accepted') {
+        const operationId = detail.accepted.operationId;
+        if (!operationId || !claimAgentOperation(operationId)) return;
+        appendAssistantTurnEvent({
+          type: 'operation.started',
+          timestamp: new Date().toISOString(),
+          operationId,
+          label: '正在思考',
+          interruptible: true,
+        });
+        return;
+      }
+      agentRequestPendingRef.current = false;
+      setPendingSend(false);
+      setError(detail.error);
+    };
+    window.addEventListener(MAHAYANA_COMMAND_EVENT_NAME, onCommandBridge);
     void transport.initialize({ profileId: 'desktop-messenger-v2', mode: 'production' })
       .then(async () => {
         if (closed) return;
@@ -1166,6 +1201,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     return () => {
       closed = true;
       unsubscribe();
+      window.removeEventListener(MAHAYANA_COMMAND_EVENT_NAME, onCommandBridge);
       const remoteComputer = remoteComputerControllerRef.current;
       if (remoteComputer) void remoteComputer.stop().finally(() => transport.close());
       else void transport.close();
