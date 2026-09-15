@@ -71,6 +71,12 @@ async function openMahayanaConversation(page: Page): Promise<void> {
   await expect(page.getByTestId('messenger-input')).toBeVisible();
 }
 
+async function enableMahayanaInspector(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    document.body.dataset.mahayanaInspector = 'true';
+  });
+}
+
 async function createSelfHostedBotAcceptanceChannel(page: Page): Promise<{ conversationId: string; peerTestId: string }> {
   await page.getByTestId('profile-navigation-trigger').click();
   const chats = page.getByTitle('聊天', { exact: true });
@@ -128,7 +134,7 @@ async function emitBotInvocationRequested(
   }, { conversationId, text });
 }
 
-test('bot runs through Mahayana as a visible multi-step task and restores its run journal', async () => {
+test('default chat stays free of the legacy completion card while the Mahayana inspector restores its run journal', async () => {
   const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-mahayana-workbench-'));
   let app: ElectronApplication | null = null;
 
@@ -145,6 +151,14 @@ test('bot runs through Mahayana as a visible multi-step task and restores its ru
     // the Mahayana Host finishes accepting/routing the agent turn.
     await expect(page.getByRole('article').filter({ hasText: prompt }).last()).toBeVisible({ timeout: 1_000 });
 
+    // MSR-204 makes the normal transcript the product surface. The legacy
+    // workbench timeline remains mounted only for compatibility side effects
+    // and is opt-in as an inspector while those side effects migrate to Rust.
+    await expect(page.locator('body')).not.toHaveAttribute('data-mahayana-inspector', 'true');
+    await expect(page.getByText('执行完成，最终结果如下', { exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('agent-workbench')).toBeHidden();
+
+    await enableMahayanaInspector(page);
     const workbench = page.getByTestId('agent-workbench');
     await expect(workbench).toBeVisible({ timeout: 15_000 });
     const run = page.getByTestId('agent-run').last();
@@ -166,6 +180,8 @@ test('bot runs through Mahayana as a visible multi-step task and restores its ru
     // local journal on first paint instead of waiting for conversation.open.
     await expect(page.getByRole('article').filter({ hasText: prompt }).last()).toBeVisible({ timeout: 1_000 });
     await openMahayanaConversation(page);
+    await expect(page.getByText('执行完成，最终结果如下', { exact: true })).toHaveCount(0);
+    await enableMahayanaInspector(page);
 
     const restoredRun = page.locator(`[data-testid="agent-run"][data-run-id="${persistedRunId}"]`);
     await expect(restoredRun).toBeVisible({ timeout: 15_000 });
@@ -178,7 +194,7 @@ test('bot runs through Mahayana as a visible multi-step task and restores its ru
   }
 });
 
-test('self-hosted Bot invocation is consumed by Mahayana multi-step runtime without actor impersonation and restores after restart', async () => {
+test('self-hosted Bot invocation stays off the default task-card surface and remains inspectable after restart', async () => {
   const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-selfhosted-bot-mahayana-'));
   let app: ElectronApplication | null = null;
   const prompt = '自建 Bot 请规划步骤，调用 Mahayana 工具并完成这个任务。';
@@ -196,10 +212,14 @@ test('self-hosted Bot invocation is consumed by Mahayana multi-step runtime with
 
     // The Rust messaging service has a separate contract test proving that a
     // human message to a Bot produces this exact BotInvocationRequested event.
-    // Here we verify the Electron consumer half: event -> Mahayana -> visible run.
+    // Here we verify the Electron consumer half: event -> Mahayana -> runtime
+    // run, while the legacy task-card UI remains inspector-only.
     const invocationId = await emitBotInvocationRequested(page, conversationId, prompt);
     expect(invocationId).toContain('invocation:e2e:');
+    await expect(page.getByText('执行完成，最终结果如下', { exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('agent-workbench')).toBeHidden();
 
+    await enableMahayanaInspector(page);
     const run = page.getByTestId('agent-run').last();
     await expect(run).toBeVisible({ timeout: 15_000 });
     await expect(run).toHaveAttribute('data-status', 'completed', { timeout: 15_000 });
@@ -225,6 +245,8 @@ test('self-hosted Bot invocation is consumed by Mahayana multi-step runtime with
     await expect(restoredPeer).toBeVisible({ timeout: 15_000 });
     await restoredPeer.click();
     await expect(page.getByRole('article').filter({ hasText: prompt }).last()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('执行完成，最终结果如下', { exact: true })).toHaveCount(0);
+    await enableMahayanaInspector(page);
 
     const restoredRun = page.locator(`[data-testid="agent-run"][data-run-id="${persistedRunId}"]`);
     await expect(restoredRun).toBeVisible({ timeout: 15_000 });
