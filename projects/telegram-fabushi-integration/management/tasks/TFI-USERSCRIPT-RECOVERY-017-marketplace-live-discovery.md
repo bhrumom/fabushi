@@ -3,9 +3,9 @@
 - 项目：`FAB-P0001` / `TFI`
 - Task ID：`TFI-USERSCRIPT-RECOVERY-017`
 - 来源：`source/2026-09-15-marketplace-userscript-live-discovery.md`
-- 状态：`IN_PROGRESS / PR_PENDING`
+- 状态：`IN_PROGRESS / FOLLOWUP_PR_PENDING`
 - 开始时间：2026-09-15（Asia/Shanghai）
-- 最近更新：2026-09-15
+- 最近更新：2026-09-15（生产 catalog 已回读）
 
 ## 目标
 
@@ -53,16 +53,17 @@
 ## 分支 / 提交 / PR
 
 - 分支：`codex/tfi-marketplace-live-discovery-017`
+- 跟进分支：`codex/tfi-marketplace-live-discovery-017-status`
 - 提交：待提交
 - PR：待创建
 
 ## CI / 部署 / 线上证据
 
-- Platform Control Plane PR CI：待运行
-- canonical main：待 protected merge/readback
-- 生产部署：待 Platform Control Plane workflow
-- 线上 catalog/release 回读：待部署后执行
-- Chrome `0.6.6` packaged artifact 与自动更新检查 UI/Service Worker 证据：待 Chrome workflow 产出
+- Platform Control Plane PR CI：通过；PR #2641 / run `34921674552`
+- canonical main：`4f484be2fd72f13289473f9c4917e03b78a92022`（PR #2641 已合并）
+- 生产部署：通过；Platform Control Plane run `34922024310`
+- 线上 catalog/release 回读：通过；详见 `evidence/TFI-USERSCRIPT-RECOVERY-017/2026-09-15-production-readback.json`
+- Chrome `0.6.6` packaged artifact 与自动更新检查 UI/Service Worker 证据：Chrome run `34922024248` 成功，artifact `10378058000`；follow-up PR #2642 的状态保持修复待合并后复跑 required post-main evidence
 
 ## 风险与阻塞
 
@@ -72,7 +73,7 @@
 
 ## 下一步
 
-提交 PR，等待 Platform Control Plane 与 Chrome workflow checks 和 protected main；部署后回读线上 API，确认用户截图中的条目从 `2.9.28/f09e2c5e` 变为 `2.9.30/480ebe61`，并确认 `0.6.6` 插件的后台检查、徽章和页面提示已进入包。当前已安装的旧 Chrome 包仍需通过其分发渠道更新到 `0.6.6`，本机扩展重载/安装仍需用户在动作前明确确认。
+第一版 PR #2641 已合并并完成生产 Worker 部署/API 回读，线上条目已从 `2.9.28/f09e2c5e` 变为 `2.9.30/480ebe61`；Chrome `0.6.6` 包已由 run `34922024248` 构建。当前跟进 PR #2642 只修正搜索/加载竞态下的全局更新提示保持；合并后需完成该 SHA 的 post-main packaged evidence。当前已安装的旧 Chrome 包仍需通过其分发渠道更新到 `0.6.6`，本机扩展重载/安装仍需用户在动作前明确确认。
 
 ## 时间
 
