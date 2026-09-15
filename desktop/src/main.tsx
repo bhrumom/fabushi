@@ -16,6 +16,7 @@ import { installSelfHostedMahayanaInvocationBridge } from './selfhosted-mahayana
 import './messenger-layout-regressions.css';
 import './grok-agent-ui-parity.css';
 import './openbot-ui-parity.css';
+import './mahayana-turn-migration.css';
 import './credential-vault.css';
 import './sidebar-contact-groups.css';
 
