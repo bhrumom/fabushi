@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   repair:
-    if: github.event.head_commit.message == 'chore(msr): run one-shot peer repair'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout canonical MSR-204 branch
@@ -33,7 +32,9 @@ jobs:
           path = Path('third_party/mahayana/mahayana-rs/mahayana-gateway-peer/src/lib.rs')
           text = path.read_text()
 
-          old = '''    let mut answers = request.locked_answers.clone();
+          start = text.index('    let mut answers = request.locked_answers.clone();\n')
+          end = text.index('    object.insert(\n', start)
+          replacement = '''    let mut answers = BTreeMap::new();
               if let Some(client_answers) = object.get("answers").and_then(Value::as_object) {
                   for (question_id, answer) in client_answers {
                       if let Some(answer) = answer.as_str() {
@@ -41,67 +42,53 @@ jobs:
                       }
                   }
               }
+              // Rust is authoritative for answers already locked before reconnect.
+              // A stale client response may fill unlocked answers, but it cannot
+              // replace an answer the server has already sealed.
+              answers.extend(request.locked_answers.clone());
           '''
-          # Keep exact indentation independent of the embedded workflow block.
-          old = old.replace('              ', '')
-          new = '''    let mut answers = BTreeMap::new();
-          if let Some(client_answers) = object.get("answers").and_then(Value::as_object) {
-              for (question_id, answer) in client_answers {
-                  if let Some(answer) = answer.as_str() {
-                      answers.insert(question_id.clone(), answer.to_string());
-                  }
+          replacement = '\n'.join(line[10:] if line.startswith('          ') else line for line in replacement.splitlines()) + '\n'
+          text = text[:start] + replacement + text[end:]
+
+          marker = '    #[test]\n    fn exported_state_round_trips_for_future_canonical_restart_store() {\n'
+          regression = '''    #[test]
+              fn locked_clarify_answer_wins_over_stale_client_response() {
+                  let mut registry = ServerRequestRegistry::default();
+                  registry
+                      .issue_with_id(
+                          "srq-clarify0003".to_string(),
+                          "session-3".to_string(),
+                          "clarify".to_string(),
+                          json!({}),
+                          vec!["q1".to_string(), "q2".to_string()],
+                          30,
+                      )
+                      .unwrap();
+                  registry
+                      .lock_answer("srq-clarify0003", "q1", "server-locked")
+                      .unwrap();
+
+                  let resolved = registry
+                      .resolve_response(&json!({
+                          "jsonrpc": "2.0",
+                          "id": "srq-clarify0003",
+                          "result": {"answers": {"q1": "stale-client", "q2": "client-open"}}
+                      }))
+                      .unwrap();
+
+                  assert_eq!(
+                      resolved.response,
+                      ServerRequestResponse::Result(json!({
+                          "answers": {"q1": "server-locked", "q2": "client-open"}
+                      }))
+                  );
               }
-          }
-          // Rust is authoritative for answers already locked before reconnect.
-          // A stale or duplicated client response may contribute unlocked answers,
-          // but it must never overwrite an answer that the server already sealed.
-          answers.extend(request.locked_answers.clone());
+
           '''
-          new = new.replace('          ', '')
-          if old not in text:
-              raise SystemExit('merge_locked_answers target block not found')
-          text = text.replace(old, new, 1)
-
-          marker = '''    #[test]
-              fn exported_state_round_trips_for_future_canonical_restart_store() {
-          '''.replace('              ', '')
-          test = '''    #[test]
-          fn locked_clarify_answer_wins_over_stale_client_response() {
-              let mut registry = ServerRequestRegistry::default();
-              registry
-                  .issue_with_id(
-                      "srq-clarify0003".to_string(),
-                      "session-3".to_string(),
-                      "clarify".to_string(),
-                      json!({}),
-                      vec!["q1".to_string(), "q2".to_string()],
-                      30,
-                  )
-                  .unwrap();
-              registry
-                  .lock_answer("srq-clarify0003", "q1", "server-locked")
-                  .unwrap();
-
-              let resolved = registry
-                  .resolve_response(&json!({
-                      "jsonrpc": "2.0",
-                      "id": "srq-clarify0003",
-                      "result": {"answers": {"q1": "stale-client", "q2": "client-open"}}
-                  }))
-                  .unwrap();
-
-              assert_eq!(
-                  resolved.response,
-                  ServerRequestResponse::Result(json!({
-                      "answers": {"q1": "server-locked", "q2": "client-open"}
-                  }))
-              );
-          }
-
-          '''.replace('          ', '')
+          regression = '\n'.join(line[10:] if line.startswith('          ') else line for line in regression.splitlines()) + '\n'
           if marker not in text:
               raise SystemExit('test insertion marker not found')
-          text = text.replace(marker, test + marker, 1)
+          text = text.replace(marker, regression + marker, 1)
           path.write_text(text)
           PY
 
