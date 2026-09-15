@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   repair:
-    if: github.event.head_commit.message == 'chore(msr): trigger rustfmt repair'
+    if: "github.event.head_commit.message == 'chore(msr): trigger rustfmt repair'"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout canonical MSR-204 branch
