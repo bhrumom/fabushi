@@ -79,6 +79,7 @@
 - `app.js` 现在始终先读取实时 Chrome Marketplace API；只有网络失败时才回退到 Host 目录。增加 `marketplaceRequestId`，丢弃过期搜索/启动请求，避免旧响应覆盖最新版本。
 - 该补强保持安装安全边界：自动检查只提示，不静默安装；真正安装继续校验不可变 GitHub URL、字节数、SHA-256 与 userscript header。
 - 本轮需重新执行 exact-main Chrome 包与 packaged simulated-user journey；Web Store 仍受现有审核提交的 `NOT_UPDATEABLE` 外部限制。
+- 因本轮改变扩展二进制，manifest、打包校验器与 Web Store workflow 已从 `0.6.6` 递增到 `0.6.7`，避免以同一版本发布不同内容；`0.6.7` 的 exact-main 包和旅程仍待 CI。
 
 ## 风险与阻塞
 
