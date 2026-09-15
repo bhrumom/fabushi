@@ -1,0 +1,17 @@
+[package]
+name = "mahayana-gateway-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Native Mahayana Runtime adapter for the transport-neutral gateway."
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+mahayana-gateway.workspace = true
+mahayana-turn-protocol.workspace = true
+mahayana-ffi = { path = "../mahayana-ffi" }
+serde_json.workspace = true
+uuid.workspace = true
