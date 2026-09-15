@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   repair:
+    if: github.event.head_commit.message == 'chore(msr): correct peer repair helper'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout canonical MSR-204 branch
@@ -31,61 +32,69 @@ jobs:
 
           path = Path('third_party/mahayana/mahayana-rs/mahayana-gateway-peer/src/lib.rs')
           text = path.read_text()
-
-          start = text.index('    let mut answers = request.locked_answers.clone();\n')
-          end = text.index('    object.insert(\n', start)
-          replacement = '''    let mut answers = BTreeMap::new();
-              if let Some(client_answers) = object.get("answers").and_then(Value::as_object) {
-                  for (question_id, answer) in client_answers {
-                      if let Some(answer) = answer.as_str() {
-                          answers.insert(question_id.clone(), answer.to_string());
-                      }
-                  }
-              }
-              // Rust is authoritative for answers already locked before reconnect.
-              // A stale client response may fill unlocked answers, but it cannot
-              // replace an answer the server has already sealed.
-              answers.extend(request.locked_answers.clone());
-          '''
-          replacement = '\n'.join(line[10:] if line.startswith('          ') else line for line in replacement.splitlines()) + '\n'
-          text = text[:start] + replacement + text[end:]
+          old_merge = (
+              '    let mut answers = request.locked_answers.clone();\n'
+              '    if let Some(client_answers) = object.get("answers").and_then(Value::as_object) {\n'
+              '        for (question_id, answer) in client_answers {\n'
+              '            if let Some(answer) = answer.as_str() {\n'
+              '                answers.insert(question_id.clone(), answer.to_string());\n'
+              '            }\n'
+              '        }\n'
+              '    }\n'
+          )
+          new_merge = (
+              '    let mut answers = BTreeMap::new();\n'
+              '    if let Some(client_answers) = object.get("answers").and_then(Value::as_object) {\n'
+              '        for (question_id, answer) in client_answers {\n'
+              '            if let Some(answer) = answer.as_str() {\n'
+              '                answers.insert(question_id.clone(), answer.to_string());\n'
+              '            }\n'
+              '        }\n'
+              '    }\n'
+              '    // Rust owns locked clarify answers across reconnects; stale client\n'
+              '    // responses may fill unlocked answers but cannot overwrite sealed ones.\n'
+              '    answers.extend(request.locked_answers.clone());\n'
+          )
+          if text.count(old_merge) != 1:
+              raise SystemExit(f'expected one merge block, found {text.count(old_merge)}')
+          text = text.replace(old_merge, new_merge, 1)
 
           marker = '    #[test]\n    fn exported_state_round_trips_for_future_canonical_restart_store() {\n'
-          regression = '''    #[test]
-              fn locked_clarify_answer_wins_over_stale_client_response() {
-                  let mut registry = ServerRequestRegistry::default();
-                  registry
-                      .issue_with_id(
-                          "srq-clarify0003".to_string(),
-                          "session-3".to_string(),
-                          "clarify".to_string(),
-                          json!({}),
-                          vec!["q1".to_string(), "q2".to_string()],
-                          30,
-                      )
-                      .unwrap();
-                  registry
-                      .lock_answer("srq-clarify0003", "q1", "server-locked")
-                      .unwrap();
-
-                  let resolved = registry
-                      .resolve_response(&json!({
-                          "jsonrpc": "2.0",
-                          "id": "srq-clarify0003",
-                          "result": {"answers": {"q1": "stale-client", "q2": "client-open"}}
-                      }))
-                      .unwrap();
-
-                  assert_eq!(
-                      resolved.response,
-                      ServerRequestResponse::Result(json!({
-                          "answers": {"q1": "server-locked", "q2": "client-open"}
-                      }))
-                  );
-              }
-
-          '''
-          regression = '\n'.join(line[10:] if line.startswith('          ') else line for line in regression.splitlines()) + '\n'
+          regression = (
+              '    #[test]\n'
+              '    fn locked_clarify_answer_wins_over_stale_client_response() {\n'
+              '        let mut registry = ServerRequestRegistry::default();\n'
+              '        registry\n'
+              '            .issue_with_id(\n'
+              '                "srq-clarify0003".to_string(),\n'
+              '                "session-3".to_string(),\n'
+              '                "clarify".to_string(),\n'
+              '                json!({}),\n'
+              '                vec!["q1".to_string(), "q2".to_string()],\n'
+              '                30,\n'
+              '            )\n'
+              '            .unwrap();\n'
+              '        registry\n'
+              '            .lock_answer("srq-clarify0003", "q1", "server-locked")\n'
+              '            .unwrap();\n'
+              '\n'
+              '        let resolved = registry\n'
+              '            .resolve_response(&json!({\n'
+              '                "jsonrpc": "2.0",\n'
+              '                "id": "srq-clarify0003",\n'
+              '                "result": {"answers": {"q1": "stale-client", "q2": "client-open"}}\n'
+              '            }))\n'
+              '            .unwrap();\n'
+              '\n'
+              '        assert_eq!(\n'
+              '            resolved.response,\n'
+              '            ServerRequestResponse::Result(json!({\n'
+              '                "answers": {"q1": "server-locked", "q2": "client-open"}\n'
+              '            }))\n'
+              '        );\n'
+              '    }\n'
+              '\n'
+          )
           if marker not in text:
               raise SystemExit('test insertion marker not found')
           text = text.replace(marker, regression + marker, 1)
