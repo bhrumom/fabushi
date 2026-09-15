@@ -122,6 +122,9 @@ active_work:
     web_store_publish_run: 34923905837
     state_detail: IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED
     blocker: Chrome Web Store API returned NOT_UPDATEABLE because an existing item submission is still in review; exact-main package and packaged journey are green
+    next_chrome_version: 0.6.7
+    live_catalog_fix_parent_sha: f2073f6a72158c057145240a7391abbe0581f38a
+    live_catalog_fix_state: CI_PENDING
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001
