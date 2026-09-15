@@ -110,3 +110,10 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 - PR #2641 已合并至 `main@4f484be2fd72f13289473f9c4917e03b78a92022`；Platform Control Plane run `34922024310` 已成功部署 Worker。
 - 生产 Chrome catalog 已返回 userscript v2.9.30、source commit `480ebe61…`、224113 bytes 和 SHA-256 `d15040a5…`；desktop/CLI 仍返回 `1.0.1` Mini App package。
 - Chrome package run `34922024248` 成功，产出 `fabushi-chrome-web-store-4f484be2fd72f13289473f9c4917e03b78a92022` artifact；follow-up PR #2642 只修正视图状态保持，待合并后完成最终 post-main evidence。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 最终客户端交付回读
+
+- PR #2643 已清除主线合并冲突标记并进入 `main@bc22336c5b6d645576575ea4e4919b4658d6f13a`。
+- Chrome `0.6.6` exact-main workflow `34923735666` 通过，artifact `10379295814`；包内已包含 Service Worker 后台版本检查、持久化状态、徽章和 Marketplace 更新提示。
+- 线上 Chrome catalog/direct-release 已返回 userscript `v2.9.30`，不再把桌面 `1.0.1` 包当成 Chrome 脚本版本。
+- Chrome Web Store publish run `34923905837` 已触达发布 API，但因已有提交处于审核中返回 `400 NOT_UPDATEABLE`；未取消或覆盖审核。任务状态为 `IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED`，审核结束后可用同一 exact-main 包重试。

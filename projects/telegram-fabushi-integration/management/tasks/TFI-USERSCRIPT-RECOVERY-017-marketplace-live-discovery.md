@@ -3,9 +3,9 @@
 - 项目：`FAB-P0001` / `TFI`
 - Task ID：`TFI-USERSCRIPT-RECOVERY-017`
 - 来源：`source/2026-09-15-marketplace-userscript-live-discovery.md`
-- 状态：`IN_PROGRESS / FOLLOWUP_PR_PENDING`
+- 状态：`IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED`
 - 开始时间：2026-09-15（Asia/Shanghai）
-- 最近更新：2026-09-15（生产 catalog 已回读）
+- 最近更新：2026-09-15（canonical main、Chrome packaged journey 和 Web Store 门禁已回读）
 
 ## 目标
 
@@ -54,8 +54,8 @@
 
 - 分支：`codex/tfi-marketplace-live-discovery-017`
 - 跟进分支：`codex/tfi-marketplace-live-discovery-017-status`
-- 提交：待提交
-- PR：待创建
+- 提交：`bc22336c5b6d645576575ea4e4919b4658d6f13a`（canonical main，PR #2643 合并）
+- PR：[#2641](https://github.com/bhrumom/fabushi/pull/2641)、[#2642](https://github.com/bhrumom/fabushi/pull/2642)、[#2643](https://github.com/bhrumom/fabushi/pull/2643)
 
 ## CI / 部署 / 线上证据
 
@@ -65,6 +65,14 @@
 - 线上 catalog/release 回读：通过；详见 `evidence/TFI-USERSCRIPT-RECOVERY-017/2026-09-15-production-readback.json`
 - Chrome `0.6.6` packaged artifact 与自动更新检查 UI/Service Worker 证据：Chrome run `34922024248` 成功，artifact `10378058000`；follow-up PR #2642 的状态保持修复待合并后复跑 required post-main evidence
 
+## 2026-09-15 — canonical main 自动识别交付回读
+
+- PR #2642 已合并为 `d00346d6…`，随后 PR #2643 清除了合并冲突标记并合并为 canonical `main@bc22336c5b6d645576575ea4e4919b4658d6f13a`。
+- Chrome workflow `34923735666` 成功：`0.6.6` 包及 packaged simulated-user journey 均通过；证据包含 5 个检查点截图、完整视频分段、Playwright trace/HTML 报告、journey/native 日志和 content manifest。
+- 线上 Chrome catalog/direct-release 回读仍为 userscript `v2.9.30`、sourceRef `480ebe61…`、224113 bytes、SHA-256 `d15040a5…`；desktop/CLI 未被改写。
+- 已按用户要求尝试公开发布 Chrome 扩展：publish run `34923905837` 在 Web Store API 返回 `400 FAILED_PRECONDITION / NOT_UPDATEABLE`，原因是已有提交仍在审核；没有取消或覆盖现有审核。
+- 机器证据：`evidence/TFI-USERSCRIPT-RECOVERY-017/2026-09-15-client-auto-discovery-main-readback.json`。
+
 ## 风险与阻塞
 
 - `R-TFI-USR-MKT-017-01`：未来 userscript Release 若只更新 source repo 而未更新 projection 常量，旧扩展仍会显示旧版本；缓解为把 projection 常量和 release 记录作为同一任务门禁。
@@ -73,10 +81,10 @@
 
 ## 下一步
 
-第一版 PR #2641 已合并并完成生产 Worker 部署/API 回读，线上条目已从 `2.9.28/f09e2c5e` 变为 `2.9.30/480ebe61`；Chrome `0.6.6` 包已由 run `34922024248` 构建。当前跟进 PR #2642 只修正搜索/加载竞态下的全局更新提示保持；合并后需完成该 SHA 的 post-main packaged evidence。当前已安装的旧 Chrome 包仍需通过其分发渠道更新到 `0.6.6`，本机扩展重载/安装仍需用户在动作前明确确认。
+第一版 PR #2641 与状态保持 PR #2642 已合并；PR #2643 修复主线冲突标记并完成 exact-main Chrome 包/旅程证据。当前已安装的旧 Chrome 包仍需通过 Chrome Web Store 更新到 `0.6.6`，而 Web Store item 因已有审核提交暂不能编辑/发布；审核完成后重试 `34923905837` 的 exact-main 发布流程。当前不把 GitHub artifact 或本地重载误报为 Web Store 已更新。
 
 ## 时间
 
 - started_at：2026-09-15T10:08:00+08:00
-- updated_at：2026-09-15T10:08:00+08:00
+- updated_at：2026-09-15T11:18:00+08:00
 - completed_at：N/A（任务进行中）

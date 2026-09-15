@@ -14,3 +14,11 @@
 - Chrome `0.6.6` packaged artifact containing the Service Worker alarm checker, persisted update status, action badge, startup/Marketplace polling UI, and versioned packaged E2E screenshots/video/trace/report.
 
 No completion evidence is claimed until the production deployment and online readback are successful.
+
+## 2026-09-15 exact-main client auto-discovery readback
+
+- Canonical main: `bc22336c5b6d645576575ea4e4919b4658d6f13a`.
+- Chrome workflow `34923735666` passed. The `0.6.6` package includes the background checker and the required packaged journey evidence bundle (checkpoint screenshots, complete video segments, trace, HTML report, journey/native logs).
+- Production catalog still returns userscript `2.9.30` with the pinned source/hash/size above.
+- Web Store publish workflow `34923905837` reached the protected API but returned `400 FAILED_PRECONDITION / NOT_UPDATEABLE`: an existing item submission is still in review. The package was not falsely reported as publicly published; retry is required after that review completes.
+- Full machine-readable record: `2026-09-15-client-auto-discovery-main-readback.json`.

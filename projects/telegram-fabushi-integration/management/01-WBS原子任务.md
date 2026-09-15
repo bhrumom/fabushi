@@ -329,3 +329,10 @@
 
 | TFI-USERSCRIPT-RECOVERY-017-AUTO | FAB-P0001 / TFI | Service Worker 启动/安装/30 分钟 alarm、Marketplace 打开/5 分钟目录刷新和持久化更新提示 | IMPLEMENTED / CI_PENDING | `marketplace-update-check.js`、`app.js`、manifest 0.6.6 与纯比较回归已写入分支 | Chrome package/packaged E2E 与 protected main 交付证据 |
 - 第一版 PR #2641 已进入 `main@4f484be2…`，Chrome package `34922024248` 和 Worker deploy `34922024310` 已通过；follow-up PR #2642 的状态保持修复仍待合并。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 主线修复与商店门禁
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-017 | FAB-P0001 / TFI | 让 Chrome 插件在后台自动识别线上 userscript 更新 | IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED | PR #2643 → `main@bc22336c…`; Chrome run `34923735666`, artifact `10379295814`, packaged journey/evidence 通过；线上 catalog v2.9.30 | 等待现有 Chrome Web Store 审核结束后重新提交 0.6.6；不取消或覆盖审核中的提交 |
+| TFI-USERSCRIPT-RECOVERY-017-AUTO | FAB-P0001 / TFI | 启动/安装/30 分钟后台检查、5 分钟页面刷新、持久化徽章与更新提示 | VERIFIED / MAIN_PACKAGE_GREEN | `marketplace-update-check.js`, `app.js`, manifest 0.6.6；exact-main packaged artifact 含截图/视频/trace/report/log | Web Store 公开版本回读 |
