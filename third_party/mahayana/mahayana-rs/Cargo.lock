@@ -9004,6 +9004,7 @@ dependencies = [
  "mahayana-feature-host",
  "mahayana-ffi",
  "mahayana-gateway",
+ "mahayana-gateway-peer",
  "mahayana-gateway-protocol",
  "mahayana-host",
  "mahayana-host-protocol",
@@ -9109,6 +9110,16 @@ dependencies = [
  "mahayana-gateway-protocol",
  "serde",
  "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "mahayana-gateway-peer"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
  "uuid",
 ]
 

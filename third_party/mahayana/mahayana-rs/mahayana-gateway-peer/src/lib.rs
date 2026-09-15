@@ -64,7 +64,10 @@ pub struct PendingServerRequest {
 impl PendingServerRequest {
     pub fn frame(&self) -> Value {
         let mut params = object_or_empty(&self.params);
-        params.insert("sessionId".to_string(), Value::String(self.session_id.clone()));
+        params.insert(
+            "sessionId".to_string(),
+            Value::String(self.session_id.clone()),
+        );
         json!({
             "jsonrpc": JSON_RPC_VERSION,
             "id": self.id,
@@ -222,7 +225,11 @@ impl ServerRequestRegistry {
         let Some(request) = self.open.get_mut(request_id) else {
             return Ok(None);
         };
-        if !request.question_ids.iter().any(|candidate| candidate == question_id) {
+        if !request
+            .question_ids
+            .iter()
+            .any(|candidate| candidate == question_id)
+        {
             return Err(ServerRequestError::UnknownQuestion(question_id.to_string()));
         }
         request
@@ -435,9 +442,11 @@ mod tests {
     fn response_resolves_only_the_matching_open_request() {
         let mut registry = ServerRequestRegistry::default();
         issue_approval(&mut registry);
-        assert!(registry
-            .resolve_response(&json!({"jsonrpc": "2.0", "id": "srq-missing", "result": {}}))
-            .is_none());
+        assert!(
+            registry
+                .resolve_response(&json!({"jsonrpc": "2.0", "id": "srq-missing", "result": {}}))
+                .is_none()
+        );
         let resolved = registry
             .resolve_response(&json!({
                 "jsonrpc": "2.0",
@@ -478,7 +487,10 @@ mod tests {
                 20,
             )
             .unwrap();
-        let lock = registry.lock_answer("srq-clarify0001", "q1", "yes").unwrap().unwrap();
+        let lock = registry
+            .lock_answer("srq-clarify0001", "q1", "yes")
+            .unwrap()
+            .unwrap();
         assert_eq!(lock.remaining_question_ids, vec!["q2"]);
         assert!(lock.resolution.is_none());
 
@@ -501,7 +513,9 @@ mod tests {
                 20,
             )
             .unwrap();
-        registry.lock_answer("srq-clarify0002", "q1", "alpha").unwrap();
+        registry
+            .lock_answer("srq-clarify0002", "q1", "alpha")
+            .unwrap();
         let last = registry
             .lock_answer("srq-clarify0002", "q2", "beta")
             .unwrap()

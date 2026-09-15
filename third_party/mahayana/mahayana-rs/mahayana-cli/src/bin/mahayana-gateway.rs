@@ -1,8 +1,6 @@
 use mahayana_core::RuntimeEvent;
 use mahayana_gateway::{GatewayRuntime, GatewayState, ReplayLimits, RpcFailure, dispatch_request};
-use mahayana_gateway_peer::{
-    ResolvedServerRequest, ServerRequestRegistry, ServerRequestResponse,
-};
+use mahayana_gateway_peer::{ResolvedServerRequest, ServerRequestRegistry, ServerRequestResponse};
 use mahayana_gateway_protocol::{
     ApprovalRequestPayload, GatewayEvent, GatewayEventEnvelope, JsonRpcEventNotification,
 };
@@ -263,7 +261,9 @@ fn resolve_peer_request(
     };
 
     let decision = match resolved.response {
-        ServerRequestResponse::Result(result) => match result.get("decision").and_then(Value::as_str)
+        ServerRequestResponse::Result(result) => match result
+            .get("decision")
+            .and_then(Value::as_str)
         {
             Some("allow-once" | "accept") => "allow-once",
             Some("allow-session" | "accept-for-session" | "acceptForSession") => "allow-session",
@@ -290,10 +290,7 @@ fn rpc_error(id: Value, code: i64, message: &str) -> Value {
     })
 }
 
-fn write_notification(
-    output: &Arc<Mutex<()>>,
-    event: GatewayEventEnvelope,
-) -> Result<(), String> {
+fn write_notification(output: &Arc<Mutex<()>>, event: GatewayEventEnvelope) -> Result<(), String> {
     let value = serde_json::to_value(JsonRpcEventNotification::new(event))
         .map_err(|error| error.to_string())?;
     write_value(output, &value)
@@ -486,14 +483,15 @@ mod tests {
     fn peer_decision_maps_to_runtime_decision() {
         let result = ServerRequestResponse::Result(json!({"decision": "allow-session"}));
         let decision = match result {
-            ServerRequestResponse::Result(result) => match result.get("decision").and_then(Value::as_str)
-            {
-                Some("allow-once" | "accept") => "allow-once",
-                Some("allow-session" | "accept-for-session" | "acceptForSession") => {
-                    "allow-session"
+            ServerRequestResponse::Result(result) => {
+                match result.get("decision").and_then(Value::as_str) {
+                    Some("allow-once" | "accept") => "allow-once",
+                    Some("allow-session" | "accept-for-session" | "acceptForSession") => {
+                        "allow-session"
+                    }
+                    _ => "deny",
                 }
-                _ => "deny",
-            },
+            }
             ServerRequestResponse::Error(_) => "deny",
         };
         assert_eq!(decision, "allow-session");
