@@ -47,7 +47,7 @@ pub struct JsonRpcRequest {
     pub params: Value,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct JsonRpcResponse {
     pub jsonrpc: &'static str,
     pub id: Value,
@@ -237,11 +237,12 @@ where
         }
         let dispatched = dispatcher.dispatch_json(&line);
         if let Some(response) = dispatched.response {
-            serde_json::to_writer(&mut writer, &response)?;
+            serde_json::to_writer(&mut writer, &response).map_err(std::io::Error::other)?;
             writer.write_all(b"\n")?;
         }
         for event in dispatched.events {
-            writer.write_all(event_notification(&event)?.as_bytes())?;
+            let notification = event_notification(&event).map_err(std::io::Error::other)?;
+            writer.write_all(notification.as_bytes())?;
             writer.write_all(b"\n")?;
         }
         writer.flush()?;
