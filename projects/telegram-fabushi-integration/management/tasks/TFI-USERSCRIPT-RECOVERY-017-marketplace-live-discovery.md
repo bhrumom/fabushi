@@ -73,6 +73,13 @@
 - 已按用户要求尝试公开发布 Chrome 扩展：publish run `34923905837` 在 Web Store API 返回 `400 FAILED_PRECONDITION / NOT_UPDATEABLE`，原因是已有提交仍在审核；没有取消或覆盖现有审核。
 - 机器证据：`evidence/TFI-USERSCRIPT-RECOVERY-017/2026-09-15-client-auto-discovery-main-readback.json`。
 
+## 2026-09-15 — Chrome 实时目录优先修复
+
+- 用户再次明确要求插件自动识别更新。发现桌面 Host 已连接时，popup 可能优先读取 Host 的旧 Marketplace 目录，导致线上 `v2.9.30` 仍显示为 bundled `2.9.28`。
+- `app.js` 现在始终先读取实时 Chrome Marketplace API；只有网络失败时才回退到 Host 目录。增加 `marketplaceRequestId`，丢弃过期搜索/启动请求，避免旧响应覆盖最新版本。
+- 该补强保持安装安全边界：自动检查只提示，不静默安装；真正安装继续校验不可变 GitHub URL、字节数、SHA-256 与 userscript header。
+- 本轮需重新执行 exact-main Chrome 包与 packaged simulated-user journey；Web Store 仍受现有审核提交的 `NOT_UPDATEABLE` 外部限制。
+
 ## 风险与阻塞
 
 - `R-TFI-USR-MKT-017-01`：未来 userscript Release 若只更新 source repo 而未更新 projection 常量，旧扩展仍会显示旧版本；缓解为把 projection 常量和 release 记录作为同一任务门禁。

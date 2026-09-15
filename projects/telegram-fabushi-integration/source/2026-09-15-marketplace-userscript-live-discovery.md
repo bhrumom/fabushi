@@ -35,3 +35,7 @@
 ## 用户补充要求（2026-09-15）
 
 用户进一步澄清：这里需要的是“插件自动识别更新”，而不是只在发布页显示一个新版本。验收因此要求实际发布包中的扩展 Service Worker 在没有打开 popup 的情况下也能定期检查线上目录，并在扩展打开后恢复提示；旧版本安装包必须能通过正常 Chrome Web Store 更新到包含该能力的扩展版本。Chrome Web Store 若已有提交处于审核中，不取消或覆盖该提交，记录 `NOT_UPDATEABLE` 阻塞并等待审核完成。
+
+## 用户再次澄清与客户端路径修复（2026-09-15）
+
+用户要求“让插件能够自动识别更新”。进一步回溯发现：桌面 Host 连接存在时，Chrome popup 原先优先使用 Host 的目录，Host 版本落后会继续显示旧的 `2.9.28`。因此 Chrome Marketplace 目录现在优先读取 `https://api.ombhrum.com` 的实时 `platform=chrome-extension` 响应；Host 仅在实时目录暂时失败时兜底，且请求序号会丢弃过期响应，避免旧请求覆盖新目录。后台 Service Worker 的启动/安装/30 分钟检查仍独立运行，不依赖 popup 或 Host。

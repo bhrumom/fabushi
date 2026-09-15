@@ -117,3 +117,7 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 - Chrome `0.6.6` exact-main workflow `34923735666` 通过，artifact `10379295814`；包内已包含 Service Worker 后台版本检查、持久化状态、徽章和 Marketplace 更新提示。
 - 线上 Chrome catalog/direct-release 已返回 userscript `v2.9.30`，不再把桌面 `1.0.1` 包当成 Chrome 脚本版本。
 - Chrome Web Store publish run `34923905837` 已触达发布 API，但因已有提交处于审核中返回 `400 NOT_UPDATEABLE`；未取消或覆盖审核。任务状态为 `IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED`，审核结束后可用同一 exact-main 包重试。
+
+### Chrome 实时目录优先
+
+当桌面 Host 连接并且版本较旧时，Chrome popup 不再使用 Host 目录覆盖线上结果；`app.js` 先读实时 Chrome Marketplace API，失败才回退 Host，并用请求序号防止旧响应回写。这样插件打开 Marketplace 时能直接识别线上 userscript 更新；Service Worker 的后台 alarm 检查继续独立工作。
