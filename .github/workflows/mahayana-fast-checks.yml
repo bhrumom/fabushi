@@ -5,7 +5,9 @@ on:
     paths:
       - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
+      - frontend/apps/web/src/lib/mahayana-host/gateway-events.ts
       - scripts/check-mahayana-source-boundary.py
+      - .github/scripts/check-mahayana-gateway-event-drift.py
       - .github/workflows/mahayana-fast-checks.yml
   push:
     branches:
@@ -13,7 +15,9 @@ on:
     paths:
       - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
+      - frontend/apps/web/src/lib/mahayana-host/gateway-events.ts
       - scripts/check-mahayana-source-boundary.py
+      - .github/scripts/check-mahayana-gateway-event-drift.py
       - .github/workflows/mahayana-fast-checks.yml
   workflow_dispatch:
 
@@ -42,18 +46,35 @@ jobs:
           sparse-checkout: |
             /native/mahayana-messaging/**
             /third_party/mahayana/**
+            /frontend/apps/web/src/lib/mahayana-host/gateway-events.ts
             /scripts/check-mahayana-source-boundary.py
+            /.github/scripts/check-mahayana-gateway-event-drift.py
 
       - name: Verify Mahayana source ownership boundary
         run: python3 ../../../scripts/check-mahayana-source-boundary.py
+
+      - name: Verify Rust and TypeScript gateway event catalogs match
+        run: python3 ../../../.github/scripts/check-mahayana-gateway-event-drift.py
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
 
-      - name: Verify formatting before native package setup
+      - name: Verify workspace formatting before native package setup
         run: cargo fmt --all -- --check
+
+      - name: Verify isolated gateway protocol formatting
+        run: cargo fmt --manifest-path mahayana-gateway-protocol/Cargo.toml -- --check
+
+      - name: Test isolated gateway protocol contract
+        run: cargo test --manifest-path mahayana-gateway-protocol/Cargo.toml
+
+      - name: Test gateway peer request authority
+        run: >-
+          cargo test
+          -p mahayana-gateway-peer
+          --profile ci
 
       - name: Install Linux native capture/input dependencies
         shell: bash
@@ -130,27 +151,27 @@ jobs:
         run: >-
           cargo test
           -p mahayana-mcp-runtime
-          -p mahayana-native-agent
+          -p mahayana-agent
+          -p mahayana-agent-responses
           --profile ci
 
-      - name: Test protocol and MiniApp bridge
+      - name: Test product protocol and MiniApp bridge
         run: >-
           cargo test
+          -p mahayana-platform-client
           -p mahayana-miniapp-protocol
           -p mahayana-miniapp-bridge
-          -p mahayana-host-protocol
           --profile ci
 
       - name: Test Rust-native Mahayana Harness
         run: >-
           cargo test
-          -p mahayana-harness
+          -p mahayana-harness-protocol
           -p mahayana-harness-services
-          -p mahayana-harness-advanced
           -p mahayana-harness-adapters
           -p mahayana-harness-agent
-          -p mahayana-harness-protocol
-          -p mahayana-unified-app-host
+          -p mahayana-harness-advanced
+          -p mahayana-harness
           --profile ci
 
       - name: Test direct Mahayana Host
@@ -175,12 +196,13 @@ jobs:
           --profile ci
           --no-default-features
           --features local-only
-          production_uses_the_real_runtime_and_rust_owned_session_store
+          production_uses_registered_auth_provider_before_falling_back_to_runtime_session
 
-      - name: Check minimal embedded FFI boundary
+      - name: Test minimal embedded FFI boundary
         run: >-
-          cargo check
+          cargo test
           -p mahayana-ffi
           --profile ci
           --no-default-features
           --features local-only
+          exported_state_apis_surface_rust_native_authority_and_recovery

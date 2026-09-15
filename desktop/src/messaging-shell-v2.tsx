@@ -52,7 +52,14 @@ import type {
   SandboxRuntime,
   UpdateState,
 } from '../../frontend/apps/web/src/lib/mahayana-host/contracts';
-import { ElectronMahayanaHostTransport, isElectronMahayanaHostAvailable, MAHAYANA_ACCOUNT_SESSION_RESET_EVENT, readCachedConversationMessages } from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
+import {
+  ElectronMahayanaHostTransport,
+  isElectronMahayanaHostAvailable,
+  MAHAYANA_ACCOUNT_SESSION_RESET_EVENT,
+  MAHAYANA_COMMAND_EVENT_NAME,
+  readCachedConversationMessages,
+  type MahayanaCommandBridgeDetail,
+} from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
 import { MockMahayanaHostTransport } from '../../frontend/apps/web/src/lib/mahayana-host/mock-transport';
 import { invokeNativeDesktop, subscribeNativeDesktopEvents } from '../../frontend/apps/web/src/lib/fabushi-runtime/native-desktop';
 import type { InstalledPluginPointer, MahayanaHostTransport, MarketplacePluginSummary } from '../../frontend/apps/web/src/lib/mahayana-host/transport';
@@ -115,6 +122,13 @@ import {
   projectSidebarContactGroups,
   useSidebarContactGroups,
 } from './sidebar-contact-groups';
+import { MahayanaAssistantTurnView } from './mahayana-assistant-turn-view';
+import {
+  assistantTurnPlainText,
+  createAssistantTurn,
+  reduceAssistantTurn,
+  type AssistantTurn,
+} from './mahayana-assistant-turn';
 
 function miniAppMarketplaceAction(
   app: MarketplacePluginSummary,
@@ -182,13 +196,14 @@ type DisplayMessage = {
   role: 'me' | 'peer';
   text: string;
   createdAtMs: number;
-  kind?: 'message' | 'action' | 'thinking';
+  kind?: 'message' | 'assistant-turn' | 'action' | 'thinking';
   operationId?: string;
   streaming?: boolean;
   optimistic?: boolean;
   actionTitle?: string;
   actionDetail?: string;
   actionStatus?: 'running' | 'completed' | 'failed';
+  assistantTurn?: AssistantTurn;
   pinned?: boolean;
   reactions?: string[];
   invoiceId?: string;
@@ -1119,6 +1134,34 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     const unsubscribe = transport.subscribe((event) => {
       if (!closed) handleRuntimeEvent(event);
     });
+    const onCommandBridge = (event: Event) => {
+      const detail = (event as CustomEvent<MahayanaCommandBridgeDetail>).detail;
+      if (!detail || detail.command.type !== 'chat.send') return;
+      const conversationKey = detail.context?.conversationKey;
+      if (!conversationKey || activePeerKeyRef.current !== conversationKey) return;
+
+      if (detail.phase === 'dispatch') {
+        agentRequestPendingRef.current = true;
+        setPendingSend(true);
+        return;
+      }
+      if (detail.phase === 'accepted') {
+        const operationId = detail.accepted.operationId;
+        if (!operationId || !claimAgentOperation(operationId)) return;
+        appendAssistantTurnEvent({
+          type: 'operation.started',
+          timestamp: new Date().toISOString(),
+          operationId,
+          label: '正在思考',
+          interruptible: true,
+        });
+        return;
+      }
+      agentRequestPendingRef.current = false;
+      setPendingSend(false);
+      setError(detail.error);
+    };
+    window.addEventListener(MAHAYANA_COMMAND_EVENT_NAME, onCommandBridge);
     void transport.initialize({ profileId: 'desktop-messenger-v2', mode: 'production' })
       .then(async () => {
         if (closed) return;
@@ -1158,6 +1201,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     return () => {
       closed = true;
       unsubscribe();
+      window.removeEventListener(MAHAYANA_COMMAND_EVENT_NAME, onCommandBridge);
       const remoteComputer = remoteComputerControllerRef.current;
       if (remoteComputer) void remoteComputer.stop().finally(() => transport.close());
       else void transport.close();
@@ -1350,60 +1394,37 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     return true;
   }
 
-  function clearAgentOperation(operationId: string, terminalStatus: 'completed' | 'failed' = 'completed') {
+  function clearAgentOperation(operationId: string) {
     if (agentOperationIdRef.current !== operationId) return;
     agentOperationIdRef.current = null;
     setAgentOperationId(null);
     agentRequestPendingRef.current = false;
-    setMessages((current) => current
-      .filter((message) => !(message.kind === 'thinking' && message.operationId === operationId))
-      .map((message) => message.kind === 'action' &&
-        message.operationId === operationId &&
-        message.actionStatus === 'running'
-        ? { ...message, actionStatus: terminalStatus }
-        : message));
   }
 
-  function appendAgentThinking(operationId: string, label: string) {
-    setMessages((current) => [
-      ...current.filter((message) => !(message.kind === 'thinking' && message.operationId === operationId)),
-      {
-        id: `${operationId}:thinking`,
-        source: 'legacy',
-        role: 'peer',
-        text: '',
-        createdAtMs: Date.now(),
-        kind: 'thinking',
-        operationId,
-        actionTitle: label || '正在思考',
-        actionStatus: 'running',
-      },
-    ]);
-  }
-
-  function upsertAgentAction(input: {
-    id: string;
-    operationId: string;
-    title: string;
-    detail?: string;
-    status: 'running' | 'completed' | 'failed';
-  }) {
+  function appendAssistantTurnEvent(event: RuntimeEvent) {
+    const operationId = 'operationId' in event && typeof event.operationId === 'string'
+      ? event.operationId
+      : undefined;
+    if (!operationId) return;
     setMessages((current) => {
+      const index = current.findIndex((message) =>
+        message.kind === 'assistant-turn' && message.operationId === operationId,
+      );
+      const existingTurn = index >= 0 ? current[index]?.assistantTurn : undefined;
+      const assistantTurn = reduceAssistantTurn(existingTurn ?? createAssistantTurn(operationId), event);
       const next: DisplayMessage = {
-        id: input.id,
+        id: `${operationId}:assistant-turn`,
         source: 'legacy',
         role: 'peer',
-        text: '',
-        createdAtMs: Date.now(),
-        kind: 'action',
-        operationId: input.operationId,
-        actionTitle: input.title,
-        actionDetail: input.detail,
-        actionStatus: input.status,
+        text: assistantTurnPlainText(assistantTurn),
+        createdAtMs: assistantTurn.createdAtMs,
+        kind: 'assistant-turn',
+        operationId,
+        streaming: assistantTurn.status === 'running',
+        assistantTurn,
       };
-      const index = current.findIndex((message) => message.kind === 'action' && message.id === input.id);
       if (index < 0) return [...current, next];
-      return current.map((message, messageIndex) => messageIndex === index ? { ...message, ...next } : message);
+      return current.map((message, messageIndex) => messageIndex === index ? next : message);
     });
   }
 
@@ -1657,18 +1678,11 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         setHostSettings(event.settings);
         break;
       case 'chat.message':
-        if (event.role === 'assistant' && claimAgentOperation(event.operationId)) {
-          setMessages((current) => current.filter((message) => !(message.kind === 'thinking' && message.operationId === event.operationId)));
+        if (event.role === 'assistant' && event.operationId && claimAgentOperation(event.operationId)) {
+          appendAssistantTurnEvent(event);
+          break;
         }
         setMessages((current) => {
-          const existingIndex = event.role === 'assistant' && event.operationId
-            ? current.findIndex((message) => message.kind === 'message' && message.operationId === event.operationId && message.streaming)
-            : -1;
-          if (existingIndex >= 0) {
-            return current.map((message, messageIndex) => messageIndex === existingIndex
-              ? { ...message, kind: 'message', text: event.text, streaming: false }
-              : message);
-          }
           if (event.role === 'user') {
             const optimisticIndex = current.findIndex((message) =>
               message.role === 'me' && message.optimistic === true && message.text === event.text,
@@ -1695,8 +1709,10 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         });
         break;
       case 'chat.delta':
-        claimAgentOperation(event.operationId);
-        setMessages((current) => current.filter((message) => !(message.kind === 'thinking' && message.operationId === event.operationId)));
+        if (claimAgentOperation(event.operationId)) {
+          appendAssistantTurnEvent(event);
+          break;
+        }
         setMessages((current) => {
           const index = current.findIndex((message) => message.kind === 'message' && message.operationId === event.operationId && message.streaming);
           if (index < 0) return [...current, { id: `${event.operationId}:stream`, source: 'legacy', role: 'peer', text: event.delta, createdAtMs: Date.now(), kind: 'message', operationId: event.operationId, streaming: true }];
@@ -1706,36 +1722,22 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
       case 'operation.started':
         if (claimAgentOperation(event.operationId)) {
           setPendingSend(true);
-          appendAgentThinking(event.operationId, event.label || '正在思考');
+          appendAssistantTurnEvent(event);
         }
         break;
       case 'model.routed':
-        if (claimAgentOperation(event.operationId)) {
-          upsertAgentAction({
-            id: `${event.operationId}:model`,
-            operationId: event.operationId,
-            title: event.model === 'auto' ? '选择模型' : `模型：${event.model}`,
-            detail: `${event.provider} · ${event.mode}`,
-            status: 'completed',
-          });
-        }
+        if (claimAgentOperation(event.operationId)) appendAssistantTurnEvent(event);
         break;
       case 'agent.step':
-        if (claimAgentOperation(event.operationId)) {
-          upsertAgentAction({
-            id: `${event.operationId}:${event.stepId}`,
-            operationId: event.operationId!,
-            title: event.title,
-            detail: event.detail,
-            status: event.status,
-          });
-        }
+        if (claimAgentOperation(event.operationId)) appendAssistantTurnEvent(event);
         break;
       case 'operation.interrupted':
-        clearAgentOperation(event.operationId, 'failed');
+        if (agentOperationIdRef.current === event.operationId) appendAssistantTurnEvent(event);
+        clearAgentOperation(event.operationId);
         setPendingSend(false);
         break;
       case 'operation.completed':
+        if (agentOperationIdRef.current === event.operationId) appendAssistantTurnEvent(event);
         clearAgentOperation(event.operationId);
         setPendingSend(false);
         break;
@@ -1748,7 +1750,8 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         }
         break;
       case 'operation.failed':
-        clearAgentOperation(event.operationId, 'failed');
+        if (agentOperationIdRef.current === event.operationId) appendAssistantTurnEvent(event);
+        clearAgentOperation(event.operationId);
         setPendingSend(false);
         setError(event.message);
         break;
@@ -2096,7 +2099,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
             : message));
         }
         if (agentRequest && accepted.operationId && claimAgentOperation(accepted.operationId)) {
-          appendAgentThinking(accepted.operationId, '正在思考');
+          appendAssistantTurnEvent({ type: 'operation.started', timestamp: new Date().toISOString(), operationId: accepted.operationId, label: '正在思考', interruptible: true });
         }
       }
       setReplyTo(null);
@@ -3113,17 +3116,19 @@ async function saveInvoiceDialog() {
             <div className={styles.messageArea} data-testid="message-list" data-agent-operation-id={agentOperationId ?? undefined}>
               <div className={styles.dayDivider}>今天</div>
               {matchingMessages.length > renderedMessages.length ? <button type="button" data-testid="message-list-load-earlier" onClick={() => setMessageRenderCount((count) => count + initialMessageRenderCount)}>加载更早消息</button> : null}
-              {renderedMessages.map((message) => message.kind === 'thinking' ? (
-                <article key={`${message.source}:${message.id}`} className={styles.agentThinkingRow} data-testid="agent-thinking" data-operation-id={message.operationId}>
-                  <BotMark botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`} state="thinking" size={30} className={styles.agentStreamAvatar} label={activePeer.title} />
-                  <div><strong>{message.actionTitle ?? '正在思考'}</strong><span>大乘助手正在处理这条消息…</span></div>
-                </article>
-              ) : message.kind === 'action' ? (
-                <article key={`${message.source}:${message.id}`} className={styles.agentActionRow} data-testid="agent-step" data-operation-id={message.operationId} data-status={message.actionStatus}>
-                  <BotMark botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`} state={message.actionStatus === 'running' ? 'working' : message.actionStatus === 'failed' ? 'error' : 'result'} size={25} className={styles.agentStreamAvatar} label={activePeer.title} />
-                  <div><strong>{message.actionTitle}</strong>{message.actionDetail ? <span>{message.actionDetail}</span> : null}</div>
-                  <small>{message.actionStatus === 'running' ? '进行中' : message.actionStatus === 'failed' ? '失败' : '完成'}</small>
-                </article>
+              {renderedMessages.map((message) => message.kind === 'assistant-turn' && message.assistantTurn ? (
+                <MahayanaAssistantTurnView
+                  key={`${message.source}:${message.id}`}
+                  turn={message.assistantTurn}
+                  label={activePeer.title}
+                  avatar={<BotMark
+                    botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`}
+                    state={message.assistantTurn.status === 'running' ? 'thinking' : message.assistantTurn.status === 'failed' ? 'error' : 'result'}
+                    size={30}
+                    className={styles.agentStreamAvatar}
+                    label={activePeer.title}
+                  />}
+                />
               ) : (
                 <article
                   key={`${message.source}:${message.id}`}
@@ -3132,7 +3137,7 @@ async function saveInvoiceDialog() {
                   data-agent-invoke="contextmenu"
                   data-agent-message-role={message.role}
                   onContextMenu={(event) => {
-                    if (message.kind === 'action' || message.kind === 'thinking') return;
+                    if (message.kind === 'assistant-turn' || message.kind === 'action' || message.kind === 'thinking') return;
                     event.preventDefault();
                     event.stopPropagation();
                     setMessageMenu({ message, x: event.clientX, y: event.clientY });
