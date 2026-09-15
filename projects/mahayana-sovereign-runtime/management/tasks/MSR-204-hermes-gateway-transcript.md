@@ -112,3 +112,10 @@ No local build result is represented as verification. GitHub Actions exact-head 
 - Verified product repair commit: `3bcb1dd26353434ad5ee07a16b03bc27d5d37e30`.
 - Current capability matrix: `projects/mahayana-sovereign-runtime/management/MSR-204-HERMES-PARITY.md`.
 - Final exact-head CI, canonical-main merge SHA, packaged E2E bundle and Release traceability: pending.
+
+## 2026-09-15 canonical continuation
+
+- Re-read canonical PR `#2620` at head `750362aa69b5e61b11abe7b87f49172c432249dc`; this remains the single MSR-204 implementation and duplicate branches must not be revived.
+- Exact-head Desktop quality and Host fast E2E were green, while Mahayana fast checks stopped only on `cargo fmt --all -- --check` drift in the gateway CLI and peer crate.
+- The CI repair execution proved the formatted source by passing `mahayana-gateway` and `mahayana-cli` tests; its final push failed because the repair checkout was shallow (`shallow update not allowed`), not because product tests failed.
+- This commit intentionally triggers the branch's one-shot full-history rustfmt repair workflow. Acceptance state remains `in-progress` until the resulting exact head is re-verified and all remaining task blockers are closed.
