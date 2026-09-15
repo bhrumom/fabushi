@@ -5,7 +5,7 @@
   "project_id_regex": "^FAB-P[0-9]{4}$",
   "allocation_policy": "monotonic-no-reuse",
   "ordering_basis": "first-formal-project-folder-commit-on-canonical-main",
-  "next_sequence": 12,
+  "next_sequence": 13,
   "projects": [
     {
       "project_id": "FAB-P0001",
@@ -126,6 +126,17 @@
       "status": "active",
       "registered_at": "2026-09-12",
       "first_canonical_main_commit": "656d05e8d66bfed241f5b9d871a062abfbf2f952",
+      "legacy_project_ids": []
+    },
+    {
+      "project_id": "FAB-P0012",
+      "project_key": "OBF",
+      "slug": "openbot-fabushi-integration",
+      "name": "OpenBot -> Fabushi Capability & UX Gap Closure",
+      "authoritative_path": "projects/openbot-fabushi-integration",
+      "status": "active",
+      "registered_at": "2026-09-13",
+      "first_canonical_main_commit": "PENDING_CANONICAL_MAIN",
       "legacy_project_ids": []
     }
   ]

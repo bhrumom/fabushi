@@ -36,11 +36,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -f /tmp/fabushi-portfolio-baseline.json
+          rm -f /tmp/fabushi-portfolio-baseline.json /tmp/fabushi-portfolio-baseline-ref
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            git show "origin/${GITHUB_BASE_REF}:projects/PORTFOLIO.json" > /tmp/fabushi-portfolio-baseline.json 2>/dev/null || true
+            baseline_ref="origin/${GITHUB_BASE_REF}"
+            git show "${baseline_ref}:projects/PORTFOLIO.json" > /tmp/fabushi-portfolio-baseline.json 2>/dev/null || true
+            printf '%s\n' "${baseline_ref}" > /tmp/fabushi-portfolio-baseline-ref
           elif git rev-parse HEAD^ >/dev/null 2>&1; then
-            git show "HEAD^:projects/PORTFOLIO.json" > /tmp/fabushi-portfolio-baseline.json 2>/dev/null || true
+            baseline_ref="HEAD^"
+            git show "${baseline_ref}:projects/PORTFOLIO.json" > /tmp/fabushi-portfolio-baseline.json 2>/dev/null || true
+            printf '%s\n' "${baseline_ref}" > /tmp/fabushi-portfolio-baseline-ref
           fi
 
       - name: Validate portfolio registry and project metadata
@@ -48,7 +52,10 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -s /tmp/fabushi-portfolio-baseline.json ]]; then
-            python3 scripts/check-project-portfolio.py --baseline /tmp/fabushi-portfolio-baseline.json
+            baseline_ref="$(cat /tmp/fabushi-portfolio-baseline-ref)"
+            python3 scripts/check-project-portfolio.py \
+              --baseline /tmp/fabushi-portfolio-baseline.json \
+              --baseline-ref "${baseline_ref}"
           else
             python3 scripts/check-project-portfolio.py
           fi
