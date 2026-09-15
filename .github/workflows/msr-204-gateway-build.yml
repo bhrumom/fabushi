@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   verify-and-record:
@@ -124,8 +125,34 @@ jobs:
         run: cargo fmt --all
 
       - name: Let Cargo generate the canonical lock update
+        id: compile
+        continue-on-error: true
+        shell: bash
         working-directory: third_party/mahayana/mahayana-rs
-        run: cargo check -p mahayana-gateway -p mahayana-gateway-protocol -p mahayana-cli --bin mahayana-gateway
+        run: |
+          set -o pipefail
+          cargo check -p mahayana-gateway -p mahayana-gateway-protocol -p mahayana-cli --bin mahayana-gateway 2>&1 | tee "$RUNNER_TEMP/msr204-cargo-check.log"
+
+      - name: Publish exact compiler diagnostics to PR
+        if: ${{ steps.compile.outcome == 'failure' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo '### MSR-204 exact Rust compiler diagnostics'
+            echo
+            echo 'Bound head: `${{ github.sha }}`'
+            echo
+            echo '```text'
+            tail -n 220 "$RUNNER_TEMP/msr204-cargo-check.log"
+            echo '```'
+          } > "$RUNNER_TEMP/msr204-comment.md"
+          gh pr comment 2620 --body-file "$RUNNER_TEMP/msr204-comment.md"
+
+      - name: Fail closed on compiler error
+        if: ${{ steps.compile.outcome == 'failure' }}
+        run: exit 1
 
       - name: Test gateway projection, replay and protocol
         working-directory: third_party/mahayana/mahayana-rs
