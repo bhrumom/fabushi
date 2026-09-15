@@ -13,7 +13,7 @@ test("Chrome extension action opens the unified Fabushi application shell", asyn
   assert.equal(manifest.action.default_popup, "app.html");
   assert.equal(manifest.background.service_worker, "service-worker.js");
   assert.deepEqual(manifest.host_permissions, ["<all_urls>"]);
-  assert.equal(manifest.version, "0.6.5");
+  assert.equal(manifest.version, "0.6.6");
   assert.ok(manifest.permissions.includes("tabs"));
   assert.equal(manifest.content_scripts?.[0]?.js?.[0], "userscript-content.js");
   for (const label of ["Fabushi", "聊天", "小程序", "Marketplace", "浏览器", "设置"]) assert.match(appHtml, new RegExp(label));
@@ -24,4 +24,5 @@ test("Chrome extension action opens the unified Fabushi application shell", asyn
   assert.match(appJs, /fabushi\.platform\.request/);
   assert.match(appJs, /import-userscript/);
   assert.match(appJs, /chatgpt-auto-confirm/);
+  assert.match(appJs, /fabushi\.marketplace\.update\.check/);
 });

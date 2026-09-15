@@ -98,3 +98,10 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 - source userscript PR [#22](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/22) 与版本对齐 PR [#23](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/23) 已合并；canonical source main `480ebe61ba039f15e7023bbc0253ea23c373aba0`，Release `v2.9.30`，资产 `224113` bytes / SHA-256 `d15040a5d420b0fa4cc38b195f178143a2d22a166e3357f88c7159c6b7a3b14a`；source CI 已通过。
 - parent clean branch 已同步该精确脚本，并将 Chrome 扩展从 canonical `0.6.4` 递增到 `0.6.5`，同时更新 Marketplace 的 sourceRef、版本、大小和哈希。父 PR #2638、workflow 修复 PR #2639 均已合并；exact-main Electron/Chrome/post-main 门禁已通过，桌面 Release [desktop-1.2.65-80ef6f15f42e](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65-80ef6f15f42e) 已绑定 canonical `main@80ef6f15f42e1399f13327889c1dde13edff8097`。
 - Chrome 0.6.5 的 exact-main Actions artifact `10362084424` 保留了 ZIP、内容清单、逐步 PNG、完整视频分段、trace/report/native logs；线上独立 userscript v2.9.30 已公开。任务记录：`management/tasks/TFI-USERSCRIPT-RECOVERY-016-fair-continuous-scheduler.md`；当前状态 `IN_PROGRESS / LIVE_CHROME_CONFIRMATION_PENDING`，只剩当前登录 Chrome 的本机更新确认与现场双任务证据，不把 source Release 冒充为本机已安装。
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 Marketplace 线上发现修复
+
+用户反馈 Marketplace 仍显示 `2.9.28`。本轮在 Mahayana Platform Worker 增加 Chrome-only userscript projection，让旧扩展从公开目录发现独立 userscript `v2.9.30`，并继续按不可变 commit、SHA-256 和 size 校验下载；桌面/CLI Mini App 条目不改写。
+
+- 任务记录：`management/tasks/TFI-USERSCRIPT-RECOVERY-017-marketplace-live-discovery.md`
+- 当前状态：`IN_PROGRESS / PR_PENDING`
+- 下一门禁：Platform Control Plane CI → protected main → 生产部署 → catalog/direct-release API 回读

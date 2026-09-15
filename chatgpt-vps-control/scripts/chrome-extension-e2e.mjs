@@ -11,10 +11,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(here, "../..");
 const extensionRoot = resolve(repositoryRoot, "chatgpt-vps-control");
+const chromeManifest = JSON.parse(await readFile(join(extensionRoot, "chrome-platform", "extension", "manifest.json"), "utf8"));
+const chromeVersion = String(chromeManifest.version || "").trim();
 const packageRoot = join(extensionRoot, "dist", "chrome-extension");
 const packageZip = process.env.FABUSHI_CHROME_ZIP
   ? resolve(process.env.FABUSHI_CHROME_ZIP)
-  : join(packageRoot, "fabushi-chrome-0.6.5.zip");
+  : join(packageRoot, `fabushi-chrome-${chromeVersion}.zip`);
 const evidenceRoot = resolve(process.env.FABUSHI_CHROME_EVIDENCE_DIR || join(packageRoot, "evidence"));
 const journeyId = "CWA-007-chrome-packaged-browser-control";
 const sourceSha = String(process.env.GITHUB_SHA || "unknown");
@@ -237,7 +239,7 @@ const report = {
   journeyId,
   sourceSha,
   runId,
-  version: "0.6.5",
+  version: chromeVersion,
   platform: process.platform,
   startedAt,
   steps,
@@ -403,7 +405,7 @@ try {
   for (const manifestPath of nativeManifestPaths) await rm(manifestPath, { force: true }).catch(() => {});
   report.finishedAt = new Date().toISOString();
   await writeFile(join(evidenceRoot, "journey-report.json"), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
-  const html = `<!doctype html><meta charset="utf-8"><title>${journeyId}</title><h1>${journeyId}</h1><p>source=${sourceSha} run=${runId} version=0.6.5</p><p>status=${journeyError ? "failed" : "passed"}</p><pre>${JSON.stringify(report, null, 2).replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</pre>`;
+  const html = `<!doctype html><meta charset="utf-8"><title>${journeyId}</title><h1>${journeyId}</h1><p>source=${sourceSha} run=${runId} version=${chromeVersion}</p><p>status=${journeyError ? "failed" : "passed"}</p><pre>${JSON.stringify(report, null, 2).replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</pre>`;
   await writeFile(join(evidenceRoot, "playwright-report.html"), html, { mode: 0o600 });
   await rm(tempRoot, { recursive: true, force: true }).catch(() => {});
 }
