@@ -1,0 +1,124 @@
+.turn {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  width: min(100%, 760px);
+  padding: 6px 0 12px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--tg-theme-hint-color, #7d8590);
+  font-size: 10px;
+}
+
+.identity > span:last-child {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: var(--tg-theme-text-color, #e6edf3);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.parts {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.part {
+  min-width: 0;
+}
+
+.text {
+  color: var(--tg-theme-text-color, #e6edf3);
+  font-size: 14px;
+  line-height: 1.58;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.reasoning {
+  color: var(--tg-theme-hint-color, #8b949e);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.reasoning > summary {
+  width: fit-content;
+  cursor: pointer;
+  user-select: none;
+}
+
+.reasoning > div {
+  margin-top: 5px;
+  padding-left: 10px;
+  border-left: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  white-space: pre-wrap;
+}
+
+.tool,
+.request,
+.artifact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  color: var(--tg-theme-hint-color, #8b949e);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.toolIndicator {
+  font-size: 8px;
+}
+
+.toolTitle,
+.request strong {
+  color: var(--tg-theme-text-color, #c9d1d9);
+  font-weight: 600;
+}
+
+.status {
+  color: var(--tg-theme-hint-color, #7d8590);
+  font-size: 11px;
+}
+
+.detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact a {
+  color: var(--tg-theme-link-color, #58a6ff);
+  text-decoration: none;
+}
+
+.error {
+  color: #f85149;
+  font-size: 12px;
+  line-height: 1.45;
+}
