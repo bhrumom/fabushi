@@ -366,7 +366,10 @@ mod tests {
         assert_eq!(complete.event_type(), "tool.complete");
         let start_value = serde_json::to_value(start).unwrap();
         let complete_value = serde_json::to_value(complete).unwrap();
-        assert_eq!(start_value["payload"]["toolId"], complete_value["payload"]["toolId"]);
+        assert_eq!(
+            start_value["payload"]["toolId"],
+            complete_value["payload"]["toolId"]
+        );
     }
 
     #[test]
