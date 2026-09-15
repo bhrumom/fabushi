@@ -40,11 +40,15 @@ jobs:
 
       - name: Commit verified formatting and lock refresh, then remove one-shot workflow
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git rm .github/workflows/msr-204-rustfmt-repair.yml
           git add third_party/mahayana/mahayana-rs/Cargo.lock
+          git add third_party/mahayana/mahayana-rs/mahayana-cli/src/bin/mahayana-gateway.rs
           git add third_party/mahayana/mahayana-rs/mahayana-gateway-peer/src/lib.rs
           git diff --cached --check
           if git diff --cached --quiet; then
