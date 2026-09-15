@@ -176,7 +176,7 @@ function sealStreamingParts(turn: AssistantTurn): void {
 function upsertPart<T extends AssistantTurnPart>(
   turn: AssistantTurn,
   predicate: (part: AssistantTurnPart) => part is T,
-  create: () => T,
+  create: () => NoInfer<T>,
   update: (part: T) => void,
 ): T {
   const existing = turn.parts.find(predicate);
