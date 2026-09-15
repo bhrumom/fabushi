@@ -17,11 +17,14 @@ on:
       - 'ai-backend/**'
       - 'fabushi/web/tests/global-dharma-*.test.js'
       - 'frontend/apps/web/src/app/miniapps/[id]/**'
-      - 'projects/telegram-fabushi-integration/**'
-      - 'projects/fabushi-account-access-control/**'
       - 'app-version.json'
       - '.github/workflows/global-dharma-web-service-contract.yml'
       - '.github/workflows/macos-global-dharma-packaged-e2e.yml'
+
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - 'frontend/pnpm-workspace.yaml'
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -32,7 +35,60 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    name: Detect affected Global Dharma scopes
+    runs-on: ubuntu-latest
+    outputs:
+      global: ${{ steps.filter.outputs.global }}
+      backend: ${{ steps.filter.outputs.backend }}
+      web: ${{ steps.filter.outputs.web }}
+      commerce: ${{ steps.filter.outputs.commerce }}
+    steps:
+      - name: Checkout full history for changed-path detection
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect changed Global Dharma scopes
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        with:
+          token: ''
+          base: ${{ github.event_name == 'push' && github.event.before || '' }}
+          predicate-quantifier: some-with-excludes
+          filters: |
+            global:
+              - '.github/workflows/global-dharma-web-service-contract.yml'
+              - '.github/workflows/macos-global-dharma-packaged-e2e.yml'
+              - 'app-version.json'
+            backend:
+              - 'ai-backend/**'
+            web:
+              - 'frontend/apps/web/src/app/miniapps/**'
+              - 'frontend/package.json'
+              - 'frontend/pnpm-lock.yaml'
+              - 'frontend/pnpm-workspace.yaml'
+            commerce:
+              - 'fabushi/web/tests/global-dharma-*.test.js'
+      - name: Summarize detected Global Dharma scope
+        shell: bash
+        env:
+          GLOBAL_SCOPE: ${{ steps.filter.outputs.global }}
+          BACKEND_SCOPE: ${{ steps.filter.outputs.backend }}
+          WEB_SCOPE: ${{ steps.filter.outputs.web }}
+          COMMERCE_SCOPE: ${{ steps.filter.outputs.commerce }}
+        run: |
+          {
+            echo '### Global Dharma changed scope'
+            echo "- global: $GLOBAL_SCOPE"
+            echo "- backend: $BACKEND_SCOPE"
+            echo "- web: $WEB_SCOPE"
+            echo "- commerce: $COMMERCE_SCOPE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   backend-contract:
+    needs: scope
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.backend == 'true' }}
     name: Backend MCP/runtime/account contract
     runs-on: ubuntu-24.04
     timeout-minutes: 12
@@ -75,6 +131,8 @@ jobs:
           if-no-files-found: error
 
   web-build:
+    needs: scope
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.web == 'true' }}
     name: Web Mini App production build
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -106,6 +164,8 @@ jobs:
           if-no-files-found: error
 
   commerce-contract:
+    needs: scope
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.commerce == 'true' }}
     name: CNY 1080 order/webhook/refund/restore contract
     runs-on: ubuntu-24.04
     timeout-minutes: 5

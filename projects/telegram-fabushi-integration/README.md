@@ -73,3 +73,65 @@
 source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/17) 已合并，canonical source main 为 `882cadf0cc35d00a29b93450990d758b4034a5c0`，userscript 为 2.9.22。host PR [#2607](https://github.com/bhrumom/fabushi/pull/2607) 已进入父仓库 main，merge SHA 为 `f7f9871b153efbe26d040e68e8d28eea46af2130`；随后发现并修复了运行时消息分发遗漏及 0.6.1 版本门禁同步问题，后续 PR [#2608](https://github.com/bhrumom/fabushi/pull/2608) 当前开放。
 
 任务仍保持 IN_PROGRESS：后续 PR CI/protected merge、exact-main packaged/Chrome 证据和公开发布授权未完成。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-014 Renderer 崩溃保护与发布回读
+
+本轮已将多任务切页的导航控制从 userscript 页面内逻辑提升为 Fabushi Chrome 宿主能力：脚本请求 `tab-navigation-guard` permit，宿主按任务代次、阶段、轮次、goalRevision 校验，并对普通导航执行冷却、in-flight 去重、崩溃/unloaded fail-closed 与有限恢复；脚本继续负责结束会话后的新验收路由和恢复票据。
+
+- userscript PR #19 已合并，v2.9.24 Release 已发布：<https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.24>。
+- Fabushi PR #2623 已合并到 `main@b4d2d85fcd510c51d3dce646311d19c81e6c7403`；发布诊断 PR #2624 已合并到 `main@1e63a8cf14697107af62948d713cff120679694f`。
+- Chrome 0.6.2 的 exact-main 打包/模拟用户旅程、跨平台安全与 post-main 交付均已通过；证据含步骤截图、完整视频、trace、HTML/report 和日志。
+- 当前仍为 IN_PROGRESS：Chrome Web Store 条目已有提交处于审核中，API 返回 `FAILED_PRECONDITION/NOT_UPDATEABLE`，因此未重复取消或覆盖已有审核；当前 Chrome 未打包副本已在用户确认后替换并重载，扩展页与 Service Worker 控制台回读为 0.6.2，旧版备份保留在 `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.4.1-20260914`。
+- 权威任务记录：`management/tasks/TFI-USERSCRIPT-RECOVERY-014-renderer-crash-guard.md`。
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-014 最终 main 发布与 Chrome 本机回读
+
+- 最终 canonical main 为 `396a842c7e00b8ad7c236d84cabc9230ed88d391`；Chrome exact-main package run `34842044140` 成功，ZIP 为 113355 bytes，SHA-256 `fcb28edd264facb0940bc1a61366954743f72ced557a72ae79cf96e5325b58ce`。
+- post-main run `34843041788` 成功，GitHub Release [desktop-1.2.65-396a842c7e00](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65-396a842c7e00) 已绑定该 SHA，并包含 Chrome 0.6.2 包、内容清单和 SHA256SUMS。
+- 用户确认后，当前 Chrome 未打包扩展目录已从 v0.4.1 替换为精确 CI 包并重载；扩展详情页与 Service Worker 控制台均回读 v0.6.2。旧版可从 `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.4.1-20260914` 回滚。
+- Web Store 仍保持 `IN_PROGRESS / PENDING_REVIEW`：已有提交占用 item，未取消审核，也未把本地未打包扩展升级误报为商店公开发布。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-016 公平持续调度与执行器自愈
+
+本轮针对“等待冷却不续做、多个任务不轮换、打开会话即暂停、页面换代后假运行”的用户反馈，采用按任务可运行时间调度的 delayed-set 语义：一个任务的导航保护/退避/发送节流只延迟它自己，其他可运行任务继续轮询；全部延迟时只睡到最早唤醒点。打开已记录会话只写入代际绑定的 inspect ticket，不再改变任务状态。旧页面 Web Lock 短暂存在时，新实例进行有界接管并自动恢复扫描。
+
+- source userscript PR [#22](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/22) 与版本对齐 PR [#23](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/23) 已合并；canonical source main `480ebe61ba039f15e7023bbc0253ea23c373aba0`，Release `v2.9.30`，资产 `224113` bytes / SHA-256 `d15040a5d420b0fa4cc38b195f178143a2d22a166e3357f88c7159c6b7a3b14a`；source CI 已通过。
+- parent clean branch 已同步该精确脚本，并将 Chrome 扩展从 canonical `0.6.4` 递增到 `0.6.5`，同时更新 Marketplace 的 sourceRef、版本、大小和哈希。父 PR #2638、workflow 修复 PR #2639 均已合并；exact-main Electron/Chrome/post-main 门禁已通过，桌面 Release [desktop-1.2.65-80ef6f15f42e](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.2.65-80ef6f15f42e) 已绑定 canonical `main@80ef6f15f42e1399f13327889c1dde13edff8097`。
+- Chrome 0.6.5 的 exact-main Actions artifact `10362084424` 保留了 ZIP、内容清单、逐步 PNG、完整视频分段、trace/report/native logs；线上独立 userscript v2.9.30 已公开。任务记录：`management/tasks/TFI-USERSCRIPT-RECOVERY-016-fair-continuous-scheduler.md`；当前状态 `IN_PROGRESS / LIVE_CHROME_CONFIRMATION_PENDING`，只剩当前登录 Chrome 的本机更新确认与现场双任务证据，不把 source Release 冒充为本机已安装。
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 Marketplace 线上发现修复
+
+用户反馈 Marketplace 仍显示 `2.9.28`。本轮在 Mahayana Platform Worker 增加 Chrome-only userscript projection，让旧扩展从公开目录发现独立 userscript `v2.9.30`，并继续按不可变 commit、SHA-256 和 size 校验下载；桌面/CLI Mini App 条目不改写。
+
+- 任务记录：`management/tasks/TFI-USERSCRIPT-RECOVERY-017-marketplace-live-discovery.md`
+- 当前状态：`IN_PROGRESS / PR_PENDING`
+- 下一门禁：Platform Control Plane CI → protected main → 生产部署 → catalog/direct-release API 回读
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 生产回读与客户端自动发现
+
+- PR #2641 已合并至 `main@4f484be2fd72f13289473f9c4917e03b78a92022`；Platform Control Plane run `34922024310` 已成功部署 Worker。
+- 生产 Chrome catalog 已返回 userscript v2.9.30、source commit `480ebe61…`、224113 bytes 和 SHA-256 `d15040a5…`；desktop/CLI 仍返回 `1.0.1` Mini App package。
+- Chrome package run `34922024248` 成功，产出 `fabushi-chrome-web-store-4f484be2fd72f13289473f9c4917e03b78a92022` artifact；follow-up PR #2642 只修正视图状态保持，待合并后完成最终 post-main evidence。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 最终客户端交付回读
+
+- PR #2643 已清除主线合并冲突标记并进入 `main@bc22336c5b6d645576575ea4e4919b4658d6f13a`。
+- Chrome `0.6.6` exact-main workflow `34923735666` 通过，artifact `10379295814`；包内已包含 Service Worker 后台版本检查、持久化状态、徽章和 Marketplace 更新提示。
+- 线上 Chrome catalog/direct-release 已返回 userscript `v2.9.30`，不再把桌面 `1.0.1` 包当成 Chrome 脚本版本。
+- Chrome Web Store publish run `34923905837` 已触达发布 API，但因已有提交处于审核中返回 `400 NOT_UPDATEABLE`；未取消或覆盖审核。任务状态为 `IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED`，审核结束后可用同一 exact-main 包重试。
+
+### Chrome 实时目录优先
+
+当桌面 Host 连接并且版本较旧时，Chrome popup 不再使用 Host 目录覆盖线上结果；`app.js` 先读实时 Chrome Marketplace API，失败才回退 Host，并用请求序号防止旧响应回写。这样插件打开 Marketplace 时能直接识别线上 userscript 更新；Service Worker 的后台 alarm 检查继续独立工作。
+
+0.6.7 的 exact-main Chrome 包已在 `main@05297b21a684ba826d41bde5c113508103ce196f` 通过打包和模拟用户旅程；对应商店提交仍受已有审核锁定，详见 `evidence/TFI-USERSCRIPT-RECOVERY-017/2026-09-15-live-catalog-fix-main-readback.json`。
+
+## 2026-09-15 — 本机 Marketplace 更新错误修复
+
+本机点击线上更新时复现 `marketplaceItemId is not defined`；已确认是 popup 安装校验路径漏导入共享 helper，修复已加入并将 Chrome 包版本递增到 `0.6.8`。当前状态：修复待 CI/主线/打包证据，尚未把本机失败点击或 GitHub artifact 描述成已安装。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-018 导航许可活锁修复
+
+用户继续反馈“最终回复已出现但持续目标仍等待派发”，以及“导航保护每 30 秒重复且从不派发”。已确认当前 `v2.9.30` userscript 发出的宿主导航消息漏了 `pluginId/scriptId` envelope 字段；宿主的 fail-closed 校验因此每次返回无效请求，脚本把没有重试时长的拒绝统一解释为 30 秒，形成无限循环。另修正许可在真实目标路由提交前提前消费冷却的竞态。
+
+- source PR [#24](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/24) 已合并为 source main `5f7d1f26a9883e6806ec855f5f2177ad737aa07e`，发布 `v2.9.31`；资产 225544 bytes，SHA-256 `1e025a9b64bcba225059a0768fb08b5bcf818f902f8c7c4e5980505958e6fe2a`。
+- parent 分支同步精确 source、补齐 content bridge 的旧版本 envelope 兼容、增加导航 lease cancel，并把 Chrome 版本递增至 `0.6.9`；Platform Worker projection 同步 v2.9.31/hash/size。
+- 当前状态：`IN_PROGRESS / SOURCE_RELEASED / PARENT_CI_PENDING`；尚未把 parent 包或当前 Chrome 安装描述为已更新，待 protected main、exact-main packaged journey、生产目录回读和 Release。

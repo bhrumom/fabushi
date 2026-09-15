@@ -21,11 +21,13 @@ const approvedFiles = [
   "app.css",
   "app.js",
   "marketplace-install.js",
+  "marketplace-update-check.js",
   "service-worker.js",
   "platform-bridge.js",
   "browser-control.js",
   "account-browser-agent.js",
   "userscript-recovery.js",
+  "userscript-navigation-guard.js",
   "userscript-core.js",
   "userscript-runner.js",
   "userscript-memory-policy.js",
@@ -35,10 +37,10 @@ const approvedFiles = [
   "marketplace/chatgpt-task-queue.user.js",
 ];
 
-if (manifest.version !== "0.6.1") throw new Error(`Chrome extension packaging is pinned to 0.6.1; received ${manifest.version}.`);
-if (!manifest.permissions?.includes("userScripts")) throw new Error("Fabushi 0.6.1 must expose the integrated userscript runtime.");
+if (manifest.version !== "0.6.9") throw new Error(`Chrome extension packaging is pinned to 0.6.9; received ${manifest.version}.`);
+if (!manifest.permissions?.includes("userScripts")) throw new Error("Fabushi 0.6.9 must expose the integrated userscript runtime.");
 if (JSON.stringify(manifest.host_permissions || []) !== JSON.stringify(["<all_urls>"])) {
-  throw new Error("Fabushi 0.6.1 must preserve the 0.4.1 all-URL content-script permission used by the existing userscript runner.");
+  throw new Error("Fabushi 0.6.9 must preserve the 0.4.1 all-URL content-script permission used by the existing userscript runner.");
 }
 
 await rm(stage, { recursive: true, force: true });

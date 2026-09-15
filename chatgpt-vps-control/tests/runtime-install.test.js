@@ -41,6 +41,7 @@ async function createRuntimeSource(root) {
     "platform-bridge.js",
     "browser-control.js",
     "userscript-recovery.js",
+    "userscript-navigation-guard.js",
     "userscript-core.js",
     "userscript-runner.js",
     "userscript-content.js",

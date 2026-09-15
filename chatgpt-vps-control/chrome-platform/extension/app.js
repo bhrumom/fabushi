@@ -1,5 +1,6 @@
 import {
   compareMarketplaceVersions as compareVersions,
+  marketplaceItemId,
   marketplaceInstallAction,
   marketplaceInstalledVersion,
   marketplaceInstallContract,
@@ -15,14 +16,15 @@ const labels = { chats: "聊天", miniapps: "小程序", marketplace: "Marketpla
 const BUNDLED_USERSCRIPT_PATH = "userscript/chatgpt-auto-confirm.user.js";
 const MARKETPLACE_API_ROOT = "https://api.ombhrum.com";
 const MARKETPLACE_USERSCRIPT_REPOSITORY = "https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript";
-const MARKETPLACE_USERSCRIPT_COMMIT = "4e6340e380f5c6c9b22b4a5b4352ad08e8d67ba2";
-const MARKETPLACE_USERSCRIPT_SHA256 = "7529a90211ebd969044313ca38fd1d7fca1fba702604794eafe749884a59695a";
-const MARKETPLACE_USERSCRIPT_SIZE = 133694;
+const MARKETPLACE_USERSCRIPT_COMMIT = "5f7d1f26a9883e6806ec855f5f2177ad737aa07e";
+const MARKETPLACE_USERSCRIPT_SHA256 = "1e025a9b64bcba225059a0768fb08b5bcf818f902f8c7c4e5980505958e6fe2a";
+const MARKETPLACE_USERSCRIPT_SIZE = 225544;
 const MARKETPLACE_TASK_QUEUE_REPOSITORY = "https://github.com/bhrumom/fabushi";
 const MARKETPLACE_TASK_QUEUE_COMMIT = "a9d0b883c68dd45c14f9966ab79656bcf43c4d0e";
 const MARKETPLACE_TASK_QUEUE_SHA256 = "38bec5437d9a2ad3d04c4e138b2cf681fb788932b133696744ffdf05e4d45b38";
 const MARKETPLACE_TASK_QUEUE_SIZE = 13314;
 const MAX_REMOTE_USERSCRIPT_BYTES = 2 * 1024 * 1024;
+const MARKETPLACE_AUTO_REFRESH_MS = 5 * 60 * 1000;
 const state = {
   view: "chats",
   desktopConnected: false,
@@ -34,6 +36,14 @@ const state = {
   installed: [],
   userscripts: [],
   marketplace: [],
+  marketplaceUpdate: { checkedAt: 0, updates: [], error: "" },
+  marketplaceAutoRefreshTimer: null,
+  marketplaceRequestId: 0,
+  userscriptsLoaded: false,
+  // Standalone Chrome has no desktop package list; an empty list is a valid
+  // loaded state. A later Native Messaging connection replaces it with the
+  // Host-owned installed package list.
+  installedLoaded: true,
   browser: { connected: false, tabs: [] },
 };
 
@@ -142,7 +152,10 @@ function activateView(name) {
   for (const button of navButtons) button.toggleAttribute("aria-current", button.dataset.view === name);
   for (const view of views) $(`#${view}-view`).hidden = view !== name;
   search.placeholder = name === "marketplace" ? "搜索 Marketplace" : name === "chats" ? "搜索聊天" : "搜索 Fabushi";
-  if (name === "marketplace") void refreshMarketplace(search.value);
+  if (name === "marketplace") {
+    void refreshMarketplace(search.value);
+    void refreshMarketplaceUpdateStatus({ check: true });
+  }
   if (name === "miniapps") void refreshInstalled();
   if (name === "browser") void refreshBrowser();
 }
@@ -257,7 +270,7 @@ const BUILTIN_MARKETPLACE_ITEM = {
   description: "独立运行于 ChatGPT 网页的自动确认、对话和可恢复任务队列控制台，不依赖 Fabushi 桌面端。",
   // Keep a signed local compatibility copy while the remote catalogue is
   // unavailable. The install/update path below uses the pinned GitHub release.
-  latestVersion: "2.9.11",
+  latestVersion: "2.9.31",
   bundledFallback: true,
   platforms: ["desktop", "cli", "chrome-extension"],
   matches: ["https://chatgpt.com/*", "https://chat.openai.com/*"],
@@ -267,7 +280,7 @@ const BUILTIN_MARKETPLACE_ITEM = {
     provider: "github",
     repository: MARKETPLACE_USERSCRIPT_REPOSITORY,
     sourceRef: MARKETPLACE_USERSCRIPT_COMMIT,
-    releaseUrl: `${MARKETPLACE_USERSCRIPT_REPOSITORY}/releases/tag/v2.9.11`,
+    releaseUrl: `${MARKETPLACE_USERSCRIPT_REPOSITORY}/releases/tag/v2.9.31`,
     surfaces: [{ id: "userscript", kind: "userscript", title: "ChatGPT 网页油猴脚本", entry: "userscript/chatgpt-auto-confirm.user.js", platforms: ["chrome-extension"] }],
     commands: [],
   },
@@ -278,12 +291,12 @@ const BUILTIN_MARKETPLACE_ITEM = {
     protocol: "fabushi.marketplace.install.v1",
     strategy: "github-immutable",
     pluginId: "chatgpt-auto-confirm",
-    version: "2.9.11",
+    version: "2.9.31",
     source: {
       provider: "github",
       repository: MARKETPLACE_USERSCRIPT_REPOSITORY,
       sourceRef: MARKETPLACE_USERSCRIPT_COMMIT,
-      releaseUrl: `${MARKETPLACE_USERSCRIPT_REPOSITORY}/releases/tag/v2.9.11`,
+      releaseUrl: `${MARKETPLACE_USERSCRIPT_REPOSITORY}/releases/tag/v2.9.31`,
       marketplaceHostsPackage: false,
     },
     artifacts: [{
@@ -311,7 +324,7 @@ const BUILTIN_MARKETPLACE_ITEM = {
     schemaVersion: 1,
     protocol: "mahayana.external-release.v1",
     pluginId: "chatgpt-auto-confirm",
-    version: "2.9.11",
+    version: "2.9.31",
     runtimeForm: "userscript",
     permissions: ["读取 ChatGPT 页面状态", "显示任务队列", "仅在匹配页面运行"],
     artifacts: [{
@@ -331,12 +344,12 @@ const BUILTIN_MARKETPLACE_ITEM = {
       protocol: "fabushi.marketplace.install.v1",
       strategy: "github-immutable",
       pluginId: "chatgpt-auto-confirm",
-      version: "2.9.11",
+      version: "2.9.31",
       source: {
         provider: "github",
         repository: MARKETPLACE_USERSCRIPT_REPOSITORY,
         sourceRef: MARKETPLACE_USERSCRIPT_COMMIT,
-        releaseUrl: `${MARKETPLACE_USERSCRIPT_REPOSITORY}/releases/tag/v2.9.11`,
+        releaseUrl: `${MARKETPLACE_USERSCRIPT_REPOSITORY}/releases/tag/v2.9.31`,
         marketplaceHostsPackage: false,
       },
       artifacts: [{
@@ -446,6 +459,88 @@ function userscriptSurface(item) {
 
 function userscriptInstalled(pluginId) {
   return state.userscripts.find((script) => script.sourcePluginId === pluginId);
+}
+
+function localMarketplaceUpdateCandidates() {
+  return state.marketplace.flatMap((item) => {
+    const pluginId = itemPluginId(item);
+    if (!pluginId) return [];
+    const installed = state.installed.find((candidate) => itemPluginId(candidate) === pluginId);
+    const script = userscriptInstalled(pluginId);
+    const action = marketplaceInstallAction(item, installed, script);
+    if (action !== "update" && action !== "reinstall") return [];
+    return [{
+      pluginId,
+      displayName: String(item.displayName || item.name || item.title || pluginId),
+      installedVersion: marketplaceInstalledVersion(item, installed, script) || "未知",
+      latestVersion: itemVersion(item),
+      reason: action === "reinstall" ? "artifact-digest" : "version",
+    }];
+  });
+}
+
+function updateStatusCopy(status) {
+  const updates = Array.isArray(status?.updates) ? status.updates : [];
+  if (updates.length) {
+    return `发现 ${updates.length} 个更新：${updates.map((item) => `${item.displayName || item.pluginId} ${item.installedVersion || "旧版本"} → ${item.latestVersion || "新版本"}`).join("、")}`;
+  }
+  if (status?.error) return "自动检查暂时失败，将在后台继续重试。";
+  if (status?.checkedAt) return `已自动检查 · 暂无新版本（${new Date(status.checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}）`;
+  return "正在检查线上版本…";
+}
+
+function setMarketplaceUpdateStatus(status = {}) {
+  const localUpdates = state.userscriptsLoaded && state.installedLoaded
+    ? localMarketplaceUpdateCandidates()
+    : [];
+  const remoteUpdates = Array.isArray(status.updates) ? status.updates : [];
+  const updates = localUpdates.length ? localUpdates : remoteUpdates;
+  state.marketplaceUpdate = {
+    checkedAt: Number(status.checkedAt) || (localUpdates.length ? Date.now() : 0),
+    updates,
+    error: String(status.error || ""),
+    reason: String(status.reason || ""),
+  };
+  const container = $("#marketplace-update-status");
+  const copy = $("#marketplace-update-copy");
+  if (!container || !copy) return;
+  container.hidden = false;
+  container.classList.toggle("has-update", updates.length > 0);
+  copy.textContent = updateStatusCopy(state.marketplaceUpdate);
+}
+
+function marketplaceCatalogStatus(query = "") {
+  const queryActive = Boolean(String(query || "").trim());
+  const ready = state.userscriptsLoaded && state.installedLoaded;
+  return {
+    ...state.marketplaceUpdate,
+    checkedAt: ready && !queryActive ? Date.now() : state.marketplaceUpdate.checkedAt,
+    updates: ready && !queryActive ? localMarketplaceUpdateCandidates() : state.marketplaceUpdate.updates,
+    error: "",
+    reason: "catalog",
+  };
+}
+async function refreshMarketplaceUpdateStatus({ check = false } = {}) {
+  const type = check ? "fabushi.marketplace.update.check" : "fabushi.marketplace.update.status";
+  try {
+    const response = await runtimeMessage({ type }, check ? 5_000 : 2_000);
+    if (response?.ok && response.status) setMarketplaceUpdateStatus(response.status);
+  } catch {
+    // Older extension workers have no background checker yet. The direct
+    // Marketplace fetch still performs the same version comparison below.
+  }
+}
+
+function scheduleMarketplaceAutoRefresh() {
+  if (state.marketplaceAutoRefreshTimer !== null) return;
+  const refresh = () => {
+    if (document.visibilityState === "hidden" || state.view !== "marketplace") return;
+    void refreshMarketplace(search.value);
+  };
+  state.marketplaceAutoRefreshTimer = window.setInterval(refresh, MARKETPLACE_AUTO_REFRESH_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refresh();
+  });
 }
 
 function shouldShowBundledFallback(query) {
@@ -670,8 +765,18 @@ async function refreshUserscripts() {
   try {
     const result = await runtimeMessage({ type: "fabushi.userscript.list" });
     state.userscripts = result?.ok && Array.isArray(result.scripts) ? result.scripts : [];
+    state.userscriptsLoaded = true;
     renderUserScripts();
-    if (state.view === "marketplace") renderCards($("#marketplace-list"), state.marketplace, "没有找到兼容 Chrome 的项目");
+    if (state.view === "marketplace") {
+      renderCards($("#marketplace-list"), state.marketplace, "没有找到兼容 Chrome 的项目");
+      setMarketplaceUpdateStatus({
+        ...state.marketplaceUpdate,
+        checkedAt: state.installedLoaded ? Date.now() : state.marketplaceUpdate.checkedAt,
+        updates: state.installedLoaded ? localMarketplaceUpdateCandidates() : state.marketplaceUpdate.updates,
+        error: state.installedLoaded ? "" : state.marketplaceUpdate.error,
+        reason: "local-state",
+      });
+    }
   } catch (error) {
     showBanner(`油猴脚本列表读取失败：${error.message}`, "error");
   }
@@ -865,24 +970,36 @@ async function installMarketplaceItem(item, button) {
 }
 
 async function refreshMarketplace(query = "") {
-  if (!state.desktopConnected) {
-    // Discovery remains available without Native Messaging. Only metadata is
-    // fetched here; executable code is still either bundled or installed by
-    // the verified Host path below.
-    try {
-      state.marketplace = await fetchPublicMarketplace(query);
-    } catch {
-      state.marketplace = [];
-    }
+  const requestId = ++state.marketplaceRequestId;
+  // Chrome discovery is authoritative at the live Marketplace endpoint. A
+  // connected desktop Host may be older than the extension and must not make
+  // a published userscript update look like 2.9.28 is still current.
+  try {
+    const liveItems = await fetchPublicMarketplace(query);
+    if (requestId !== state.marketplaceRequestId) return;
+    state.marketplace = liveItems;
     if (shouldShowBundledFallback(query)) {
       const builtins = await bundledMarketplaceItems();
+      if (requestId !== state.marketplaceRequestId) return;
       for (const builtin of builtins) {
         const index = state.marketplace.findIndex((item) => itemPluginId(item) === builtin.pluginId);
         if (index < 0) state.marketplace.unshift(builtin);
         else if (compareVersions(itemVersion(builtin), itemVersion(state.marketplace[index])) > 0) state.marketplace[index] = builtin;
       }
     }
+    renderCards($("#marketplace-list"), state.marketplace, state.desktopConnected ? "没有找到兼容 Chrome 的项目" : "没有找到可独立安装的 Chrome 项目");
+    setMarketplaceUpdateStatus(marketplaceCatalogStatus(query));
+    return;
+  } catch {
+    // A transient live-catalog failure falls back to the connected Host. The
+    // Host can still install verified artifacts, but never outranks live data.
+  }
+
+  if (!state.desktopConnected) {
+    if (requestId !== state.marketplaceRequestId) return;
+    state.marketplace = [];
     renderCards($("#marketplace-list"), state.marketplace, "没有找到可独立安装的 Chrome 项目");
+    setMarketplaceUpdateStatus({ ...state.marketplaceUpdate, checkedAt: Date.now(), error: "线上 Marketplace 暂时不可用。", reason: "catalog" });
     return;
   }
   try {
@@ -894,9 +1011,11 @@ async function refreshMarketplace(query = "") {
       // extension usable while the desktop app is being upgraded.
       result = await desktopRequest("feature.marketplace.browse", { query: query.trim() || undefined, platform: "web" });
     }
+    if (requestId !== state.marketplaceRequestId) return;
     state.marketplace = marketplaceItems(result);
     if (shouldShowBundledFallback(query)) {
       const builtins = await bundledMarketplaceItems();
+      if (requestId !== state.marketplaceRequestId) return;
       for (const builtin of builtins) {
         const index = state.marketplace.findIndex((item) => itemPluginId(item) === builtin.pluginId);
         if (index < 0) state.marketplace.unshift(builtin);
@@ -905,8 +1024,10 @@ async function refreshMarketplace(query = "") {
       }
     }
     renderCards($("#marketplace-list"), state.marketplace, "没有找到兼容 Chrome 的项目");
+    setMarketplaceUpdateStatus(marketplaceCatalogStatus(query));
   } catch (error) {
     showBanner(error.message, "error");
+    setMarketplaceUpdateStatus({ ...state.marketplaceUpdate, checkedAt: Date.now(), error: error.message, reason: "catalog" });
   }
 }
 
@@ -914,15 +1035,23 @@ async function refreshInstalled() {
   await refreshUserscripts();
   if (!state.desktopConnected) {
     state.installed = [];
+    state.installedLoaded = true;
     renderCards($("#miniapp-list"), [], "桌面小程序属于可选增强；下方油猴脚本可独立运行");
-    if (state.view === "marketplace") renderCards($("#marketplace-list"), state.marketplace, "没有找到兼容 Chrome 的项目");
+    if (state.view === "marketplace") {
+      renderCards($("#marketplace-list"), state.marketplace, "没有找到兼容 Chrome 的项目");
+      setMarketplaceUpdateStatus({ ...state.marketplaceUpdate, checkedAt: Date.now(), updates: localMarketplaceUpdateCandidates(), error: "", reason: "local-state" });
+    }
     return;
   }
   try {
     const result = await desktopRequest("feature.plugin.listInstalled");
     state.installed = Array.isArray(result) ? result : Array.isArray(result?.plugins) ? result.plugins : Array.isArray(result?.items) ? result.items : [];
+    state.installedLoaded = true;
     renderCards($("#miniapp-list"), state.installed, "还没有已安装的小程序");
-    if (state.view === "marketplace") renderCards($("#marketplace-list"), state.marketplace, "没有找到兼容 Chrome 的项目");
+    if (state.view === "marketplace") {
+      renderCards($("#marketplace-list"), state.marketplace, "没有找到兼容 Chrome 的项目");
+      setMarketplaceUpdateStatus({ ...state.marketplaceUpdate, checkedAt: Date.now(), updates: localMarketplaceUpdateCandidates(), error: "", reason: "local-state" });
+    }
     $("#miniapp-empty").hidden = state.installed.length > 0;
   } catch (error) {
     showBanner(error.message, "error");
@@ -1007,7 +1136,9 @@ async function initialize() {
   // hidden or make the extension appear frozen during startup.
   loading.hidden = true;
   activateView("marketplace");
+  scheduleMarketplaceAutoRefresh();
   void Promise.allSettled([refreshUserscripts(), refreshBrowserAccount()]);
+  void refreshMarketplaceUpdateStatus({ check: true });
   void connectDesktopEnhancements();
 }
 
@@ -1029,6 +1160,16 @@ $("#browser-account-action").addEventListener("click", async () => {
   }
 });
 $("#refresh-browser").addEventListener("click", () => void refreshBrowser());
+$("#marketplace-refresh").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  setMarketplaceUpdateStatus({ ...state.marketplaceUpdate, checkedAt: 0, updates: [], error: "" });
+  try {
+    await Promise.allSettled([refreshMarketplace(search.value), refreshMarketplaceUpdateStatus({ check: true })]);
+  } finally {
+    button.disabled = false;
+  }
+});
 $("#new-chat").addEventListener("click", () => {
   state.activeConversationId = "new";
   $("#conversation-empty").hidden = true;
@@ -1079,6 +1220,10 @@ document.addEventListener("keydown", (event) => {
 });
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "fabushi.platform.event") handlePlatformEvent(message.event);
+  if (message?.type === "fabushi.marketplace.updates" && message.status) {
+    setMarketplaceUpdateStatus(message.status);
+    if (state.view === "marketplace") renderCards($("#marketplace-list"), state.marketplace, "没有找到兼容 Chrome 的项目");
+  }
   if (message?.type === "fabushi.platform.connection") {
     if (message.connected === true) void connectDesktopEnhancements();
     else setDesktopConnection(false, message.error || "");

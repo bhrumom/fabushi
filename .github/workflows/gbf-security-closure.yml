@@ -8,6 +8,12 @@ on:
       - 'projects/grok-bot-fabushi-integration/**'
       - 'desktop/electron/**'
       - 'chatgpt-vps-control/**'
+      - '!chatgpt-vps-control/chrome-platform/**'
+      - '!chatgpt-vps-control/tests/browser-extension.test.js'
+      - '!chatgpt-vps-control/tests/chrome-platform.test.js'
+      - '!chatgpt-vps-control/tests/extension-entry.test.js'
+      - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
+      - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
@@ -19,9 +25,15 @@ on:
       - 'projects/grok-bot-fabushi-integration/**'
       - 'desktop/electron/**'
       - 'chatgpt-vps-control/**'
+      - '!chatgpt-vps-control/chrome-platform/**'
+      - '!chatgpt-vps-control/tests/browser-extension.test.js'
+      - '!chatgpt-vps-control/tests/chrome-platform.test.js'
+      - '!chatgpt-vps-control/tests/extension-entry.test.js'
+      - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+  merge_group:
   workflow_dispatch:
 
 concurrency:
@@ -32,7 +44,57 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    name: Detect affected GBF security scope
+    runs-on: ubuntu-latest
+    outputs:
+      global: ${{ steps.filter.outputs.global }}
+      gbf: ${{ steps.filter.outputs.gbf }}
+    steps:
+      - name: Checkout full history for changed-path detection
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect changed GBF scope
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        with:
+          token: ''
+          base: ${{ github.event_name == 'push' && github.event.before || '' }}
+          predicate-quantifier: some-with-excludes
+          filters: |
+            global:
+              - '.github/workflows/gbf-security-closure.yml'
+              - '.github/scripts/assert-gbf-security-closure.py'
+            gbf:
+              - 'projects/grok-bot-fabushi-integration/**'
+              - 'desktop/electron/**'
+              - 'chatgpt-vps-control/**'
+              - '!chatgpt-vps-control/chrome-platform/**'
+              - '!chatgpt-vps-control/tests/browser-extension.test.js'
+              - '!chatgpt-vps-control/tests/chrome-platform.test.js'
+              - '!chatgpt-vps-control/tests/extension-entry.test.js'
+              - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
+      - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
+              - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - name: Summarize detected GBF scope
+        shell: bash
+        env:
+          GLOBAL_SCOPE: ${{ steps.filter.outputs.global }}
+          GBF_SCOPE: ${{ steps.filter.outputs.gbf }}
+        run: |
+          {
+            echo '### GBF security changed scope'
+            echo "- global: $GLOBAL_SCOPE"
+            echo "- gbf: $GBF_SCOPE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   closure:
+    needs: scope
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.gbf == 'true' }}
     name: Threat provenance secret denial closure
     runs-on: ubuntu-latest
     timeout-minutes: 15

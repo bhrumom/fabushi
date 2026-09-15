@@ -33,6 +33,8 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   const core = await source("userscript-core.js");
   const content = await source("userscript-content.js");
   const recovery = await source("userscript-recovery.js");
+  const navigation = await source("userscript-navigation-guard.js");
+  const worker = await source("service-worker.js");
   const app = await source("app.js");
   const packager = await readFile(resolve(extensionRoot, "../../scripts/package-chrome-extension.mjs"), "utf8");
   const validator = await readFile(resolve(extensionRoot, "../../scripts/validate-chrome-extension.mjs"), "utf8");
@@ -45,7 +47,9 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   assert.match(runner, /userscript-memory-policy/);
   assert.match(runner, /requestTabMemoryCleanup/);
   assert.ok(packager.includes('"userscript-memory-policy.js"'));
+  assert.ok(packager.includes('"userscript-navigation-guard.js"'));
   assert.ok(validator.includes('"userscript-memory-policy.js"'));
+  assert.ok(validator.includes('"userscript-navigation-guard.js"'));
   assert.match(core, /forbiddenDirectives/);
   assert.match(core, /dynamic WebAssembly/);
   assert.match(content, /fabushi\.userscript\.pageReady/);
@@ -53,6 +57,14 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   assert.match(content, /tab-memory\.response/);
   assert.match(content, /fabushi\.userscript\.recovery\.request/);
   assert.match(content, /recovery-capability\.granted/);
+  assert.match(content, /navigation-guard\.request/);
+  assert.match(content, /navigation-guard\.granted/);
+  assert.match(content, /data\.pluginId \|\| NAVIGATION_PLUGIN_ID/);
+  assert.match(content, /navigation-guard\.cancel/);
+  assert.match(navigation, /CAPABILITY = "tab-navigation-guard"/);
+  assert.match(navigation, /navigation-in-flight/);
+  assert.match(navigation, /rotation-break/);
+  assert.match(worker, /userscript-navigation-guard\.js/);
   assert.match(recovery, /chrome\.alarms\.onAlarm/);
   assert.match(recovery, /chrome\.tabs\.onUpdated/);
   assert.match(recovery, /chrome\.tabs\.onRemoved/);

@@ -256,3 +256,97 @@
 - [ ] exact-main packaged/Chrome 证据、公开发布授权及 Release/Web Store 回读。
 
 当前状态：`IN_PROGRESS / SOURCE_MERGED / HOST_FOLLOWUP_OPEN / LIVE_EVIDENCE_PENDING`。
+
+
+## 2026-09-14 — TFI-USERSCRIPT-RECOVERY-013 发布/主线回读
+
+- [x] source exact-main CI 与 source main readback：`faf68931dfa5c915feb316ea2a8da1de45384b96` / `34813245918` / userscript `2.9.23`。
+- [x] 按明确授权发布 source Release `v2.9.23`，资产 SHA-256 `80bea8ea03d18bd258bd4a326d150786b01cb52d2a731db7a04c7d4ffcaee7e4`。
+- [x] host package preflight 与 canonical-main Chrome packaged journey：main `13188628da46b88db843c9c5b4d59100233e3a21`，workflow `34817384069` 成功，证据 artifact `10337146244`。
+- [ ] Electron/mobile/security 其余 post-main 门禁与最终任务回读。
+- [ ] 官方 MCP remote Runner 手测：连接器内部错误恢复后，用同一测试账号完成 list → describe → `ci_session_status` → 手动内存验收 → note → finish。
+
+当前状态：`IN_PROGRESS / SOURCE_RELEASED / HOST_CHROME_EXACT_MAIN_PASSED / REMOTE_MANUAL_PENDING`。
+
+## 2026-09-14 — 新增 WBS 原子任务
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-014 | FAB-P0001 / TFI | 宿主受控导航、renderer 崩溃恢复、source 2.9.24 与 Chrome 0.6.2 发布 | IN_PROGRESS | source main 71a2279b；source CI run 34838068938 114/114；parent branch codex/release-0.6.2-renderer-guard-20260914 | parent PR/保护主线、exact-main Chrome package/journey、Web Store 与安装版本回读 |
+
+## 2026-09-14 TFI-USERSCRIPT-RECOVERY-014 交付回读
+
+| 原子任务 | 状态 | 证据 |
+| --- | --- | --- |
+| 脚本会话结束后创建新验收路由 | 已实现/已验证 | 源码 PR #19、canonical source main 71a2279、CI 34838068938（114/114） |
+| 宿主 tab-navigation-guard 与 renderer crash/unloaded 防护 | 已实现/已验证 | 父 PR #2623 → main b4d2d85；Chrome run 34839358565 |
+| 精确主 SHA 打包、证据与发布物 | 已通过 | post-main run 34840407940；Chrome 0.6.2 包含截图、视频、trace、HTML/report、日志 |
+| Web Store 提交与当前 Chrome 更新 | 进行中 | publisher runs 34840738917/34841285781：条目已有审核中提交；当前 Chrome 0.4.1 待确认重载 |
+
+## 2026-09-14 TFI-USERSCRIPT-RECOVERY-014 最终发布与本机回读
+
+- [x] source v2.9.24、host Chrome 0.6.2、parent protected-main 与 exact-main packaged journey 完成。
+- [x] final canonical main `396a842c7e00b8ad7c236d84cabc9230ed88d391` 的 Chrome package run `34842044140` 与 post-main run `34843041788` 完成；Release 含 Chrome ZIP/manifest/checksum。
+- [x] 当前 Chrome 未打包扩展已重载并回读 v0.6.2；旧版备份可回滚。
+- [ ] Web Store 现有审核提交仍锁定 item，公开 0.6.2 发布等待审核完成或单独明确的取消决定。
+
+当前状态：`IN_PROGRESS / LOCAL_CHROME_0.6.2_VERIFIED / WEB_STORE_REVIEW_PENDING`。
+
+
+## 2026-09-14 TFI-USERSCRIPT-RECOVERY-014 最新反馈跟进
+
+| 原子任务 | 状态 | 证据/下一步 |
+| --- | --- | --- |
+| assistant 错误卡片中的发送超时识别 | 已实现/待主线回读 | source v2.9.26、source PR #21、source CI 34849096867；parent PR #2628 待 Merge Queue |
+| 发送超时进入新派发队列且不自动暂停 | 已实现/待主线回读 | `inspect → queueNoFinalReplyRetry` 回归；Chrome 0.6.4 packaged journey 待 exact main |
+| 人工打开历史会话时明确暂停原因 | 已实现/待主线回读 | source v2.9.26 manual inspection log regression；待 Chrome 包含该源码 |
+| Chrome 宿主与 bundled userscript 版本一致 | 进行中 | parent PR #2628：Chrome 0.6.4，固定 source commit/hash/size；等待 protected main |
+| exact-main 发布/现场安装回读 | 未开始 | 待 parent merge 后运行 Chrome package、packaged journey、证据归档与 Release |
+
+
+## 2026-09-14 — TFI-CI-OPT-015 按变更范围选择自动化检查
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-CI-OPT-015 | FAB-P0001 / TFI | 为安全、桌面、GBF 与 Global Dharma 工作流增加 changed-path scope，跳过未受影响的重矩阵并保留稳定检查名 | IN_PROGRESS | task record；开源调查 dorny/paths-filter；workflow implementation branch | PR Actions 验证 scope、skipped 聚合、merge_group 与 main push 行为 |
+
+验收约束：Chrome-only 变更不启动 Computer Control Rust/platform-worker/Linux desktop、Electron PR journey、GBF closure 与无关 Global Dharma 依赖；workflow/scope/security boundary 变更保守全量；main 发布路径不变。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-016 公平持续调度
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-016 | FAB-P0001 / TFI | 按任务 eligibility/最早唤醒点公平轮换；区分限流、导航保护和普通退避；查看会话不中断；旧 runner lock 有界接管 | IN_PROGRESS / LIVE_CHROME_CONFIRMATION_PENDING | source main `480ebe61` / v2.9.30 / PR #22/#23；parent PR #2638/#2639 已合并至 `main@80ef6f15`；Electron `34880495486`、Chrome `34881462209`、post-main `34881675501` 成功；Release 已发布 | 当前 Chrome Tampermonkey 更新确认与登录态双任务连续轮换证据；Web Store 状态独立跟踪 |
+
+- `TFI-USR-SCHED-R01..R06` 已在 source 侧实现并有 focused/full regression；Chrome 0.6.5 packaged journey 与完整 evidence bundle 已由 artifact `10362084424` 验证。
+- 本任务继续保留单页前台写操作互斥，不以并行任务为由允许同一 composer 的发送、上传、授权或未确认派发并发。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 Marketplace 线上 userscript 发现
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-017 | FAB-P0001 / TFI | 让旧 Chrome 扩展从公开控制面发现 userscript v2.9.30，同时保持桌面/CLI Mini App release 不变 | IN_PROGRESS / PR_PENDING | source v2.9.30 Release 与 parent bundled pin 已验证；Worker Chrome-only projection 已实现并加入单测 | Platform Control Plane CI、protected main、生产部署和线上 catalog/direct-release 回读 |
+
+| TFI-USERSCRIPT-RECOVERY-017-AUTO | FAB-P0001 / TFI | Service Worker 启动/安装/30 分钟 alarm、Marketplace 打开/5 分钟目录刷新和持久化更新提示 | IMPLEMENTED / CI_PENDING | `marketplace-update-check.js`、`app.js`、manifest 0.6.6 与纯比较回归已写入分支 | Chrome package/packaged E2E 与 protected main 交付证据 |
+- 第一版 PR #2641 已进入 `main@4f484be2…`，Chrome package `34922024248` 和 Worker deploy `34922024310` 已通过；follow-up PR #2642 的状态保持修复仍待合并。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 主线修复与商店门禁
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-017 | FAB-P0001 / TFI | 让 Chrome 插件在后台自动识别线上 userscript 更新 | IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED | PR #2646 → `main@05297b21…`; Chrome run `34925924905`, artifact `10379573729`, 0.6.7 packaged journey/evidence 通过；线上 catalog v2.9.30 | 等待现有 Chrome Web Store 审核结束后重新提交 0.6.7；不取消或覆盖审核中的提交 |
+| TFI-USERSCRIPT-RECOVERY-017-AUTO | FAB-P0001 / TFI | 启动/安装/30 分钟后台检查、5 分钟页面刷新、持久化徽章与更新提示 | VERIFIED / MAIN_PACKAGE_GREEN | `marketplace-update-check.js`, `app.js`, manifest 0.6.7；exact-main artifact `10379573729` 含截图/视频/trace/report/log | Web Store 公开版本回读 |
+
+| TFI-USERSCRIPT-RECOVERY-017-LIVE-CATALOG | FAB-P0001 / TFI | Chrome popup 优先读取实时 Marketplace，Host 仅网络失败兜底；并发目录请求按序提交 | VERIFIED / MAIN_PACKAGE_GREEN | `app.js` 的 live-catalog-first 与 `marketplaceRequestId`；`main@05297b21…`、Chrome run `34925924905`、artifact `10379573729` 的 0.6.7 packaged journey 通过 | Web Store 审核结束后公开发布 0.6.7 |
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 本机更新错误修复
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-017 | FAB-P0001 / TFI | 修复 Chrome popup 点击 Marketplace 更新时的 `marketplaceItemId is not defined` | IN_PROGRESS / FIX_PR_PENDING | 本机截图回读；`app.js` 已补共享 helper import；Chrome 版本已递增到 0.6.8；轻量语法/差异检查通过 | 提交 PR，跑 exact-main Chrome package/packaged E2E，之后替换本机包 |
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-018 导航许可活锁与最终回复续派
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-018 | FAB-P0001 / TFI | 修复导航申请漏插件身份导致的无限 30 秒保护循环，并保证最终回复后的 review 继续派发 | IN_PROGRESS / SOURCE_RELEASED / PARENT_CI_PENDING | source main `5f7d1f26` / Release v2.9.31 / 121-assertion regression；parent branch 已同步 source、host lease 与 Worker projection，Chrome 0.6.9 | parent PR、Platform Control Plane/Chrome CI、protected main、exact-main packaged evidence、生产 catalog 回读与 Release |

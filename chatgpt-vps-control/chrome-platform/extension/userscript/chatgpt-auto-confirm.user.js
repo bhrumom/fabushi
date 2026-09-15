@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT 自动确认 · Fabushi
 // @namespace    https://fabushi.ombhrum.com/userscripts/chatgpt-auto-confirm
-// @version      2.9.23
+// @version      2.9.31
 // @description  独立单标签任务工作台：目标编排、单次任务、附件粘贴预览、授权识别、实时消息、内存感知与可中断调度。
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -14,7 +14,7 @@
   'use strict';
   if (window.top !== window.self) return;
   const INSTANCE = '__FABUSHI_AUTO_CONFIRM_INSTANCE__';
-  const VERSION = '2.9.23';
+  const VERSION = '2.9.31';
   const BOOTSTRAP_MARKER = 'fabushi-auto-confirm-bootstrap-v1';
   const previousInstance = window[INSTANCE];
   if (previousInstance?.version === VERSION && previousInstance?.active) return;
@@ -65,6 +65,10 @@
   // catches the renderer state where Stop disappeared but no answer/card was
   // rendered, without treating a brief transition as a failure.
   const STOP_LOST_FINAL_REPLY_MS = 15000;
+  // A final answer may become static on a document that was previously
+  // observed in loading/generating state. Keep a short grace period, then
+  // finish even when the prior scan was not itself a clear observation.
+  const FINAL_REPLY_STABILITY_MS = 4000;
   const ROUTE_HYDRATION_TIMEOUT_MS = 30000;
   const ROUTE_RECOVERY_LIMIT = 2;
   const CONNECTION_INTERRUPTED_REFRESH_LIMIT = 2;
@@ -88,6 +92,8 @@
   const WORKSPACE_RECLAIM_TIMEOUT_MS = 5000;
   const WORKSPACE_RECLAIM_FAST_TIMEOUT_MS = 1000;
   const WORKSPACE_RECLAIM_POLL_MS = 50;
+  const RUNNER_RECLAIM_TIMEOUT_MS = 5000;
+  const RUNNER_RECLAIM_POLL_MS = 100;
   // A renderer crash stops this script before it can run pagehide. Persist a
   // small, content-free lease heartbeat so a newly loaded ChatGPT document
   // (or an optional page-external watcher) can distinguish a dead workspace
@@ -118,6 +124,19 @@
   const MEMORY_LOCAL_CLEANUP_COOLDOWN_MS = 60000;
   const MEMORY_HOST_REQUEST_COOLDOWN_MS = 5 * 60 * 1000;
   const MEMORY_HOST_RESPONSE_TTL_MS = 10000;
+  // Full ChatGPT document navigations are expensive. The host guard adds a
+  // second, cross-document budget; these local limits remain effective when
+  // the script is used without Fabushi.
+  const HOST_NAVIGATION_CAPABILITY = 'tab-navigation-guard';
+  const HOST_NAVIGATION_REQUEST_TYPE = 'navigation-guard.request';
+  const HOST_NAVIGATION_CANCEL_TYPE = 'navigation-guard.cancel';
+  const HOST_NAVIGATION_GRANTED_TYPE = 'navigation-guard.granted';
+  const HOST_NAVIGATION_DENIED_TYPE = 'navigation-guard.denied';
+  const HOST_NAVIGATION_RESPONSE_TTL_MS = 5000;
+  const LOCAL_NAVIGATION_COOLDOWN_MS = 30000;
+  const LOCAL_NAVIGATION_BURST_WINDOW_MS = 5 * 60 * 1000;
+  const LOCAL_NAVIGATION_BURST_LIMIT = 6;
+  const LOCAL_NAVIGATION_BREAK_MS = 60000;
   const MEMORY_SOFT_LIMIT_BYTES = 768 * 1024 * 1024;
   const MEMORY_HARD_LIMIT_BYTES = 1536 * 1024 * 1024;
   const MEMORY_RATIO_MIN_BYTES = 256 * 1024 * 1024;
@@ -419,6 +438,8 @@
   let hostRecoveryReleaseSent = false;
   const hostRecoveryPending = new Map();
   const hostMemoryPending = new Map();
+  const hostNavigationPending = new Map();
+  let navigationRequestPending = false;
   let memoryMonitorTimer = null;
   let memoryMonitorBusy = false;
   let memoryPressureStreak = 0;
@@ -509,6 +530,248 @@
     }
     hostRecoveryCapability = { status:'released', granted:false, expiresAt:0 };
     hostRecoveryLastHeartbeatAt = 0;
+  }
+  function navigationGuardStorageKey() {
+    return 'fabushi-navigation-guard-v1:' + tabId;
+  }
+  function readNavigationGuardState(now = Date.now()) {
+    const stored = read(navigationGuardStorageKey(), {});
+    const recent = Array.isArray(stored?.recent)
+      ? stored.recent.map(value => Number(value)).filter(value => Number.isFinite(value) && now - value >= 0 && now - value < LOCAL_NAVIGATION_BURST_WINDOW_MS).slice(-LOCAL_NAVIGATION_BURST_LIMIT)
+      : [];
+    return { lastAt:Number(stored?.lastAt || 0), recent };
+  }
+  function rememberNavigationCommit(now = Date.now()) {
+    const state = readNavigationGuardState(now);
+    state.recent.push(now);
+    localStorage.setItem(navigationGuardStorageKey(), JSON.stringify({
+      lastAt:now,
+      recent:state.recent.slice(-LOCAL_NAVIGATION_BURST_LIMIT),
+    }));
+  }
+  function localNavigationDecision({ force = false } = {}) {
+    if (force) return { granted:true, reason:'forced' };
+    const now = Date.now();
+    const state = readNavigationGuardState(now);
+    const cooldownRemaining = state.lastAt
+      ? Math.max(0, LOCAL_NAVIGATION_COOLDOWN_MS - (now - state.lastAt))
+      : 0;
+    if (cooldownRemaining > 0) {
+      return { granted:false, reason:'local-cooldown', retryAfterMs:cooldownRemaining };
+    }
+    if (state.recent.length >= LOCAL_NAVIGATION_BURST_LIMIT) {
+      return { granted:false, reason:'local-break', retryAfterMs:LOCAL_NAVIGATION_BREAK_MS };
+    }
+    return { granted:true, reason:'local-ready' };
+  }
+  function settleHostNavigationRequest(requestId, result) {
+    const pending = hostNavigationPending.get(requestId);
+    if (!pending) return;
+    hostNavigationPending.delete(requestId);
+    const granted = result?.granted === true;
+    pending.resolve({
+      granted,
+      leaseId:String(result?.leaseId || '').slice(0, 128),
+      reason:String(result?.reason || (granted ? 'granted' : 'denied')).slice(0, 120),
+      retryAfterMs:Math.max(0, Math.min(LOCAL_NAVIGATION_BREAK_MS, Number(result?.retryAfterMs) || 0)),
+      fallback:result?.fallback === true,
+    });
+  }
+  function cancelHostNavigationLease(leaseId, reason = 'stale-ticket') {
+    const lease = String(leaseId || '').slice(0, 128);
+    if (!lease || typeof window.postMessage !== 'function') return false;
+    try {
+      window.postMessage({
+        source:'fabushi-userscript',
+        type:HOST_NAVIGATION_CANCEL_TYPE,
+        requestId:'fabushi-navigation-cancel-' + id(),
+        scriptId:HOST_MEMORY_PLUGIN_ID,
+        pluginId:HOST_MEMORY_PLUGIN_ID,
+        payload:{ capability:HOST_NAVIGATION_CAPABILITY, leaseId:lease, reason:String(reason || '').slice(0, 80) },
+      }, '*');
+      return true;
+    } catch { return false; }
+  }
+  function requestHostNavigationPermit(targetHref, task, { force = false, recovery = false, reason = 'route-switch' } = {}) {
+    const local = localNavigationDecision({ force });
+    if (!local.granted) return Promise.resolve(local);
+    if (force || typeof window.postMessage !== 'function') {
+      return Promise.resolve({ granted:true, fallback:true, reason:force ? 'forced' : 'standalone' });
+    }
+    const requestId = 'fabushi-navigation-' + id();
+    const payload = {
+      capability:HOST_NAVIGATION_CAPABILITY,
+      ownerTabId:String(tabId),
+      taskId:String(task?.id || current || ''),
+      taskURL:canonicalConversationURL(task?.url) || '',
+      targetURL:String(targetHref || '').slice(0, 2000),
+      phase:String(task?.phase || 'work').slice(0, 40),
+      round:Number(task?.round || 0),
+      goalRevision:Number(task?.goalRevision || 0),
+      reason:String(reason || 'route-switch').slice(0, 80),
+      force:force === true,
+      recovery:recovery === true,
+    };
+    return new Promise(resolve => {
+      hostNavigationPending.set(requestId, { resolve });
+      try {
+        window.postMessage({
+          source:'fabushi-userscript',
+          type:HOST_NAVIGATION_REQUEST_TYPE,
+          requestId,
+          scriptId:HOST_MEMORY_PLUGIN_ID,
+          pluginId:HOST_MEMORY_PLUGIN_ID,
+          payload,
+        }, '*');
+      } catch {
+        settleHostNavigationRequest(requestId, { granted:true, fallback:true, reason:'post-message-failed' });
+        return;
+      }
+      window.setTimeout(() => {
+        // A plain standalone userscript has no content bridge. Keep it
+        // functional, but retain the local cooldown/burst budget above.
+        if (hostNavigationPending.has(requestId)) {
+          settleHostNavigationRequest(requestId, { granted:true, fallback:true, reason:'host-timeout' });
+        }
+      }, HOST_NAVIGATION_RESPONSE_TTL_MS);
+    });
+  }
+  function cancelHostNavigationRequests(reason = 'shutdown') {
+    for (const requestId of [...hostNavigationPending.keys()]) {
+      settleHostNavigationRequest(requestId, { granted:false, reason });
+    }
+  }
+  function navigationTicketFor(targetHref, task, targetPath, options = {}) {
+    return {
+      taskId:task?.id || current,
+      targetHref,
+      targetPath,
+      phase:String(task?.phase || 'work'),
+      round:Number(task?.round || 0),
+      goalRevision:Number(task?.goalRevision || 0),
+      recovery:options.recovery === true,
+    };
+  }
+  function validNavigationTicket(ticket) {
+    if (!ticket || ticket.resume !== true || ticket.direct !== true || !ticket.task) return false;
+    const task = data.tasks.find(item => item.id === ticket.task && taskBelongsToTab(item));
+    if (!task || terminal.has(task.state) || task.state === 'paused') return false;
+    const phase = String(task.phase || 'work');
+    const round = Number(task.round || 0);
+    const goalRevision = Number(task.goalRevision || 0);
+    if (String(ticket.phase || '') !== phase
+      || Number(ticket.round || 0) !== round
+      || Number(ticket.goalRevision || 0) !== goalRevision) return false;
+    const targetHref = String(ticket.href || '');
+    const targetPath = String(ticket.path || '');
+    if (!targetHref || !targetPath || targetPath === '*') return false;
+    let target;
+    try { target = new URL(targetHref, location.origin); } catch { return false; }
+    if (target.origin !== location.origin || target.search) return false;
+    const taskURL = canonicalConversationURL(task.url);
+    const targetURL = canonicalConversationURL(target.href);
+    if (ticket.purpose === 'dispatch') {
+      if (ticket.recovery || ticket.documentRecovery || task.attempted) return false;
+      if (target.pathname === '/') {
+        return !taskURL && ['queued', 'sending'].includes(task.state);
+      }
+      return Boolean(taskURL && targetURL && taskURL === targetURL && resumableStates.has(task.state));
+    }
+    if (ticket.purpose === 'recovery') {
+      if (!ticket.recovery && !ticket.documentRecovery) return false;
+      if (!resumableStates.has(task.state)) return false;
+      if (ticket.documentRecovery) return target.pathname === '/';
+      return Boolean(target.pathname === '/'
+        || (taskURL && targetURL && taskURL === targetURL));
+    }
+    if (ticket.purpose === 'inspect') {
+      if (ticket.recovery || ticket.documentRecovery || !resumableStates.has(task.state)) return false;
+      return Boolean(taskURL && targetURL && taskURL === targetURL);
+    }
+    return false;
+  }
+
+  function beginGuardedNavigation(targetHref, task, {
+    replace = true,
+    force = false,
+    recovery = false,
+    ticketPath = '',
+    ticketHref = '',
+    reason = 'route-switch',
+  } = {}) {
+    if (navigationRequestPending) return false;
+    const targetPath = ticketPath || new URL(targetHref, location.origin).pathname;
+    const expected = navigationTicketFor(targetHref, task, targetPath, { recovery });
+    navigationRequestPending = true;
+    navigating = true;
+    void requestHostNavigationPermit(targetHref, task, { force, recovery, reason }).then(result => {
+      if (!result?.granted) {
+        navigating = false;
+        if (task && !terminal.has(task.state) && task.state !== 'paused') {
+          const now = Date.now();
+          const retryAfterMs = Math.max(1000, Number(result.retryAfterMs) || LOCAL_NAVIGATION_COOLDOWN_MS);
+          if (now - Number(task.navigationGuardNoticeAt || 0) >= LOCAL_NAVIGATION_COOLDOWN_MS) {
+            task.navigationGuardNoticeAt = now;
+            log(task, `导航保护暂缓本次切页，约 ${Math.ceil(retryAfterMs / 1000)} 秒后可重试；调度器会先检查其他可运行任务。`);
+          }
+          task.navigationGuardRetryAt = now + retryAfterMs;
+          task.updatedAt = now;
+          save();
+        }
+        schedule(100);
+        return;
+      }
+      const latest = data.tasks.find(item => item.id === expected.taskId);
+      if (!latest || !taskBelongsToTab(latest) || terminal.has(latest.state) || latest.state === 'paused'
+        || Number(latest.goalRevision || 0) !== expected.goalRevision
+        || Number(latest.round || 0) !== expected.round
+        || String(latest.phase || 'work') !== expected.phase) {
+        cancelHostNavigationLease(result.leaseId, 'stale-task-generation');
+        navigating = false;
+        return;
+      }
+      let ticket = null;
+      try { ticket = JSON.parse(sessionStorage.getItem(NAV)); } catch {}
+      if (!ticket || ticket.task !== expected.taskId || ticket.path !== expected.targetPath
+        || (ticketHref && ticket.href !== ticketHref)) {
+        cancelHostNavigationLease(result.leaseId, 'stale-navigation-ticket');
+        navigating = false;
+        return;
+      }
+      latest.navigationGuardRetryAt = 0;
+      if (new URL(targetHref, location.origin).pathname === location.pathname) {
+        cancelHostNavigationLease(result.leaseId, 'same-route');
+        sessionStorage.removeItem(NAV);
+        navigating = false;
+        return;
+      }
+      try {
+        // A permit is only a short-lived opportunity, not a completed
+        // navigation. Consume the standalone/local budget at the final commit
+        // point; the MV3 host independently records the exact target URL from
+        // tabs.onUpdated. Stale grants above are cancelled and consume no
+        // cooldown, preventing a repeated 30-second permit livelock.
+        rememberNavigationCommit();
+        if (replace) location.replace(targetHref);
+        else location.assign(targetHref);
+      } catch (error) {
+        navigating = false;
+        if (task) {
+          state(task, 'waiting', '页面切换失败：' + error.message + '；已保留任务等待下一次受控恢复。');
+          save();
+        }
+      }
+    }).catch(error => {
+      navigating = false;
+      if (task && !terminal.has(task.state) && task.state !== 'paused') {
+        state(task, 'waiting', '宿主页面保护暂时不可用：' + error.message);
+        save();
+      }
+      schedule(LOCAL_NAVIGATION_COOLDOWN_MS);
+    }).finally(() => {
+      navigationRequestPending = false;
+    });
+    return false;
   }
   function hasUnsavedComposerInput() {
     const candidates = [...document.querySelectorAll('#prompt-textarea, textarea[data-id="root"], textarea[placeholder*="Message" i], div[contenteditable="true"]')];
@@ -685,6 +948,16 @@
         ? message.result
         : { ok:false, discarded:false, reason:String(message.error || 'host-unavailable').slice(0, 160) };
       settleHostMemoryRequest(requestId, result);
+      return;
+    }
+    if (message.type === HOST_NAVIGATION_GRANTED_TYPE || message.type === HOST_NAVIGATION_DENIED_TYPE) {
+      if (!hostNavigationPending.has(requestId)) return;
+      settleHostNavigationRequest(requestId, {
+        granted:message.type === HOST_NAVIGATION_GRANTED_TYPE && message.granted === true,
+        leaseId:message.leaseId,
+        reason:message.reason || message.error,
+        retryAfterMs:message.retryAfterMs,
+      });
       return;
     }
     if (!hostRecoveryPending.has(requestId)) return;
@@ -1010,10 +1283,14 @@
     return parsed && !parsed.synthetic ? parsed.href : '';
   }
   function currentConversationURL() { return canonicalConversationURL(location.href); }
-  function hasTaskMarker(task) {
-    if (!task?.token) return false;
+  function taskMarkerUser(task) {
+    if (!task?.token) return null;
     const marker = `[Fabushi:${task.token}]`;
-    return nodes('[data-message-author-role=user]').some(node => text(node).includes(marker));
+    return nodes('[data-message-author-role=user]').slice().reverse()
+      .find(node => text(node).includes(marker)) || null;
+  }
+  function hasTaskMarker(task) {
+    return Boolean(taskMarkerUser(task));
   }
   function recordedConversationURL(task) {
     const candidates = [
@@ -1090,14 +1367,41 @@
     return Boolean(task && !terminal.has(task.state) && task.state !== 'paused'
       && (!task.url || task.attempted || ['sending', 'uploading', 'loading', 'approval'].includes(task.state)));
   }
+  function taskDeferredUntil(task, now = Date.now()) {
+    if (!task || terminal.has(task.state) || task.state === 'paused') return Number.POSITIVE_INFINITY;
+    const deadlines = [
+      Number(task.cooldownUntil || 0),
+      Number(task.noFinalReplyRecoveryUntil || 0),
+    ];
+    const navigationRetryAt = Number(task.navigationGuardRetryAt || 0);
+    if (navigationRetryAt > now && !taskMatchesCurrentConversation(task)) deadlines.push(navigationRetryAt);
+    const attachmentRetryAt = Number(task.attachmentUploadRetryAt || 0);
+    if (!task.url && task.attachmentUploadFailed && attachmentRetryAt > now) deadlines.push(attachmentRetryAt);
+    if (!task.url && !task.attempted) {
+      const dispatchWait = dispatchCooldownRemaining(now);
+      if (dispatchWait > 0) deadlines.push(now + dispatchWait);
+    }
+    return Math.max(now, ...deadlines.filter(value => Number.isFinite(value) && value > 0));
+  }
   function nextSupervisionTask(active, now = Date.now()) {
     if (!active.length) return null;
-    const focused = active.find(item => item.id === current);
-    const canRotate = active.length > 1 && focused && !taskHoldsScheduler(focused)
+    const runnable = active.filter(item => taskDeferredUntil(item, now) <= now);
+    if (!runnable.length) return null;
+    const focused = runnable.find(item => item.id === current);
+    const canRotate = runnable.length > 1 && focused && !taskHoldsScheduler(focused)
       && now - lastSwitch >= SUPERVISION_INTERVAL_MS;
     if (focused && !canRotate) return focused;
-    const index = focused ? active.findIndex(item => item.id === focused.id) : -1;
-    return active[(index + 1 + active.length) % active.length] || active[0];
+    const currentIndex = active.findIndex(item => item.id === current);
+    for (let offset = 1; offset <= active.length; offset++) {
+      const candidate = active[(currentIndex + offset + active.length) % active.length];
+      if (runnable.includes(candidate)) return candidate;
+    }
+    return runnable[0];
+  }
+  function nextTaskWakeDelay(active, now = Date.now()) {
+    const deadlines = active.map(item => taskDeferredUntil(item, now)).filter(Number.isFinite);
+    if (!deadlines.length) return 2000;
+    return Math.max(100, Math.min(...deadlines) - now);
   }
   const text = node => normalize(node?.textContent);
   const label = node => normalize(`${text(node)} ${node?.getAttribute('aria-label') || ''} ${node?.getAttribute('title') || ''}`);
@@ -1931,14 +2235,29 @@
   }
   function sendTimeoutNotice() {
     const pattern = /消息发送超时\s*[，,]?\s*请重试|message (?:send|sending) timed out|failed to send/i;
-    // Only a visible page-level error is actionable. Do not match the
-    // workbench's own log or a user/assistant message quoting the same text.
+    const retryPattern = /^(?:重试|再次尝试|再试一次|retry|try again|again)(?:\b|$)/i;
+    const retryControls = 'button,a,[role="button"]';
+    const hasRetryControl = node => {
+      let scope = node?.parentElement || null;
+      for (let depth = 0; scope && depth < 8; depth += 1, scope = scope.parentElement) {
+        const controls = [];
+        if (scope.matches?.(retryControls)) controls.push(scope);
+        controls.push(...nodes(retryControls, scope));
+        if (controls.some(control => visible(control) && retryPattern.test(label(control)))) return true;
+      }
+      return false;
+    };
+    // A visible page-level error is actionable. When ChatGPT renders the
+    // error inside an assistant turn, require a nearby retry control so a
+    // quoted transcript sentence cannot trigger a duplicate dispatch.
     const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
     let currentNode;
     while ((currentNode = walker.nextNode())) {
       const parent = currentNode.parentElement;
-      if (!parent || own(parent) || parent.closest('[data-message-author-role]')) continue;
-      if (pattern.test(normalize(currentNode.nodeValue)) && visible(parent)) return true;
+      if (!parent || own(parent)) continue;
+      if (!pattern.test(normalize(currentNode.nodeValue)) || !visible(parent)) continue;
+      const message = parent.closest('[data-message-author-role]');
+      if (!message || hasRetryControl(parent)) return true;
     }
     return false;
   }
@@ -2005,9 +2324,29 @@
     save();
     return Math.max(1, cooldownUntil - Date.now());
   }
-  function latestTurn() {
+  function latestTurn(task = null) {
     const users = nodes('[data-message-author-role=user]');
-    const user = users.at(-1);
+    const scoped = Boolean(task && typeof task === 'object');
+    const markedUser = scoped ? taskMarkerUser(task) : null;
+    const user = scoped ? markedUser : users.at(-1);
+    // A task marker is necessary but not sufficient: if another user turn is
+    // newer in the DOM, the assistant response after the marker belongs to a
+    // different turn (or to another task left behind during route rotation).
+    // Fail closed instead of allowing the global "last assistant" heuristic
+    // to attribute that response to the current task.
+    const owned = !scoped || Boolean(user && user === users.at(-1));
+    if (scoped && !owned) {
+      return {
+        user: text(user),
+        text: '',
+        final: false,
+        owned: false,
+        responseActions: [],
+        responseActionsComplete: false,
+        explicitFinal: false,
+        article: null,
+      };
+    }
     const replies = nodes('[data-message-author-role=assistant]').filter(node => !user || Boolean(user.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING));
     const assistant = replies.at(-1);
     const article = assistant?.closest('article,[data-testid^="conversation-turn-"],[data-turn-key],[data-content-search-turn-key]') || assistant;
@@ -2098,10 +2437,23 @@
     const responseActionsComplete = responseActions.has('copy')
       && (responseActions.has('like') || responseActions.has('dislike'))
       && (responseActions.has('dislike') || responseActions.has('regenerate') || responseActions.has('more') || responseActions.has('branch'));
+    // ChatGPT has shipped renderer variants where the static marker lives on
+    // the markdown node (or on a turn wrapper without a message/turn id).
+    // The node is already scoped to the latest assistant turn, so requiring a
+    // legacy id here rejects a genuinely finished reply after a page rotation.
+    const hasCompletionMarker = node => {
+      if (!node) return false;
+      const streaming = node.getAttribute?.('data-is-streaming');
+      const busy = node.getAttribute?.('aria-busy');
+      const state = node.getAttribute?.('data-state') || node.getAttribute?.('data-status') || '';
+      return streaming === 'false'
+        || busy === 'false'
+        || node.getAttribute?.('data-complete') === 'true'
+        || /^(?:complete|completed|done|finished|success|idle)$/i.test(state);
+    };
     const explicitFinal = Boolean(
       markdown
-      && [assistant, article].some(node => node?.getAttribute?.('data-is-streaming') === 'false'
-        && (node.hasAttribute?.('data-message-id') || node.hasAttribute?.('data-turn-key') || node.hasAttribute?.('data-content-search-turn-key'))),
+      && [markdown, assistant, article].some(hasCompletionMarker),
     );
     const streaming = article?.querySelector('[data-is-streaming="true"],[aria-busy="true"]')
       || [assistant, article].find(node => node?.getAttribute?.('data-is-streaming') === 'true' || node?.getAttribute?.('aria-busy') === 'true');
@@ -2109,6 +2461,7 @@
       user: text(user),
       text: content,
       final: Boolean(content && (responseActionsComplete || explicitFinal) && !streaming),
+      owned,
       responseActions: [...responseActions],
       responseActionsComplete,
       explicitFinal,
@@ -2284,11 +2637,25 @@
     if (sample.rateLimit) return { state:'cooldown', reason:sample.rateLimit };
     const ignoredPageNotice = /ChatGPT 使用额度或访问频率受限|达到使用上限|usage limit|rate limit|too many requests|请求过于频繁|达到.*限额/i.test(String(sample.blocker || ''));
     if (sample.blocker && !ignoredPageNotice) return { state:'blocked', reason:sample.blocker };
-    if (!sample.owned) return { state:'blocked', reason:'当前会话最后一条用户消息不属于这轮任务，已停止发送。' };
+    if (sample.routeOwned === false || !sample.owned) {
+      const reason = sample.foreignTaskId
+        ? '当前页面仍显示另一个任务的消息；已暂停本轮读取，等待当前任务会话完成交接。'
+        : '当前任务的发送消息尚未完成渲染；已暂停本轮读取，避免误读其他任务。';
+      // A foreign task's spinner is not a reason to hold the scheduler on
+      // this task. Keep the task resumable and let the next supervision slice
+      // inspect the other task while this route finishes its own handoff.
+      return { state: sample.loading && !sample.foreignTaskId ? 'loading' : 'waiting', reason };
+    }
     if (sample.cards) return { state:'approval' };
     if (sample.stop) return { state:'generating' };
     if (sample.loading) return { state:'loading', reason:'ChatGPT 页面正在加载，等待会话内容完全渲染。' };
-    if (sample.final && sample.text && previous?.clear && previous?.text === sample.text && now - previous.since >= 4000) return { state:'complete' };
+    const finalStayedStable = sample.final && sample.text && previous?.final
+      && previous?.text === sample.text
+      && now - Number(previous.finalSince || previous.since || 0) >= FINAL_REPLY_STABILITY_MS;
+    const finalWasStableBeforeTransition = sample.final && sample.text && previous?.clear
+      && previous?.text === sample.text
+      && now - previous.since >= FINAL_REPLY_STABILITY_MS;
+    if (finalStayedStable || finalWasStableBeforeTransition) return { state:'complete' };
     // ChatGPT can lose the Stop control while the assistant turn is still
     // absent (or while a renderer error leaves only a partial/empty turn).
     // Once that transition remains stable, it is an abnormal end and must be
@@ -2353,39 +2720,49 @@
     }
     let previous = null;
     try { previous = JSON.parse(sessionStorage.getItem(NAV)); } catch {}
-    const sameTicket = Boolean(previous?.direct && previous?.task === task?.id
-      && previous?.path === targetPath && previous?.href === targetHref);
+    const isDispatchTarget = targetPath === '/' && Boolean(task);
+    const dispatchPhase = String(task?.phase || '');
+    const dispatchRound = Number.isFinite(Number(task?.round)) ? Number(task.round) : 0;
+    const dispatchGoalRevision = Number.isFinite(Number(task?.goalRevision)) ? Number(task.goalRevision) : 0;
+    const sameTicket = Boolean(previous?.direct && previous?.task === (task?.id || current)
+      && previous?.path === targetPath && previous?.href === targetHref
+      && (!isDispatchTarget || (previous?.purpose === 'dispatch'
+        && String(previous?.phase || '') === dispatchPhase
+        && Number(previous?.round) === dispatchRound
+        && Number(previous?.goalRevision ?? 0) === dispatchGoalRevision)));
     if (!sameTicket) {
       const now = Date.now();
       sessionStorage.setItem(NAV, JSON.stringify({
-        path: targetPath,
-        href: targetHref,
-        at: now,
-        task: task?.id || current,
-        attempts: 1,
-        assigned: true,
-        direct: true,
-        resume: true,
+        path:targetPath,
+        href:targetHref,
+        at:now,
+        task:task?.id || current,
+        attempts:1,
+        assigned:true,
+        direct:true,
+        purpose:'dispatch',
+        phase:String(task?.phase || 'work'),
+        round:Number(task?.round || 0),
+        goalRevision:Number(task?.goalRevision || 0),
+        resume:true,
       }));
       if (task) {
         if (parsed && !parsed.synthetic) recordConversationURL(task, targetHref);
-        task.updatedAt = Date.now();
+        task.updatedAt = now;
         save();
       }
-      log(task, `正在按已记录的会话链接恢复：${targetHref}`);
-      navigating = true;
-      if (perform) {
-        try { location.assign(targetHref); } catch (error) {
-          navigating = false;
-          if (task) state(task, 'blocked', `会话链接打开失败：${error.message}`);
-        }
-      }
-    } else {
-      // The browser may still be hydrating after the first direct navigation.
-      // Keep the ticket, but never assign the same URL again.
-      navigating = true;
+      log(task, '正在按已记录的会话链接恢复：' + targetHref);
     }
-    return false;
+    if (!perform) {
+      navigating = false;
+      return false;
+    }
+    return beginGuardedNavigation(targetHref, task, {
+      replace:true,
+      ticketPath:targetPath,
+      ticketHref:targetHref,
+      reason:'route-switch',
+    });
   }
 
   function recoverThroughFreshDocument(task) {
@@ -2399,27 +2776,32 @@
     task.state = 'waiting';
     task.updatedAt = Date.now();
     sessionStorage.setItem(NAV, JSON.stringify({
-      path: root.pathname,
-      href: root.href,
-      at: Date.now(),
-      task: task.id,
-      attempts: nextAttempt,
-      assigned: true,
-      direct: true,
-      recovery: true,
-      documentRecovery: true,
-      resume: true,
+      path:root.pathname,
+      href:root.href,
+      at:Date.now(),
+      task:task.id,
+      attempts:nextAttempt,
+      assigned:true,
+      direct:true,
+      purpose:'recovery',
+      phase:String(task.phase || 'work'),
+      round:Number(task.round || 0),
+      goalRevision:Number(task.goalRevision || 0),
+      recovery:true,
+      documentRecovery:true,
+      resume:true,
     }));
     log(task, 'ChatGPT 页面持续卡住；正在通过一次新的文档交接恢复原任务，保留会话、发送标识和附件，不会重复派发。');
     sameRouteWaitUntil = 0;
     sameRouteWaitSince = 0;
-    navigating = true;
-    try { location.replace(ticket.recoveryURL); } catch (error) {
-      navigating = false;
-      state(task, 'waiting', `新的文档恢复加载失败：${error.message}；已保留任务等待下一次页面恢复。`);
-      save();
-    }
-    return false;
+    return beginGuardedNavigation(ticket.recoveryURL, task, {
+      replace:true,
+      force:true,
+      recovery:true,
+      ticketPath:root.pathname,
+      ticketHref:root.href,
+      reason:'document-recovery',
+    });
   }
 
   function recoverStalledRoute(target, task) {
@@ -2454,6 +2836,10 @@
       attempts: nextAttempt,
       assigned: true,
       direct: true,
+      purpose: 'recovery',
+      phase: String(task?.phase || 'work'),
+      round: Number(task?.round || 0),
+      goalRevision: Number(task?.goalRevision || 0),
       recovery: true,
       resume: true,
     }));
@@ -2464,15 +2850,14 @@
     sameRouteWaitUntil = 0;
     sameRouteWaitSince = 0;
     navigating = true;
-    try { location.replace(href); } catch (error) {
-      navigating = false;
-      if (task) {
-        task.rendererRecoveryExhausted = true;
-        state(task, 'waiting', `页面恢复加载失败：${error.message}；已停止重复刷新，保留当前任务等待。`);
-        save();
-      }
-    }
-    return false;
+    return beginGuardedNavigation(href, task, {
+      replace:true,
+      force:true,
+      recovery:true,
+      ticketPath:target.pathname,
+      ticketHref:href,
+      reason:'route-recovery',
+    });
   }
 
   function stopAmbiguousSend(task) {
@@ -2870,43 +3255,84 @@
     // turn state to detect an abnormal end and recover in a fresh Chat.
     if (!await navigate(task.url, signal, task, false)) return;
     check(signal);
-    if (connectionInterruptedNotice()) {
+    const liveURL = currentConversationURL();
+    const taskURL = canonicalConversationURL(task.url);
+    if (!liveURL || !taskURL || liveURL !== taskURL) {
+      observations.delete(task.id);
+      state(task, 'waiting', '正在等待切换到当前任务会话；不会读取其他任务的页面内容。');
+      return;
+    }
+    const begin = performance.now(), turn = latestTurn(task), pending = cards();
+    const routeOwned = Boolean(liveURL && taskURL && liveURL === taskURL);
+    const foreignTask = tabTasks().find(item => item.id !== task.id && item.token && hasTaskMarker(item));
+    const pageBelongsToTask = routeOwned && (turn.owned || !foreignTask);
+    // Page-level error notices are only actionable after the current route is
+    // confirmed and either this task's marker is present or no other task
+    // marker is visible. During a rotation the old document can briefly retain
+    // another task's error banner; handling it before that check would consume
+    // this task's retry budget.
+    if (pageBelongsToTask && connectionInterruptedNotice()) {
       refreshInterruptedConversation(task);
       return;
     }
-    if (sendTimeoutNotice()) {
+    if (pageBelongsToTask && sendTimeoutNotice()) {
       queueNoFinalReplyRetry(task, '检测到“消息发送超时，请重试”');
       return;
     }
-    const begin = performance.now(), turn = latestTurn(), pending = cards();
     const sample = {
-      stop:Boolean(stopButton()),
-      cards:pending.length,
+      stop:turn.owned ? Boolean(stopButton()) : false,
+      cards:turn.owned ? pending.length : 0,
       loading:Boolean(pageLoadingState()),
       blocker:blocker(),
       rateLimit:rateLimitNotice(),
-      // The exact /c/<id> route is the primary identity. The marker remains a
-      // useful send/completion signal, but an older task must still recover
-      // when its turn is not currently rendered in the DOM.
-      owned:Boolean(taskMatchesCurrentConversation(task) || hasTaskMarker(task)),
+      // A matching URL is only the route boundary. The task marker on the
+      // latest user turn is the message boundary; both are required before
+      // reading Stop, approval cards, or an assistant reply.
+      routeOwned,
+      owned:Boolean(routeOwned && turn.owned),
+      foreignTaskId:routeOwned && !turn.owned ? (foreignTask?.id || '') : '',
       text:turn.text,
       final:turn.final,
       sentAt:task.sentAt,
     };
     const previous = observations.get(task.id);
-    const result = classify(sample, previous, Date.now());
     const now = Date.now();
+    const identityMismatchSince = sample.routeOwned && !sample.owned
+      ? (previous?.identityMismatchSince || now)
+      : 0;
+    if (identityMismatchSince && now - identityMismatchSince >= ROUTE_HYDRATION_TIMEOUT_MS) {
+      let target;
+      try { target = safeURL(task.url); } catch { target = null; }
+      if (target && !task.rendererRecoveryExhausted) {
+        recoverStalledRoute(target, task);
+        observations.set(task.id, {
+          ...(previous || {}),
+          text:sample.text,
+          identityMismatchSince,
+          since:now,
+          clear:false,
+        });
+        return;
+      }
+    }
+    const result = classify(sample, previous, now);
     const clear = !sample.stop && !sample.cards && !sample.loading;
     const stable = previous?.text === sample.text && previous?.clear && clear;
     const endedAt = abnormalEndSince(sample, previous, now);
+    const finalSince = sample.final && previous?.final && previous?.text === sample.text
+      ? (previous.finalSince || previous.since || now)
+      : sample.final ? now : 0;
     observations.set(task.id, {
       text:sample.text,
       since:stable ? previous.since : now,
       idleSince:previous?.clear ? previous.idleSince : now,
       endedAt,
+      final:Boolean(sample.final),
+      finalSince,
       stop:Boolean(sample.stop),
       loading:Boolean(sample.loading),
       clear,
+      identityMismatchSince,
     });
     measurements.scans++; measurements.totalScanMs += performance.now() - begin;
     if (sample.owned && task.preview !== sample.text) {
@@ -2946,6 +3372,10 @@
       if (!active.length) { haltRunnerForPause(); paint(); return; }
       const focused = active.find(item => item.id === current);
       task = nextSupervisionTask(active);
+      if (!task) {
+        nextScheduleMs = nextTaskWakeDelay(active);
+        return;
+      }
       // Keep a queued send, an ambiguous send confirmation, or an approval
       // card on the foreground route. Once a task has a durable conversation
       // URL and is merely waiting/generating/reviewing, rotate to the next
@@ -2968,6 +3398,11 @@
         }
         task.cooldownUntil = 0;
         log(task, '休息等待结束，插件恢复自动检查；不会手动刷新页面。');
+        save();
+      }
+      if (task.navigationGuardRetryAt && (task.navigationGuardRetryAt <= Date.now() || taskMatchesCurrentConversation(task))) {
+        task.navigationGuardRetryAt = 0;
+        task.updatedAt = Date.now();
         save();
       }
       const recoveryUntil = Number(task.noFinalReplyRecoveryUntil || 0);
@@ -3057,22 +3492,30 @@
   async function start(restorePaused = true) {
     if (running || busy) return;
     if (!navigator.locks) throw new Error('浏览器不支持单标签互斥锁，无法安全启动。');
-    await new Promise((resolve, reject) => {
-      navigator.locks.request(`fabushi-tab-runner-v3:${tabId}`, { ifAvailable:true }, async lock => {
-        if (!lock) { reject(new Error('这个标签页的任务监督器已经在运行。')); return; }
-        const stored = read(KEY, null);
-        const nextRevision = Math.max(Number(data.controlRevision || 0), Number(stored?.tabControls?.[tabId]?.controlRevision || 0)) + 1;
-        data.controlRevision = nextRevision;
-        data.autoResume = true;
-        data.pausedAt = 0;
-        if (restorePaused) restorePausedTasks(nextRevision);
-        save();
-        if (data.autoResume === false) { haltRunnerForPause(); resolve(); return; }
-        running = true; controller = new AbortController();
-        const held = new Promise(done => { lockRelease = done; });
-        paint(); schedule(100); resolve(); await held;
-      }).catch(reject);
-    });
+    const deadline = Date.now() + RUNNER_RECLAIM_TIMEOUT_MS;
+    while (!running && Date.now() <= deadline) {
+      const acquired = await new Promise((resolveAttempt, rejectAttempt) => {
+        navigator.locks.request(`fabushi-tab-runner-v3:${tabId}`, { ifAvailable:true }, async lock => {
+          if (!lock) { resolveAttempt(false); return; }
+          const stored = read(KEY, null);
+          const nextRevision = Math.max(Number(data.controlRevision || 0), Number(stored?.tabControls?.[tabId]?.controlRevision || 0)) + 1;
+          data.controlRevision = nextRevision;
+          data.autoResume = true;
+          data.pausedAt = 0;
+          if (restorePaused) restorePausedTasks(nextRevision);
+          save();
+          if (data.autoResume === false) { haltRunnerForPause(); resolveAttempt(true); return; }
+          running = true; controller = new AbortController();
+          const held = new Promise(done => { lockRelease = done; });
+          paint(); schedule(100); resolveAttempt(true); await held;
+        }).catch(rejectAttempt);
+      });
+      if (acquired) return;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await new Promise(resolve => setTimeout(resolve, Math.min(RUNNER_RECLAIM_POLL_MS, remaining)));
+    }
+    throw new Error('旧页面的任务监督器仍在释放中；插件会继续自动接管，无需手动暂停或重开任务。');
   }
   function autoStart(taskId) {
     if (!taskId) return;
@@ -3146,16 +3589,7 @@
       : '已恢复取消的任务，继续监控取消前的 ChatGPT 会话。');
     return true;
   }
-  function validNavigationTicket(ticket) {
-    const task = data.tasks.find(item => item.id === ticket?.task);
-    if (!taskBelongsToTab(task) || terminal.has(task.state) || task.state === 'paused') return false;
-    const ticketURL = canonicalConversationURL(ticket?.href);
-    if (ticketURL) return canonicalConversationURL(task.url) === ticketURL;
-    // A send starts at `/` before ChatGPT creates its real /c/<id> URL. The
-    // wildcard ticket is valid only while that exact send is still marked
-    // attempted; it must not resurrect an older round after the task moved on.
-    return ticket?.path === '*' && Boolean(task.attempted || task.state === 'sending');
-  }
+NaN
   function resumeCancelledTask(task) {
     if (!restoreCancelledTask(task)) return Promise.resolve(false);
     data.autoResume = true;
@@ -3295,10 +3729,26 @@
     selected = task.id;
     current = task.id;
     lastSwitch = Date.now();
-    // Opening a conversation is a manual inspection action. Pause only this
-    // task before the document changes; unrelated tasks must keep running.
-    pauseTask(task, '已暂停当前任务，正在打开已记录会话；其他任务继续运行。');
-    sessionStorage.removeItem(NAV);
+    // Viewing a task is not a pause command. Persist a generation-bound
+    // handoff ticket so the replacement document can reclaim the same runner
+    // and continue supervising this task without changing any task state.
+    sessionStorage.setItem(NAV, JSON.stringify({
+      path:new URL(target).pathname,
+      href:target,
+      at:Date.now(),
+      task:task.id,
+      attempts:1,
+      assigned:true,
+      direct:true,
+      purpose:'inspect',
+      phase:String(task.phase || 'work'),
+      round:Number(task.round || 0),
+      goalRevision:Number(task.goalRevision || 0),
+      resume:true,
+    }));
+    task.updatedAt = Date.now();
+    log(task, '正在查看已记录会话；任务保持运行，页面交接后会自动继续监督。');
+    if (running) schedule(100);
     return target;
   }
   function recoverableWorkspaces() {
@@ -3691,7 +4141,7 @@
     };
     paint();
   }
-  window[INSTANCE]={active:true,version:VERSION,async shutdown(){stopMemoryMonitor();cancelHostMemoryRequests();stopWorkspaceHeartbeat('shutdown');suspendRunnerForPagehide();globalApprovalController?.abort();clearTimeout(globalApprovalTimer);globalApprovalTimer=null;clearTimeout(popupDismissTimer);popupDismissTimer=null;clearTimeout(automaticRecoveryTimer);automaticRecoveryTimer=null;releaseTransientUIResources({force:true});readTransientUIState=()=>({hasDraft:false,hasFiles:false});releaseTransientUIResources=()=>false;lifecycleController?.abort();this.active=false;document.querySelectorAll(`#${ROOT}`).forEach(node=>node.remove());document.querySelectorAll('#fabushi-auto-confirm-style').forEach(node=>node.remove());if(document.getElementById(BOOTSTRAP_MARKER)===bootstrap)bootstrap.remove();await releaseWorkspace();}};
+  window[INSTANCE]={active:true,version:VERSION,async shutdown(){stopMemoryMonitor();cancelHostMemoryRequests();cancelHostNavigationRequests();stopWorkspaceHeartbeat('shutdown');suspendRunnerForPagehide();globalApprovalController?.abort();clearTimeout(globalApprovalTimer);globalApprovalTimer=null;clearTimeout(popupDismissTimer);popupDismissTimer=null;clearTimeout(automaticRecoveryTimer);automaticRecoveryTimer=null;releaseTransientUIResources({force:true});readTransientUIState=()=>({hasDraft:false,hasFiles:false});releaseTransientUIResources=()=>false;lifecycleController?.abort();this.active=false;document.querySelectorAll(`#${ROOT}`).forEach(node=>node.remove());document.querySelectorAll('#fabushi-auto-confirm-style').forEach(node=>node.remove());if(document.getElementById(BOOTSTRAP_MARKER)===bootstrap)bootstrap.remove();await releaseWorkspace();}};
   window.FabushiUserscript=Object.freeze({pluginId:'chatgpt-auto-confirm',getServer:()=> 'browser-local',call:async(tool,args={})=>{
     if(['status','diagnose','queue_status','chat_status'].includes(tool))return{version:VERSION,running,tasks:tabTasks(),measurements,tabWorkspace:true,tabId,memory:{...memorySnapshot,pressure:memoryPressure,lastAction:memoryLastAction}};
     if(tool==='memory_status')return{...memorySnapshot,pressure:memoryPressure,lastAction:memoryLastAction,hostCapability:HOST_MEMORY_CAPABILITY};
@@ -3699,7 +4149,11 @@
     if(['pause_queue','stop'].includes(tool)){pause();return{running:false};}
     if(['start_queue','resume_queue'].includes(tool))return start();
     if(tool==='enqueue_tasks'){for(const task of args.tasks||[])enqueue(task.prompt||task.goal||'',task.mode||'once',task.attachments||[]);return tabTasks();}
-    if(tool==='get_reply')return latestTurn().text;
+    if(tool==='get_reply'){
+      const task = data.tasks.find(item => item.id === current && taskBelongsToTab(item))
+        || data.tasks.find(item => item.id === selected && taskBelongsToTab(item));
+      return task ? latestTurn(task).text : '';
+    }
     throw new Error('请通过新版任务输入框使用此功能。');
   }});
   mount();
@@ -3721,13 +4175,13 @@
   let ticket;try{ticket=JSON.parse(sessionStorage.getItem(NAV));}catch{}
   const ticketFresh = ticket && ticket.resume && Date.now()-ticket.at < NAV_TICKET_TTL_MS;
   const ticketUsable = ticketFresh && validNavigationTicket(ticket);
-  if(recoveredTaskId && data.autoResume !== false){
-    current=recoveredTaskId; lastSwitch=Date.now(); autoStart(recoveredTaskId);
-  } else if(ticketUsable){
-    // Resume the scheduler and let its finite navigation state machine inspect
-    // the ticket. Startup must never perform an unconditional location.assign,
-    // otherwise every document load can immediately trigger another refresh.
+  if(ticketUsable && data.autoResume !== false){
+    // An exact, phase/round-bound navigation ticket is stronger than a
+    // generic legacy-recovery hint. This keeps a completed Work document on
+    // the fresh queued review dispatch after a multi-task switch.
     current=ticket.task; lastSwitch=Date.now(); autoStart(ticket.task);
+  } else if(recoveredTaskId && data.autoResume !== false){
+    current=recoveredTaskId; lastSwitch=Date.now(); autoStart(recoveredTaskId);
   } else {
     sessionStorage.removeItem(NAV);
     if (data.autoResume !== false) {
@@ -3748,5 +4202,15 @@
     syncRemoteControl();
   });
   listen(window, 'pagehide',()=>{stopMemoryMonitor();writeWorkspaceHeartbeat('pagehide');if(!navigating)suspendRunnerForPagehide();releaseWorkspace();});
-  listen(window, 'pageshow',event=>{if(event.persisted)location.reload();else scheduleMemoryMonitor(1000);});
+  listen(window, 'pageshow',event=>{
+    if(event.persisted){
+      // A BFCache restore is already a live document. Avoid turning every
+      // tab switch into another full reload; let the bounded scheduler recheck
+      // the current route instead.
+      navigating=false;
+      sameRouteWaitUntil=Date.now()+1000;
+      sameRouteWaitSince=Date.now();
+      schedule(1000);
+    } else scheduleMemoryMonitor(1000);
+  });
 })();

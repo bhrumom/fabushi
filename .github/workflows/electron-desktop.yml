@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - 'chatgpt-vps-control/**'
+      - '!chatgpt-vps-control/chrome-platform/**'
+      - '!chatgpt-vps-control/tests/browser-extension.test.js'
+      - '!chatgpt-vps-control/tests/chrome-platform.test.js'
+      - '!chatgpt-vps-control/tests/extension-entry.test.js'
+      - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
+      - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
       - 'desktop/**'
       - 'frontend/apps/host/**'
       - 'frontend/apps/web/src/app/host/**'
@@ -35,6 +41,42 @@ on:
       - '.github/scripts/verify-packaged-computer-control.mjs'
   push:
     branches: [main]
+    paths:
+      - 'chatgpt-vps-control/**'
+      - '!chatgpt-vps-control/chrome-platform/**'
+      - '!chatgpt-vps-control/tests/browser-extension.test.js'
+      - '!chatgpt-vps-control/tests/chrome-platform.test.js'
+      - '!chatgpt-vps-control/tests/extension-entry.test.js'
+      - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
+      - 'desktop/**'
+      - 'frontend/apps/host/**'
+      - 'frontend/apps/web/src/app/host/**'
+      - 'frontend/apps/web/src/app/remote-computer/**'
+      - 'frontend/apps/web/src/lib/fabushi-runtime/**'
+      - 'frontend/apps/web/src/components/fabushi-app-agent-surface.tsx'
+      - 'frontend/apps/web/src/lib/app-agent-surface/**'
+      - 'frontend/packages/mcp-app-sdk/**'
+      - 'frontend/apps/web/src/lib/mahayana-host/**'
+      - 'frontend/apps/web/src/lib/remote-computer/**'
+      - 'frontend/packages/shared/**'
+      - 'contracts/automation/cross-platform-journeys.json'
+      - 'third_party/mahayana/codex-rs/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host-desktop/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
+      - '.github/scripts/assert-native-electron-canonical.sh'
+      - '.github/scripts/assert-electron-feature-host-bridge.sh'
+      - '.github/scripts/assert-fabushi-desktop-architecture.py'
+      - '.github/scripts/assert-native-desktop-edge-parity.py'
+      - '.github/workflows/electron-desktop.yml'
+      - '.github/scripts/verify-packaged-computer-control.mjs'
+  merge_group:
   workflow_dispatch:
 
 concurrency:
@@ -45,12 +87,92 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    name: Detect affected Electron scopes
+    runs-on: ubuntu-latest
+    outputs:
+      global: ${{ steps.filter.outputs.global }}
+      electron: ${{ steps.filter.outputs.electron }}
+    steps:
+      - name: Checkout full history for changed-path detection
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect changed Electron scope
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        with:
+          token: ''
+          base: ${{ github.event_name == 'push' && github.event.before || '' }}
+          predicate-quantifier: some-with-excludes
+          filters: |
+            global:
+              - '.github/workflows/electron-desktop.yml'
+              - '.github/scripts/assert-native-electron-canonical.sh'
+              - '.github/scripts/assert-electron-feature-host-bridge.sh'
+              - '.github/scripts/assert-fabushi-desktop-architecture.py'
+              - '.github/scripts/assert-native-desktop-edge-parity.py'
+              - '.github/scripts/assert-auth-entry-flow.py'
+              - '.github/scripts/assert-bot-mark-motion.py'
+              - '.github/scripts/assert-product-ui-contracts.py'
+              - '.github/scripts/assert-native-capability-semantics.py'
+              - '.github/scripts/build-offline-asr-engine.mjs'
+              - '.github/scripts/notarize-macos-dmg.sh'
+              - '.github/scripts/verify-electron-macos-package.sh'
+              - '.github/scripts/verify-packaged-computer-control.mjs'
+            electron:
+              - 'chatgpt-vps-control/**'
+              - '!chatgpt-vps-control/chrome-platform/**'
+              - '!chatgpt-vps-control/tests/browser-extension.test.js'
+              - '!chatgpt-vps-control/tests/chrome-platform.test.js'
+              - '!chatgpt-vps-control/tests/extension-entry.test.js'
+              - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
+              - 'desktop/**'
+              - 'frontend/apps/host/**'
+              - 'frontend/apps/web/src/app/host/**'
+              - 'frontend/apps/web/src/app/remote-computer/**'
+              - 'frontend/apps/web/src/lib/fabushi-runtime/**'
+              - 'frontend/apps/web/src/components/fabushi-app-agent-surface.tsx'
+              - 'frontend/apps/web/src/lib/app-agent-surface/**'
+              - 'frontend/packages/mcp-app-sdk/**'
+              - 'frontend/apps/web/src/lib/mahayana-host/**'
+              - 'frontend/apps/web/src/lib/remote-computer/**'
+              - 'frontend/packages/shared/**'
+              - 'contracts/automation/cross-platform-journeys.json'
+              - 'third_party/mahayana/codex-rs/**'
+              - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+              - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+              - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-app-host-desktop/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-host/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+              - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
+              - 'app-version.json'
+              - 'desktop/package.json'
+              - 'desktop/package-lock.json'
+      - name: Summarize detected Electron scope
+        shell: bash
+        env:
+          GLOBAL_SCOPE: ${{ steps.filter.outputs.global }}
+          ELECTRON_SCOPE: ${{ steps.filter.outputs.electron }}
+        run: |
+          {
+            echo '### Electron changed scope'
+            echo "- global: $GLOBAL_SCOPE"
+            echo "- electron: $ELECTRON_SCOPE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   platform:
+    needs: scope
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.electron == 'true' }}
     name: ${{ matrix.check_name }}
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","label":"Linux","target":"linux","check_name":"Electron Linux"}]' || '[{"os":"macos-15","label":"macOS","target":"mac","check_name":"Electron macOS"},{"os":"windows-latest","label":"Windows","target":"win","check_name":"Electron Windows"},{"os":"ubuntu-latest","label":"Linux","target":"linux","check_name":"Electron Linux"}]') }}
+        include: ${{ fromJSON((github.event_name == 'pull_request' || github.event_name == 'merge_group') && '[{"os":"ubuntu-latest","label":"Linux","target":"linux","check_name":"Electron Linux"}]' || '[{"os":"macos-15","label":"macOS","target":"mac","check_name":"Electron macOS"},{"os":"windows-latest","label":"Windows","target":"win","check_name":"Electron Windows"},{"os":"ubuntu-latest","label":"Linux","target":"linux","check_name":"Electron Linux"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
     steps:
@@ -438,16 +560,26 @@ jobs:
   result:
     name: Electron desktop result
     if: always()
-    needs: platform
+    needs:
+      - scope
+      - platform
     runs-on: ubuntu-latest
     steps:
       - name: Require every Electron desktop matrix job
         shell: bash
         env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
           PLATFORM_RESULT: ${{ needs.platform.result }}
         run: |
-          if [ "$PLATFORM_RESULT" != "success" ]; then
-            echo "Electron desktop matrix result=$PLATFORM_RESULT" >&2
+          if [ "$SCOPE_RESULT" != "success" ]; then
+            echo "Electron scope detection result=$SCOPE_RESULT" >&2
             exit 1
           fi
-          echo 'Every Electron desktop matrix job succeeded.'
+          case "$PLATFORM_RESULT" in
+            success|skipped) ;;
+            *)
+              echo "Electron desktop matrix result=$PLATFORM_RESULT" >&2
+              exit 1
+              ;;
+          esac
+          echo 'Selected Electron desktop checks passed or were safely skipped.'

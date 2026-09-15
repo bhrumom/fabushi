@@ -15,6 +15,11 @@ test('native workflow has no second runner whose only job is aggregating platfor
   assert.match(source, /name:\s*\$\{\{ matrix\.check_name \}\}/u);
   assert.match(source, /check_name":"Native Android"/u);
   assert.match(source, /check_name":"Native iOS"/u);
+  assert.match(source, /matrix:\s+\$\{\{ steps\.matrix\.outputs\.matrix \}\}/u);
+  assert.match(source, /include:\s+\$\{\{ fromJSON\(needs\.scope\.outputs\.matrix\) \}\}/u);
+  assert.match(source, /needs\.scope\.outputs\.android == 'true'/u);
+  assert.match(source, /needs\.scope\.outputs\.ios == 'true'/u);
+  assert.doesNotMatch(source, /    if: >-[\s\S]{0,250}matrix\.target/u);
   assert.doesNotMatch(source, /\n  result:\s*\n/u);
   assert.doesNotMatch(source, /name:\s*Native mobile result/u);
   assert.doesNotMatch(source, /Require every native mobile matrix job/u);
@@ -30,7 +35,9 @@ test('formal release source gate names the real native platform checks directly'
 
 test('post-main delivery waits on direct Android and iOS checks, not an aggregate runner', async () => {
   const source = await read(postMainPath);
-  assert.match(source, /required_checks=\('Native Android' 'Native iOS'\)/u);
+  assert.match(source, /required_checks=\(\)/u);
+  assert.match(source, /ANDROID_REQUIRED:[\s\S]*Native Android/u);
+  assert.match(source, /IOS_REQUIRED:[\s\S]*Native iOS/u);
   assert.match(source, /- Native Android: success/u);
   assert.match(source, /- Native iOS: success/u);
   assert.doesNotMatch(source, /required_checks=.*Native mobile result/u);
