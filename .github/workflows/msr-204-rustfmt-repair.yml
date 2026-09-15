@@ -1,0 +1,48 @@
+name: MSR-204 rustfmt repair
+
+on:
+  push:
+    branches:
+      - feat/msr-204-hermes-gateway-transcript
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'chore(msr): run rustfmt repair'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout canonical MSR-204 branch
+        uses: actions/checkout@v5
+        with:
+          ref: feat/msr-204-hermes-gateway-transcript
+          fetch-depth: 0
+
+      - name: Set up stable Rust with rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Format canonical Mahayana workspace
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt --all
+
+      - name: Verify formatting is clean
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt --all -- --check
+
+      - name: Commit verified formatting and remove one-shot workflow
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/msr-204-rustfmt-repair.yml
+          git add third_party/mahayana/mahayana-rs
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'No formatting changes to commit.'
+            exit 1
+          fi
+          git commit -m 'style(msr): format Hermes gateway peer changes'
+          git push origin HEAD:feat/msr-204-hermes-gateway-transcript
