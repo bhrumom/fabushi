@@ -39,12 +39,17 @@ fn run() -> Result<(), String> {
                     }
                     let dispatched = dispatcher.dispatch_json(&line);
                     if let Some(response) = dispatched.response {
-                        serde_json::to_writer(&mut output, &response).map_err(|error| error.to_string())?;
+                        serde_json::to_writer(&mut output, &response)
+                            .map_err(|error| error.to_string())?;
                         output.write_all(b"\n").map_err(|error| error.to_string())?;
                     }
                     for event in dispatched.events {
                         output
-                            .write_all(event_notification(&event).map_err(|error| error.to_string())?.as_bytes())
+                            .write_all(
+                                event_notification(&event)
+                                    .map_err(|error| error.to_string())?
+                                    .as_bytes(),
+                            )
                             .map_err(|error| error.to_string())?;
                         output.write_all(b"\n").map_err(|error| error.to_string())?;
                     }
@@ -64,7 +69,11 @@ fn run() -> Result<(), String> {
             .map_err(|error| error.message)?
         {
             output
-                .write_all(event_notification(&event).map_err(|error| error.to_string())?.as_bytes())
+                .write_all(
+                    event_notification(&event)
+                        .map_err(|error| error.to_string())?
+                        .as_bytes(),
+                )
                 .map_err(|error| error.to_string())?;
             output.write_all(b"\n").map_err(|error| error.to_string())?;
             output.flush().map_err(|error| error.to_string())?;
