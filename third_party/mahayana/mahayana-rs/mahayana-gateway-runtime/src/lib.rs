@@ -39,17 +39,14 @@ pub struct NativeRuntimeGateway {
 impl NativeRuntimeGateway {
     pub fn create() -> Result<Self, JsonRpcError> {
         let cwd = std::env::current_dir().map_err(internal)?;
-        let use_codex_account =
-            std::env::var("MAHAYANA_USE_CODEX_ACCOUNT").as_deref() == Ok("1");
+        let use_codex_account = std::env::var("MAHAYANA_USE_CODEX_ACCOUNT").as_deref() == Ok("1");
         let mut config = json!({
             "hostPlatform": "cli",
             "cwd": cwd,
             "workspaceRoots": [cwd],
             "useCodexAccount": use_codex_account,
         });
-        if use_codex_account
-            && let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME")
-        {
+        if use_codex_account && let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME") {
             config["codexHome"] =
                 serde_json::to_value(PathBuf::from(codex_home)).map_err(internal)?;
         }
@@ -318,10 +315,7 @@ impl NativeRuntimeGateway {
             "mahayana.approval.requested" => self.next_event(
                 operation_id,
                 TurnEvent::ApprovalRequest(ApprovalRequest {
-                    approval_id: value
-                        .get("approvalId")
-                        .and_then(Value::as_str)?
-                        .to_string(),
+                    approval_id: value.get("approvalId").and_then(Value::as_str)?.to_string(),
                     subject: value
                         .get("title")
                         .and_then(Value::as_str)
