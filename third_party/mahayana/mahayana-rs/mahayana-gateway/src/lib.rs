@@ -87,7 +87,11 @@ pub struct JsonRpcError {
 
 impl JsonRpcError {
     pub fn invalid_request(message: impl Into<String>) -> Self {
-        Self { code: -32600, message: message.into(), data: None }
+        Self {
+            code: -32600,
+            message: message.into(),
+            data: None,
+        }
     }
 
     pub fn method_not_found(method: impl Into<String>) -> Self {
@@ -100,11 +104,19 @@ impl JsonRpcError {
     }
 
     pub fn invalid_params(message: impl Into<String>) -> Self {
-        Self { code: -32602, message: message.into(), data: None }
+        Self {
+            code: -32602,
+            message: message.into(),
+            data: None,
+        }
     }
 
     pub fn internal(message: impl Into<String>) -> Self {
-        Self { code: -32603, message: message.into(), data: None }
+        Self {
+            code: -32603,
+            message: message.into(),
+            data: None,
+        }
     }
 }
 
@@ -116,7 +128,10 @@ pub struct GatewayOutcome {
 
 impl GatewayOutcome {
     pub fn accepted(result: Value) -> Self {
-        Self { result, events: Vec::new() }
+        Self {
+            result,
+            events: Vec::new(),
+        }
     }
 
     pub fn with_events(mut self, events: impl IntoIterator<Item = TurnEventEnvelope>) -> Self {
@@ -174,19 +189,23 @@ where
     pub fn dispatch(&mut self, request: JsonRpcRequest) -> DispatchResult {
         if request.jsonrpc != JSON_RPC_VERSION {
             return DispatchResult {
-                response: request.id.map(|id| JsonRpcResponse::failure(
-                    id,
-                    JsonRpcError::invalid_request("jsonrpc must be 2.0"),
-                )),
+                response: request.id.map(|id| {
+                    JsonRpcResponse::failure(
+                        id,
+                        JsonRpcError::invalid_request("jsonrpc must be 2.0"),
+                    )
+                }),
                 events: Vec::new(),
             };
         }
         if request.method.trim().is_empty() {
             return DispatchResult {
-                response: request.id.map(|id| JsonRpcResponse::failure(
-                    id,
-                    JsonRpcError::invalid_request("method must not be empty"),
-                )),
+                response: request.id.map(|id| {
+                    JsonRpcResponse::failure(
+                        id,
+                        JsonRpcError::invalid_request("method must not be empty"),
+                    )
+                }),
                 events: Vec::new(),
             };
         }
@@ -194,7 +213,9 @@ where
         let outcome = self.handler.handle(&request.method, &request.params);
         match outcome {
             Ok(outcome) => DispatchResult {
-                response: request.id.map(|id| JsonRpcResponse::success(id, outcome.result)),
+                response: request
+                    .id
+                    .map(|id| JsonRpcResponse::success(id, outcome.result)),
                 events: outcome.events,
             },
             Err(error) => DispatchResult {
@@ -269,31 +290,41 @@ mod tests {
                 return Err(JsonRpcError::method_not_found(method));
             }
             self.calls.push_back(method.to_owned());
-            let operation_id = params.get("operationId").and_then(Value::as_str).unwrap_or("operation-1");
-            Ok(GatewayOutcome::accepted(json!({ "accepted": true, "operationId": operation_id })).with_events([
-                TurnEventEnvelope::new(
-                    "session-1",
-                    operation_id,
-                    operation_id,
-                    1,
-                    0,
-                    1_000,
-                    TurnEvent::MessageStart(MessageStart::default()),
-                ),
-            ]))
+            let operation_id = params
+                .get("operationId")
+                .and_then(Value::as_str)
+                .unwrap_or("operation-1");
+            Ok(
+                GatewayOutcome::accepted(json!({ "accepted": true, "operationId": operation_id }))
+                    .with_events([TurnEventEnvelope::new(
+                        "session-1",
+                        operation_id,
+                        operation_id,
+                        1,
+                        0,
+                        1_000,
+                        TurnEvent::MessageStart(MessageStart::default()),
+                    )]),
+            )
         }
     }
 
     #[test]
     fn dispatcher_returns_rpc_result_and_same_turn_event_contract() {
         let mut dispatcher = GatewayDispatcher::new(TestHandler::default());
-        let dispatched = dispatcher.dispatch_json(&json!({
-            "jsonrpc": "2.0",
-            "id": 42,
-            "method": "prompt.submit",
-            "params": { "operationId": "turn-42", "text": "hello" }
-        }).to_string());
-        assert_eq!(dispatched.response.unwrap().result.unwrap()["operationId"], "turn-42");
+        let dispatched = dispatcher.dispatch_json(
+            &json!({
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "prompt.submit",
+                "params": { "operationId": "turn-42", "text": "hello" }
+            })
+            .to_string(),
+        );
+        assert_eq!(
+            dispatched.response.unwrap().result.unwrap()["operationId"],
+            "turn-42"
+        );
         assert_eq!(dispatched.events.len(), 1);
         assert_eq!(dispatched.events[0].operation_id, "turn-42");
         assert_eq!(dispatched.events[0].event_type(), "message.start");
@@ -323,12 +354,27 @@ mod tests {
             "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"prompt.submit\",\"params\":{\"operationId\":\"turn-2\"}}\n"
         );
         let mut output = Vec::new();
-        let handler = serve_stdio(Cursor::new(input.as_bytes()), &mut output, TestHandler::default()).unwrap();
-        assert_eq!(handler.calls.into_iter().collect::<Vec<_>>(), vec!["session.create", "prompt.submit"]);
+        let handler = serve_stdio(
+            Cursor::new(input.as_bytes()),
+            &mut output,
+            TestHandler::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            handler.calls.into_iter().collect::<Vec<_>>(),
+            vec!["session.create", "prompt.submit"]
+        );
 
         let lines = String::from_utf8(output).unwrap();
-        let frames = lines.lines().map(|line| serde_json::from_str::<Value>(line).unwrap()).collect::<Vec<_>>();
-        assert_eq!(frames.len(), 4, "each request produces one response and one event notification");
+        let frames = lines
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            frames.len(),
+            4,
+            "each request produces one response and one event notification"
+        );
         assert_eq!(frames[0]["id"], 1);
         assert_eq!(frames[1]["method"], "event");
         assert_eq!(frames[2]["id"], 2);
