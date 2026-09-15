@@ -123,3 +123,7 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 当桌面 Host 连接并且版本较旧时，Chrome popup 不再使用 Host 目录覆盖线上结果；`app.js` 先读实时 Chrome Marketplace API，失败才回退 Host，并用请求序号防止旧响应回写。这样插件打开 Marketplace 时能直接识别线上 userscript 更新；Service Worker 的后台 alarm 检查继续独立工作。
 
 0.6.7 的 exact-main Chrome 包已在 `main@05297b21a684ba826d41bde5c113508103ce196f` 通过打包和模拟用户旅程；对应商店提交仍受已有审核锁定，详见 `evidence/TFI-USERSCRIPT-RECOVERY-017/2026-09-15-live-catalog-fix-main-readback.json`。
+
+## 2026-09-15 — 本机 Marketplace 更新错误修复
+
+本机点击线上更新时复现 `marketplaceItemId is not defined`；已确认是 popup 安装校验路径漏导入共享 helper，修复已加入并将 Chrome 包版本递增到 `0.6.8`。当前状态：修复待 CI/主线/打包证据，尚未把本机失败点击或 GitHub artifact 描述成已安装。

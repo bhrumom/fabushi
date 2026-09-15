@@ -30,3 +30,5 @@ Product implementation and production readback are complete; task completion rem
 - The package uses the live Chrome catalog first and only falls back to a connected Host when the live endpoint fails; stale concurrent responses are discarded.
 - Web Store publish run `34926076850` again returned `400 FAILED_PRECONDITION / NOT_UPDATEABLE` because an existing submission remains in review. The 0.6.7 package is ready but not claimed as publicly published.
 - Full machine-readable record: `2026-09-15-live-catalog-fix-main-readback.json`.
+- 本机 Chrome 更新失败回读：点击 `2.9.28 → 2.9.30` 时 popup 抛出 `marketplaceItemId is not defined`；这是 0.6.7 `app.js` 缺少共享导入的运行时错误，尚未下载/安装远端脚本。
+- 修复已递增到 Chrome `0.6.8`，待 CI packaged journey 和 protected-main 交付后再安装本机包；不能把失败的本机点击描述成已更新。

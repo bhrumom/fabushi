@@ -101,5 +101,12 @@
 ## 时间
 
 - started_at：2026-09-15T10:08:00+08:00
-- updated_at：2026-09-15T11:18:00+08:00
+- updated_at：2026-09-15T12:25:00+08:00
 - completed_at：N/A（任务进行中）
+
+## 2026-09-15 — 本机更新失败修复（0.6.8）
+
+- 用户在本机 Chrome 点击 `ChatGPT 自动确认` 的 `2.9.28 → 2.9.30` 更新时，界面报 `marketplaceItemId is not defined`；失败发生在下载/校验前，是 Chrome popup 的运行时导入缺失，不是线上 catalog 或 GitHub artifact 失败。
+- 已在 `app.js` 显式导入共享的 `marketplaceItemId`，并新增契约测试断言该导入存在，防止再次出现“目录可见、点击安装即崩溃”。
+- 因修复改变 Chrome 二进制，版本递增到 `0.6.8`；待 protected-main、exact-main Chrome packaged journey 和完整证据通过后，再更新本机并重试 Web Store 提交。
+- 轻量检查已通过：`node --check`（app/service-worker/update-check）、manifest 版本读取、`git diff --check`；本机不执行构建或应用 E2E。
