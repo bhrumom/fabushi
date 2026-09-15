@@ -105,3 +105,9 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 - 任务记录：`management/tasks/TFI-USERSCRIPT-RECOVERY-017-marketplace-live-discovery.md`
 - 当前状态：`IN_PROGRESS / PR_PENDING`
 - 下一门禁：Platform Control Plane CI → protected main → 生产部署 → catalog/direct-release API 回读
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 生产回读与客户端自动发现
+
+- PR #2641 已合并至 `main@4f484be2fd72f13289473f9c4917e03b78a92022`；Platform Control Plane run `34922024310` 已成功部署 Worker。
+- 生产 Chrome catalog 已返回 userscript v2.9.30、source commit `480ebe61…`、224113 bytes 和 SHA-256 `d15040a5…`；desktop/CLI 仍返回 `1.0.1` Mini App package。
+- Chrome package run `34922024248` 成功，产出 `fabushi-chrome-web-store-4f484be2fd72f13289473f9c4917e03b78a92022` artifact；follow-up PR #2642 只修正视图状态保持，待合并后完成最终 post-main evidence。
