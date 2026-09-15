@@ -1,0 +1,14 @@
+/*
+ * MSR-204 migration guard.
+ *
+ * The workbench component still owns a small amount of compatibility behavior
+ * (self-hosted agent submit interception and avatar state) while the Rust turn
+ * gateway lands. Its task-card timeline is no longer the default product chat
+ * surface. Developers can opt the legacy inspector back in by setting
+ * document.body.dataset.mahayanaInspector = 'true' from a debug session.
+ */
+body:not([data-mahayana-inspector='true'])
+  #mahayana-agent-workbench-portal
+  [data-testid='agent-workbench'] {
+  display: none !important;
+}
