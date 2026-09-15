@@ -5,7 +5,9 @@
 - Repository: `https://github.com/NousResearch/hermes-agent`
 - Branch: `main`
 - Commit: `d128ce2e25634105c81dfcc9c7a1678d6c1db038`
-- License/provenance action: adapt architecture, protocol semantics and behavior behind Mahayana-owned contracts; do not wholesale-copy Python runtime source into the product.
+- License: MIT, copyright Nous Research (2025).
+- License obligation if source or substantial portions are copied: preserve the upstream copyright notice and MIT permission notice.
+- Provenance action for MSR-204: adapt architecture, protocol semantics and behavior behind Mahayana-owned contracts; do not wholesale-copy Python runtime source into the product. The new Rust/TypeScript implementation in this branch is Fabushi-authored rather than a bundled Hermes runtime.
 
 ## Relevant upstream paths inspected
 
