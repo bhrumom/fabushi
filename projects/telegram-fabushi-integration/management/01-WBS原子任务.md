@@ -328,5 +328,8 @@
 | TFI-USERSCRIPT-RECOVERY-017 | FAB-P0001 / TFI | 让旧 Chrome 扩展从公开控制面发现 userscript v2.9.30，同时保持桌面/CLI Mini App release 不变 | IN_PROGRESS / PR_PENDING | source v2.9.30 Release 与 parent bundled pin 已验证；Worker Chrome-only projection 已实现并加入单测 | Platform Control Plane CI、protected main、生产部署和线上 catalog/direct-release 回读 |
 
 | TFI-USERSCRIPT-RECOVERY-017-AUTO | FAB-P0001 / TFI | Service Worker 启动/安装/30 分钟 alarm、Marketplace 打开/5 分钟目录刷新和持久化更新提示 | IMPLEMENTED / CI_PENDING | `marketplace-update-check.js`、`app.js`、manifest 0.6.6 与纯比较回归已写入分支 | Chrome package/packaged E2E 与 protected main 交付证据 |
+<<<<<<< HEAD
 
 - 第一版 PR #2641 已进入 `main@4f484be2…`，Chrome package `34922024248` 和 Worker deploy `34922024310` 已通过；follow-up PR #2642 的状态保持修复仍待合并。
+=======
+>>>>>>> origin/main

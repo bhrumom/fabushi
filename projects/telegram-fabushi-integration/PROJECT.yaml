@@ -109,6 +109,7 @@ active_work:
     blocker: current Chrome Tampermonkey update requires user confirmation; live two-task rotation evidence pending
   - task: TFI-USERSCRIPT-RECOVERY-017
     branch: codex/tfi-marketplace-live-discovery-017
+<<<<<<< HEAD
     followup_branch: codex/tfi-marketplace-live-discovery-017-status
     state: IN_PROGRESS
     chrome_version: 0.6.6
@@ -118,6 +119,12 @@ active_work:
     chrome_package_run: 34922024248
     followup_pr: 2642
     blocker: follow-up status-preservation PR #2642 and its exact-SHA post-main packaged evidence pending
+=======
+    state: IN_PROGRESS
+    chrome_version: 0.6.6
+    client_auto_discovery: implemented
+    blocker: Platform Control Plane/Chrome PR checks, protected merge, production deployment, packaged E2E and online catalog readback pending
+>>>>>>> origin/main
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001
