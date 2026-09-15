@@ -43,6 +43,7 @@ members = [
     "mahayana-telegram",
     "mahayana-test-driver-protocol",
     "mahayana-tool-host",
+    "mahayana-turn-protocol",
     "mahayana-unified-app-host",
     "mahayana-web",
     "mahayana-workspace-engine",
@@ -124,6 +125,7 @@ mahayana-social = { path = "mahayana-social" }
 mahayana-telegram = { path = "mahayana-telegram" }
 mahayana-test-driver-protocol = { path = "mahayana-test-driver-protocol" }
 mahayana-tool-host = { path = "mahayana-tool-host" }
+mahayana-turn-protocol = { path = "mahayana-turn-protocol" }
 mahayana-workspace-engine = { path = "mahayana-workspace-engine" }
 mahayana-unified-app-host = { path = "mahayana-unified-app-host" }
 fabushi-official-miniapps = { path = "providers/official-miniapps" }
