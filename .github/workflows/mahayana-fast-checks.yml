@@ -70,6 +70,12 @@ jobs:
       - name: Test isolated gateway protocol contract
         run: cargo test --manifest-path mahayana-gateway-protocol/Cargo.toml
 
+      - name: Test gateway peer request authority
+        run: >-
+          cargo test
+          -p mahayana-gateway-peer
+          --profile ci
+
       - name: Install Linux native capture/input dependencies
         shell: bash
         working-directory: ${{ github.workspace }}
