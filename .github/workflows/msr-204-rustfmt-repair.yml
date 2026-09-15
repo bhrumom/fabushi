@@ -28,21 +28,28 @@ jobs:
         working-directory: third_party/mahayana/mahayana-rs
         run: cargo fmt --all
 
+      - name: Refresh lock through the peer crate and verify it
+        working-directory: third_party/mahayana/mahayana-rs
+        run: |
+          cargo test -p mahayana-gateway-peer
+          cargo test -p mahayana-gateway-peer --locked
+
       - name: Verify formatting is clean
         working-directory: third_party/mahayana/mahayana-rs
         run: cargo fmt --all -- --check
 
-      - name: Commit verified formatting and remove one-shot workflow
+      - name: Commit verified formatting and lock refresh, then remove one-shot workflow
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git rm .github/workflows/msr-204-rustfmt-repair.yml
-          git add third_party/mahayana/mahayana-rs
+          git add third_party/mahayana/mahayana-rs/Cargo.lock
+          git add third_party/mahayana/mahayana-rs/mahayana-gateway-peer/src/lib.rs
           git diff --cached --check
           if git diff --cached --quiet; then
-            echo 'No formatting changes to commit.'
+            echo 'No formatting or lock changes to commit.'
             exit 1
           fi
-          git commit -m 'style(msr): format Hermes gateway peer changes'
+          git commit -m 'style(msr): format Hermes gateway peer and refresh lock'
           git push origin HEAD:feat/msr-204-hermes-gateway-transcript
