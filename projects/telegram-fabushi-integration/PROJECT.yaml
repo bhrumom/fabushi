@@ -113,11 +113,15 @@ active_work:
     state: IN_PROGRESS
     chrome_version: 0.6.6
     client_auto_discovery: implemented
-    canonical_main_sha: 4f484be2fd72f13289473f9c4917e03b78a92022
+    canonical_main_sha: bc22336c5b6d645576575ea4e4919b4658d6f13a
     production_worker_run: 34922024310
-    chrome_package_run: 34922024248
+    chrome_package_run: 34923735666
     followup_pr: 2642
-    blocker: follow-up status-preservation PR #2642 and its exact-SHA post-main packaged evidence pending
+    recovery_pr: 2643
+    chrome_package_artifact: 10379295814
+    web_store_publish_run: 34923905837
+    state_detail: IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED
+    blocker: Chrome Web Store API returned NOT_UPDATEABLE because an existing item submission is still in review; exact-main package and packaged journey are green
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001
