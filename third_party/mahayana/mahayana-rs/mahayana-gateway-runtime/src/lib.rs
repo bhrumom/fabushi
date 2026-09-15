@@ -39,15 +39,19 @@ pub struct NativeRuntimeGateway {
 impl NativeRuntimeGateway {
     pub fn create() -> Result<Self, JsonRpcError> {
         let cwd = std::env::current_dir().map_err(internal)?;
-        let use_codex_account = std::env::var("MAHAYANA_USE_CODEX_ACCOUNT").as_deref() == Ok("1");
+        let use_codex_account =
+            std::env::var("MAHAYANA_USE_CODEX_ACCOUNT").as_deref() == Ok("1");
         let mut config = json!({
             "hostPlatform": "cli",
             "cwd": cwd,
             "workspaceRoots": [cwd],
             "useCodexAccount": use_codex_account,
         });
-        if use_codex_account && let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME") {
-            config["codexHome"] = serde_json::to_value(PathBuf::from(codex_home)).map_err(internal)?;
+        if use_codex_account
+            && let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME")
+        {
+            config["codexHome"] =
+                serde_json::to_value(PathBuf::from(codex_home)).map_err(internal)?;
         }
         if let Ok(base_url) = std::env::var("MAHAYANA_RESPONSES_BASE_URL")
             && !base_url.trim().is_empty()
@@ -99,18 +103,25 @@ impl NativeRuntimeGateway {
 
     fn execute(&self, command: Value) -> Result<Value, JsonRpcError> {
         let command = CString::new(command.to_string()).map_err(internal)?;
-        let response = unsafe { take_json(mahayana_runtime_execute(self.runtime_id, command.as_ptr())) }
-            .map_err(internal)?;
+        let response =
+            unsafe { take_json(mahayana_runtime_execute(self.runtime_id, command.as_ptr())) }
+                .map_err(internal)?;
         unwrap_ffi(response).map_err(JsonRpcError::internal)
     }
 
     fn interrupt(&self, operation_id: &str) -> Result<(), JsonRpcError> {
-        let request = CString::new(json!({"operationId": operation_id}).to_string()).map_err(internal)?;
+        let request =
+            CString::new(json!({"operationId": operation_id}).to_string()).map_err(internal)?;
         let response = unsafe {
-            take_json(mahayana_runtime_interrupt(self.runtime_id, request.as_ptr()))
+            take_json(mahayana_runtime_interrupt(
+                self.runtime_id,
+                request.as_ptr(),
+            ))
         }
         .map_err(internal)?;
-        unwrap_ffi(response).map(|_| ()).map_err(JsonRpcError::internal)
+        unwrap_ffi(response)
+            .map(|_| ())
+            .map_err(JsonRpcError::internal)
     }
 
     fn resolve_approval(&self, approval_id: &str, decision: &str) -> Result<(), JsonRpcError> {
@@ -118,20 +129,33 @@ impl NativeRuntimeGateway {
             "allow-once" => "accept",
             "allow-session" => "acceptForSession",
             "deny" => "decline",
-            other => return Err(JsonRpcError::invalid_params(format!("invalid approval decision: {other}"))),
+            other => {
+                return Err(JsonRpcError::invalid_params(format!(
+                    "invalid approval decision: {other}"
+                )));
+            }
         };
         let request = CString::new(
             json!({"approvalId": approval_id, "decision": runtime_decision}).to_string(),
         )
         .map_err(internal)?;
         let response = unsafe {
-            take_json(mahayana_runtime_resolve_approval(self.runtime_id, request.as_ptr()))
+            take_json(mahayana_runtime_resolve_approval(
+                self.runtime_id,
+                request.as_ptr(),
+            ))
         }
         .map_err(internal)?;
-        unwrap_ffi(response).map(|_| ()).map_err(JsonRpcError::internal)
+        unwrap_ffi(response)
+            .map(|_| ())
+            .map_err(JsonRpcError::internal)
     }
 
-    fn start_turn(&mut self, conversation_id: String, text: &str) -> Result<GatewayOutcome, JsonRpcError> {
+    fn start_turn(
+        &mut self,
+        conversation_id: String,
+        text: &str,
+    ) -> Result<GatewayOutcome, JsonRpcError> {
         let accepted = self.execute(json!({
             "@type": "mahayana.conversation.send",
             "conversationId": conversation_id,
@@ -190,7 +214,11 @@ impl NativeRuntimeGateway {
             "mahayana.message.delta" => self.next_event(
                 operation_id,
                 TurnEvent::MessageDelta(TextDelta {
-                    text: value.get("delta").and_then(Value::as_str).unwrap_or_default().to_string(),
+                    text: value
+                        .get("delta")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
                 }),
             ),
             "mahayana.message.completed" => {
@@ -201,7 +229,11 @@ impl NativeRuntimeGateway {
                 self.next_event(
                     operation_id,
                     TurnEvent::MessageComplete(MessageComplete {
-                        text: message.get("text").and_then(Value::as_str).unwrap_or_default().to_string(),
+                        text: message
+                            .get("text")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
                         status: TurnCompletionStatus::Completed,
                         usage: None,
                     }),
@@ -213,15 +245,31 @@ impl NativeRuntimeGateway {
                     .and_then(Value::as_str)
                     .unwrap_or(operation_id)
                     .to_string();
-                let name = value.get("kind").and_then(Value::as_str).unwrap_or("agent").to_string();
-                let title = value.get("title").and_then(Value::as_str).map(ToOwned::to_owned);
-                let detail = value.get("detail").and_then(Value::as_str).map(ToOwned::to_owned);
-                match value.get("status").and_then(Value::as_str).unwrap_or("running") {
+                let name = value
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("agent")
+                    .to_string();
+                let title = value
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned);
+                let detail = value
+                    .get("detail")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned);
+                match value
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("running")
+                {
                     "completed" => self.next_event(
                         operation_id,
                         TurnEvent::ToolComplete(ToolComplete {
                             tool_id,
-                            result: detail.map(|detail| json!({"detail": detail})).unwrap_or(Value::Null),
+                            result: detail
+                                .map(|detail| json!({"detail": detail}))
+                                .unwrap_or(Value::Null),
                             error: None,
                         }),
                     ),
@@ -230,7 +278,9 @@ impl NativeRuntimeGateway {
                         TurnEvent::ToolComplete(ToolComplete {
                             tool_id,
                             result: Value::Null,
-                            error: Some(detail.unwrap_or_else(|| "Mahayana tool step failed".to_string())),
+                            error: Some(
+                                detail.unwrap_or_else(|| "Mahayana tool step failed".to_string()),
+                            ),
                         }),
                     ),
                     _ => self.next_event(
@@ -239,19 +289,27 @@ impl NativeRuntimeGateway {
                             tool_id,
                             name,
                             title,
-                            arguments: detail.map(|detail| json!({"detail": detail})).unwrap_or(Value::Null),
+                            arguments: detail
+                                .map(|detail| json!({"detail": detail}))
+                                .unwrap_or(Value::Null),
                         }),
                     ),
                 }
             }
             "mahayana.plugin.progress" => {
-                let plugin_id = value.get("pluginId").and_then(Value::as_str).unwrap_or("plugin");
+                let plugin_id = value
+                    .get("pluginId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("plugin");
                 let tool = value.get("tool").and_then(Value::as_str).unwrap_or("tool");
                 self.next_event(
                     operation_id,
                     TurnEvent::ToolProgress(ToolProgress {
                         tool_id: format!("{plugin_id}:{tool}"),
-                        detail: value.get("message").and_then(Value::as_str).map(ToOwned::to_owned),
+                        detail: value
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .map(ToOwned::to_owned),
                         progress: value.get("progress").and_then(Value::as_u64),
                         total: value.get("total").and_then(Value::as_u64),
                     }),
@@ -260,18 +318,36 @@ impl NativeRuntimeGateway {
             "mahayana.approval.requested" => self.next_event(
                 operation_id,
                 TurnEvent::ApprovalRequest(ApprovalRequest {
-                    approval_id: value.get("approvalId").and_then(Value::as_str)?.to_string(),
-                    subject: value.get("title").and_then(Value::as_str).unwrap_or("Mahayana approval").to_string(),
+                    approval_id: value
+                        .get("approvalId")
+                        .and_then(Value::as_str)?
+                        .to_string(),
+                    subject: value
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Mahayana approval")
+                        .to_string(),
                     detail: value.get("details").map(compact_value),
-                    proposed_rule: value.get("proposedRule").and_then(Value::as_str).map(ToOwned::to_owned),
+                    proposed_rule: value
+                        .get("proposedRule")
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned),
                     metadata: value.get("metadata").cloned(),
                 }),
             ),
             "mahayana.operation.failed" => self.next_event(
                 operation_id,
                 TurnEvent::TurnError(TurnError {
-                    code: value.get("code").and_then(Value::as_str).unwrap_or("mahayana_operation_failed").to_string(),
-                    message: value.get("message").and_then(Value::as_str).unwrap_or("Mahayana operation failed").to_string(),
+                    code: value
+                        .get("code")
+                        .and_then(Value::as_str)
+                        .unwrap_or("mahayana_operation_failed")
+                        .to_string(),
+                    message: value
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Mahayana operation failed")
+                        .to_string(),
                     recoverable: false,
                 }),
             ),
@@ -309,7 +385,9 @@ impl GatewayHandler for NativeRuntimeGateway {
             method::SESSION_INTERRUPT => {
                 let operation_id = required_string(params, "operationId")?;
                 self.interrupt(operation_id)?;
-                Ok(GatewayOutcome::accepted(json!({"operationId": operation_id, "interrupted": true})))
+                Ok(GatewayOutcome::accepted(
+                    json!({"operationId": operation_id, "interrupted": true}),
+                ))
             }
             method::PROMPT_SUBMIT => {
                 let text = required_string(params, "text")?;
@@ -325,7 +403,9 @@ impl GatewayHandler for NativeRuntimeGateway {
                 let approval_id = required_string(params, "approvalId")?;
                 let decision = required_string(params, "decision")?;
                 self.resolve_approval(approval_id, decision)?;
-                Ok(GatewayOutcome::accepted(json!({"approvalId": approval_id, "decision": decision})))
+                Ok(GatewayOutcome::accepted(
+                    json!({"approvalId": approval_id, "decision": decision}),
+                ))
             }
             method::TURN_REPLAY => Err(JsonRpcError::internal(
                 "turn.replay requires the MSR-205 durable Rust replay store; live turn sequencing is active but durable replay is not accepted yet",
