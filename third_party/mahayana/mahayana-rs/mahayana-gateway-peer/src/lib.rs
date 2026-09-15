@@ -369,7 +369,7 @@ fn merge_locked_answers(request: &PendingServerRequest, result: &mut Value) {
     let Some(object) = result.as_object_mut() else {
         return;
     };
-    let mut answers = request.locked_answers.clone();
+    let mut answers = BTreeMap::new();
     if let Some(client_answers) = object.get("answers").and_then(Value::as_object) {
         for (question_id, answer) in client_answers {
             if let Some(answer) = answer.as_str() {
@@ -377,6 +377,9 @@ fn merge_locked_answers(request: &PendingServerRequest, result: &mut Value) {
             }
         }
     }
+    // The Rust request registry is authoritative across reconnects. A stale
+    // renderer may fill an unlocked answer, but it cannot replace a sealed one.
+    answers.extend(request.locked_answers.clone());
     object.insert(
         "answers".to_string(),
         serde_json::to_value(answers).unwrap_or(Value::Null),
@@ -526,6 +529,37 @@ mod tests {
             ServerRequestResponse::Result(json!({"answers": {"q1": "alpha", "q2": "beta"}}))
         );
         assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn locked_clarify_answer_wins_over_stale_client_response() {
+        let mut registry = ServerRequestRegistry::default();
+        registry
+            .issue_with_id(
+                "srq-clarify0003".to_string(),
+                "session-3".to_string(),
+                "clarify".to_string(),
+                json!({}),
+                vec!["q1".to_string(), "q2".to_string()],
+                30,
+            )
+            .unwrap();
+        registry
+            .lock_answer("srq-clarify0003", "q1", "server-locked")
+            .unwrap();
+        let resolved = registry
+            .resolve_response(&json!({
+                "jsonrpc": "2.0",
+                "id": "srq-clarify0003",
+                "result": {"answers": {"q1": "stale-client", "q2": "client-open"}}
+            }))
+            .unwrap();
+        assert_eq!(
+            resolved.response,
+            ServerRequestResponse::Result(json!({
+                "answers": {"q1": "server-locked", "q2": "client-open"}
+            }))
+        );
     }
 
     #[test]
