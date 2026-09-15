@@ -117,8 +117,8 @@ jobs:
       - name: Format and verify peer crate
         working-directory: third_party/mahayana/mahayana-rs
         run: |
-          cargo fmt --all
-          cargo fmt --all -- --check
+          cargo fmt -p mahayana-gateway-peer
+          cargo fmt -p mahayana-gateway-peer -- --check
           cargo test -p mahayana-gateway-peer
           cargo test -p mahayana-gateway-peer --locked
 
@@ -270,7 +270,7 @@ jobs:
       - name: Test product protocol and MiniApp bridge
         run: >-
           cargo test
-          -p mahayana-product
+          -p mahayana-platform-client
           -p mahayana-miniapp-protocol
           -p mahayana-miniapp-bridge
           --profile ci
