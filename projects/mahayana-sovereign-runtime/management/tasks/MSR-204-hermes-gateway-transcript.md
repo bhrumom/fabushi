@@ -77,6 +77,9 @@ Historical failures are retained because they explain the repair and are **not**
 3. The verification workflow was corrected to install the same Linux native capture/input dependencies already used by the repository's normal Mahayana fast gate. On run `34939951270`, source repair and `cargo fmt --all` passed; `cargo check -p mahayana-gateway -p mahayana-gateway-protocol -p mahayana-cli --bin mahayana-gateway` passed; `cargo test -p mahayana-gateway -p mahayana-gateway-protocol --locked` passed; and the gateway CLI recheck under the generated lock passed.
 4. Only after those checks passed did GitHub Actions create product commit `3bcb1dd26353434ad5ee07a16b03bc27d5d37e30` (`fix(msr): complete Hermes assistant turns and Bot routing`).
 5. Cleanup commits restored the ordinary fast gate and removed the completed task-specific repair workflow. Those cleanup/project-record commits create a new exact head, so standard CI/E2E must be read again before merge or acceptance.
+6. Later exact-head fast checks isolated remaining drift to rustfmt-only changes in `mahayana-cli/src/bin/mahayana-gateway.rs` and `mahayana-gateway-peer/src/lib.rs`; the same repair execution passed the relevant gateway/CLI tests but initially could not push from a shallow checkout.
+7. The canonical branch repair was retried with full history. GitHub Actions then created `d49b116facd52be6bc14cd9792e9598a3ab2df9b` (`style(msr): format Hermes gateway peer and refresh lock`) and removed the one-shot repair workflow from the branch. This is a repository commit, not local evidence.
+8. Because commits pushed by the workflow `GITHUB_TOKEN` do not recursively start downstream Actions, this project-record commit is intentionally the next user-authored/API commit so the ordinary exact-head PR workflows re-run against the formatted product tree.
 
 No local build result is represented as verification. GitHub Actions exact-head results are the accepted verification source for this task.
 
@@ -110,6 +113,7 @@ No local build result is represented as verification. GitHub Actions exact-head 
 - Draft PR: `#2620`.
 - Verified repair run: `34939951270`.
 - Verified product repair commit: `3bcb1dd26353434ad5ee07a16b03bc27d5d37e30`.
+- Rustfmt repair commit: `d49b116facd52be6bc14cd9792e9598a3ab2df9b`.
 - Current capability matrix: `projects/mahayana-sovereign-runtime/management/MSR-204-HERMES-PARITY.md`.
 - Final exact-head CI, canonical-main merge SHA, packaged E2E bundle and Release traceability: pending.
 
@@ -117,5 +121,7 @@ No local build result is represented as verification. GitHub Actions exact-head 
 
 - Re-read canonical PR `#2620` at head `750362aa69b5e61b11abe7b87f49172c432249dc`; this remains the single MSR-204 implementation and duplicate branches must not be revived.
 - Exact-head Desktop quality and Host fast E2E were green, while Mahayana fast checks stopped only on `cargo fmt --all -- --check` drift in the gateway CLI and peer crate.
-- The CI repair execution proved the formatted source by passing `mahayana-gateway` and `mahayana-cli` tests; its final push failed because the repair checkout was shallow (`shallow update not allowed`), not because product tests failed.
-- This commit intentionally triggers the branch's one-shot full-history rustfmt repair workflow. Acceptance state remains `in-progress` until the resulting exact head is re-verified and all remaining task blockers are closed.
+- The CI repair execution proved the formatted source by passing `mahayana-gateway` and `mahayana-cli` tests; its first push failed because the repair checkout was shallow (`shallow update not allowed`), not because product tests failed.
+- An initial full-history repair trigger then exposed an invalid YAML `if:` expression before jobs were created; the expression was quoted and retriggered on the same canonical branch.
+- The corrected full-history repair succeeded and produced `d49b116facd52be6bc14cd9792e9598a3ab2df9b`, containing the rustfmt changes/lock refresh and deleting the one-shot repair workflow.
+- This project-record synchronization is intentionally the next branch commit so the normal PR workflows execute against the repaired tree. Acceptance state remains `in-progress` until those exact-head checks are read and the remaining architectural/product blockers are closed.
