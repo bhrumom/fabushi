@@ -59,6 +59,8 @@ test("the integrated runner keeps install, enable, lifecycle and desktop-call co
   assert.match(content, /recovery-capability\.granted/);
   assert.match(content, /navigation-guard\.request/);
   assert.match(content, /navigation-guard\.granted/);
+  assert.match(content, /data\.pluginId \|\| NAVIGATION_PLUGIN_ID/);
+  assert.match(content, /navigation-guard\.cancel/);
   assert.match(navigation, /CAPABILITY = "tab-navigation-guard"/);
   assert.match(navigation, /navigation-in-flight/);
   assert.match(navigation, /rotation-break/);

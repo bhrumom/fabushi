@@ -123,6 +123,30 @@ test("host grants scoped route changes and throttles repeated multi-task rotatio
   assert.ok(second.retryAfterMs > 0);
 });
 
+test("an unused or stale grant can be cancelled without starting a phantom cooldown", async () => {
+  const state = fixture();
+  const first = await send(state, request());
+  assert.equal(first.granted, true);
+  assert.equal(state.stored[STORAGE_KEY].tabs["7"].lastGrantedAt, 0);
+  assert.deepEqual(state.stored[STORAGE_KEY].tabs["7"].recent, []);
+
+  const cancelled = await send(state, {
+    type: "fabushi.userscript.navigation.cancel",
+    pluginId: "chatgpt-auto-confirm",
+    payload: {
+      capability: "tab-navigation-guard",
+      leaseId: first.leaseId,
+      reason: "stale-navigation-ticket",
+    },
+  });
+  assert.equal(cancelled.ok, true);
+  assert.equal(cancelled.cancelled, true);
+  assert.equal(state.stored[STORAGE_KEY].tabs["7"].inFlight, null);
+
+  const retry = await send(state, request({ targetURL: "https://chatgpt.com/c/retry" }));
+  assert.equal(retry.granted, true,'a cancelled lease must not force another 30-second wait');
+});
+
 test("host refuses crash and unloaded renderer pages, then permits an explicit recovery request", async () => {
   const state = fixture();
   state.tab.url = "chrome-error://chromewebdata/";
@@ -158,9 +182,7 @@ test("host rejects invalid identities and non-ChatGPT navigation targets", async
   assert.equal(invalidTarget.granted, false);
   assert.equal(invalidTarget.reason, "invalid-request");
 
-  const invalidCapability = await send(state, request({
-    payload: { capability: "other-capability" },
-  }));
+  const invalidCapability = await send(state, request({ capability: "other-capability" }));
   assert.equal(invalidCapability.ok, false);
   assert.equal(invalidCapability.granted, false);
   assert.equal(invalidCapability.reason, "invalid-request");

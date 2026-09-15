@@ -126,6 +126,19 @@ active_work:
     runtime_fix: import marketplaceItemId before validating userscript install contracts
     live_catalog_fix_parent_sha: f2073f6a72158c057145240a7391abbe0581f38a
     live_catalog_fix_state: MAIN_PACKAGE_GREEN
+  - task: TFI-USERSCRIPT-RECOVERY-018
+    branch: codex/tfi-userscript-navigation-livelock-018-20260915
+    source_branch: codex/navigation-livelock-2.9.31-20260915
+    source_pr: 24
+    source_main_sha: 5f7d1f26a9883e6806ec855f5f2177ad737aa07e
+    source_version: 2.9.31
+    source_release: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.31
+    chrome_version: 0.6.9
+    state: IN_PROGRESS
+    root_cause: navigation requests omitted the canonical plugin identity and every invalid response restarted the 30-second retry path
+    parent_pr: PENDING
+    exact_main_runs: []
+    blocker: parent protected-main, exact-main Chrome package/E2E/evidence and production Marketplace readback pending
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001
