@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "taskId": "TFI-USERSCRIPT-RECOVERY-017",
+  "projectId": "FAB-P0001",
+  "projectKey": "TFI",
+  "canonicalMainSha": "05297b21a684ba826d41bde5c113508103ce196f",
+  "chromeVersion": "0.6.7",
+  "chromeWorkflow": {
+    "runId": "34925924905",
+    "url": "https://github.com/bhrumom/fabushi/actions/runs/34925924905",
+    "conclusion": "success",
+    "artifact": "fabushi-chrome-web-store-05297b21a684ba826d41bde5c113508103ce196f",
+    "artifactId": "10379573729",
+    "package": {
+      "name": "fabushi-chrome-0.6.7.zip",
+      "bytes": 120660,
+      "sha256": "6f2d81af55f7e30e47adb070adf02750e32dce819997e7c0d00dadc868badb80"
+    },
+    "journey": {
+      "id": "CWA-007-chrome-packaged-browser-control",
+      "sourceSha": "05297b21a684ba826d41bde5c113508103ce196f",
+      "evidence": [
+        "evidence/01-startup-fixture.png",
+        "evidence/02-fabushi-shell.png",
+        "evidence/03-browser-view.png",
+        "evidence/05-after-browser-control.png",
+        "evidence/06-cdp-screenshot.png",
+        "evidence/page@6fe8f413a415f56f8df7030a73305a29.webm",
+        "evidence/page@df19df38d78eebecfa8b2baebf34550a.webm",
+        "evidence/trace.zip",
+        "evidence/playwright-report.html",
+        "evidence/journey-report.json",
+        "evidence/native-journey.json"
+      ]
+    }
+  },
+  "productionMarketplaceReadback": {
+    "catalogUrl": "https://api.ombhrum.com/v1/marketplace/plugins?platform=chrome-extension",
+    "pluginId": "chatgpt-auto-confirm",
+    "latestVersion": "2.9.30",
+    "sourceRef": "480ebe61ba039f15e7023bbc0253ea23c373aba0",
+    "artifactBytes": 224113,
+    "artifactSha256": "d15040a5d420b0fa4cc38b195f178143a2d22a166e3357f88c7159c6b7a3b14a",
+    "runtimeForm": "userscript",
+    "platforms": ["chrome-extension"]
+  },
+  "webStorePublishAttempt": {
+    "runId": "34926076850",
+    "url": "https://github.com/bhrumom/fabushi/actions/runs/34926076850",
+    "sourceSha": "05297b21a684ba826d41bde5c113508103ce196f",
+    "version": "0.6.7",
+    "conclusion": "failure",
+    "httpStatus": 400,
+    "reason": "NOT_UPDATEABLE",
+    "message": "You may not edit or publish an item that is in review.",
+    "status": "BLOCKED_PENDING_EXISTING_REVIEW",
+    "nextAction": "等待现有 Chrome Web Store 审核结束后，重新提交 0.6.7 exact-main 包；不取消或覆盖审核中的提交。"
+  }
+}

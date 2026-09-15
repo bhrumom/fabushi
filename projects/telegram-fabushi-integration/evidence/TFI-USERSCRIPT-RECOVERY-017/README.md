@@ -13,7 +13,7 @@
 - direct release metadata response for `chatgpt-auto-confirm@2.9.30`.
 - Chrome `0.6.6` packaged artifact containing the Service Worker alarm checker, persisted update status, action badge, startup/Marketplace polling UI, and versioned packaged E2E screenshots/video/trace/report.
 
-No completion evidence is claimed until the production deployment and online readback are successful.
+Product implementation and production readback are complete; task completion remains blocked only by the Chrome Web Store item being locked by an existing review submission.
 
 ## 2026-09-15 exact-main client auto-discovery readback
 
@@ -22,3 +22,11 @@ No completion evidence is claimed until the production deployment and online rea
 - Production catalog still returns userscript `2.9.30` with the pinned source/hash/size above.
 - Web Store publish workflow `34923905837` reached the protected API but returned `400 FAILED_PRECONDITION / NOT_UPDATEABLE`: an existing item submission is still in review. The package was not falsely reported as publicly published; retry is required after that review completes.
 - Full machine-readable record: `2026-09-15-client-auto-discovery-main-readback.json`.
+
+## 2026-09-15 live-catalog-first main readback
+
+- Canonical main: `05297b21a684ba826d41bde5c113508103ce196f`.
+- Chrome workflow `34925924905` passed; artifact `10379573729` contains `fabushi-chrome-0.6.7.zip` (120660 bytes, SHA-256 `6f2d81af55f7e30e47adb070adf02750e32dce819997e7c0d00dadc868badb80`) and the complete `CWA-007` screenshot/video/trace/report/log bundle.
+- The package uses the live Chrome catalog first and only falls back to a connected Host when the live endpoint fails; stale concurrent responses are discarded.
+- Web Store publish run `34926076850` again returned `400 FAILED_PRECONDITION / NOT_UPDATEABLE` because an existing submission remains in review. The 0.6.7 package is ready but not claimed as publicly published.
+- Full machine-readable record: `2026-09-15-live-catalog-fix-main-readback.json`.

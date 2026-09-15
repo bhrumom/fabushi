@@ -79,7 +79,14 @@
 - `app.js` 现在始终先读取实时 Chrome Marketplace API；只有网络失败时才回退到 Host 目录。增加 `marketplaceRequestId`，丢弃过期搜索/启动请求，避免旧响应覆盖最新版本。
 - 该补强保持安装安全边界：自动检查只提示，不静默安装；真正安装继续校验不可变 GitHub URL、字节数、SHA-256 与 userscript header。
 - 本轮需重新执行 exact-main Chrome 包与 packaged simulated-user journey；Web Store 仍受现有审核提交的 `NOT_UPDATEABLE` 外部限制。
-- 因本轮改变扩展二进制，manifest、打包校验器与 Web Store workflow 已从 `0.6.6` 递增到 `0.6.7`，避免以同一版本发布不同内容；`0.6.7` 的 exact-main 包和旅程仍待 CI。
+- 因本轮改变扩展二进制，manifest、打包校验器与 Web Store workflow 已从 `0.6.6` 递增到 `0.6.7`，避免以同一版本发布不同内容；`0.6.7` 的 exact-main 包和旅程已由后续主线 run 验证。
+
+## 2026-09-15 — 0.6.7 exact-main 交付回读
+
+- PR #2645 合并后 canonical main 为 `f2073f6a…`；随后 PR #2646 将严格递增版本与发布校验合并为 `main@05297b21a684ba826d41bde5c113508103ce196f`。
+- Chrome workflow `34925924905` 成功，artifact `10379573729` 的 `0.6.7` ZIP 为 120660 bytes、SHA-256 `6f2d81af55f7e30e47adb070adf02750e32dce819997e7c0d00dadc868badb80`；`CWA-007` packaged journey 的截图、完整视频、trace、HTML report 和 native logs 均已保留。
+- 线上 catalog 仍回读 `chatgpt-auto-confirm` userscript `v2.9.30` / sourceRef `480ebe61…` / 224113 bytes / `d15040a5…`。
+- 以 0.6.7 重试 Web Store publish `34926076850`，Google 仍返回 `400 NOT_UPDATEABLE`（已有提交审核中）；不取消或覆盖审核，待审核完成后再次提交 0.6.7。
 
 ## 风险与阻塞
 

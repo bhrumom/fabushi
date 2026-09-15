@@ -111,20 +111,20 @@ active_work:
     branch: codex/tfi-marketplace-live-discovery-017
     followup_branch: codex/tfi-marketplace-live-discovery-017-status
     state: IN_PROGRESS
-    chrome_version: 0.6.6
+    chrome_version: 0.6.7
     client_auto_discovery: implemented
-    canonical_main_sha: bc22336c5b6d645576575ea4e4919b4658d6f13a
+    canonical_main_sha: 05297b21a684ba826d41bde5c113508103ce196f
     production_worker_run: 34922024310
-    chrome_package_run: 34923735666
+    chrome_package_run: 34925924905
     followup_pr: 2642
     recovery_pr: 2643
-    chrome_package_artifact: 10379295814
-    web_store_publish_run: 34923905837
+    chrome_package_artifact: 10379573729
+    web_store_publish_run: 34926076850
     state_detail: IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED
     blocker: Chrome Web Store API returned NOT_UPDATEABLE because an existing item submission is still in review; exact-main package and packaged journey are green
-    next_chrome_version: 0.6.7
+    delivered_chrome_version: 0.6.7
     live_catalog_fix_parent_sha: f2073f6a72158c057145240a7391abbe0581f38a
-    live_catalog_fix_state: CI_PENDING
+    live_catalog_fix_state: MAIN_PACKAGE_GREEN
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001

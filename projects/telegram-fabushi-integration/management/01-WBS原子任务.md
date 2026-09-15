@@ -334,7 +334,7 @@
 
 | Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
 |---|---|---|---|---|---|
-| TFI-USERSCRIPT-RECOVERY-017 | FAB-P0001 / TFI | 让 Chrome 插件在后台自动识别线上 userscript 更新 | IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED | PR #2643 → `main@bc22336c…`; Chrome run `34923735666`, artifact `10379295814`, packaged journey/evidence 通过；线上 catalog v2.9.30 | 等待现有 Chrome Web Store 审核结束后重新提交 0.6.6；不取消或覆盖审核中的提交 |
-| TFI-USERSCRIPT-RECOVERY-017-AUTO | FAB-P0001 / TFI | 启动/安装/30 分钟后台检查、5 分钟页面刷新、持久化徽章与更新提示 | VERIFIED / MAIN_PACKAGE_GREEN | `marketplace-update-check.js`, `app.js`, manifest 0.6.6；exact-main packaged artifact 含截图/视频/trace/report/log | Web Store 公开版本回读 |
+| TFI-USERSCRIPT-RECOVERY-017 | FAB-P0001 / TFI | 让 Chrome 插件在后台自动识别线上 userscript 更新 | IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED | PR #2646 → `main@05297b21…`; Chrome run `34925924905`, artifact `10379573729`, 0.6.7 packaged journey/evidence 通过；线上 catalog v2.9.30 | 等待现有 Chrome Web Store 审核结束后重新提交 0.6.7；不取消或覆盖审核中的提交 |
+| TFI-USERSCRIPT-RECOVERY-017-AUTO | FAB-P0001 / TFI | 启动/安装/30 分钟后台检查、5 分钟页面刷新、持久化徽章与更新提示 | VERIFIED / MAIN_PACKAGE_GREEN | `marketplace-update-check.js`, `app.js`, manifest 0.6.7；exact-main artifact `10379573729` 含截图/视频/trace/report/log | Web Store 公开版本回读 |
 
-| TFI-USERSCRIPT-RECOVERY-017-LIVE-CATALOG | FAB-P0001 / TFI | Chrome popup 优先读取实时 Marketplace，Host 仅网络失败兜底；并发目录请求按序提交 | IMPLEMENTED / CI_PENDING | `app.js` 的 live-catalog-first 与 `marketplaceRequestId`；轻量语法/冲突检查通过；扩展版本递增至 0.6.7 | 新 PR exact-main Chrome 包与 packaged journey；Web Store 审核结束后公开发布 |
+| TFI-USERSCRIPT-RECOVERY-017-LIVE-CATALOG | FAB-P0001 / TFI | Chrome popup 优先读取实时 Marketplace，Host 仅网络失败兜底；并发目录请求按序提交 | VERIFIED / MAIN_PACKAGE_GREEN | `app.js` 的 live-catalog-first 与 `marketplaceRequestId`；`main@05297b21…`、Chrome run `34925924905`、artifact `10379573729` 的 0.6.7 packaged journey 通过 | Web Store 审核结束后公开发布 0.6.7 |

@@ -121,3 +121,5 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 ### Chrome 实时目录优先
 
 当桌面 Host 连接并且版本较旧时，Chrome popup 不再使用 Host 目录覆盖线上结果；`app.js` 先读实时 Chrome Marketplace API，失败才回退 Host，并用请求序号防止旧响应回写。这样插件打开 Marketplace 时能直接识别线上 userscript 更新；Service Worker 的后台 alarm 检查继续独立工作。
+
+0.6.7 的 exact-main Chrome 包已在 `main@05297b21a684ba826d41bde5c113508103ce196f` 通过打包和模拟用户旅程；对应商店提交仍受已有审核锁定，详见 `evidence/TFI-USERSCRIPT-RECOVERY-017/2026-09-15-live-catalog-fix-main-readback.json`。
