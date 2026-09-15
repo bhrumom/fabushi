@@ -320,3 +320,11 @@
 
 - `TFI-USR-SCHED-R01..R06` 已在 source 侧实现并有 focused/full regression；Chrome 0.6.5 packaged journey 与完整 evidence bundle 已由 artifact `10362084424` 验证。
 - 本任务继续保留单页前台写操作互斥，不以并行任务为由允许同一 composer 的发送、上传、授权或未确认派发并发。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 Marketplace 线上 userscript 发现
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-017 | FAB-P0001 / TFI | 让旧 Chrome 扩展从公开控制面发现 userscript v2.9.30，同时保持桌面/CLI Mini App release 不变 | IN_PROGRESS / PR_PENDING | source v2.9.30 Release 与 parent bundled pin 已验证；Worker Chrome-only projection 已实现并加入单测 | Platform Control Plane CI、protected main、生产部署和线上 catalog/direct-release 回读 |
+
+| TFI-USERSCRIPT-RECOVERY-017-AUTO | FAB-P0001 / TFI | Service Worker 启动/安装/30 分钟 alarm、Marketplace 打开/5 分钟目录刷新和持久化更新提示 | IMPLEMENTED / CI_PENDING | `marketplace-update-check.js`、`app.js`、manifest 0.6.6 与纯比较回归已写入分支 | Chrome package/packaged E2E 与 protected main 交付证据 |
