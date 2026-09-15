@@ -1,0 +1,126 @@
+name: MSR-204 peer repair
+
+on:
+  push:
+    branches:
+      - feat/msr-204-hermes-gateway-transcript
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'chore(msr): run one-shot peer repair'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout canonical MSR-204 branch
+        uses: actions/checkout@v5
+        with:
+          ref: feat/msr-204-hermes-gateway-transcript
+          fetch-depth: 0
+
+      - name: Set up stable Rust with rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Repair Rust-owned clarify lock semantics and add regression coverage
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('third_party/mahayana/mahayana-rs/mahayana-gateway-peer/src/lib.rs')
+          text = path.read_text()
+
+          old = '''    let mut answers = request.locked_answers.clone();
+              if let Some(client_answers) = object.get("answers").and_then(Value::as_object) {
+                  for (question_id, answer) in client_answers {
+                      if let Some(answer) = answer.as_str() {
+                          answers.insert(question_id.clone(), answer.to_string());
+                      }
+                  }
+              }
+          '''
+          # Keep exact indentation independent of the embedded workflow block.
+          old = old.replace('              ', '')
+          new = '''    let mut answers = BTreeMap::new();
+          if let Some(client_answers) = object.get("answers").and_then(Value::as_object) {
+              for (question_id, answer) in client_answers {
+                  if let Some(answer) = answer.as_str() {
+                      answers.insert(question_id.clone(), answer.to_string());
+                  }
+              }
+          }
+          // Rust is authoritative for answers already locked before reconnect.
+          // A stale or duplicated client response may contribute unlocked answers,
+          // but it must never overwrite an answer that the server already sealed.
+          answers.extend(request.locked_answers.clone());
+          '''
+          new = new.replace('          ', '')
+          if old not in text:
+              raise SystemExit('merge_locked_answers target block not found')
+          text = text.replace(old, new, 1)
+
+          marker = '''    #[test]
+              fn exported_state_round_trips_for_future_canonical_restart_store() {
+          '''.replace('              ', '')
+          test = '''    #[test]
+          fn locked_clarify_answer_wins_over_stale_client_response() {
+              let mut registry = ServerRequestRegistry::default();
+              registry
+                  .issue_with_id(
+                      "srq-clarify0003".to_string(),
+                      "session-3".to_string(),
+                      "clarify".to_string(),
+                      json!({}),
+                      vec!["q1".to_string(), "q2".to_string()],
+                      30,
+                  )
+                  .unwrap();
+              registry
+                  .lock_answer("srq-clarify0003", "q1", "server-locked")
+                  .unwrap();
+
+              let resolved = registry
+                  .resolve_response(&json!({
+                      "jsonrpc": "2.0",
+                      "id": "srq-clarify0003",
+                      "result": {"answers": {"q1": "stale-client", "q2": "client-open"}}
+                  }))
+                  .unwrap();
+
+              assert_eq!(
+                  resolved.response,
+                  ServerRequestResponse::Result(json!({
+                      "answers": {"q1": "server-locked", "q2": "client-open"}
+                  }))
+              );
+          }
+
+          '''.replace('          ', '')
+          if marker not in text:
+              raise SystemExit('test insertion marker not found')
+          text = text.replace(marker, test + marker, 1)
+          path.write_text(text)
+          PY
+
+      - name: Format canonical Mahayana workspace
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt --all
+
+      - name: Verify peer regression test
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test -p mahayana-gateway-peer --locked
+
+      - name: Commit verified repair and remove one-shot workflow
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/msr-204-peer-repair.yml
+          git add third_party/mahayana/mahayana-rs/mahayana-cli/src/bin/mahayana-gateway.rs
+          git add third_party/mahayana/mahayana-rs/mahayana-gateway-peer/src/lib.rs
+          git diff --cached --check
+          git commit -m 'fix(msr): preserve locked clarify answers'
+          git push origin HEAD:feat/msr-204-hermes-gateway-transcript
