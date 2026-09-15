@@ -338,3 +338,9 @@
 | TFI-USERSCRIPT-RECOVERY-017-AUTO | FAB-P0001 / TFI | 启动/安装/30 分钟后台检查、5 分钟页面刷新、持久化徽章与更新提示 | VERIFIED / MAIN_PACKAGE_GREEN | `marketplace-update-check.js`, `app.js`, manifest 0.6.7；exact-main artifact `10379573729` 含截图/视频/trace/report/log | Web Store 公开版本回读 |
 
 | TFI-USERSCRIPT-RECOVERY-017-LIVE-CATALOG | FAB-P0001 / TFI | Chrome popup 优先读取实时 Marketplace，Host 仅网络失败兜底；并发目录请求按序提交 | VERIFIED / MAIN_PACKAGE_GREEN | `app.js` 的 live-catalog-first 与 `marketplaceRequestId`；`main@05297b21…`、Chrome run `34925924905`、artifact `10379573729` 的 0.6.7 packaged journey 通过 | Web Store 审核结束后公开发布 0.6.7 |
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-017 本机更新错误修复
+
+| Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
+|---|---|---|---|---|---|
+| TFI-USERSCRIPT-RECOVERY-017 | FAB-P0001 / TFI | 修复 Chrome popup 点击 Marketplace 更新时的 `marketplaceItemId is not defined` | IN_PROGRESS / FIX_PR_PENDING | 本机截图回读；`app.js` 已补共享 helper import；Chrome 版本已递增到 0.6.8；轻量语法/差异检查通过 | 提交 PR，跑 exact-main Chrome package/packaged E2E，之后替换本机包 |

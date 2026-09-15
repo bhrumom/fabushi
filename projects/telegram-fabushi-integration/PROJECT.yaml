@@ -111,7 +111,7 @@ active_work:
     branch: codex/tfi-marketplace-live-discovery-017
     followup_branch: codex/tfi-marketplace-live-discovery-017-status
     state: IN_PROGRESS
-    chrome_version: 0.6.7
+    chrome_version: 0.6.8
     client_auto_discovery: implemented
     canonical_main_sha: 05297b21a684ba826d41bde5c113508103ce196f
     production_worker_run: 34922024310
@@ -120,9 +120,10 @@ active_work:
     recovery_pr: 2643
     chrome_package_artifact: 10379573729
     web_store_publish_run: 34926076850
-    state_detail: IN_PROGRESS / WEB_STORE_REVIEW_BLOCKED
-    blocker: Chrome Web Store API returned NOT_UPDATEABLE because an existing item submission is still in review; exact-main package and packaged journey are green
+    state_detail: IN_PROGRESS / CHROME_RUNTIME_FIX_PENDING
+    blocker: 0.6.7 local update attempt exposed a missing marketplaceItemId import in app.js; 0.6.8 fix awaits protected-main package/E2E and Web Store review unlock
     delivered_chrome_version: 0.6.7
+    runtime_fix: import marketplaceItemId before validating userscript install contracts
     live_catalog_fix_parent_sha: f2073f6a72158c057145240a7391abbe0581f38a
     live_catalog_fix_state: MAIN_PACKAGE_GREEN
 completed_stage_evidence:
