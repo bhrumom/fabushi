@@ -60,16 +60,17 @@
 
 - Parent records/implementation branch: `codex/tfi-userscript-019-final-reply-stall-refresh-20260915`
 - Source implementation branch: `codex/final-reply-stall-refresh-2.9.32-20260915`
-- Source PR / source main SHA / Release: pending
-- Parent PR / canonical main SHA / Chrome version: pending
+- Source PR: [#25](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/25) — merged source main `50569be0ab88909408ed8880a24c185906d760eb`
+- Source Release: [v2.9.32](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.32), 234862 bytes, SHA-256 `30ec1f70e0c14a8ebbd530b2cf0186a2d63690bf85e45b8ec8d0e1a81090e9e7`
+- Parent PR: [#2652](https://github.com/bhrumom/fabushi/pull/2652) — bundled source, Chrome `0.6.10`, and Worker pin staged; canonical main SHA pending
 
 ## Status and evidence
 
-- Status: `IN_PROGRESS / GOVERNANCE_INTAKE`
+- Status: `IN_PROGRESS / SOURCE_RELEASED / PARENT_CI_PENDING`
 - Started: `2026-09-15`
 - Updated: `2026-09-15`
 - Completed: pending required source + parent delivery gates
-- Current blocker: none at intake; source and parent Actions/merge/release gates are required.
+- Current blocker: parent Actions, protected-main merge, exact-main Chrome packaged/E2E evidence, production Worker readback and parent Release are required.
 - Risks: overly broad button matching could create false final replies; reload during an ambiguous send could duplicate Work; tolerant JSON extraction could accept foreign text. Mitigate with task/turn association, Stop/streaming checks, bounded refresh/repair, strict identity/round validation and regression fixtures.
-- Next action: commit/push this intake record, implement source v2.9.32 in a separate clean source checkout, then run Actions and merge/release gates.
-
+- Implementation summary: source v2.9.32 now uses copy + like/dislike as final evidence, refreshes a bound unchanged conversation after 180 seconds with a two-refresh cap, and requeues only the review phase after bounded JSON recovery failure. Parent mirrors the exact source Release metadata and increments Chrome to 0.6.10.
+- Next action: run parent PR Actions, merge through protected main, run exact-main packaged simulated-user evidence, deploy/read back Marketplace, then publish the parent Release if all required gates pass.
