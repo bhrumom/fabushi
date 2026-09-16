@@ -153,6 +153,20 @@ active_work:
     parent_pr: 2652
     exact_main_runs: []
     blocker: parent CI, protected-main, exact-main Chrome packaged evidence and production Marketplace readback pending
+  - task: TFI-USERSCRIPT-RECOVERY-021
+    branch: codex/tfi-final-reply-share-20260916
+    source_branch: codex/final-reply-toolbar-2.9.35-20260916
+    source_pr: 28
+    source_main_sha: 42df09a39f4505418f13a4fab578c96ee03b9b37
+    source_version: 2.9.35
+    source_release: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.35
+    source_sha256: 4fc88a50a8bb5034d5ec41f262c333d83e83917b1e22f75b26bb04ae10f8602b
+    source_size: 235583
+    chrome_version: 0.6.11
+    state: IN_PROGRESS
+    parent_pr: 2680
+    exact_main_runs: []
+    blocker: PR #2680 checks, protected-main, exact-main Chrome packaged evidence, Release and production Marketplace readback pending; Web Store may remain NOT_UPDATEABLE
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001
