@@ -47,6 +47,7 @@ jobs:
             --source-sha "$SOURCE_SHA" \
             --report evidence/marketplace-audit.json
           python3 scripts/check-official-plugin-marketplace.py
+          python3 scripts/generate-official-plugin-marketplace.py --check
       - name: Summarize deterministic audit
         if: always()
         shell: bash
