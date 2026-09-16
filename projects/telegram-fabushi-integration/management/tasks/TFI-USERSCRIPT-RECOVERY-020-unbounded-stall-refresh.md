@@ -48,7 +48,8 @@
 - source commit：`205fc1266c779ea6addfd054ec3fd3df87ed3f4c`
 - source 文件：`chatgpt-auto-confirm.user.js`，v2.9.33，235095 bytes，SHA-256 `419a3eacdabe34b439cc71c2c934f5d7dea3a69a6ebaa50e76c7645da40f1986`
 - parent 分支：`codex/tfi-userscript-020-unbounded-stall-refresh-20260916`
-- parent 候选：Chrome `0.6.11`，内置 userscript v2.9.33；parent commit/PR 待创建。
+- parent code/records commit：`fd5e3bdbbb423d1a32a12766f577c74adce80f41`
+- parent 候选：Chrome `0.6.11`，内置 userscript v2.9.33；parent PR/CI/主线交付仍待完成。
 - source PR/Release：待执行；不能把本地 commit 当作 canonical source main 或公开 Release。
 
 ## 验证结果
