@@ -143,3 +143,9 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 - source PR [#25](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/25) 已合并到 source main `50569be0ab88909408ed8880a24c185906d760eb`，发布 [v2.9.32](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.32)；资产 234862 bytes，SHA-256 `30ec1f70e0c14a8ebbd530b2cf0186a2d63690bf85e45b8ec8d0e1a81090e9e7`。
 - source 已收敛最终回复按钮判定、180 秒有界刷新和 review JSON 严格优先/有限恢复；完整 source Actions 回归通过。
 - parent PR [#2652](https://github.com/bhrumom/fabushi/pull/2652) 已把 bundled userscript、Marketplace projection 固定到上述 source SHA，并将 Chrome 版本递增到 `0.6.10`；parent CI、protected main、exact-main packaged evidence、生产 catalog 回读和 parent Release 仍待完成。
+
+## 2026-09-16 — TFI-USERSCRIPT-RECOVERY-020 停滞会话无限次刷新
+
+- 用户明确要求移除停滞会话的两次刷新上限：绑定会话每连续 3 分钟无变化就刷新一次，之后仍无变化则每 3 分钟继续；截图仅作故障证据，未扩展为额外指令。
+- source 候选 v2.9.33 已完成：source commit `205fc1266c779ea6addfd054ec3fd3df87ed3f4c`，235095 bytes，SHA-256 `419a3eacdabe34b439cc71c2c934f5d7dea3a69a6ebaa50e76c7645da40f1986`；13 项专项回归和 126 项 source 轻量回归通过。
+- parent 候选已同步内置 userscript、Marketplace immutable metadata 和 Chrome `0.6.11` 版本门禁；source CI/Release、parent protected main、exact-main packaged evidence、线上 catalog readback 和 parent Release 尚未完成，因此任务保持 `IN_PROGRESS`。

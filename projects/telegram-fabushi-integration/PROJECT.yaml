@@ -153,6 +153,19 @@ active_work:
     parent_pr: 2652
     exact_main_runs: []
     blocker: parent CI, protected-main, exact-main Chrome packaged evidence and production Marketplace readback pending
+  - task: TFI-USERSCRIPT-RECOVERY-020
+    branch: codex/tfi-userscript-020-unbounded-stall-refresh-20260916
+    source_branch: codex/unbounded-stall-refresh-2.9.33-20260916
+    source_head_sha: 205fc1266c779ea6addfd054ec3fd3df87ed3f4c
+    source_version: 2.9.33
+    source_sha256: 419a3eacdabe34b439cc71c2c934f5d7dea3a69a6ebaa50e76c7645da40f1986
+    source_size: 235095
+    chrome_version: 0.6.11
+    state: IN_PROGRESS
+    source_pr: PENDING
+    parent_pr: PENDING
+    exact_main_runs: []
+    blocker: source CI/Release and parent protected-main, packaged E2E evidence, production catalog readback and Release pending
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001
