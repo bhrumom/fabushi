@@ -161,7 +161,7 @@ active_work:
     source_sha256: 419a3eacdabe34b439cc71c2c934f5d7dea3a69a6ebaa50e76c7645da40f1986
     source_size: 235095
     chrome_version: 0.6.11
-    parent_head_sha: fd5e3bdbbb423d1a32a12766f577c74adce80f41
+    parent_head_sha: 2bdb7267cf65551cfd11658147cca56de1cfd107
     state: IN_PROGRESS
     source_pr: PENDING
     parent_pr: PENDING
