@@ -1,6 +1,6 @@
 {
   "name": "@fabushi/native-mobile",
-  "version": "1.2.32",
+  "version": "1.2.33",
   "private": true,
   "description": "Native iOS (SwiftUI) and Android (Jetpack Compose) shells backed by the Mahayana Rust Host.",
   "scripts": {
