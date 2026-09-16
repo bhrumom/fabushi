@@ -149,5 +149,5 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 电脑插件对用户当前 Chrome 页面进行了只读核验：页面顶部的 `分享` 是全局按钮，assistant 回复下方实际暴露为 `复制回复`、`评价回复`、`切换模型`、`更多操作`。因此 source `v2.9.35` 同时支持回复级 `复制+分享` 与真实页面的 `复制+评价回复/Rate response`，而不会把顶部分享误判为任意回复完成。
 
 - source PR [#28](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/28) 已合并到 source main `42df09a39f4505418f13a4fab578c96ee03b9b37`；[Release v2.9.35](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.35) 资产 `235583` bytes，SHA-256 `4fc88a50a8bb5034d5ec41f262c333d83e83917b1e22f75b26bb04ae10f8602b`，source CI [35102539237](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/actions/runs/35102539237) 通过。
-- 本次 parent clean branch `codex/tfi-final-reply-share-20260916` 已同步 byte-identical bundled userscript、Worker immutable projection，并将 Chrome 版本推进至 `0.6.11`；仍需 parent PR、主线、exact-main packaged journey/evidence、Release 和生产目录回读。
+- parent PR [#2680](https://github.com/bhrumom/fabushi/pull/2680) 已从最新 canonical main 创建，包含 byte-identical bundled userscript、Worker immutable projection，并将 Chrome 版本推进至 `0.6.11`；仍需 PR/主线、exact-main packaged journey/evidence、Release 和生产目录回读。
 - `TFI-USERSCRIPT-RECOVERY-020` 的无限 180 秒停滞刷新语义随本次 parent 交付一并保留；旧冲突候选 PR 不作为正式发布依据。

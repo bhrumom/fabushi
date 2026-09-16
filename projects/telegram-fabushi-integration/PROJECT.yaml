@@ -164,9 +164,9 @@ active_work:
     source_size: 235583
     chrome_version: 0.6.11
     state: IN_PROGRESS
-    parent_pr: PENDING
+    parent_pr: 2680
     exact_main_runs: []
-    blocker: parent PR, protected-main, exact-main Chrome packaged evidence, Release and production Marketplace readback pending; Web Store may remain NOT_UPDATEABLE
+    blocker: PR #2680 checks, protected-main, exact-main Chrome packaged evidence, Release and production Marketplace readback pending; Web Store may remain NOT_UPDATEABLE
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001

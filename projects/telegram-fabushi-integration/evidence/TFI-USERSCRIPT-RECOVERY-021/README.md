@@ -25,9 +25,8 @@ This index tracks the exact source and parent delivery lineage for the real Chat
 - Bundled userscript: byte-identical to source Release asset above.
 - Worker projection: source commit/release URL/size/SHA-256 updated to the same Release.
 - Candidate Chrome version: `0.6.11`.
-- Parent PR, canonical-main SHA, exact-main package/journey, evidence artifact, parent Release and production catalog readback: pending.
+- Parent PR [#2680](https://github.com/bhrumom/fabushi/pull/2680), head `feaff40e5327617bd49dbf360611b40c8a72f9e8`: open; canonical-main SHA, exact-main package/journey, evidence artifact, parent Release and production catalog readback remain pending.
 
 ## Evidence contract
 
 Required for application-affecting parent delivery: exact canonical-main SHA, workflow/job IDs, package/content manifest/checksums, step-labelled screenshots, complete journey video, trace, HTML/test report and native logs; upload must occur on passing and failing paths with the maximum permitted retention. No local build or packaged E2E is claimed.
-

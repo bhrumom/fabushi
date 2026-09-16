@@ -52,15 +52,14 @@ Decision: adapt the proven retry/semantic-query ideas, reject a new dependency b
 - Computer Use inspection: current Chrome AX tree observed top-level `分享` versus response-level `复制回复`/`评价回复`/`切换模型`/`更多操作`.
 - Source CI: PR [#28](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/28), run [35102539237](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/actions/runs/35102539237), full regression and syntax passed.
 - Source main/Release: merged source main `42df09a39f4505418f13a4fab578c96ee03b9b37`; [v2.9.35](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.35); asset `235583` bytes, SHA-256 `4fc88a50a8bb5034d5ec41f262c333d83e83917b1e22f75b26bb04ae10f8602b`.
-- Parent: branch `codex/tfi-final-reply-share-20260916`; bundled source and Marketplace pin are implemented locally; parent PR, protected main, package/E2E, Release and production readback are pending at task creation.
+- Parent: branch `codex/tfi-final-reply-share-20260916`, commit `feaff40e5327617bd49dbf360611b40c8a72f9e8`; parent PR [#2680](https://github.com/bhrumom/fabushi/pull/2680) is open from the latest canonical main; protected main, package/E2E, Release and production readback remain pending.
 
 ## Status and next action
 
-- Status: `IN_PROGRESS / PARENT_PR_PENDING`.
+- Status: `IN_PROGRESS / PARENT_CI_PENDING`.
 - Branch: `codex/tfi-final-reply-share-20260916`.
-- Next action: run parent lightweight contract checks, commit project records, create the clean parent PR, then drive required Actions → protected main → exact-main package/journey/evidence → Release → production catalog readback.
+- Next action: monitor PR #2680 checks, then drive protected main → exact-main package/journey/evidence → Release → production catalog readback.
 - Blocker: Chrome Web Store may remain `NOT_UPDATEABLE` while the existing submission is under review; this is independent of GitHub source/parent Release.
 - Started: `2026-09-16T21:12:00+08:00`
-- Updated: `2026-09-16T21:38:00+08:00`
+- Updated: `2026-09-16T21:48:00+08:00`
 - Completed: pending required delivery gates
-

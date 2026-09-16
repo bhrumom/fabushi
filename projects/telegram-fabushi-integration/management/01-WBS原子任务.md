@@ -357,4 +357,4 @@
 |---|---|---|---|---|---|
 | TFI-USERSCRIPT-RECOVERY-019 | FAB-P0001 / TFI | 以复制+点赞/点踩按钮确认最终回复；连续 3 分钟无变化时受控刷新；对验收 JSON 做有界恢复并发布 source 新版本 | IN_PROGRESS / GOVERNANCE_INTAKE | 用户需求与截图边界已写入 source/task record；开源优先调查已记录；实现与 source/parent CI 待执行 | source v2.9.32、Release、parent bundled/Marketplace pin、exact-main Chrome packaged evidence 与线上回读 |
 
-| TFI-USERSCRIPT-RECOVERY-021 | FAB-P0001 / TFI | 按真实回复操作栏识别最终回复：复制+分享或复制+评价回复/Rate response；保留无限 180 秒停滞刷新并发布累积修复 | IN_PROGRESS / SOURCE_RELEASED / PARENT_PR_PENDING | source v2.9.35 / PR #28 / CI 35102539237 / asset SHA `4fc88a50…`; parent clean branch已同步，Chrome 0.6.11 | parent CI、protected main、exact-main package/journey/evidence、Release、production catalog readback；Web Store审核另行跟踪 |
+| TFI-USERSCRIPT-RECOVERY-021 | FAB-P0001 / TFI | 按真实回复操作栏识别最终回复：复制+分享或复制+评价回复/Rate response；保留无限 180 秒停滞刷新并发布累积修复 | IN_PROGRESS / SOURCE_RELEASED / PARENT_CI_PENDING | source v2.9.35 / PR #28 / CI 35102539237 / asset SHA `4fc88a50…`; parent PR #2680 head `feaff40e…`, Chrome 0.6.11 | PR checks、protected main、exact-main package/journey/evidence、Release、production catalog readback；Web Store审核另行跟踪 |
