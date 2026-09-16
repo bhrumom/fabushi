@@ -1,17 +1,67 @@
-name: Chrome Extension Web Store (disabled by FCM-024)
+name: Chrome Extension Package (zero-test)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'chatgpt-vps-control/chrome-platform/**'
+      - 'chatgpt-vps-control/scripts/package-chrome-extension.mjs'
+      - '.github/workflows/chrome-extension-web-store.yml'
+      - '.github/workflows/chrome-extension-web-store-publish.yml'
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
-  disabled:
+  package:
+    name: Package exact-source Fabushi Chrome without behavioral tests
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: chatgpt-vps-control
     steps:
-      - name: Record disabled automatic-test policy
+      - name: Checkout exact source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Build deterministic Chrome Web Store package
+        run: node scripts/package-chrome-extension.mjs
+
+      - name: Verify exact-source provenance and checksums
+        shell: bash
         run: |
-          echo 'Disabled by FCM-024.'
-          echo 'Automatic Chrome validation, Node test suites, Playwright journeys, and packaging are not permitted in the default CI path.'
-          echo 'Test/beta releases must not run behavioral tests. Formal behavioral validation is performed only through a manually started Action runner controlled by the Fabushi official MCP.'
+          set -euo pipefail
+          manifest_path="$(find dist/chrome-extension -maxdepth 1 -type f -name 'fabushi-chrome-*.content-manifest.json' -print -quit)"
+          test -n "$manifest_path"
+          test "$(jq -r '.sourceSha' "$manifest_path")" = "$GITHUB_SHA"
+          test "$(jq -r '.version' "$manifest_path")" = "0.6.11"
+          (cd dist/chrome-extension && sha256sum -c SHA256SUMS.txt)
+          {
+            echo '### Zero-test Chrome package'
+            echo "- source_sha: \`$GITHUB_SHA\`"
+            echo '- behavioral tests: `none`'
+            echo '- automatic E2E: `none`'
+            echo '- policy: FCM-024 artifact construction only'
+            echo '- checksums:'
+            sed 's/^/  - /' dist/chrome-extension/SHA256SUMS.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact-source Chrome package
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-chrome-web-store-${{ github.sha }}
+          path: |
+            chatgpt-vps-control/dist/chrome-extension/*.zip
+            chatgpt-vps-control/dist/chrome-extension/SHA256SUMS.txt
+            chatgpt-vps-control/dist/chrome-extension/*.content-manifest.json
+          if-no-files-found: error
+          retention-days: 90
