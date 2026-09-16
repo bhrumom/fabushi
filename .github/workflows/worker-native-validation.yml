@@ -1,0 +1,12 @@
+name: Retired automatic test - worker native validation
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Disabled by FCM-024. Device validation must be driven externally by the Fabushi official MCP.'

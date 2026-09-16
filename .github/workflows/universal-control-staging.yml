@@ -1,0 +1,12 @@
+name: Retired automatic test - universal control staging
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Disabled by FCM-024. Use interactive-runner-mcp.yml for manual exact-candidate validation.'
