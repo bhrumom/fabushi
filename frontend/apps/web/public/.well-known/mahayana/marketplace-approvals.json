@@ -33,8 +33,8 @@
     },
     {
       "id": "bot-father",
-      "version": "1.0.0",
-      "digest": "1dbc0a15e178d9b4a2de824656e1d62416b168356b70aa3929e8c004700a1b0c",
+      "version": "1.0.1",
+      "digest": "233cc6c040b2a59a6fa154f423f0bd4dfcfdf7667ccd930a3f18ff6a6c29243d",
       "decision": "approved",
       "policyVersion": 1
     },
