@@ -1,20 +1,7 @@
 name: Marketplace Security Review
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - '.agents/plugins/**'
-      - 'marketplace/**'
-      - 'third_party/mahayana/mahayana-rs/providers/official-miniapps/**'
-      - 'scripts/*marketplace*.py'
-      - '.semgrep/marketplace-security.yml'
-      - '.github/codeql/marketplace-security.yml'
-      - '.github/workflows/marketplace-security-review.yml'
-      - '.github/workflows/marketplace-auto-publish.yml'
-      - 'frontend/apps/web/public/.well-known/mahayana/marketplace*.json'
-  merge_group:
-    branches: [main]
+  workflow_call:
   push:
     branches: [main]
     paths:
@@ -51,10 +38,11 @@ jobs:
         with:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
-      - name: Audit every registered plugin
+      - name: Test and audit every registered plugin
         run: |
           set -euo pipefail
           mkdir -p evidence
+          python3 scripts/test-marketplace-security.py
           python3 scripts/audit-official-plugin-marketplace.py \
             --source-sha "$SOURCE_SHA" \
             --report evidence/marketplace-audit.json
