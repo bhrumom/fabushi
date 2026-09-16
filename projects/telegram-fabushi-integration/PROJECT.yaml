@@ -105,7 +105,6 @@ active_work:
     exact_main_runs: [34880495486, 34881462209, 34881675501]
     chrome_artifact: 10362084424
     desktop_release: desktop-1.2.65-80ef6f15f42e
-    state: IN_PROGRESS
     blocker: current Chrome Tampermonkey update requires user confirmation; live two-task rotation evidence pending
   - task: TFI-USERSCRIPT-RECOVERY-017
     branch: codex/tfi-marketplace-live-discovery-017
@@ -164,9 +163,17 @@ active_work:
     source_size: 235583
     chrome_version: 0.6.11
     state: IN_PROGRESS
+    state_detail: IN_PROGRESS / FORMAL_MCP_BLOCKED
     parent_pr: 2680
-    exact_main_runs: []
-    blocker: PR #2680 checks, protected-main, exact-main Chrome packaged evidence, Release and production Marketplace readback pending; Web Store may remain NOT_UPDATEABLE
+    parent_main_sha: 343019ed0d10ab4ecd9bd37c3aa686d3cc59f2c2
+    package_repair_pr: 2681
+    package_main_sha: 195ddb0d96ca58fb262b6fe5a8b859056bc013c9
+    exact_main_runs: [35106817630]
+    chrome_package_job: 104830079326
+    chrome_package_artifact_id: 10450532008
+    chrome_package_artifact: fabushi-chrome-web-store-195ddb0d96ca58fb262b6fe5a8b859056bc013c9
+    chrome_package_sha256: 7eb41b77c0cd86953729990467adc30a7eef2c2a500e4018e32d68e1864104db
+    blocker: Fabushi official MCP account connection returns HTTP 400; formal/stable publication must remain blocked until exact-candidate App-owned runner acceptance succeeds through the official MCP
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001
