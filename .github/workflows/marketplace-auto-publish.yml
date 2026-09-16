@@ -15,10 +15,13 @@ permissions:
   actions: write
   contents: write
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
-  group: marketplace-auto-publish-${{ github.event.workflow_run.head_sha || inputs.pr_number || github.run_id }}
+  # Source-head CI and generated-head CI use the same PR branch. Serialize by
+  # branch rather than SHA so the generated-head workflow_run cannot race the
+  # publisher instance that dispatched that CI run.
+  group: marketplace-auto-publish-${{ github.event.workflow_run.head_branch || inputs.pr_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -26,9 +29,11 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'pull_request')
+       github.event.workflow_run.event == 'pull_request') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -202,44 +207,117 @@ jobs:
           git push origin "HEAD:$HEAD_REF"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Add Marketplace automerge authorization label
+      - name: Resolve final PR head after staging
         if: steps.resolve.outputs.should_stage == 'true'
+        id: final
         uses: actions/github-script@v9
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          EXPECTED_HEAD_REF: ${{ steps.resolve.outputs.head_ref }}
+          PUSHED_SHA: ${{ steps.push.outputs.sha }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = Number(process.env.PR_NUMBER);
+            const expectedRef = process.env.EXPECTED_HEAD_REF;
+            const pushedSha = process.env.PUSHED_SHA || '';
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number })).data;
+
+            if (pr.state !== 'open' || pr.base.ref !== 'main') {
+              core.setFailed(`PR #${pull_number} moved out of the open main-targeting state during staging.`);
+              return;
+            }
+            if (pr.head.repo.full_name !== `${owner}/${repo}` || pr.head.ref !== expectedRef) {
+              core.setFailed(`PR #${pull_number} head repository/ref changed during staging.`);
+              return;
+            }
+            if (pushedSha && pr.head.sha !== pushedSha) {
+              core.setFailed(`PR #${pull_number} moved after generated write-back (${pushedSha} -> ${pr.head.sha}).`);
+              return;
+            }
+
+            core.setOutput('sha', pr.head.sha);
+            core.setOutput('head_ref', pr.head.ref);
+
+      - name: Ensure protected CI succeeds for final head
+        if: steps.resolve.outputs.should_stage == 'true'
+        id: ci
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          HEAD_REF: ${{ steps.final.outputs.head_ref }}
+          FINAL_SHA: ${{ steps.final.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          successful_run="$(
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow ci.yml \
+              --branch "$HEAD_REF" \
+              --limit 100 \
+              --json databaseId,headSha,status,conclusion \
+              --jq "[.[] | select(.headSha == \"$FINAL_SHA\" and .status == \"completed\" and .conclusion == \"success\")][0].databaseId // empty"
+          )"
+
+          if test -n "$successful_run"; then
+            echo "Reusing successful CI run $successful_run for exact final head $FINAL_SHA"
+            echo "run_id=$successful_run" >> "$GITHUB_OUTPUT"
+            echo 'reused=true' >> "$GITHUB_OUTPUT"
+          else
+            before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
+            run_id=''
+            for _ in $(seq 1 60); do
+              run_id="$(
+                gh run list \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --workflow ci.yml \
+                  --branch "$HEAD_REF" \
+                  --event workflow_dispatch \
+                  --limit 30 \
+                  --json databaseId,headSha,createdAt \
+                  --jq "[.[] | select(.headSha == \"$FINAL_SHA\" and .createdAt >= \"$before\")][0].databaseId // empty"
+              )"
+              test -n "$run_id" && break
+              sleep 2
+            done
+            test -n "$run_id" || { echo 'Unable to resolve final-head CI run' >&2; exit 1; }
+            echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+            echo 'reused=false' >> "$GITHUB_OUTPUT"
+            gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+          fi
+
+          current_sha="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)"
+          test "$current_sha" = "$FINAL_SHA" || {
+            echo "PR #$PR_NUMBER moved while final-head CI was being verified: $FINAL_SHA -> $current_sha" >&2
+            exit 1
+          }
+
+      - name: Add Marketplace automerge authorization label
+        if: steps.resolve.outputs.should_stage == 'true' && steps.ci.outcome == 'success'
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          FINAL_SHA: ${{ steps.final.outputs.sha }}
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const issue_number = Number(process.env.PR_NUMBER);
+            const expectedSha = process.env.FINAL_SHA;
             const pr = (await github.rest.pulls.get({ owner, repo, pull_number: issue_number })).data;
+            if (pr.state !== 'open' || pr.head.sha !== expectedSha) {
+              core.setFailed(`PR #${issue_number} changed after final-head CI; refusing automerge authorization.`);
+              return;
+            }
             if (!pr.labels.some((label) => label.name === 'automerge')) {
               await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['automerge'] });
             }
 
-      - name: Dispatch protected CI for generated head
-        if: steps.resolve.outputs.should_stage == 'true' && steps.generate.outputs.changed == 'true'
-        id: ci
-        shell: bash
-        env:
-          HEAD_REF: ${{ steps.resolve.outputs.head_ref }}
-          GENERATED_SHA: ${{ steps.push.outputs.sha }}
-        run: |
-          set -euo pipefail
-          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
-          run_id=''
-          for _ in $(seq 1 45); do
-            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch "$HEAD_REF" --event workflow_dispatch --limit 20 --json databaseId,headSha,createdAt --jq "[.[] | select(.headSha == \"$GENERATED_SHA\" and .createdAt >= \"$before\")][0].databaseId // empty")"
-            test -n "$run_id" && break
-            sleep 2
-          done
-          test -n "$run_id" || { echo 'Unable to resolve generated-head CI run' >&2; exit 1; }
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
-
       - name: Invoke the existing protected merge controller
-        if: steps.resolve.outputs.should_stage == 'true' && (steps.generate.outputs.changed != 'true' || steps.ci.outcome == 'success')
+        if: steps.resolve.outputs.should_stage == 'true' && steps.ci.outcome == 'success'
         id: automerge
         shell: bash
         env:
@@ -258,6 +336,54 @@ jobs:
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
           gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
 
+      - name: Confirm protected merge handoff
+        if: steps.resolve.outputs.should_stage == 'true' && steps.automerge.outcome == 'success'
+        id: queue
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          FINAL_SHA: ${{ steps.final.outputs.sha }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const number = Number(process.env.PR_NUMBER);
+            const expectedSha = process.env.FINAL_SHA;
+            const state = await github.graphql(
+              `query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    state
+                    merged
+                    headRefOid
+                    mergeQueueEntry { position }
+                  }
+                }
+              }`,
+              { owner, repo, number },
+            );
+            const pr = state.repository.pullRequest;
+            if (!pr) {
+              core.setFailed(`Unable to resolve PR #${number} after protected merge-controller run.`);
+              return;
+            }
+            if (pr.headRefOid !== expectedSha) {
+              core.setFailed(`PR #${number} moved after protected merge authorization (${expectedSha} -> ${pr.headRefOid}).`);
+              return;
+            }
+            if (pr.merged) {
+              core.setOutput('merged', 'true');
+              core.info(`PR #${number} merged before queue handoff verification completed.`);
+              return;
+            }
+            if (!pr.mergeQueueEntry) {
+              core.setFailed(`PR #${number} is neither merged nor present in the protected merge queue after automerge controller success.`);
+              return;
+            }
+            core.setOutput('merged', 'false');
+            core.setOutput('position', String(pr.mergeQueueEntry.position));
+            core.info(`PR #${number} is in the protected merge queue at position ${pr.mergeQueueEntry.position}.`);
+
       - name: Summarize publication
         if: always()
         shell: bash
@@ -266,8 +392,12 @@ jobs:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           GENERATED: ${{ steps.generate.outputs.changed }}
           BLOCKED_TOOLING: ${{ steps.resolve.outputs.blocked_by_tooling_change }}
+          FINAL_SHA: ${{ steps.final.outputs.sha }}
           CI_RUN: ${{ steps.ci.outputs.run_id }}
+          CI_REUSED: ${{ steps.ci.outputs.reused }}
           AUTOMERGE_RUN: ${{ steps.automerge.outputs.run_id }}
+          QUEUE_POSITION: ${{ steps.queue.outputs.position }}
+          MERGED: ${{ steps.queue.outputs.merged }}
         run: |
           {
             echo '## Marketplace Auto Publish'
@@ -275,12 +405,14 @@ jobs:
             echo "- eligible plugin PR: ${SHOULD_STAGE:-false}"
             echo "- generated listing commit required: ${GENERATED:-false}"
             echo "- privileged staging blocked by security-tooling change: ${BLOCKED_TOOLING:-false}"
-            echo "- generated-head CI run: ${CI_RUN:-not-needed}"
+            echo "- final PR head: ${FINAL_SHA:-n/a}"
+            echo "- final-head CI run: ${CI_RUN:-not-run}"
+            echo "- final-head CI reused: ${CI_REUSED:-false}"
             echo "- protected merge-controller run: ${AUTOMERGE_RUN:-not-run}"
-            if test "${GENERATED:-false}" = true; then
-              echo '- generated catalog/approval ledger were committed into the same source PR, revalidated by CI, then handed to the existing protected merge controller.'
-            elif test "${SHOULD_STAGE:-false}" = true; then
-              echo '- catalog/approval ledger already matched the reviewed source; the existing protected merge controller was invoked explicitly.'
+            echo "- merge queue position: ${QUEUE_POSITION:-n/a}"
+            echo "- already merged when verified: ${MERGED:-false}"
+            if test "${SHOULD_STAGE:-false}" = true; then
+              echo '- generated/current final head was bound to successful CI before automerge authorization and protected merge handoff.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
