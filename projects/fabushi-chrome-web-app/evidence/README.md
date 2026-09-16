@@ -24,3 +24,9 @@ guard and unsafe URL/blocked-task rejection cases. Exact canonical-main package,
 post-main packaged delivery and GitHub Release passed. The Chrome Web Store draft was submitted
 through the developer dashboard and is currently pending external review; the task-specific live
 Chrome crash/recovery journey and public Web Store listing/install evidence remain open.
+
+CWA-009 planned evidence is server-side and must never include plugin contents, secret matches,
+tokens or raw scanner output. Record the self-hosted service revision SHA, server instance ID,
+claim/result timestamps, package SHA/size, four check statuses, immutable scanner image digests,
+Cosign bundle/public-key digest, Worker response and resulting D1 audit event. No E2E evidence is
+created in this round because the user explicitly cancelled script/plugin E2E.

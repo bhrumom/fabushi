@@ -14,6 +14,10 @@ command = "worker-build --release --no-panic-recovery"
 [vars]
 ACCESS_TOKEN_KEY_ID = "REPLACE_WITH_ACTIVE_RSA_KEY_ID"
 AUTH_PUBLIC_BASE_URL = "https://api.ombhrum.com"
+# Configure MARKETPLACE_SECURITY_TOKEN, MARKETPLACE_SECURITY_SERVER_ID,
+# MARKETPLACE_SECURITY_SOURCE_SHA and MARKETPLACE_SECURITY_SIGNER_PUBLIC_KEY_SHA256
+# as production Worker secrets; the corresponding token/private key stay on the
+# self-hosted security server.
 
 [[d1_databases]]
 binding = "ACCOUNT_DB"

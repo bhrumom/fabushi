@@ -105,6 +105,7 @@ struct MarketplacePluginRow {
     release_manifest_json: String,
     release_manifest_sha256: String,
     release_status: String,
+    security_scan_status: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -133,6 +134,34 @@ struct MarketplaceReleaseStatusRow {
     revocation_reason: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct MarketplaceSecurityQueueRow {
+    plugin_id: String,
+    version: String,
+    package_key: String,
+    package_sha256: String,
+    package_size: f64,
+    release_status: String,
+    security_scan_status: String,
+    security_scanned_at: Option<f64>,
+    security_next_scan_at: Option<f64>,
+    security_scan_run_id: String,
+    source_json: String,
+    release_manifest_json: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct MarketplaceSecurityReleaseRow {
+    package_sha256: String,
+    package_size: f64,
+    published_at: f64,
+    release_status: String,
+    security_scan_status: String,
+    security_next_scan_at: Option<f64>,
+    security_scan_started_at: Option<f64>,
+    security_scan_run_id: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct MarketplaceReleaseMetadataRow {
     plugin_id: String,
@@ -148,6 +177,10 @@ struct MarketplaceReleaseMetadataRow {
     release_status: String,
     revoked_at: Option<f64>,
     revocation_reason: Option<String>,
+    security_scan_status: String,
+    security_scanned_at: Option<f64>,
+    security_next_scan_at: Option<f64>,
+    security_signature_json: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -554,6 +587,18 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         .post_async(
             "/v1/marketplace/plugins/:plugin_id/releases/:version/revoke",
             marketplace_release_revoke,
+        )
+        .get_async(
+            "/v1/marketplace/security/queue",
+            marketplace_security_queue,
+        )
+        .post_async(
+            "/v1/marketplace/security/claim",
+            marketplace_security_claim,
+        )
+        .post_async(
+            "/v1/marketplace/security/result",
+            marketplace_security_result,
         )
         .get_async("/v1/wallet/balance", wallet_balance)
         .get_async("/v1/wallet/history", wallet_history)

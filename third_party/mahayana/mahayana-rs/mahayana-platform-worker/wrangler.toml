@@ -17,6 +17,10 @@ DEFAULT_AI_TOKEN_LIMIT = "2000000"
 # this Worker; OAuth callbacks and browser handoff therefore already use the
 # final public origin before the custom-domain ownership is switched.
 AUTH_PUBLIC_BASE_URL = "https://api.ombhrum.com"
+# MARKETPLACE_SECURITY_TOKEN, MARKETPLACE_SECURITY_SERVER_ID,
+# MARKETPLACE_SECURITY_SOURCE_SHA and MARKETPLACE_SECURITY_SIGNER_PUBLIC_KEY_SHA256
+# are Worker secrets configured out-of-band. The scanner/signing service runs on
+# the dedicated Fabushi security host, not in GitHub Actions.
 
 [[d1_databases]]
 binding = "PLATFORM_DB"

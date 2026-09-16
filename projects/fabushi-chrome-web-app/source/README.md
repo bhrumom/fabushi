@@ -33,3 +33,8 @@ not a source-of-truth dependency for future builds.
 
 CWA-007 extends the current candidate to 0.6.0 with independent account login and
 official same-account browser-agent registration; see the dated intake and ADR-0002.
+
+`2026-09-16-marketplace-security-admission.md` records CWA-009: GitHub remains the
+source/package host while the self-hosted Fabushi security gate performs admission,
+signing, automatic promotion and continuous revocation. It also records the explicit
+no-script/plugin-E2E boundary for this round.

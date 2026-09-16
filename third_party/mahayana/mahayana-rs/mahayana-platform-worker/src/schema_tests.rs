@@ -71,6 +71,27 @@ fn marketplace_account_install_migration_is_account_scoped_and_manifest_projecte
 }
 
 #[test]
+fn marketplace_security_gate_migration_is_fail_closed_and_auditable() {
+    assert_eq!(
+        validate_marketplace_security_gate_schema(MARKETPLACE_SECURITY_GATE_SCHEMA_V24),
+        Ok(())
+    );
+    for required in [
+        "security_scan_status TEXT NOT NULL DEFAULT 'pending'",
+        "security_scan_json TEXT NOT NULL DEFAULT '{}'",
+        "security_scan_run_id TEXT NOT NULL DEFAULT ''",
+        "security_signature_json TEXT NOT NULL DEFAULT '{}'",
+        "CREATE INDEX IF NOT EXISTS plugin_releases_security_queue_idx",
+        "mode\":\"legacy-official-baseline",
+    ] {
+        assert!(
+            MARKETPLACE_SECURITY_GATE_SCHEMA_V24.contains(required),
+            "missing {required}"
+        );
+    }
+}
+
+#[test]
 fn marketplace_route_projection_declares_and_resolves_official_webmcp_status() {
     for required in [
         "remote-mcp",

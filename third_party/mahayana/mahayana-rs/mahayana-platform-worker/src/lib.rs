@@ -25,6 +25,8 @@ pub const MARKETPLACE_ACCOUNT_INSTALL_SCHEMA_V18: &str =
     include_str!("../migrations/0018_marketplace_account_installs.sql");
 pub const MARKETPLACE_ROUTE_PROJECTION_SCHEMA_V19: &str =
     include_str!("../migrations/0019_marketplace_route_projection.sql");
+pub const MARKETPLACE_SECURITY_GATE_SCHEMA_V24: &str =
+    include_str!("../migrations/0024_marketplace_security_gate.sql");
 pub const WORKSPACE_MESSAGING_SCHEMA_V7: &str =
     include_str!("../migrations/0007_workspace_messaging.sql");
 pub const FABUSHI_PAY_SCHEMA_V7: &str = include_str!("../migrations/0007_fabushi_pay.sql");
@@ -148,6 +150,29 @@ pub fn validate_marketplace_account_install_schema(schema: &str) -> Result<(), S
             "account_marketplace_installs",
         ],
     )
+}
+
+pub fn validate_marketplace_security_gate_schema(schema: &str) -> Result<(), SchemaError> {
+    for required in [
+        "security_scan_status TEXT NOT NULL",
+        "security_scan_json TEXT NOT NULL",
+        "security_scanned_at INTEGER",
+        "security_next_scan_at INTEGER",
+        "security_scan_started_at INTEGER",
+        "security_scan_run_id TEXT NOT NULL",
+        "security_signature_json TEXT NOT NULL",
+        "plugin_releases_security_queue_idx",
+    ] {
+        if !schema.contains(required) {
+            return Err(SchemaError::MissingTable(required));
+        }
+    }
+    if !schema.contains("mode\":\"legacy-official-baseline")
+        || !schema.contains("security_scan_status = 'passed'")
+    {
+        return Err(SchemaError::MissingTable("marketplace security baseline"));
+    }
+    Ok(())
 }
 
 pub fn validate_workspace_messaging_schema(schema: &str) -> Result<(), SchemaError> {

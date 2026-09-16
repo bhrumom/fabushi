@@ -11,3 +11,4 @@
 
 | CWA-007 | Official Chrome login and same-account MCP browser control plus GitHub Actions remote manual test | CWA-006/AAC/gateway/interactive Runner | CWA-R009..R012, CWA-R019..R021; exact-SHA CI/release/remote evidence | in-progress | Restore connector access, run remote Runner manual gate |
 | CWA-008 | Userscript tab-recovery capability and crash watchdog | CWA-006 + TFI-USERSCRIPT-RECOVERY-011 | CWA-R013..R018; exact-SHA package/E2E/release | in-progress / Web Store pending review | Await review; capture live crash-recovery evidence and public listing proof |
+| CWA-009 | Self-hosted marketplace security admission, signing and continuous revoke | CWA-005 + D1 migration + GitHub packages | CWA-R022..R027; non-E2E contract/security evidence and server deployment | in-progress / server configuration pending | Configure Worker token/public-key digest and deploy the dedicated gate |

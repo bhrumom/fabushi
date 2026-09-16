@@ -22,6 +22,268 @@ const CHATGPT_USERSCRIPT_SHA256: &str =
 const CHATGPT_USERSCRIPT_SIZE: i64 = 225_544;
 const CHATGPT_USERSCRIPT_PUBLISHED_AT: i64 = 1_789_449_292;
 
+const MARKETPLACE_SECURITY_TOKEN: &str = "MARKETPLACE_SECURITY_TOKEN";
+const MARKETPLACE_SECURITY_SERVER_ID: &str = "MARKETPLACE_SECURITY_SERVER_ID";
+const MARKETPLACE_SECURITY_SOURCE_SHA: &str = "MARKETPLACE_SECURITY_SOURCE_SHA";
+const MARKETPLACE_SECURITY_SIGNER_PUBLIC_KEY_SHA256: &str =
+    "MARKETPLACE_SECURITY_SIGNER_PUBLIC_KEY_SHA256";
+const MARKETPLACE_SECURITY_SERVICE_NAME: &str = "fabushi-marketplace-security-gate";
+const MARKETPLACE_SECURITY_SIGNER_KEY_ID: &str = "fabushi-marketplace-security-2026-09";
+const MARKETPLACE_SECURITY_SCAN_INTERVAL_SECONDS: i64 = 24 * 60 * 60;
+const MARKETPLACE_SECURITY_CLAIM_STALE_SECONDS: i64 = 30 * 60;
+const MARKETPLACE_SECURITY_REPORT_MAX_BYTES: usize = 128 * 1024;
+const MARKETPLACE_SECURITY_QUEUE_LIMIT: usize = 20;
+const MARKETPLACE_SECURITY_CHECKS: [&str; 4] =
+    ["malware", "dynamicSandbox", "secrets", "dependencies"];
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MarketplaceSecurityClaimRequest {
+    plugin_id: String,
+    version: String,
+    scan_run_id: String,
+}
+
+fn marketplace_security_token_matches(request: &Request, env: &Env) -> Result<Option<bool>> {
+    let expected = match env.secret(MARKETPLACE_SECURITY_TOKEN) {
+        Ok(secret) => secret.to_string(),
+        Err(_) => return Ok(None),
+    };
+    let authorization = request.headers().get("Authorization")?.unwrap_or_default();
+    let supplied = authorization
+        .strip_prefix("Bearer ")
+        .map(str::trim)
+        .unwrap_or_default();
+    Ok(Some(
+        !supplied.is_empty() && constant_time_eq(supplied.as_bytes(), expected.as_bytes()),
+    ))
+}
+
+fn valid_marketplace_security_run_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 160
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
+        })
+}
+
+fn marketplace_security_check_status<'a>(report: &'a Value, name: &str) -> Option<&'a str> {
+    report
+        .get("checks")
+        .and_then(Value::as_object)
+        .and_then(|checks| checks.get(name))
+        .and_then(Value::as_object)
+        .and_then(|check| check.get("status"))
+        .and_then(Value::as_str)
+}
+
+fn marketplace_security_checks_are_well_formed(report: &Value) -> bool {
+    MARKETPLACE_SECURITY_CHECKS.iter().all(|name| {
+        marketplace_security_check_status(report, name).is_some_and(|status| {
+            matches!(status, "passed" | "failed" | "error" | "blocked" | "skipped")
+        })
+    })
+}
+
+fn marketplace_security_checks_pass(report: &Value) -> bool {
+    MARKETPLACE_SECURITY_CHECKS.iter().all(|name| {
+        marketplace_security_check_status(report, name) == Some("passed")
+    })
+}
+
+fn bounded_report_string(value: Option<&Value>, max_len: usize) -> String {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.len() <= max_len && !value.chars().any(char::is_control))
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn sanitized_marketplace_security_checks(report: &Value) -> Value {
+    let mut checks = serde_json::Map::new();
+    for name in MARKETPLACE_SECURITY_CHECKS {
+        let check = report
+            .get("checks")
+            .and_then(Value::as_object)
+            .and_then(|values| values.get(name))
+            .and_then(Value::as_object);
+        checks.insert(
+            name.to_string(),
+            json!({
+                "status": check
+                    .and_then(|value| value.get("status"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("error"),
+                "tool": bounded_report_string(check.and_then(|value| value.get("tool")), 120),
+                "version": bounded_report_string(check.and_then(|value| value.get("version")), 80),
+            }),
+        );
+    }
+    Value::Object(checks)
+}
+
+fn marketplace_security_service_is_valid(report: &Value, env: &Env) -> bool {
+    let Some(service) = report.get("service").and_then(Value::as_object) else {
+        return false;
+    };
+    let Some(expected_server_id) = env
+        .secret(MARKETPLACE_SECURITY_SERVER_ID)
+        .ok()
+        .map(|value| value.to_string().trim().to_string())
+        .filter(|value| {
+            !value.is_empty()
+                && value.len() <= 128
+                && value.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
+                })
+        })
+    else {
+        return false;
+    };
+    let Some(expected_source_sha) = env
+        .secret(MARKETPLACE_SECURITY_SOURCE_SHA)
+        .ok()
+        .map(|value| value.to_string().trim().to_ascii_lowercase())
+        .filter(|value| is_git_object_id(value))
+    else {
+        return false;
+    };
+    service.get("serviceName").and_then(Value::as_str) == Some(MARKETPLACE_SECURITY_SERVICE_NAME)
+        && service.get("serverId").and_then(Value::as_str) == Some(expected_server_id.as_str())
+        && service
+            .get("serverId")
+            .and_then(Value::as_str)
+            .is_some_and(|value| {
+                !value.is_empty()
+                    && value.len() <= 128
+                    && value.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
+                })
+            })
+        && service.get("sourceSha").and_then(Value::as_str) == Some(expected_source_sha.as_str())
+        && service
+            .get("sourceSha")
+            .and_then(Value::as_str)
+            .is_some_and(is_git_object_id)
+        && service
+            .get("version")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty() && value.len() <= 80 && !value.chars().any(char::is_control))
+}
+
+fn marketplace_security_signature_is_valid(
+    report: &Value,
+    package_sha256: &str,
+    package_size: i64,
+    env: &Env,
+) -> bool {
+    let Some(signature) = report.get("signature").and_then(Value::as_object) else {
+        return false;
+    };
+    let Some(expected_public_key_sha256) = env
+        .secret(MARKETPLACE_SECURITY_SIGNER_PUBLIC_KEY_SHA256)
+        .ok()
+        .map(|value| value.to_string().trim().to_ascii_lowercase())
+        .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    else {
+        return false;
+    };
+    signature.get("type").and_then(Value::as_str) == Some("cosign-bundle")
+        && signature.get("signerKeyId").and_then(Value::as_str)
+            == Some(MARKETPLACE_SECURITY_SIGNER_KEY_ID)
+        && signature.get("verified").and_then(Value::as_bool) == Some(true)
+        && signature
+            .get("packageSha256")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.eq_ignore_ascii_case(package_sha256))
+        && signature.get("packageSize").and_then(Value::as_u64) == u64::try_from(package_size).ok()
+        && signature
+            .get("publicKeySha256")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.eq_ignore_ascii_case(&expected_public_key_sha256))
+        && signature.get("bundle").is_some_and(Value::is_object)
+}
+
+fn sanitized_marketplace_security_report(
+    report: &Value,
+    plugin_id: &str,
+    version: &str,
+    package_sha256: &str,
+    package_size: i64,
+) -> Value {
+    let service = report
+        .get("service")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let signature = report
+        .get("signature")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let mut sanitized_signature = json!({});
+    if let Some(object) = sanitized_signature.as_object_mut() {
+        if signature.get("type").and_then(Value::as_str) == Some("cosign-bundle") {
+            object.insert("type".into(), Value::String("cosign-bundle".into()));
+            object.insert(
+                "signerKeyId".into(),
+                Value::String(MARKETPLACE_SECURITY_SIGNER_KEY_ID.into()),
+            );
+            object.insert("packageSha256".into(), Value::String(package_sha256.into()));
+            object.insert("packageSize".into(), json!(package_size));
+            object.insert("verified".into(), json!(true));
+            if let Some(public_key_sha256) = signature
+                .get("publicKeySha256")
+                .and_then(Value::as_str)
+            {
+                object.insert(
+                    "publicKeySha256".into(),
+                    Value::String(public_key_sha256.to_ascii_lowercase()),
+                );
+            }
+            if let Some(bundle) = signature.get("bundle").filter(Value::is_object) {
+                object.insert("bundle".into(), bundle.clone());
+            }
+        }
+    }
+    json!({
+        "schemaVersion": 1,
+        "pluginId": plugin_id,
+        "version": version,
+        "packageSha256": package_sha256,
+        "packageSize": package_size,
+        "status": report.get("verdict").and_then(Value::as_str).unwrap_or("failed"),
+        "checks": sanitized_marketplace_security_checks(report),
+        "service": {
+            "serviceName": MARKETPLACE_SECURITY_SERVICE_NAME,
+            "serverId": bounded_report_string(service.get("serverId"), 128),
+            "sourceSha": bounded_report_string(service.get("sourceSha"), 40),
+            "version": bounded_report_string(service.get("version"), 80),
+        },
+        "signature": sanitized_signature,
+    })
+}
+
+fn marketplace_security_queue_item(row: MarketplaceSecurityQueueRow) -> Option<Value> {
+    let package_size = exact_nonnegative_i64(row.package_size)?;
+    (package_size > 0).then(|| {
+        json!({
+            "pluginId": row.plugin_id,
+            "version": row.version,
+            "artifactUrl": row.package_key,
+            "packageSha256": row.package_sha256,
+            "packageSize": package_size,
+            "releaseStatus": row.release_status,
+            "securityScanStatus": row.security_scan_status,
+            "securityScannedAt": row.security_scanned_at.and_then(exact_nonnegative_i64),
+            "securityNextScanAt": row.security_next_scan_at.and_then(exact_nonnegative_i64),
+            "source": serde_json::from_str::<Value>(&row.source_json).unwrap_or(Value::Null),
+            "releaseManifest": serde_json::from_str::<Value>(&row.release_manifest_json).unwrap_or(Value::Null),
+        })
+    })
+}
+
 fn chatgpt_userscript_projection() -> Value {
     let permissions = json!(["读取 ChatGPT 页面状态", "显示任务队列", "仅在匹配页面运行"]);
     let artifact = json!({
@@ -101,6 +363,10 @@ fn chatgpt_userscript_projection() -> Value {
         "install": install,
         "releaseManifestSha256": release_manifest_sha256,
         "releaseStatus": "approved",
+        "security": {
+            "scanStatus": "passed",
+            "mode": "legacy-official-baseline",
+        },
     })
 }
 
@@ -167,13 +433,44 @@ fn is_github_artifact_source(source: &Value) -> bool {
                 && source
                     .get("tag")
                     .and_then(Value::as_str)
-                    .is_some_and(|value| !value.trim().is_empty())
+                    .is_some_and(is_safe_github_release_component)
                 && source
                     .get("asset")
                     .and_then(Value::as_str)
-                    .is_some_and(|value| !value.trim().is_empty())
+                    .is_some_and(is_safe_github_release_component)
         }
         _ => false,
+    }
+}
+
+fn is_safe_github_release_component(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 255
+        && value != "."
+        && value != ".."
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'+')
+        })
+}
+
+fn github_artifact_download_url(source: &Value) -> Option<String> {
+    match source.get("type").and_then(Value::as_str) {
+        Some("https") => source
+            .get("url")
+            .and_then(Value::as_str)
+            .filter(|value| is_github_artifact_url(value))
+            .map(str::to_string),
+        Some("github-release") if is_github_artifact_source(source) => {
+            let repository = source.get("repository").and_then(Value::as_str)?;
+            let repository = normalized_github_repository(repository)?;
+            let repository = repository.strip_prefix("https://github.com/")?;
+            let tag = source.get("tag").and_then(Value::as_str)?;
+            let asset = source.get("asset").and_then(Value::as_str)?;
+            Some(format!(
+                "https://github.com/{repository}/releases/download/{tag}/{asset}"
+            ))
+        }
+        _ => None,
     }
 }
 
@@ -374,12 +671,14 @@ pub(super) async fn marketplace_plugins(
         "SELECT mp.plugin_id, mp.display_name, mp.description, mp.latest_version,
                 pr.package_sha256, pr.package_size, mp.platforms_json,
                 pr.deployment_url, pr.published_at, pr.source_json,
-                pr.release_manifest_json, pr.release_manifest_sha256, pr.release_status
+                pr.release_manifest_json, pr.release_manifest_sha256, pr.release_status,
+                pr.security_scan_status
          FROM marketplace_plugins mp
          JOIN plugin_releases pr
            ON pr.plugin_id = mp.plugin_id AND pr.version = mp.latest_version
          WHERE mp.visibility = 'public' AND mp.review_state = 'approved'
            AND pr.release_status = 'approved'
+           AND pr.security_scan_status IN ('passed', 'running')
            AND pr.deployment_url <> ''
            AND (mp.display_name LIKE ?1 OR mp.description LIKE ?1 OR mp.plugin_id LIKE ?1)
            AND mp.platforms_json LIKE ?2
@@ -445,6 +744,7 @@ pub(super) async fn marketplace_plugins(
                 "install": install,
                 "releaseManifestSha256": release_manifest_sha256,
                 "releaseStatus": row.release_status,
+                "securityScanStatus": row.security_scan_status,
             }))
         })
         .collect::<Vec<_>>();
@@ -502,7 +802,9 @@ pub(super) async fn marketplace_added(
          LEFT JOIN marketplace_plugin_projections mpp ON mpp.plugin_id = mp.plugin_id
          WHERE ami.account_user_id = ?1
            AND mp.visibility = 'public' AND mp.review_state = 'approved'
-           AND pr.release_status = 'approved' AND pr.deployment_url <> ''
+           AND pr.release_status = 'approved'
+           AND pr.security_scan_status IN ('passed', 'running')
+           AND pr.deployment_url <> ''
          ORDER BY ami.updated_at DESC, mp.plugin_id ASC",
         &account.user_id
     )?
@@ -564,7 +866,9 @@ pub(super) async fn marketplace_plugin_add(
          LEFT JOIN marketplace_plugin_projections mpp ON mpp.plugin_id = mp.plugin_id
          WHERE mp.plugin_id = ?1
            AND mp.visibility = 'public' AND mp.review_state = 'approved'
-           AND pr.release_status = 'approved' AND pr.deployment_url <> ''",
+           AND pr.release_status = 'approved'
+           AND pr.security_scan_status IN ('passed', 'running')
+           AND pr.deployment_url <> ''",
         &plugin_id
     )?
     .first::<MarketplaceInstalledPluginRow>(None)
@@ -636,7 +940,9 @@ pub(super) async fn marketplace_plugin_route(
          LEFT JOIN marketplace_plugin_projections mpp ON mpp.plugin_id = mp.plugin_id
          WHERE ami.account_user_id = ?1 AND mp.plugin_id = ?2
            AND mp.visibility = 'public' AND mp.review_state = 'approved'
-           AND pr.release_status = 'approved' AND pr.deployment_url <> ''",
+           AND pr.release_status = 'approved'
+           AND pr.security_scan_status IN ('passed', 'running')
+           AND pr.deployment_url <> ''",
         &account.user_id,
         &plugin_id
     )?
@@ -810,10 +1116,10 @@ pub(super) async fn marketplace_release_publish(
     if let Err(message) = validate_github_source_identity(&source) {
         return error_response(400, "invalid_marketplace_source", &message);
     }
-    let release_manifest = serde_json::from_str::<Value>(&field("releaseManifest")?)
+    let submitted_release_manifest = serde_json::from_str::<Value>(&field("releaseManifest")?)
         .map_err(|_| worker::Error::RustError("invalid marketplace release manifest".into()))?;
     if let Err(message) = validate_multi_artifact_release_manifest(
-        &release_manifest,
+        &submitted_release_manifest,
         &plugin_id,
         &version,
         &expected_sha256,
@@ -823,6 +1129,21 @@ pub(super) async fn marketplace_release_publish(
     ) {
         return error_response(400, "invalid_marketplace_release_manifest", &message);
     }
+    let submitted_release_manifest_sha256 = canonical_json_sha256(&submitted_release_manifest)
+        .map_err(|error| worker::Error::RustError(error.to_string()))?;
+    let (release_manifest, install) = enrich_github_release(
+        &plugin_id,
+        &version,
+        &source,
+        submitted_release_manifest.clone(),
+    );
+    let Some(install) = install else {
+        return error_response(
+            400,
+            "invalid_marketplace_release_manifest",
+            "Every marketplace package artifact must point to a GitHub-hosted immutable asset.",
+        );
+    };
     let source_json = serde_json::to_string(&source)
         .map_err(|error| worker::Error::RustError(error.to_string()))?;
     let release_manifest_bytes = canonical_json_bytes(&release_manifest)
@@ -864,8 +1185,8 @@ pub(super) async fn marketplace_release_publish(
         &actual_sha256,
         expected_size,
         &source,
-        &release_manifest,
-        &release_manifest_sha256,
+        &submitted_release_manifest,
+        &submitted_release_manifest_sha256,
     )
     .await
     {
@@ -881,18 +1202,23 @@ pub(super) async fn marketplace_release_publish(
             "The package served by the Cloudflare plugin site differs from the uploaded release package.",
         );
     }
-    let package_key = marketplace_asset_url(&deployment_url, "/mahayana/plugin.tar.gz")?;
+    let package_key = release_manifest
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .and_then(|artifacts| artifacts.first())
+        .and_then(|artifact| artifact.get("source"))
+        .and_then(github_artifact_download_url)
+        .ok_or_else(|| {
+            worker::Error::RustError(
+                "marketplace release is missing a GitHub-hosted primary artifact".into(),
+            )
+        })?;
 
     let now = now_seconds();
     let package_size = i64::try_from(expected_size)
         .map_err(|_| worker::Error::RustError("packageSize exceeds D1 integer range".into()))?;
     let platforms_json = serde_json::to_string(&platforms)
         .map_err(|error| worker::Error::RustError(error.to_string()))?;
-    let release_status = if account.is_test_account {
-        "approved"
-    } else {
-        "pending"
-    };
     database
         .batch(vec![
             worker::query!(
@@ -900,29 +1226,15 @@ pub(super) async fn marketplace_release_publish(
                 "INSERT INTO marketplace_plugins
                  (plugin_id, display_name, description, publisher_user_id, latest_version,
                   visibility, review_state, created_at, updated_at, platforms_json)
-                 VALUES (?1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)
+                 VALUES (?1, ?1, ?2, ?3, NULL, 'unlisted', 'pending', ?4, ?4, ?5)
                  ON CONFLICT(plugin_id) DO UPDATE SET
                    display_name = excluded.display_name,
                    description = excluded.description,
-                   latest_version = excluded.latest_version,
-                   visibility = excluded.visibility,
-                   review_state = excluded.review_state,
                    updated_at = excluded.updated_at,
                    platforms_json = excluded.platforms_json",
                 &plugin_id,
                 &format!("Published from {deployment_url}"),
                 &account.user_id,
-                &version,
-                if account.is_test_account {
-                    "public"
-                } else {
-                    "unlisted"
-                },
-                if account.is_test_account {
-                    "approved"
-                } else {
-                    "pending"
-                },
                 now,
                 &platforms_json
             )?,
@@ -931,8 +1243,11 @@ pub(super) async fn marketplace_release_publish(
                 "INSERT INTO plugin_releases
                  (plugin_id, version, package_key, package_sha256, package_size,
                   tuf_target_path, published_at, deployment_url, source_json,
-                  release_manifest_json, release_manifest_sha256, release_status)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                  release_manifest_json, release_manifest_sha256, release_status,
+                  security_scan_status, security_scan_json, security_scan_started_at,
+                  security_scan_run_id, security_signature_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'pending',
+                         'pending', '{}', NULL, '', '{}')",
                 &plugin_id,
                 &version,
                 &package_key,
@@ -943,15 +1258,15 @@ pub(super) async fn marketplace_release_publish(
                 &deployment_url,
                 &source_json,
                 &release_manifest_json,
-                &release_manifest_sha256,
-                release_status
+                &release_manifest_sha256
             )?,
         ])
         .await?;
 
     Response::from_json(&json!({
-        "published": true,
-        "approved": account.is_test_account,
+        "submitted": true,
+        "published": false,
+        "approved": false,
         "pluginId": plugin_id,
         "version": version,
         "deploymentUrl": deployment_url,
@@ -960,8 +1275,10 @@ pub(super) async fn marketplace_release_publish(
         "platforms": platforms,
         "source": source,
         "releaseManifest": release_manifest,
+        "install": install,
         "releaseManifestSha256": release_manifest_sha256,
-        "releaseStatus": release_status,
+        "releaseStatus": "pending",
+        "securityScanStatus": "pending",
     }))
 }
 
@@ -1189,22 +1506,6 @@ pub(super) async fn marketplace_external_release_publish(
     let platforms_json = serde_json::to_string(&platforms)
         .map_err(|error| worker::Error::RustError(error.to_string()))?;
     let now = now_seconds();
-    let release_status = if account.is_test_account {
-        "approved"
-    } else {
-        "pending"
-    };
-    let visibility = if account.is_test_account {
-        "public"
-    } else {
-        "unlisted"
-    };
-    let review_state = if account.is_test_account {
-        "approved"
-    } else {
-        "pending"
-    };
-
     database
         .batch(vec![
             worker::query!(
@@ -1212,22 +1513,16 @@ pub(super) async fn marketplace_external_release_publish(
                 "INSERT INTO marketplace_plugins
                  (plugin_id, display_name, description, publisher_user_id, latest_version,
                   visibility, review_state, created_at, updated_at, platforms_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9)
+                 VALUES (?1, ?2, ?3, ?4, NULL, 'unlisted', 'pending', ?5, ?5, ?6)
                  ON CONFLICT(plugin_id) DO UPDATE SET
                    display_name = excluded.display_name,
                    description = excluded.description,
-                   latest_version = excluded.latest_version,
-                   visibility = excluded.visibility,
-                   review_state = excluded.review_state,
                    updated_at = excluded.updated_at,
                    platforms_json = excluded.platforms_json",
                 &plugin_id,
                 &display_name,
                 &description,
                 &account.user_id,
-                &version,
-                visibility,
-                review_state,
                 now,
                 &platforms_json
             )?,
@@ -1236,8 +1531,11 @@ pub(super) async fn marketplace_external_release_publish(
                 "INSERT INTO plugin_releases
                  (plugin_id, version, package_key, package_sha256, package_size,
                   tuf_target_path, published_at, deployment_url, source_json,
-                  release_manifest_json, release_manifest_sha256, release_status)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                  release_manifest_json, release_manifest_sha256, release_status,
+                  security_scan_status, security_scan_json, security_scan_started_at,
+                  security_scan_run_id, security_signature_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'pending',
+                         'pending', '{}', NULL, '', '{}')",
                 &plugin_id,
                 &version,
                 &primary_url,
@@ -1248,15 +1546,15 @@ pub(super) async fn marketplace_external_release_publish(
                 &primary_url,
                 &source_json,
                 &release_manifest_json,
-                &release_manifest_sha256,
-                release_status
+                &release_manifest_sha256
             )?,
         ])
         .await?;
 
     Response::from_json(&json!({
-        "published": true,
-        "approved": account.is_test_account,
+        "submitted": true,
+        "published": false,
+        "approved": false,
         "storage": "external",
         "pluginId": plugin_id,
         "version": version,
@@ -1266,7 +1564,672 @@ pub(super) async fn marketplace_external_release_publish(
         "install": install,
         "releaseManifestSha256": release_manifest_sha256,
         "resolvedArtifacts": resolved_artifacts,
+        "releaseStatus": "pending",
+        "securityScanStatus": "pending",
+    }))
+}
+
+pub(super) async fn marketplace_security_queue(
+    request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
+    match marketplace_security_token_matches(&request, &context.env)? {
+        None => {
+            return error_response(
+                503,
+                "marketplace_security_not_configured",
+                "Marketplace security automation is not configured.",
+            );
+        }
+        Some(false) => {
+            return error_response(
+                401,
+                "marketplace_security_automation_unauthorized",
+                "The marketplace security automation token is invalid.",
+            );
+        }
+        Some(true) => {}
+    }
+
+    let mut limit = MARKETPLACE_SECURITY_QUEUE_LIMIT;
+    for (key, value) in request.url()?.query_pairs() {
+        if key == "limit" {
+            limit = match value.parse::<usize>() {
+                Ok(value) if value > 0 => value.min(MARKETPLACE_SECURITY_QUEUE_LIMIT),
+                _ => {
+                    return error_response(
+                        400,
+                        "invalid_marketplace_security_queue_limit",
+                        "limit must be a positive integer.",
+                    );
+                }
+            };
+        }
+    }
+
+    let now = now_seconds();
+    let database = context.env.d1(DATABASE_BINDING)?;
+    let rows = worker::query!(
+        &database,
+        "SELECT pr.plugin_id, pr.version, pr.package_key, pr.package_sha256,
+                pr.package_size, pr.release_status, pr.security_scan_status,
+                pr.security_scanned_at, pr.security_next_scan_at,
+                pr.security_scan_run_id, pr.source_json, pr.release_manifest_json
+         FROM plugin_releases pr
+         JOIN marketplace_plugins mp ON mp.plugin_id = pr.plugin_id
+         WHERE (
+             (pr.release_status IN ('pending', 'staged')
+              AND pr.security_scan_status IN ('pending', 'failed'))
+             OR (pr.release_status = 'approved'
+                 AND pr.security_scan_status IN ('passed', 'running')
+                 AND (pr.security_next_scan_at IS NULL OR pr.security_next_scan_at <= ?1))
+             OR (pr.security_scan_status = 'running'
+                 AND (pr.security_scan_started_at IS NULL
+                      OR pr.security_scan_started_at <= ?1 - 1800))
+         )
+         AND (pr.security_scan_status <> 'running'
+              OR pr.security_scan_started_at IS NULL
+              OR pr.security_scan_started_at <= ?1 - 1800)
+         ORDER BY pr.published_at ASC
+         LIMIT 100",
+        now
+    )?
+    .all()
+    .await?
+    .results::<MarketplaceSecurityQueueRow>()?;
+    let Some(releases) = rows
+        .into_iter()
+        .take(limit)
+        .map(marketplace_security_queue_item)
+        .collect::<Option<Vec<_>>>()
+    else {
+        return error_response(
+            503,
+            "marketplace_security_queue_invalid",
+            "A queued marketplace release has invalid package metadata.",
+        );
+    };
+    Response::from_json(&json!({
+        "schemaVersion": 1,
+        "generatedAt": now,
+        "releases": releases,
+    }))
+}
+
+pub(super) async fn marketplace_security_claim(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
+    match marketplace_security_token_matches(&request, &context.env)? {
+        None => {
+            return error_response(
+                503,
+                "marketplace_security_not_configured",
+                "Marketplace security automation is not configured.",
+            );
+        }
+        Some(false) => {
+            return error_response(
+                401,
+                "marketplace_security_automation_unauthorized",
+                "The marketplace security automation token is invalid.",
+            );
+        }
+        Some(true) => {}
+    }
+
+    let input: MarketplaceSecurityClaimRequest = match request.json().await {
+        Ok(input) => input,
+        Err(_) => {
+            return error_response(
+                400,
+                "invalid_marketplace_security_claim",
+                "The marketplace security claim must be valid JSON.",
+            );
+        }
+    };
+    if !is_identifier(&input.plugin_id)
+        || !is_version_identifier(&input.version)
+        || !valid_marketplace_security_run_id(&input.scan_run_id)
+    {
+        return error_response(
+            400,
+            "invalid_marketplace_security_claim",
+            "pluginId, version, and scanRunId are invalid.",
+        );
+    }
+
+    let now = now_seconds();
+    let database = context.env.d1(DATABASE_BINDING)?;
+    let release = worker::query!(
+        &database,
+        "SELECT package_sha256, package_size, published_at, release_status,
+                security_scan_status, security_next_scan_at,
+                security_scan_started_at, security_scan_run_id
+         FROM plugin_releases
+         WHERE plugin_id = ?1 AND version = ?2",
+        &input.plugin_id,
+        &input.version
+    )?
+    .first::<MarketplaceSecurityReleaseRow>(None)
+    .await?;
+    let Some(release) = release else {
+        return error_response(
+            404,
+            "marketplace_security_release_not_found",
+            "The marketplace release does not exist.",
+        );
+    };
+
+    let started_at = release
+        .security_scan_started_at
+        .and_then(exact_nonnegative_i64);
+    let stale_running = release.security_scan_status == "running"
+        && started_at.is_none_or(|started_at| started_at <= now - MARKETPLACE_SECURITY_CLAIM_STALE_SECONDS);
+    if release.security_scan_status == "running"
+        && release.security_scan_run_id == input.scan_run_id
+    {
+        return Response::from_json(&json!({
+            "claimed": true,
+            "pluginId": input.plugin_id,
+            "version": input.version,
+            "scanRunId": input.scan_run_id,
+            "securityScanStatus": "running",
+            "idempotent": true,
+        }));
+    }
+    let due_rescan = release.release_status == "approved"
+        && release.security_scan_status == "passed"
+        && release
+            .security_next_scan_at
+            .and_then(exact_nonnegative_i64)
+            .is_none_or(|next_scan_at| next_scan_at <= now);
+    let pending_admission = matches!(release.release_status.as_str(), "pending" | "staged")
+        && matches!(release.security_scan_status.as_str(), "pending" | "failed");
+    if !(pending_admission || due_rescan || stale_running) {
+        return error_response(
+            409,
+            "marketplace_security_release_busy",
+            "The marketplace release is not currently eligible for a security scan claim.",
+        );
+    }
+
+    let claim_result = worker::query!(
+        &database,
+        "UPDATE plugin_releases
+         SET security_scan_status = 'running',
+             security_scan_started_at = ?1,
+             security_scan_run_id = ?2
+         WHERE plugin_id = ?3 AND version = ?4
+           AND (
+               (release_status IN ('pending', 'staged')
+                AND security_scan_status IN ('pending', 'failed'))
+               OR (release_status = 'approved'
+                   AND security_scan_status = 'passed'
+                   AND (security_next_scan_at IS NULL OR security_next_scan_at <= ?1))
+               OR (security_scan_status = 'running'
+                   AND (security_scan_started_at IS NULL
+                        OR security_scan_started_at <= ?1 - 1800))
+           )",
+        now,
+        &input.scan_run_id,
+        &input.plugin_id,
+        &input.version
+    )?
+    .run()
+    .await?;
+    if claim_result.meta()?.and_then(|meta| meta.changes).unwrap_or(0) == 0 {
+        return error_response(
+            409,
+            "marketplace_security_release_busy",
+            "The marketplace release was claimed by another security worker.",
+        );
+    }
+
+    Response::from_json(&json!({
+        "claimed": true,
+        "pluginId": input.plugin_id,
+        "version": input.version,
+        "scanRunId": input.scan_run_id,
+        "securityScanStatus": "running",
+        "packageSha256": release.package_sha256,
+        "packageSize": exact_nonnegative_i64(release.package_size),
+    }))
+}
+
+pub(super) async fn marketplace_security_result(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
+    match marketplace_security_token_matches(&request, &context.env)? {
+        None => {
+            return error_response(
+                503,
+                "marketplace_security_not_configured",
+                "Marketplace security automation is not configured.",
+            );
+        }
+        Some(false) => {
+            return error_response(
+                401,
+                "marketplace_security_automation_unauthorized",
+                "The marketplace security automation token is invalid.",
+            );
+        }
+        Some(true) => {}
+    }
+
+    let report: Value = match request.json().await {
+        Ok(report) => report,
+        Err(_) => {
+            return error_response(
+                400,
+                "invalid_marketplace_security_report",
+                "The marketplace security result must be valid JSON.",
+            );
+        }
+    };
+    let report_size = serde_json::to_vec(&report)
+        .map_err(|error| worker::Error::RustError(error.to_string()))?
+        .len();
+    if report_size > MARKETPLACE_SECURITY_REPORT_MAX_BYTES {
+        return error_response(
+            413,
+            "marketplace_security_report_too_large",
+            "The marketplace security report exceeds the permitted size.",
+        );
+    }
+    let plugin_id = match report.get("pluginId").and_then(Value::as_str) {
+        Some(value) if is_identifier(value) => value.to_string(),
+        _ => {
+            return error_response(
+                400,
+                "invalid_marketplace_security_report",
+                "pluginId is invalid.",
+            );
+        }
+    };
+    let version = match report.get("version").and_then(Value::as_str) {
+        Some(value) if is_version_identifier(value) => value.to_string(),
+        _ => {
+            return error_response(
+                400,
+                "invalid_marketplace_security_report",
+                "version is invalid.",
+            );
+        }
+    };
+    let package_sha256 = match report.get("packageSha256").and_then(Value::as_str) {
+        Some(value)
+            if value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
+        {
+            value.to_ascii_lowercase()
+        }
+        _ => {
+            return error_response(
+                400,
+                "invalid_marketplace_security_report",
+                "packageSha256 must be a 64-character hexadecimal digest.",
+            );
+        }
+    };
+    let package_size = match report.get("packageSize").and_then(Value::as_u64) {
+        Some(value) if value > 0 && value <= 100 * 1024 * 1024 => match i64::try_from(value) {
+            Ok(value) => value,
+            Err(_) => {
+                return error_response(
+                    400,
+                    "invalid_marketplace_security_report",
+                    "packageSize is out of range.",
+                );
+            }
+        },
+        _ => {
+            return error_response(
+                400,
+                "invalid_marketplace_security_report",
+                "packageSize is invalid.",
+            );
+        }
+    };
+    let verdict = match report.get("verdict").and_then(Value::as_str) {
+        Some(value @ ("passed" | "failed")) => value,
+        _ => {
+            return error_response(
+                400,
+                "invalid_marketplace_security_report",
+                "verdict must be passed or failed.",
+            );
+        }
+    };
+    let scan_run_id = match report.get("scanRunId").and_then(Value::as_str) {
+        Some(value) if valid_marketplace_security_run_id(value) => value.to_string(),
+        _ => {
+            return error_response(
+                400,
+                "invalid_marketplace_security_report",
+                "scanRunId is invalid.",
+            );
+        }
+    };
+    if report.get("schemaVersion").and_then(Value::as_u64) != Some(1)
+        || !marketplace_security_checks_are_well_formed(&report)
+        || !marketplace_security_service_is_valid(&report, &context.env)
+        || (verdict == "passed" && !marketplace_security_checks_pass(&report))
+    {
+        return error_response(
+            422,
+            "marketplace_security_report_failed_validation",
+            "The marketplace security report does not satisfy the required check and service contract.",
+        );
+    }
+
+    let service_server_id = report
+        .get("service")
+        .and_then(|value| value.get("serverId"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let now = now_seconds();
+    let database = context.env.d1(DATABASE_BINDING)?;
+    let release = worker::query!(
+        &database,
+        "SELECT package_sha256, package_size, published_at, release_status,
+                security_scan_status, security_next_scan_at,
+                security_scan_started_at, security_scan_run_id
+         FROM plugin_releases
+         WHERE plugin_id = ?1 AND version = ?2",
+        &plugin_id,
+        &version
+    )?
+    .first::<MarketplaceSecurityReleaseRow>(None)
+    .await?;
+    let Some(release) = release else {
+        return error_response(
+            404,
+            "marketplace_security_release_not_found",
+            "The marketplace release does not exist.",
+        );
+    };
+    let Some(stored_package_size) = exact_nonnegative_i64(release.package_size) else {
+        return error_response(
+            503,
+            "marketplace_security_package_metadata_invalid",
+            "The marketplace release has invalid package metadata.",
+        );
+    };
+    if !release.package_sha256.eq_ignore_ascii_case(&package_sha256)
+        || stored_package_size != package_size
+    {
+        return error_response(
+            409,
+            "marketplace_security_package_mismatch",
+            "The security report does not match the immutable marketplace package metadata.",
+        );
+    }
+    if release.security_scan_run_id != scan_run_id {
+        return error_response(
+            409,
+            "marketplace_security_claim_mismatch",
+            "The security report does not match the active scan claim.",
+        );
+    }
+    if verdict == "passed"
+        && !marketplace_security_signature_is_valid(
+            &report,
+            &package_sha256,
+            package_size,
+            &context.env,
+        )
+    {
+        return error_response(
+            422,
+            "marketplace_security_signature_invalid",
+            "A valid server Cosign bundle bound to the pinned public key is required before publication.",
+        );
+    }
+    if release.security_scan_status != "running" {
+        let passed_retry = verdict == "passed"
+            && release.security_scan_status == "passed"
+            && release.release_status == "approved";
+        let failed_retry = verdict == "failed"
+            && release.security_scan_status == "failed"
+            && matches!(release.release_status.as_str(), "rejected" | "revoked");
+        if passed_retry || failed_retry {
+            return Response::from_json(&json!({
+                "accepted": true,
+                "idempotent": true,
+                "published": passed_retry,
+                "revoked": failed_retry && release.release_status == "revoked",
+                "pluginId": plugin_id,
+                "version": version,
+                "releaseStatus": release.release_status,
+                "securityScanStatus": release.security_scan_status,
+                "nextScanAt": release.security_next_scan_at.and_then(exact_nonnegative_i64),
+            }));
+        }
+        return error_response(
+            409,
+            "marketplace_security_claim_mismatch",
+            "The security report does not match the active scan claim.",
+        );
+    }
+
+    let sanitized_report = sanitized_marketplace_security_report(
+        &report,
+        &plugin_id,
+        &version,
+        &package_sha256,
+        package_size,
+    );
+    let sanitized_report_json = serde_json::to_string(&sanitized_report)
+        .map_err(|error| worker::Error::RustError(error.to_string()))?;
+    if sanitized_report_json.len() > MARKETPLACE_SECURITY_REPORT_MAX_BYTES {
+        return error_response(
+            413,
+            "marketplace_security_report_too_large",
+            "The sanitized marketplace security report exceeds the permitted size.",
+        );
+    }
+    let signature_json = sanitized_report
+        .get("signature")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let signature_json = serde_json::to_string(&signature_json)
+        .map_err(|error| worker::Error::RustError(error.to_string()))?;
+    let audit_id = Uuid::new_v4().to_string();
+    let subject_id = format!("{plugin_id}@{version}");
+
+    if verdict == "passed" {
+        let next_scan_at = now + MARKETPLACE_SECURITY_SCAN_INTERVAL_SECONDS;
+        database
+            .batch(vec![
+                worker::query!(
+                    &database,
+                    "UPDATE plugin_releases
+                     SET security_scan_status = 'passed',
+                         security_scan_json = ?1,
+                         security_scanned_at = ?2,
+                         security_next_scan_at = ?3,
+                         security_scan_started_at = NULL,
+                         security_scan_run_id = ?4,
+                         security_signature_json = ?5,
+                         release_status = 'approved',
+                         revoked_at = NULL,
+                         revocation_reason = NULL
+                     WHERE plugin_id = ?6 AND version = ?7
+                       AND package_sha256 = ?8 AND package_size = ?9
+                       AND release_status IN ('pending', 'staged', 'approved')
+                       AND security_scan_status = 'running'
+                       AND security_scan_run_id = ?4",
+                    &sanitized_report_json,
+                    now,
+                    next_scan_at,
+                    &scan_run_id,
+                    &signature_json,
+                    &plugin_id,
+                    &version,
+                    &package_sha256,
+                    package_size
+                )?,
+                worker::query!(
+                    &database,
+                    "UPDATE marketplace_plugins
+                     SET latest_version = CASE
+                             WHEN latest_version IS NULL
+                                  OR COALESCE((
+                                      SELECT published_at FROM plugin_releases
+                                      WHERE plugin_id = ?1 AND version = latest_version
+                                        AND release_status = 'approved'
+                                  ), -1) <= COALESCE((
+                                      SELECT published_at FROM plugin_releases
+                                      WHERE plugin_id = ?1 AND version = ?2
+                                  ), -1)
+                             THEN ?2 ELSE latest_version END,
+                         visibility = 'public',
+                         review_state = 'approved',
+                         updated_at = ?4
+                     WHERE plugin_id = ?1
+                       AND EXISTS (
+                           SELECT 1 FROM plugin_releases
+                           WHERE plugin_id = ?1 AND version = ?2
+                             AND release_status = 'approved'
+                             AND security_scan_status = 'passed'
+                             AND security_scan_run_id = ?3
+                       )",
+                    &plugin_id,
+                    &version,
+                    &scan_run_id,
+                    now
+                )?,
+                worker::query!(
+                    &database,
+                    "INSERT OR IGNORE INTO audit_events
+                     (event_id, actor_type, actor_id, event_type, subject_type, subject_id, payload_json, created_at)
+                     VALUES (?1, 'automation', ?2, 'marketplace_security_passed',
+                             'marketplace_release', ?3, ?4, ?5)",
+                    &audit_id,
+                    &service_server_id,
+                    &subject_id,
+                    &sanitized_report_json,
+                    now
+                )?,
+            ])
+            .await?;
+        return Response::from_json(&json!({
+            "accepted": true,
+            "published": true,
+            "pluginId": plugin_id,
+            "version": version,
+            "releaseStatus": "approved",
+            "securityScanStatus": "passed",
+            "nextScanAt": next_scan_at,
+        }));
+    }
+
+    let active_rescan = release.release_status == "approved";
+    let release_status = if active_rescan { "revoked" } else { "rejected" };
+    let event_type = if active_rescan {
+        "marketplace_security_revoked"
+    } else {
+        "marketplace_security_rejected"
+    };
+    database
+        .batch(vec![
+            worker::query!(
+                &database,
+                "UPDATE plugin_releases
+                 SET security_scan_status = 'failed',
+                     security_scan_json = ?1,
+                     security_scanned_at = ?2,
+                     security_next_scan_at = NULL,
+                     security_scan_started_at = NULL,
+                     security_scan_run_id = ?3,
+                     security_signature_json = '{}',
+                     release_status = CASE
+                         WHEN release_status = 'approved' THEN 'revoked'
+                         ELSE 'rejected'
+                     END,
+                     revoked_at = CASE
+                         WHEN release_status = 'approved' THEN ?2
+                         ELSE NULL
+                     END,
+                     revocation_reason = CASE
+                         WHEN release_status = 'approved' THEN 'automated_security_failure'
+                         ELSE NULL
+                     END
+                 WHERE plugin_id = ?4 AND version = ?5
+                   AND package_sha256 = ?6 AND package_size = ?7
+                   AND release_status IN ('pending', 'staged', 'approved')
+                   AND security_scan_status = 'running'
+                   AND security_scan_run_id = ?3",
+                &sanitized_report_json,
+                now,
+                &scan_run_id,
+                &plugin_id,
+                &version,
+                &package_sha256,
+                package_size
+            )?,
+            worker::query!(
+                &database,
+                "UPDATE marketplace_plugins
+                 SET latest_version = CASE
+                         WHEN latest_version = ?2 THEN (
+                             SELECT version FROM plugin_releases
+                             WHERE plugin_id = ?1 AND release_status = 'approved'
+                               AND security_scan_status = 'passed'
+                             ORDER BY published_at DESC LIMIT 1
+                         )
+                         ELSE latest_version
+                     END,
+                     visibility = CASE
+                         WHEN latest_version = ?2 OR latest_version IS NULL THEN CASE
+                             WHEN EXISTS (
+                                 SELECT 1 FROM plugin_releases
+                                 WHERE plugin_id = ?1 AND release_status = 'approved'
+                                   AND security_scan_status = 'passed'
+                             ) THEN 'public' ELSE 'unlisted' END
+                         ELSE visibility
+                     END,
+                     review_state = CASE
+                         WHEN latest_version = ?2 OR latest_version IS NULL THEN CASE
+                             WHEN EXISTS (
+                                 SELECT 1 FROM plugin_releases
+                                 WHERE plugin_id = ?1 AND release_status = 'approved'
+                                   AND security_scan_status = 'passed'
+                             ) THEN 'approved' ELSE 'rejected' END
+                         ELSE review_state
+                     END,
+                     updated_at = ?3
+                 WHERE plugin_id = ?1",
+                &plugin_id,
+                &version,
+                now
+            )?,
+            worker::query!(
+                &database,
+                "INSERT OR IGNORE INTO audit_events
+                 (event_id, actor_type, actor_id, event_type, subject_type, subject_id, payload_json, created_at)
+                 VALUES (?1, 'automation', ?2, ?3, 'marketplace_release', ?4, ?5, ?6)",
+                &audit_id,
+                &service_server_id,
+                event_type,
+                &subject_id,
+                &sanitized_report_json,
+                now
+            )?,
+        ])
+        .await?;
+
+    Response::from_json(&json!({
+        "accepted": true,
+        "published": false,
+        "revoked": active_rescan,
+        "pluginId": plugin_id,
+        "version": version,
         "releaseStatus": release_status,
+        "securityScanStatus": "failed",
     }))
 }
 
@@ -1285,11 +2248,16 @@ pub(super) async fn marketplace_release_metadata(
         "SELECT pr.plugin_id, pr.version, pr.package_sha256, pr.package_size,
                 pr.deployment_url, pr.published_at, mp.platforms_json,
                 pr.source_json, pr.release_manifest_json, pr.release_manifest_sha256,
-                pr.release_status, pr.revoked_at, pr.revocation_reason
+                pr.release_status, pr.revoked_at, pr.revocation_reason,
+                pr.security_scan_status, pr.security_scanned_at,
+                pr.security_next_scan_at, pr.security_signature_json
          FROM plugin_releases pr
          JOIN marketplace_plugins mp ON mp.plugin_id = pr.plugin_id
          WHERE pr.plugin_id = ?1 AND pr.version = ?2
            AND mp.visibility = 'public' AND mp.review_state = 'approved'
+           AND ((pr.release_status = 'approved'
+                 AND pr.security_scan_status IN ('passed', 'running'))
+                OR pr.release_status = 'revoked')
            AND pr.deployment_url <> ''",
         &plugin_id,
         &version
@@ -1370,6 +2338,12 @@ pub(super) async fn marketplace_release_metadata(
         "install": install,
         "releaseManifestSha256": release_manifest_sha256,
         "releaseStatus": row.release_status,
+        "security": {
+            "scanStatus": row.security_scan_status,
+            "scannedAt": row.security_scanned_at.and_then(exact_nonnegative_i64),
+            "nextScanAt": row.security_next_scan_at.and_then(exact_nonnegative_i64),
+            "signature": serde_json::from_str::<Value>(&row.security_signature_json).unwrap_or(Value::Null),
+        },
     }))
 }
 
@@ -1388,6 +2362,9 @@ pub(super) async fn marketplace_plugin_download(
          JOIN marketplace_plugins mp ON mp.plugin_id = pr.plugin_id
          WHERE pr.plugin_id = ?1 AND pr.version = ?2
            AND mp.visibility = 'public' AND mp.review_state = 'approved'
+           AND ((pr.release_status = 'approved'
+                 AND pr.security_scan_status IN ('passed', 'running'))
+                OR pr.release_status = 'revoked')
            AND pr.deployment_url <> ''",
         &plugin_id,
         &version
@@ -1440,20 +2417,20 @@ pub(super) async fn marketplace_plugin_download(
             );
         }
     };
-    // The marketplace is a metadata/control plane, not a binary CDN. Package
-    // bytes stay on the publisher's immutable GitHub/npm/HTTPS origin. Older
-    // releases already store their externally served package URL in
-    // `package_key`, so redirecting is backward compatible while removing the
-    // Worker from the plugin data path. Clients MUST continue validating the
-    // catalogued size and SHA-256 after following this redirect.
+    // The marketplace is a metadata/control plane, not a binary CDN. Current
+    // package bytes stay on the publisher's immutable GitHub origin. Older
+    // rows may retain an externally served URL in `package_key`, but current
+    // public releases are fail-closed unless that URL is GitHub-hosted. Clients
+    // MUST continue validating the catalogued size and SHA-256 after following
+    // this redirect.
     let package_url = Url::parse(&release.package_key).map_err(|_| {
         worker::Error::RustError("marketplace release package URL is invalid".into())
     })?;
-    if package_url.scheme() != "https" || package_url.host_str().is_none() {
+    if !is_github_artifact_url(package_url.as_str()) {
         return error_response(
             503,
             "marketplace_package_url_invalid",
-            "The approved release does not point to a public HTTPS artifact.",
+            "The approved release does not point to a GitHub immutable artifact.",
         );
     }
     let mut response = Response::redirect_with_status(package_url, 307)?;
@@ -1582,8 +2559,20 @@ pub(super) async fn marketplace_release_revoke(
                  SET latest_version = (
                      SELECT version FROM plugin_releases
                      WHERE plugin_id = ?2 AND release_status = 'approved'
+                       AND security_scan_status = 'passed'
                      ORDER BY published_at DESC LIMIT 1
-                 ), updated_at = ?1
+                 ),
+                 visibility = CASE WHEN EXISTS (
+                     SELECT 1 FROM plugin_releases
+                     WHERE plugin_id = ?2 AND release_status = 'approved'
+                       AND security_scan_status = 'passed'
+                 ) THEN 'public' ELSE 'unlisted' END,
+                 review_state = CASE WHEN EXISTS (
+                     SELECT 1 FROM plugin_releases
+                     WHERE plugin_id = ?2 AND release_status = 'approved'
+                       AND security_scan_status = 'passed'
+                 ) THEN 'approved' ELSE 'rejected' END,
+                 updated_at = ?1
                  WHERE plugin_id = ?2 AND latest_version = ?3",
                 now,
                 &plugin_id,

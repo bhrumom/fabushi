@@ -1,0 +1,25 @@
+[Unit]
+Description=Fabushi self-hosted marketplace security gate
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fabushi-marketplace-security
+Group=fabushi-marketplace-security
+WorkingDirectory=/opt/fabushi-marketplace-security
+EnvironmentFile=/etc/fabushi/marketplace-security.env
+ExecStart=/usr/bin/node /opt/fabushi-marketplace-security/services/marketplace-security-gate/server.mjs
+Restart=always
+RestartSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/fabushi-marketplace-security
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

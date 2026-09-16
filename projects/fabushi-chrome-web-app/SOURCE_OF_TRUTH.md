@@ -12,6 +12,12 @@ comparison source, not canonical state; only compatible modules are adapted.
 Open-source references are the official Chrome Native Messaging and Debugger API
 documentation and the GoogleChrome samples listed in source/README.md.
 
+CWA-009 is the current marketplace security addition: GitHub remains the source and immutable
+package host; `services/marketplace-security-gate/` is the self-hosted audit/signing worker;
+the Worker/D1 queue is the promotion and revoke control plane. The user's explicit no-script/plugin
+E2E instruction is authoritative for this round, so no E2E execution may be used as a completion
+claim.
+
 Precedence is: latest user requirement persisted here; canonical portfolio registry and
 identity policy; this file and source intake; accepted ADRs/specs; management state; live
 GitHub code/PR/CI/release/deployment facts; external mirrors; chat memory. If records

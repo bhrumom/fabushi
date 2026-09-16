@@ -2,7 +2,7 @@
 
 - Project ID: FAB-P0011
 - Project Key: CWA
-- Status: active / implementation delivered; Web Store review and live recovery evidence pending
+- Status: active / CWA-009 security admission implementation in progress; no E2E requested
 - Canonical path: projects/fabushi-chrome-web-app/
 - Authoritative repository: bhrumom/fabushi, branch main
 - Allocation baseline: canonical main `656d05e8d66bfed241f5b9d871a062abfbf2f952`
@@ -27,6 +27,14 @@ CWA-007 adds independent Fabushi account login and account-scoped official MCP
 browser registration in the 0.6.0 change stream. PR, CI, canonical package/E2E,
 gateway deployment, Web Store release and production same-account proof remain required.
 
+CWA-009 adds a self-hosted marketplace security gate. GitHub remains the source and
+immutable package host; the dedicated security server downloads and verifies packages,
+runs ClamAV/Gitleaks/Syft/OSV and an isolated dynamic probe, signs with a server-resident
+Cosign key, and calls the protected Worker to atomically promote or revoke D1 metadata.
+The user explicitly cancelled script/plugin E2E, so this task does not run E2E and remains
+in progress until the server secrets, scanner images and non-E2E deployment checks are
+configured and verified.
+
 ## Scope
 
 In scope: product shell parity with Fabushi 0.4.1, all nine Bridge commands,
@@ -36,4 +44,5 @@ Out of scope: copying official ChatGPT bookmarks/history/sidebar features or del
 Computer Use runtime/native accessibility helpers.
 
 Start with SOURCE_OF_TRUTH.md, then PROJECT.yaml, docs, management records, ADRs,
-evidence and runbooks. Active tasks are CWA-006, CWA-007 and CWA-008 under management/tasks/.
+evidence and runbooks. Active tasks are CWA-006, CWA-007, CWA-008 and CWA-009 under
+management/tasks/.

@@ -15,3 +15,17 @@ userscript recovery 的可观测字段限于 capability grant/deny、lease expir
 凭证。当前目标为检测到异常后一次有界恢复，连续失败进入可见任务状态并保留 token，禁止
 watchdog 无界刷新或重开。精确延迟、成功率和误恢复率在 canonical-main packaged journey
 与真实 Chrome 样本后建立基线。
+
+### Marketplace security gate SLO
+
+安全服务器每 60 秒轮询一次队列；目标是候选进入队列后 10 分钟内被 claim，单个包扫描
+和回写在 30 分钟 claim 租约内完成。`pending/running/passed/failed/revoked`、服务器
+实例、服务源码 SHA、包 SHA/大小、扫描时间和下一次复扫时间进入脱敏审计记录；原始扫描
+器输出、命中秘密、包内容和 token 不进入日志。Worker 缺少 token/公钥指纹时返回配置错误
+并 fail closed。
+
+服务异常或回写失败不会把候选直接公开；运行中的 claim 超过 30 分钟后可被重新领取。
+公开版本默认每 24 小时进入复扫队列，任何失败自动撤销并从目录、下载、安装和路由中
+移除。监控应告警队列年龄超过 10 分钟、连续扫描失败、ClamAV 数据库过期、镜像 digest
+漂移、Cosign 验签失败和回写 HTTP 错误。完整操作步骤见
+`runbooks/marketplace-security-gate.md`。

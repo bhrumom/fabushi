@@ -24,6 +24,12 @@ case "$environment" in
       APPLE_PRIVATE_KEY
       APPLE_BUNDLE_ID
       FIREBASE_PROJECT_ID
+      # The value is only a public-key digest; the token/private key remain in
+      # the self-hosted marketplace security server's secret store.
+      MARKETPLACE_SECURITY_TOKEN
+      MARKETPLACE_SECURITY_SERVER_ID
+      MARKETPLACE_SECURITY_SOURCE_SHA
+      MARKETPLACE_SECURITY_SIGNER_PUBLIC_KEY_SHA256
     )
     ;;
   development)

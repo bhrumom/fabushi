@@ -4,17 +4,26 @@
 
 本规范是任务 `mahayana-marketplace-cloudflare-20260730` 的目标架构与验收依据。后续开发、修复、GitHub Actions 验证和 PR 验收不得只满足示例插件能够偶然安装运行，还必须满足本文定义的发布、发现、可信分发、隔离部署和安全安装模型。
 
+### CWA-009 当前发布边界
+
+Fabushi 当前明确采用“GitHub 托管、私有服务器审核”的发布链路：源码、不可变 GitHub
+Release 和安装包继续放在 GitHub；自有安全服务器轮询市场队列，下载并校验 GitHub 包，
+执行 ClamAV、密钥、依赖/SBOM、隔离动态探针和 Cosign 签名验签。Worker/D1 只保存来源、
+摘要、大小、签名和审核状态；全部通过后才原子公开，复扫失败自动撤销。GitHub Actions
+不执行这套插件审核或发布。CWA-009 的边界优先于本文早期“Cloudflare 独立插件站点负责
+安装包”的历史描述。
+
 ## 设计原则
 
 大乘市场采用“中央控制平面 + 插件独立分发与运行平面”的混合架构：
 
 - 市场中心负责账号、命名空间、审核、搜索、版本索引、权限声明、签名、撤销和安全治理。
-- 每个插件是独立的逻辑部署单元，部署到独立的 Cloudflare Pages 项目或 Cloudflare Worker 服务。
+- 每个插件是独立的逻辑部署单元；它的网页/MCP Runtime 可以部署到独立的 Cloudflare Pages 项目或 Cloudflare Worker 服务，但源码、不可变 Release 和安装包归 GitHub 托管。
 - 一个插件不等于一台独立服务器，但必须具有独立身份、部署边界、权限边界、Secret、版本和回滚生命周期。
 - 每个版本必须是不可变发布物；同一插件 ID 与版本不得被新内容覆盖。
-- 插件网页、远程 MCP Runtime、安装包及插件静态资源均由该插件自己的 Cloudflare Pages/Worker 站点提供。
+- 插件网页、远程 MCP Runtime 和运行时静态资源由插件自己的站点提供；源码、GitHub Release 和安装包不迁入 Cloudflare。
 - 禁止把插件包或插件静态资源放入 R2；市场数据库只保存目录和可信元数据。
-- 正常下载路径由 CLI 直接访问插件站点。市场 Worker 可以在发布时拉取并验证发布物，但不应成为日常安装包流量的永久代理。
+- 正常下载路径由 CLI 按市场签名元数据直接访问 GitHub 不可变 Release 资产。自有安全服务器在审核时拉取并验证发布物；市场 Worker 不成为日常安装包流量的永久代理。
 
 ## 发布者模型
 
@@ -27,7 +36,7 @@ mahayana login
 mahayana plugin publish <plugin-directory>
 ```
 
-平台负责创建或绑定独立 Cloudflare 项目、构建、扫描、部署、生成不可变发布物、登记市场版本并进入审核流程。普通用户不需要直接管理 Wrangler、Cloudflare API Token、Worker 名称或上传路径。
+发布者先把源码和不可变安装包上传到 GitHub Release，再登记市场版本。平台登记候选版本并将其置为 `pending/unlisted`；自有安全服务器完成扫描、签名和回调后才公开。若插件需要网页或 MCP Runtime，平台仍可负责创建或绑定独立 Cloudflare 项目；普通用户不需要直接管理 Wrangler、Cloudflare API Token、Worker 名称或上传路径。
 
 ### 高级自托管模式
 
@@ -35,7 +44,7 @@ mahayana plugin publish <plugin-directory>
 
 - 证明部署地址所有权；
 - 使用 HTTPS 的 `workers.dev`、`pages.dev` 或经市场批准的自定义域名；
-- 提供符合本规范的不可变版本清单和安装包；
+- 提供指向 GitHub 不可变 Release 资产的版本清单和安装包；
 - 接受市场服务对清单、包内容、哈希、大小、签名和运行端点的重新验证。
 
 ## 插件身份和部署隔离
@@ -98,7 +107,7 @@ GET /v1/marketplace/plugins/<plugin-id>/releases/<version>
 - 发布者和插件未被封禁；
 - 发布物没有进入撤销列表；
 - 支持当前请求平台；
-- 存在有效的不可变 Cloudflare 下载 URL、SHA-256 和大小。
+- 存在有效的不可变 GitHub 下载 URL、SHA-256 和大小。
 
 内置 `.agents/plugins/marketplace.json` 是当前仓库的本地安装与发现索引，不是云端市场数据库。
 
@@ -108,7 +117,7 @@ GET /v1/marketplace/plugins/<plugin-id>/releases/<version>
 
 ```text
 CLI -> 大乘市场 API 获取签名元数据
-CLI -> 插件自己的 Cloudflare URL 直接下载
+CLI -> GitHub 不可变 Release 资产直接下载
 CLI -> 本地验证后安装
 ```
 
@@ -161,20 +170,22 @@ CLI 必须验证：
 
 ## 发布认证和供应链证明
 
-长期目标使用 GitHub Actions OIDC 或等效短期身份交换进行可信发布，避免普通发布者长期保存市场发布 Token。
+可信发布由自有安全服务器完成：服务器使用受限 token 读取/回写审核队列，用本机保管的
+Cosign 私钥签名，Worker 固定服务名、key ID 和公钥文件 SHA-256。市场发布 Token、私钥和
+扫描器凭据不得进入 GitHub Actions、插件包或扫描容器。
 
 市场版本应记录：
 
 - 源代码仓库；
 - commit SHA；
-- GitHub Actions workflow 和 run；
+- 安全服务器实例和服务源码 SHA；
 - 构建者身份；
 - 安装包 SHA-256 和大小；
 - Cloudflare 部署标识；
 - 签名和来源证明；
 - 审核结果与撤销状态。
 
-当前 GitHub Secrets 中的测试账号仍可用于端到端测试，但测试账号不得成为普通生产发布者的长期认证方案。
+本轮不运行脚本/插件 E2E；用户明确取消该类 E2E，产品 post-main E2E 门保持未完成。
 
 ## 审核状态
 
@@ -189,9 +200,10 @@ CLI 必须验证：
 
 普通用户首次发布默认进入 `unlisted + pending`。自动扫描通过后可以进入社区可见状态；身份、安全和人工审核通过后可以提升为 verified；官方维护的小程序标记为 official。
 
-## GitHub Actions 最终验收
+## 历史 GitHub Actions 最终验收说明
 
-项目的测试、构建、打包、部署、安装和运行验证必须在 GitHub Actions 中执行。任务 `mahayana-marketplace-cloudflare-20260730` 完成前，Actions 必须使用真实测试账号和真实 Cloudflare 部署证明以下流程全部成功：
+以下是早期 Cloudflare 插件站点任务的历史验收清单，不是 CWA-009 的安全审核执行平面。
+CWA-009 不启动该 E2E 清单，并以自有安全服务器的非 E2E 安全结果作为本轮实现证据：
 
 1. 登录大乘 CLI；
 2. 构建并测试真实示例小程序；
@@ -209,7 +221,8 @@ CLI 必须验证：
 14. 重复发布同一版本但内容不同必须失败；
 15. 被撤销、未批准或权限不匹配的版本不能被公开安装。
 
-现有 `cloud-market-hello` 是端到端验收样例，但架构和命令不能只为该固定插件硬编码，必须对普通发布者的小程序通用。
+现有 `cloud-market-hello` 是历史端到端验收样例；本轮按用户要求不执行它。架构和命令
+不能只为该固定插件硬编码，必须对普通发布者的小程序通用。
 
 ## 完成定义
 
@@ -222,4 +235,5 @@ CLI 必须验证：
 - CLI 默认直连下载并完成本地可信校验；
 - 安装过程具备路径、大小、身份、版本和权限安全检查；
 - 发布者身份、构建来源和撤销状态可审计；
-- GitHub Actions 对真实发布、浏览、下载、安装和运行链路给出可复核的成功日志及构件。
+- 自有安全服务器对真实 GitHub 包给出可复核的四项扫描、签名验签、promotion/revoke 和
+  Worker 审计结果；本轮不执行脚本/插件 E2E，故产品 E2E 完成门保持待授权状态。
