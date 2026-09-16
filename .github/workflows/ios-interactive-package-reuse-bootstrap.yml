@@ -1,32 +1,17 @@
-name: iOS interactive package reuse bootstrap
+name: iOS interactive package reuse bootstrap (disabled by FCM-024)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/ios-interactive-package-reuse-bootstrap.yml'
+  workflow_dispatch:
 
-permissions:
-  actions: write
-  contents: read
+permissions: {}
 
 jobs:
-  dispatch-exact-existing-package:
-    name: Dispatch exact current package reuse run once
+  disabled:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 1
     steps:
-      - name: Dispatch exact existing iOS package reuse journey
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ORIGIN_RUN_ID: '34030851007'
-          PACKAGE_SOURCE_SHA: '6872793daf727c118510e818e3cd689c09101594'
-        shell: bash
+      - name: Record retired bootstrap policy
         run: |
-          set -euo pipefail
-          gh workflow run ios-interactive-package-reuse-e2e.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f "origin_run_id=$ORIGIN_RUN_ID" \
-            -f "package_source_sha=$PACKAGE_SOURCE_SHA"
-          echo "Dispatched exact package reuse after relocatable-checksum fix: origin_run=$ORIGIN_RUN_ID package_source_sha=$PACKAGE_SOURCE_SHA"
+          echo 'Disabled by FCM-024.'
+          echo 'This historical bootstrap no longer dispatches any simulator or behavioral journey.'
+          echo 'Formal device validation is started manually and controlled through the Fabushi official MCP.'

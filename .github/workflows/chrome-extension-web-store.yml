@@ -1,147 +1,17 @@
-name: Chrome Extension Web Store
+name: Chrome Extension Web Store (disabled by FCM-024)
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "chatgpt-vps-control/chrome-platform/**"
-      - "chatgpt-vps-control/lib/**"
-      - "chatgpt-vps-control/scripts/**"
-      - "chatgpt-vps-control/tests/**"
-      - "!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js"
-      - "chatgpt-vps-control/docs/chrome-web-store/**"
-      - "chatgpt-vps-control/package.json"
-      - "desktop/electron/chrome-platform-server.cjs"
-      - "desktop/electron/host-process.cjs"
-      - ".github/scripts/verify-packaged-computer-control.mjs"
-      - "ai-backend/src/miniapp_marketplace_catalog.js"
-      - ".github/workflows/chrome-extension-web-store.yml"
-      - ".github/workflows/chrome-extension-web-store-publish.yml"
-  push:
-    branches: [main]
-    paths:
-      - 'chatgpt-vps-control/chrome-platform/**'
-      - 'chatgpt-vps-control/lib/**'
-      - 'chatgpt-vps-control/scripts/**'
-      - 'chatgpt-vps-control/tests/**'
-      - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
-      - 'chatgpt-vps-control/docs/chrome-web-store/**'
-      - 'chatgpt-vps-control/package.json'
-      - 'desktop/electron/chrome-platform-server.cjs'
-      - 'desktop/electron/host-process.cjs'
-      - '.github/scripts/verify-packaged-computer-control.mjs'
-      - '.github/workflows/chrome-extension-web-store.yml'
-      - '.github/workflows/chrome-extension-web-store-publish.yml'
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
-  scope:
-    name: Detect affected Chrome scope
+  disabled:
     runs-on: ubuntu-latest
-    outputs:
-      global: ${{ steps.filter.outputs.global }}
-      chrome: ${{ steps.filter.outputs.chrome }}
+    timeout-minutes: 1
     steps:
-      - name: Checkout full history for changed-path detection
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Detect changed Chrome scope
-        id: filter
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        with:
-          token: ''
-          base: ${{ github.event_name == 'push' && github.event.before || '' }}
-          predicate-quantifier: some-with-excludes
-          filters: |
-            global:
-              - '.github/workflows/chrome-extension-web-store.yml'
-              - '.github/workflows/chrome-extension-web-store-publish.yml'
-              - '.github/scripts/verify-packaged-computer-control.mjs'
-            chrome:
-              - 'chatgpt-vps-control/chrome-platform/**'
-              - 'chatgpt-vps-control/lib/**'
-              - 'chatgpt-vps-control/scripts/**'
-              - 'chatgpt-vps-control/tests/**'
-              - '!chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js'
-              - 'chatgpt-vps-control/docs/chrome-web-store/**'
-              - 'chatgpt-vps-control/package.json'
-              - 'desktop/electron/chrome-platform-server.cjs'
-              - 'desktop/electron/host-process.cjs'
-              - '.github/scripts/verify-packaged-computer-control.mjs'
-      - name: Summarize detected Chrome scope
-        shell: bash
-        env:
-          GLOBAL_SCOPE: ${{ steps.filter.outputs.global }}
-          CHROME_SCOPE: ${{ steps.filter.outputs.chrome }}
+      - name: Record disabled automatic-test policy
         run: |
-          {
-            echo '### Chrome changed scope'
-            echo "- global: $GLOBAL_SCOPE"
-            echo "- chrome: $CHROME_SCOPE"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  validate-package:
-    needs: scope
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.scope.outputs.global == 'true' || needs.scope.outputs.chrome == 'true' }}
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: chatgpt-vps-control
-    steps:
-      - name: Checkout exact source
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-      - name: Setup Node
-        id: setup-node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            chatgpt-vps-control/package-lock.json
-            desktop/package-lock.json
-      - name: Install dependencies
-        run: npm ci --ignore-scripts --prefer-offline
-      - name: Run production Chrome release preflight
-        run: npm run chrome:release
-
-      - name: Install packaged journey Playwright dependencies
-        working-directory: desktop
-        run: npm ci --prefer-offline --no-audit --no-fund
-
-      - name: Install Chromium and video support for packaged journey
-        working-directory: desktop
-        run: |
-          npx playwright install --with-deps chromium
-          npx playwright install ffmpeg
-
-      - name: Run packaged Chrome simulated-user journey
-        run: xvfb-run -a npm run chrome:e2e
-
-      - name: Record warm-build and source provenance
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          echo "node=$(node --version)" >> "$GITHUB_STEP_SUMMARY"
-          echo "npm_cache_hit=${{ steps.setup-node.outputs.cache-hit || 'false' }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "build_mode=deterministic allow-list package; npm cache is acceleration only" >> "$GITHUB_STEP_SUMMARY"
-          cat dist/chrome-extension/SHA256SUMS.txt >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload Web Store package
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: fabushi-chrome-web-store-${{ github.sha }}
-          path: |
-            chatgpt-vps-control/dist/chrome-extension/*.zip
-            chatgpt-vps-control/dist/chrome-extension/SHA256SUMS.txt
-            chatgpt-vps-control/dist/chrome-extension/*.content-manifest.json
-            chatgpt-vps-control/dist/chrome-extension/evidence/**
-          if-no-files-found: error
-          retention-days: 90
+          echo 'Disabled by FCM-024.'
+          echo 'Automatic Chrome validation, Node test suites, Playwright journeys, and packaging are not permitted in the default CI path.'
+          echo 'Test/beta releases must not run behavioral tests. Formal behavioral validation is performed only through a manually started Action runner controlled by the Fabushi official MCP.'
