@@ -214,6 +214,7 @@ jobs:
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           EXPECTED_HEAD_REF: ${{ steps.resolve.outputs.head_ref }}
+          REVIEWED_SHA: ${{ steps.resolve.outputs.head_sha }}
           PUSHED_SHA: ${{ steps.push.outputs.sha }}
         with:
           script: |
@@ -221,24 +222,41 @@ jobs:
             const repo = context.repo.repo;
             const pull_number = Number(process.env.PR_NUMBER);
             const expectedRef = process.env.EXPECTED_HEAD_REF;
+            const reviewedSha = process.env.REVIEWED_SHA;
             const pushedSha = process.env.PUSHED_SHA || '';
-            const pr = (await github.rest.pulls.get({ owner, repo, pull_number })).data;
+            const expectedFinalSha = pushedSha || reviewedSha;
 
-            if (pr.state !== 'open' || pr.base.ref !== 'main') {
-              core.setFailed(`PR #${pull_number} moved out of the open main-targeting state during staging.`);
-              return;
-            }
-            if (pr.head.repo.full_name !== `${owner}/${repo}` || pr.head.ref !== expectedRef) {
-              core.setFailed(`PR #${pull_number} head repository/ref changed during staging.`);
-              return;
-            }
-            if (pushedSha && pr.head.sha !== pushedSha) {
-              core.setFailed(`PR #${pull_number} moved after generated write-back (${pushedSha} -> ${pr.head.sha}).`);
-              return;
+            // Git's branch-ref update can become visible before the PR object has
+            // converged to the new head SHA. Treat only the previously reviewed SHA
+            // as a temporary stale read; any third SHA is a real concurrent move.
+            for (let attempt = 1; attempt <= 30; attempt += 1) {
+              const pr = (await github.rest.pulls.get({ owner, repo, pull_number })).data;
+
+              if (pr.state !== 'open' || pr.base.ref !== 'main') {
+                core.setFailed(`PR #${pull_number} moved out of the open main-targeting state during staging.`);
+                return;
+              }
+              if (pr.head.repo.full_name !== `${owner}/${repo}` || pr.head.ref !== expectedRef) {
+                core.setFailed(`PR #${pull_number} head repository/ref changed during staging.`);
+                return;
+              }
+              if (pr.head.sha === expectedFinalSha) {
+                core.info(`PR #${pull_number} final head converged to ${expectedFinalSha} on attempt ${attempt}.`);
+                core.setOutput('sha', expectedFinalSha);
+                core.setOutput('head_ref', pr.head.ref);
+                return;
+              }
+
+              if (!pushedSha || pr.head.sha !== reviewedSha) {
+                core.setFailed(`PR #${pull_number} moved to unexpected head ${pr.head.sha}; expected temporary ${reviewedSha} or final ${expectedFinalSha}.`);
+                return;
+              }
+
+              core.info(`PR #${pull_number} still exposes stale reviewed head ${reviewedSha}; waiting for generated head ${pushedSha} (attempt ${attempt}/30).`);
+              await new Promise((resolve) => setTimeout(resolve, 2000));
             }
 
-            core.setOutput('sha', pr.head.sha);
-            core.setOutput('head_ref', pr.head.ref);
+            core.setFailed(`PR #${pull_number} did not converge from reviewed head ${reviewedSha} to generated head ${expectedFinalSha} within 60 seconds.`);
 
       - name: Ensure protected CI succeeds for final head
         if: steps.resolve.outputs.should_stage == 'true'
