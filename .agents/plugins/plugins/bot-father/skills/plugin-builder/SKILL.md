@@ -30,7 +30,22 @@ Before finishing, run `mahayana plugin validate`, `mahayana plugin test`, and
 repository tests. The CLI test command must execute the plugin's declared test
 suite; an external `npm test` alone is not a substitute. Exercise the local
 runtime over stdio, and verify MCP App message handling does not mistake an
-outbound JSON-RPC request for its response. Run `mahayana plugin publish` only
-after those checks pass. Only report publication after the market service
-returns a release receipt and a subsequent market query can find the exact
-plugin/version.
+outbound JSON-RPC request for its response.
+
+For an official in-repository plugin, do not hand-edit
+`frontend/apps/web/public/.well-known/mahayana/marketplace.json` or the
+Marketplace approval ledger. Commit the plugin source plus the internal
+`.agents/plugins/marketplace.json` registration in a governed PR. The required
+`CI result` automatically runs `Marketplace Security Review` (deterministic
+Fabushi policy, CodeQL, Semgrep CE, Trivy, OSV and Syft/Grype). Only after that
+PR is protected-merged to canonical `main` may `Marketplace Auto Publish`
+generate the public catalog and approval ledger in its own protected publish
+PR. A failed audit, a changed digest under an already-approved version, or a
+failed publish PR keeps the new plugin/version unlisted.
+
+Use `mahayana plugin publish` only after local plugin validation/test/pack has
+passed and when the market service path being used is explicitly supported by
+the current repository policy. Only report public publication after the
+canonical public market query returns the exact plugin/version and its audit
+digest; a source PR, successful pack, or pending auto-publish PR is not a
+publication receipt.
