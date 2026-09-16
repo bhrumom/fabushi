@@ -13,14 +13,14 @@ const CHATGPT_USERSCRIPT_PLUGIN_ID: &str = "chatgpt-auto-confirm";
 const CHATGPT_USERSCRIPT_VERSION: &str = "2.9.33";
 const CHATGPT_USERSCRIPT_REPOSITORY: &str =
     "https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript";
-const CHATGPT_USERSCRIPT_COMMIT: &str = "205fc1266c779ea6addfd054ec3fd3df87ed3f4c";
+const CHATGPT_USERSCRIPT_COMMIT: &str = "e246ea925c4daa2f90cae51d1c8718bcddaa6d47";
 const CHATGPT_USERSCRIPT_RELEASE_URL: &str =
     "https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.33";
-const CHATGPT_USERSCRIPT_ARTIFACT_URL: &str = "https://raw.githubusercontent.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/205fc1266c779ea6addfd054ec3fd3df87ed3f4c/chatgpt-auto-confirm.user.js";
+const CHATGPT_USERSCRIPT_ARTIFACT_URL: &str = "https://raw.githubusercontent.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/e246ea925c4daa2f90cae51d1c8718bcddaa6d47/chatgpt-auto-confirm.user.js";
 const CHATGPT_USERSCRIPT_SHA256: &str =
     "419a3eacdabe34b439cc71c2c934f5d7dea3a69a6ebaa50e76c7645da40f1986";
 const CHATGPT_USERSCRIPT_SIZE: i64 = 235_095;
-const CHATGPT_USERSCRIPT_PUBLISHED_AT: i64 = 1_789_483_274;
+const CHATGPT_USERSCRIPT_PUBLISHED_AT: i64 = 1_789_564_005;
 
 fn chatgpt_userscript_projection() -> Value {
     let permissions = json!(["读取 ChatGPT 页面状态", "显示任务队列", "仅在匹配页面运行"]);

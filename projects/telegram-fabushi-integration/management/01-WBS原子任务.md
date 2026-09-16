@@ -361,4 +361,4 @@
 
 | Task ID | Project | 原子目标 | 状态 | 当前证据 | 下一步 |
 |---|---|---|---|---|---|
-| TFI-USERSCRIPT-RECOVERY-020 | FAB-P0001 / TFI | 移除停滞会话两次刷新上限；每 180 秒无变化继续刷新；保留任务身份和不重复发送保护 | IN_PROGRESS / SOURCE_LOCAL_VERIFIED / PARENT_DELIVERY_PENDING | source v2.9.33，commit `205fc126`；focused `13/13`、full `126/126`；parent bundled/Marketplace/Chrome `0.6.11` 已同步 | source CI/Release；parent PR/CI/protected main；exact-main packaged visual evidence、Release 与 catalog readback |
+| TFI-USERSCRIPT-RECOVERY-020 | FAB-P0001 / TFI | 移除停滞会话两次刷新上限；每 180 秒无变化继续刷新；保留任务身份和不重复发送保护 | IN_PROGRESS / SOURCE_RELEASED / PARENT_DELIVERY_PENDING | source v2.9.33 Release `e246ea92`；source PR/main Actions 通过；parent bundled/Marketplace/Chrome `0.6.11` 已同步 | parent PR/CI/protected main；exact-main packaged visual evidence、Release 与 catalog readback |

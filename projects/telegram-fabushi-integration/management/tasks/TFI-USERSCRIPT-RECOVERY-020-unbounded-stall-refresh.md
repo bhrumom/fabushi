@@ -5,7 +5,7 @@
 - Portfolio Project ID：`FAB-P0001`
 - Project Key：`TFI`
 - Task ID：`TFI-USERSCRIPT-RECOVERY-020`
-- 状态：`IN_PROGRESS / SOURCE_LOCAL_VERIFIED / PARENT_DELIVERY_PENDING`
+- 状态：`IN_PROGRESS / SOURCE_RELEASED / PARENT_DELIVERY_PENDING`
 - 开始时间：2026-09-16
 - 更新时间：2026-09-16
 - 完成时间：N/A；在 source/parent CI、受保护主线、post-main packaged E2E 和 Release 闭合前不得标记完成。
@@ -22,7 +22,7 @@
 
 - 需求记录：[`source/2026-09-16-userscript-unbounded-stall-refresh.md`](../../source/2026-09-16-userscript-unbounded-stall-refresh.md)
 - 前序实现：`TFI-USERSCRIPT-RECOVERY-019` / source v2.9.32 / parent Chrome 0.6.10。
-- source 基线：`userscript/main@50569be0ab88909408ed8880a24c185906d760eb`。
+- source 基线/当前 canonical main：`userscript/main@e246ea925c4daa2f90cae51d1c8718bcddaa6d47`。
 - parent 基线：`codex/tfi-userscript-019-final-reply-stall-refresh-20260915@45ed9da82485d569b4f08d2019096524abb8c2b9`。
 
 ## 验收标准
@@ -45,13 +45,16 @@
 ## 实现与分支证据
 
 - source 分支：`codex/unbounded-stall-refresh-2.9.33-20260916`
-- source commit：`205fc1266c779ea6addfd054ec3fd3df87ed3f4c`
+- source implementation commit：`205fc1266c779ea6addfd054ec3fd3df87ed3f4c`
+- source PR：[#26](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/26)，已合并。
+- source canonical main merge commit：`e246ea925c4daa2f90cae51d1c8718bcddaa6d47`
+- source Release：[v2.9.33](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.33)，发布于 2026-09-16T13:06:45Z。
 - source 文件：`chatgpt-auto-confirm.user.js`，v2.9.33，235095 bytes，SHA-256 `419a3eacdabe34b439cc71c2c934f5d7dea3a69a6ebaa50e76c7645da40f1986`
 - parent 分支：`codex/tfi-userscript-020-unbounded-stall-refresh-20260916`
 - parent implementation/initial-record commit：`fd5e3bdbbb423d1a32a12766f577c74adce80f41`
 - parent record follow-up commit：`39e376af50df1a8ab3b7d307ee94c5e13efc45f9`
 - parent 候选：Chrome `0.6.11`，内置 userscript v2.9.33；parent PR/CI/主线交付仍待完成。
-- source PR/Release：待执行；不能把本地 commit 当作 canonical source main 或公开 Release。
+- source Actions：PR run `35099639206`、merge-to-main run `35099720957` 均成功；Release 资产已公开并绑定上述 canonical main。
 
 ## 验证结果
 
@@ -64,6 +67,6 @@
 ## 风险、阻塞与下一步
 
 - 风险：无限刷新可能增加 ChatGPT 页面请求。缓解为同一路由、每 180 秒持久化冷却，并在暂停/取消/完成/限流/阻塞/发送歧义时 fail-closed。
-- 阻塞：source CI、source protected main/Release；parent CI、protected main、exact-main packaged simulated-user E2E 及其分步截图/全程视频/trace/report/log；Worker 部署与 catalog readback；parent Release。
+- 阻塞：parent CI、protected main、exact-main packaged simulated-user E2E 及其分步截图/全程视频/trace/report/log；Worker 部署与 catalog readback；parent Release。
 - Chrome Web Store 现有审核锁定仍独立跟踪，不取消或覆盖。
-- 下一步：提交/验证 source 分支与 Release；随后提交 parent 变更，运行 GitHub Actions post-main 交付闭环；在全部证据闭合前保持 `IN_PROGRESS`。
+- 下一步：提交 parent 变更，运行 GitHub Actions post-main 交付闭环；在全部证据闭合前保持 `IN_PROGRESS`。

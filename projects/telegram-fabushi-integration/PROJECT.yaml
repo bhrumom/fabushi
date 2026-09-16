@@ -156,17 +156,18 @@ active_work:
   - task: TFI-USERSCRIPT-RECOVERY-020
     branch: codex/tfi-userscript-020-unbounded-stall-refresh-20260916
     source_branch: codex/unbounded-stall-refresh-2.9.33-20260916
-    source_head_sha: 205fc1266c779ea6addfd054ec3fd3df87ed3f4c
+    source_head_sha: e246ea925c4daa2f90cae51d1c8718bcddaa6d47
     source_version: 2.9.33
+    source_pr: 26
+    source_release: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.33
     source_sha256: 419a3eacdabe34b439cc71c2c934f5d7dea3a69a6ebaa50e76c7645da40f1986
     source_size: 235095
     chrome_version: 0.6.11
     parent_head_sha: 2bdb7267cf65551cfd11658147cca56de1cfd107
     state: IN_PROGRESS
-    source_pr: PENDING
     parent_pr: PENDING
     exact_main_runs: []
-    blocker: source CI/Release and parent protected-main, packaged E2E evidence, production catalog readback and Release pending
+    blocker: parent PR/CI, protected-main, packaged E2E evidence, production catalog readback and Release pending
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001
