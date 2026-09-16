@@ -112,7 +112,7 @@
     },
     {
       "id": "bot-father",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "title": "Bot Father",
       "description": "创建完整可移植 Codex 插件",
       "homepage": "https://fabushi.ombhrum.com/miniapps/bot-father/",
@@ -126,7 +126,7 @@
         "protocol": "fabushi.marketplace.audit.v1",
         "policyVersion": 1,
         "decision": "approved",
-        "digest": "1dbc0a15e178d9b4a2de824656e1d62416b168356b70aa3929e8c004700a1b0c"
+        "digest": "dc9a3704e918059d4540f5e58481c23997532b0fbbbc60de143cee41b35dc6ed"
       }
     },
     {

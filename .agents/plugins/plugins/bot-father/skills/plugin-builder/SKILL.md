@@ -35,17 +35,23 @@ outbound JSON-RPC request for its response.
 For an official in-repository plugin, do not hand-edit
 `frontend/apps/web/public/.well-known/mahayana/marketplace.json` or the
 Marketplace approval ledger. Commit the plugin source plus the internal
-`.agents/plugins/marketplace.json` registration in a governed PR. The required
-`CI result` automatically runs `Marketplace Security Review` (deterministic
-Fabushi policy, CodeQL, Semgrep CE, Trivy, OSV and Syft/Grype). Only after that
-PR is protected-merged to canonical `main` may `Marketplace Auto Publish`
-generate the public catalog and approval ledger in its own protected publish
-PR. A failed audit, a changed digest under an already-approved version, or a
-failed publish PR keeps the new plugin/version unlisted.
+`.agents/plugins/marketplace.json` registration in a same-repository governed
+PR. The required `CI result` automatically runs `Marketplace Security Review`
+(deterministic Fabushi policy, CodeQL, Semgrep CE, Trivy, OSV and Syft/Grype).
+After that exact PR head passes CI, the trusted default-branch
+`Marketplace Auto Publish` workflow re-audits it, generates the public catalog
+and immutable approval ledger, commits those generated files back into the
+same source PR, reruns `CI result` on the generated head, then explicitly hands
+the PR to the repository's existing protected automerge/merge-queue
+controller. This write-back is disabled for fork PRs and for PRs that also
+change security/publisher tooling. A failed audit, a changed digest under an
+already-approved version, a failed generated-head CI, or a failed merge-group
+keeps the new plugin/version unlisted. Do not manually stage the generated
+catalog or add merge authorization to bypass this publication controller.
 
 Use `mahayana plugin publish` only after local plugin validation/test/pack has
 passed and when the market service path being used is explicitly supported by
-the current repository policy. Only report public publication after the
-canonical public market query returns the exact plugin/version and its audit
-digest; a source PR, successful pack, or pending auto-publish PR is not a
-publication receipt.
+the current repository policy. Only report public publication after canonical
+`main`/the public market query returns the exact plugin/version and its audit
+digest; a source PR, successful pack, staged catalog commit, or queued merge is
+not a publication receipt.
