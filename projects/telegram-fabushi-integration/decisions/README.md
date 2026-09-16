@@ -11,3 +11,6 @@ ADR 用于记录会长期影响代码结构、协议或平台边界的决策。�
 | ADR-0005 | AI Agent 是通信网络一等公民 | Accepted |
 | ADR-0006 | Mini App 使用权限清单、签名上下文和沙箱 bridge | Accepted |
 | ADR-0007 | 支付采用 PaymentIntent + Provider Adapter + Ledger | Accepted |
+| ADR-0014 | Event-aware exact-head checkout gate（PR exact head / merge-group current group SHA / fail-closed CI result） | Accepted |
+
+> Review note (2026-09-05): 本轮仅补入当前任务直接依赖的 ADR-0014 索引，不在独立代码审查中重编号或重写既有 ADR-0008–ADR-0013 的历史索引债务；其源文件与 provenance 保持不变。
