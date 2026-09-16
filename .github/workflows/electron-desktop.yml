@@ -230,7 +230,7 @@ jobs:
           printf '{"version":"%s","sha":"%s","platform":"%s","behavioralTests":"none"}\n' \
             "$FABUSHI_DELIVERY_VERSION" "$SOURCE_SHA" "${{ matrix.target }}" \
             > "desktop/release/fabushi-delivery-${{ matrix.target }}.json"
-          (cd desktop/release && find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS.txt)
+          (cd desktop/release && find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
 
       - name: Upload installable package artifacts
         uses: actions/upload-artifact@v7
