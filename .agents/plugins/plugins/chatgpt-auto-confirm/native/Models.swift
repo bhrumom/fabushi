@@ -178,6 +178,19 @@ struct AutomationTask: Codable {
   var reviewFeedback: String?
   var reviewedAt: String?
   var continuationDepth: Int?
+  // Authoritative per-turn timing and continuation state. Wall-clock fields
+  // are persisted for diagnostics, while monotonic nanoseconds are used for
+  // the 20-minute policy so clock adjustments cannot change Chat rotation.
+  var turnStartedAt: String? = nil
+  var turnEndedAt: String? = nil
+  var turnStartedMonotonicNanoseconds: UInt64? = nil
+  var turnEndedMonotonicNanoseconds: UInt64? = nil
+  var thinkingDurationSeconds: Double? = nil
+  var turnThinkingSeconds: Double? = nil
+  var chatConversationId: String? = nil
+  var sameChatFollowUpCount: Int? = nil
+  var newChatContinuationCount: Int? = nil
+  var nextTurnContinuationAction: String? = nil
   var reportFingerprints: [String]?
   var lastActivitySignature: String?
   var lastProgressAt: String?
