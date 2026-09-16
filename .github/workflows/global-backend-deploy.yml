@@ -1,0 +1,12 @@
+name: Retired automatic test - global backend deploy
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Disabled by FCM-024 because this legacy path included automatic product tests.'
