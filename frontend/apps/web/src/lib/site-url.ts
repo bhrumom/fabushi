@@ -6,8 +6,14 @@ export const siteBasePath =
 
 const rootHref = siteBasePath ? `${siteBasePath}/` : "/";
 const defaultOrigin = `https://${brand.domain}`;
-const rawOrigin = process.env.NEXT_PUBLIC_SITE_ORIGIN?.trim() || defaultOrigin;
-const siteOrigin = rawOrigin.endsWith("/") ? rawOrigin.slice(0, -1) : rawOrigin;
+const configuredOrigin = (process.env.NEXT_PUBLIC_SITE_ORIGIN?.trim() || defaultOrigin).replace(/\/+$/, "");
+const legacyOfficialOrigins = new Set([
+  `https://www.${brand.domain}`,
+  `https://fabushi.${brand.domain}`,
+]);
+// The public website is canonical on the root domain. Keep stale deployment
+// variables from making a legacy hostname canonical again after the host split.
+const siteOrigin = legacyOfficialOrigins.has(configuredOrigin) ? defaultOrigin : configuredOrigin;
 
 function isExternalHref(path: string) {
   return /^(?:[a-z]+:)?\/\//i.test(path) || path.startsWith("mailto:") || path.startsWith("tel:");
