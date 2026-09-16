@@ -7,23 +7,25 @@ Canonical project record: `bhrumom/fabushi` `main` → `projects/fabushi-cicd-me
 - `source/README.md` preserves the original CI/CD and merge-governance requirement and diagnosed cause.
 - `source/2026-08-24-main-e2e-release-open-source-first.md` records the historical requirement for open-source-first startup, warm/incremental build/test, per-main packaged simulated-user E2E and E2E-gated Release publication.
 - `source/2026-08-24-updater-proof-optional-clarification.md` made the previous-installed-App updater journey optional/non-blocking by default.
-- **`source/2026-09-16-test-first-mcp-only-formal-release.md` is the latest explicit requirement and supersedes conflicting historical E2E/release-test rules.** Test/beta/prerelease publication has no behavioral-test gate; automatic E2E/long-running test flows are disabled/manual-only; formal/stable behavioral acceptance is driven from ChatGPT through the Fabushi official MCP against Action-hosted App-owned devices after the test release exists.
+- `source/2026-09-16-test-first-mcp-only-formal-release.md` superseded historical automatic/E2E-gated release behavior: test publication has no behavioral-test gate and formal acceptance is external through the Fabushi official MCP.
+- **`source/2026-09-16-zero-test-all-platform-prerelease.md` is the latest explicit refinement.** Before test publication, automatic workflows are limited to the no-test merge status and artifact construction/distribution. Automatic unit/integration/contract/smoke/E2E/regression/simulator/emulator/user-journey/quality-test flows are disabled. A newer exact-main version publishes macOS/Windows/Linux test packages plus iOS TestFlight and Android internal builds without behavioral tests. Formal acceptance remains MCP-driven on manually started App-owned Action devices.
 
 ## Current release/test authority
 
 1. Merge/protected-main provenance, source identity, version monotonicity, signing/notarization, package integrity and security controls remain mandatory.
 2. Test/beta/prerelease construction and publication must not run or require product behavioral tests.
-3. Automatic post-main/release-triggered E2E is not release authority and must remain disabled/manual-only.
-4. For a formal/stable candidate, GitHub Actions provides the runner/device and installs/launches the exact candidate App; the App self-registers its own controllable device; the Fabushi official MCP is the external test driver.
-5. Missing/unavailable MCP connectivity, missing App-owned device, failed external control, or failed required journey blocks the formal release. Do not substitute another SHA, an autonomous workflow E2E, or an older run.
+3. Automatic product-test/quality/E2E workflows are not release authority and must remain disabled; historical implementations may be retained only outside the active workflow directory or as later explicitly requested manual diagnostics.
+4. For a formal/stable candidate, GitHub Actions provides a manually started runner/device and installs/launches the exact candidate App; the App self-registers its own controllable device; the Fabushi official MCP is the external test driver.
+5. The runner may provision/install/launch/record evidence, but must not substitute an autonomous simulated-user acceptance journey for MCP control.
+6. Missing/unavailable MCP connectivity, missing App-owned device, failed external control, or failed required journey blocks formal publication. Do not substitute another SHA, an autonomous workflow E2E, or an older run.
 
 ## Precedence
 
-1. Latest explicit user requirement once persisted here; currently the 2026-09-16 source above.
+1. Latest explicit user requirement once persisted here; currently `source/2026-09-16-zero-test-all-platform-prerelease.md`.
 2. This file and designated dated sources under `source/`; later explicit sources supersede only conflicting earlier rules.
 3. Accepted ADRs and current CI/CD model docs that do not conflict with the latest source.
 4. WBS, acceptance matrix, status, risk and task records.
 5. Actual GitHub workflow files, rules/check results, PRs, Releases and MCP/runner evidence for implementation facts.
 6. Conversation memory.
 
-No workflow is considered compliant merely because documentation says so; actual trigger configuration and actual release evidence remain authoritative.
+No workflow is considered compliant merely because documentation says so; actual triggers and actual release/MCP evidence remain authoritative.
