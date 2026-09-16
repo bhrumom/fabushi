@@ -1,0 +1,45 @@
+# 2026-09-16 Marketplace 自动安全审核与自动上架
+
+## 用户目标
+
+将 Fabushi 现有 Mini App / 插件 Marketplace 升级为自动审核、自动上架体系：所有纳入 `.agents/plugins/marketplace.json` 的官方小程序/插件必须经过统一安全审核；审核通过后无需人工逐项改公开目录即可进入公开 Marketplace；审核失败必须 fail closed，不能被搜索、安装或发布。
+
+## 约束
+
+- 继续复用 `FAB-P0001 / TFI`、`M8 Mini Apps` 与 `M8-MARKET-003` 的 GitHub immutable install/update contract，不创建第二套 Marketplace/安装协议。
+- 以 GitHub Actions 作为免费 CI/orchestration；真正的审核由确定性 Fabushi policy、CodeQL、Semgrep CE、Trivy、OSV/SBOM/漏洞扫描等组成。
+- PR / merge-group 必须 read-only 审核，不允许不可信插件代码持有写权限或发布凭据。
+- 只有 canonical `main` 上已经通过审核的插件源码，才允许进入 privileged auto-publish lane。
+- auto-publish 只能生成受治理的 catalog/audit 变更并走受保护 PR + required checks + auto-merge；不得绕过 protected `main`。
+- 发布/安装身份必须绑定 `plugin id + version + source SHA + deterministic plugin digest`；源码或版本变化后旧审核证明立即失效。
+- Secret、credential、private key、危险下载执行链、未声明/不安全 runtime descriptor、依赖高危漏洞等必须 fail closed。
+- 审核证据必须作为 GitHub Actions artifact 保留，并提供 machine-readable JSON。
+- 外部 scanners 不得成为唯一信任根；即使第三方 scanner 不可用，Fabushi deterministic policy 仍需 fail closed 或明确阻塞发布。
+
+## 自动审核目标流水线
+
+1. exact-source checkout。
+2. Fabushi deterministic marketplace/policy audit。
+3. Semgrep CE + Fabushi custom rules。
+4. Trivy filesystem vulnerability/secret/misconfiguration scan。
+5. OSV dependency scan。
+6. SBOM/Grype vulnerability scan（在 CI 可用时）。
+7. CodeQL security-extended analysis for supported source languages。
+8. 生成 `fabushi.marketplace.audit.v1` report，包含每个插件的 immutable digest、版本、source SHA、decision/findings。
+9. PR/merge-group 任一 required audit 失败则禁止进入 main。
+10. canonical main 审核通过后，确定性生成 public catalog + approval ledger；若有变化，自动创建 publish PR，并只在其 required checks 成功后 auto-merge。
+11. public catalog 只包含具有当前 `approved` ledger 证明的插件版本。
+
+## Open-source-first 调研
+
+- GitHub CodeQL / `github/codeql-action@v4`: GitHub 官方 SAST，公开仓库可用于 Code Scanning；采用 `security-extended`。
+- Semgrep CE (`semgrep/semgrep`, LGPL-2.1): 多语言 pattern SAST；用于 Fabushi 自定义危险行为规则。
+- Trivy (`aquasecurity/trivy`, Apache-2.0): filesystem vulnerability/secret/misconfiguration 扫描。
+- OSV-Scanner (`google/osv-scanner`, Apache-2.0): 依赖漏洞数据库与 GitHub reusable workflow / CLI；采用 v2 系列。
+- Syft/Grype (`anchore/syft`, `anchore/grype`, Apache-2.0): SBOM + vulnerability scan，可作为供应链二次交叉验证。
+- Sigstore/cosign (`sigstore/cosign`, Apache-2.0): 后续可用于 Release/attestation signing；本任务先固化 digest + GitHub source SHA + Actions artifact evidence，不要求新增长期私钥。
+- gVisor (`google/gvisor`, Apache-2.0): 成熟不可信 workload sandbox 参考；GitHub-hosted runner 上的通用第三方 MiniApp runtime 动态执行需要独立 runner/sandbox contract 后再启用，不能用普通 Docker 冒充完整 sandbox。
+
+## 本轮实现边界
+
+本轮首先关闭“仓库内所有官方 Mini App / 插件自动安全审核 + canonical-main 自动 public catalog 上架”闭环。任意第三方外部仓库的服务端动态 submission 仍需要后续把同一 audit protocol 接到 Marketplace ingestion worker；在该接入完成前保持 `pending_review`，不降低现有安全门禁。
