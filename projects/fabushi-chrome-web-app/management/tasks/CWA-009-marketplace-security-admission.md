@@ -61,8 +61,8 @@
 ## Branch / commit / PR
 
 - Branch: `codex/cwa-marketplace-security-gate-20260916`
-- PR: pending implementation
-- Commit: pending
+- PR: pending creation; compare URL: https://github.com/bhrumom/fabushi/compare/main...codex/cwa-marketplace-security-gate-20260916
+- Commit: `0c34c08c2d9ef8cfeb707371fc46bc213df9ccef`
 
 ## Open-source survey and reuse decision
 
