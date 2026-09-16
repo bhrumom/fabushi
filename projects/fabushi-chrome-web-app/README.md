@@ -36,4 +36,5 @@ Out of scope: copying official ChatGPT bookmarks/history/sidebar features or del
 Computer Use runtime/native accessibility helpers.
 
 Start with SOURCE_OF_TRUTH.md, then PROJECT.yaml, docs, management records, ADRs,
-evidence and runbooks. Active tasks are CWA-006, CWA-007 and CWA-008 under management/tasks/.
+evidence and runbooks. Active tasks are CWA-006, CWA-007, CWA-008 and CWA-010 under
+management/tasks/.
