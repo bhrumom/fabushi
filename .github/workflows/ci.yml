@@ -9,13 +9,31 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  security-events: write
 
 jobs:
+  marketplace-security:
+    name: Required marketplace security
+    uses: ./.github/workflows/marketplace-security-review.yml
+
   ci-result:
     name: CI result
+    if: always()
+    needs: [marketplace-security]
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 6
     steps:
+      - name: Require layered Marketplace security review
+        env:
+          MARKETPLACE_SECURITY: ${{ needs.marketplace-security.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$MARKETPLACE_SECURITY" = success || {
+            echo "Marketplace security review did not pass: $MARKETPLACE_SECURITY" >&2
+            exit 1
+          }
       - uses: actions/checkout@v5
       - name: Release-control integrity
         shell: bash
@@ -42,4 +60,4 @@ jobs:
           node --test chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js
           node --test chatgpt-vps-control/tests/fabushi-embedded-runtime-source.test.js
           git diff --check HEAD^ HEAD || true
-          echo 'Required CI result: fast release-control, canonical test-release source gate, embedded release-source architecture contract, macOS stable-target rebase, App-owned packaged native-helper binding, Action-owned App Agent smoke, exact-source macOS release dispatch, macOS/iOS interactive contracts, Mahayana CLI-first fast-gate contracts, real validation-surface latency observability, and direct native platform release-gate contracts.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Required CI result: layered Marketplace security review (deterministic policy + Semgrep + Trivy + Syft/Grype + CodeQL + OSV), fast release-control, canonical test-release source gate, embedded release-source architecture contract, macOS stable-target rebase, App-owned packaged native-helper binding, Action-owned App Agent smoke, exact-source macOS release dispatch, macOS/iOS interactive contracts, Mahayana CLI-first fast-gate contracts, real validation-surface latency observability, and direct native platform release-gate contracts.' >> "$GITHUB_STEP_SUMMARY"

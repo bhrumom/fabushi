@@ -1,0 +1,256 @@
+name: Marketplace Security Review
+
+on:
+  workflow_call:
+  push:
+    branches: [main]
+    paths:
+      - '.agents/plugins/**'
+      - 'marketplace/**'
+      - 'third_party/mahayana/mahayana-rs/providers/official-miniapps/**'
+      - 'scripts/*marketplace*.py'
+      - '.semgrep/marketplace-security.yml'
+      - '.github/codeql/marketplace-security.yml'
+      - '.github/workflows/marketplace-security-review.yml'
+      - '.github/workflows/marketplace-auto-publish.yml'
+      - 'frontend/apps/web/public/.well-known/mahayana/marketplace*.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+concurrency:
+  group: marketplace-security-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  deterministic:
+    name: Deterministic Fabushi policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Test and audit every registered plugin
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python3 scripts/test-marketplace-security.py
+          python3 scripts/audit-official-plugin-marketplace.py \
+            --source-sha "$SOURCE_SHA" \
+            --report evidence/marketplace-audit.json
+          python3 scripts/check-official-plugin-marketplace.py
+          python3 scripts/generate-official-plugin-marketplace.py --check
+      - name: Summarize deterministic audit
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Fabushi Marketplace deterministic security review'
+            echo "- source SHA: $SOURCE_SHA"
+            if test -f evidence/marketplace-audit.json; then
+              echo "- decision: $(jq -r .decision evidence/marketplace-audit.json)"
+              echo "- plugins: $(jq -r .summary.pluginCount evidence/marketplace-audit.json)"
+              echo "- rejected: $(jq -r .summary.rejected evidence/marketplace-audit.json)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload deterministic audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-deterministic-audit-${{ github.sha }}-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 90
+
+  semgrep:
+    name: Semgrep CE
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Install pinned Semgrep CE
+        run: python3 -m pip install --disable-pip-version-check 'semgrep==1.177.0'
+      - name: Run Fabushi marketplace rules
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          semgrep scan \
+            --config .semgrep/marketplace-security.yml \
+            --metrics=off \
+            --error \
+            --json-output=evidence/semgrep.json \
+            .agents/plugins/plugins
+      - name: Upload Semgrep evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-semgrep-${{ github.sha }}-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 90
+
+  trivy:
+    name: Trivy filesystem
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - run: mkdir -p evidence
+      - name: Scan plugin filesystem
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .agents/plugins/plugins
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          format: json
+          output: evidence/trivy.json
+          exit-code: '1'
+      - name: Upload Trivy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-trivy-${{ github.sha }}-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 90
+
+  supply-chain:
+    name: Syft SBOM and Grype
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - run: mkdir -p evidence
+      - name: Generate plugin SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          path: .agents/plugins/plugins
+          format: spdx-json
+          output-file: evidence/marketplace-sbom.spdx.json
+          upload-artifact: false
+      - name: Scan plugin dependencies with Grype
+        uses: anchore/scan-action@v7.4.0
+        with:
+          path: .agents/plugins/plugins
+          fail-build: true
+          severity-cutoff: high
+          output-format: json
+      - name: Upload SBOM evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-sbom-${{ github.sha }}-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 90
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, python, rust]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout: |
+            .agents/plugins/plugins
+            third_party/mahayana/mahayana-rs/providers/official-miniapps
+            .github/codeql/marketplace-security.yml
+          sparse-checkout-cone-mode: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          config-file: .github/codeql/marketplace-security.yml
+      - name: Analyze plugin source
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:${{ matrix.language }}/marketplace'
+
+  osv-pr:
+    name: OSV new dependency vulnerabilities
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.6.0
+    with:
+      scan-args: |-
+        --recursive
+        .agents/plugins/plugins
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+  osv-full:
+    name: OSV full dependency vulnerabilities
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.6.0
+    with:
+      scan-args: |-
+        --recursive
+        .agents/plugins/plugins
+      fail-on-vuln: true
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+  result:
+    name: Marketplace security result
+    if: always()
+    needs: [deterministic, semgrep, trivy, supply-chain, codeql, osv-pr, osv-full]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every applicable layer
+        env:
+          DETERMINISTIC: ${{ needs.deterministic.result }}
+          SEMGREP: ${{ needs.semgrep.result }}
+          TRIVY: ${{ needs.trivy.result }}
+          SUPPLY_CHAIN: ${{ needs.supply-chain.result }}
+          CODEQL: ${{ needs.codeql.result }}
+          OSV_PR: ${{ needs.osv-pr.result }}
+          OSV_FULL: ${{ needs.osv-full.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for item in \
+            "deterministic=$DETERMINISTIC" \
+            "semgrep=$SEMGREP" \
+            "trivy=$TRIVY" \
+            "supply-chain=$SUPPLY_CHAIN" \
+            "codeql=$CODEQL" \
+            "osv-pr=$OSV_PR" \
+            "osv-full=$OSV_FULL"; do
+            name="${item%%=*}"
+            result="${item#*=}"
+            printf '%s: %s\n' "$name" "$result"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "$name did not pass" >&2; exit 1 ;;
+            esac
+          done

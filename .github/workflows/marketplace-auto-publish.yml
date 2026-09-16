@@ -1,0 +1,177 @@
+name: Marketplace Auto Publish
+
+on:
+  workflow_run:
+    workflows: ['Marketplace Security Review']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Canonical main SHA to publish; defaults to current main'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: marketplace-auto-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve canonical source
+        id: source
+        shell: bash
+        env:
+          REQUESTED_SHA: ${{ inputs.source_sha }}
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          source_sha="${REQUESTED_SHA:-${WORKFLOW_SHA:-}}"
+          if test -z "$source_sha"; then
+            source_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          fi
+          canonical="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          test "$source_sha" = "$canonical" || {
+            echo "Refusing stale publication: reviewed=$source_sha canonical=$canonical" >&2
+            exit 1
+          }
+          echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "short=${source_sha:0:12}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Re-audit canonical source and generate publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python3 scripts/audit-official-plugin-marketplace.py \
+            --source-sha '${{ steps.source.outputs.sha }}' \
+            --report evidence/marketplace-audit.json
+          python3 scripts/generate-official-plugin-marketplace.py --write
+          python3 scripts/generate-official-plugin-marketplace.py --check
+          python3 scripts/check-official-plugin-marketplace.py
+
+      - name: Detect catalog change
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- \
+            frontend/apps/web/public/.well-known/mahayana/marketplace.json \
+            frontend/apps/web/public/.well-known/mahayana/marketplace-approvals.json; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+            git diff --check
+            git diff --stat
+          fi
+
+      - name: Create governed publication PR
+        if: steps.changes.outputs.changed == 'true'
+        id: pr
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SHORT_SHA: ${{ steps.source.outputs.short }}
+        run: |
+          set -euo pipefail
+          branch="automation/marketplace-publish-$SHORT_SHA"
+          git config user.name 'fabushi-marketplace-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B "$branch"
+          git add \
+            frontend/apps/web/public/.well-known/mahayana/marketplace.json \
+            frontend/apps/web/public/.well-known/mahayana/marketplace-approvals.json
+          git commit -m "chore(marketplace): publish approved plugins from $SHORT_SHA"
+          git push --force-with-lease origin "$branch"
+
+          pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --base main --state open --json number --jq '.[0].number // empty')"
+          if test -z "$pr"; then
+            body=$(cat <<EOF
+          Automatic publication of plugins approved by Marketplace Security Review.
+
+          - canonical reviewed source: \`$SOURCE_SHA\`
+          - audit protocol: \`fabushi.marketplace.audit.v1\`
+          - policy: deterministic Fabushi policy + CodeQL + Semgrep CE + Trivy + OSV + Syft/Grype
+          - generated files only: public catalog + immutable approval ledger
+
+          This PR must still pass the protected \`CI result\` gate and merge queue. It does not bypass protected \`main\`.
+          EOF
+          )
+            pr_url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" --title "chore(marketplace): publish approved plugins ($SHORT_SHA)" --body "$body")"
+            pr="${pr_url##*/}"
+          fi
+          echo "number=$pr" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Explicitly run protected CI on bot branch
+        if: steps.changes.outputs.changed == 'true'
+        id: ci
+        shell: bash
+        env:
+          BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          set -euo pipefail
+          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+          run_id=''
+          for _ in $(seq 1 30); do
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch "$BRANCH" --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$before\")][0].databaseId // empty")"
+            test -n "$run_id" && break
+            sleep 2
+          done
+          test -n "$run_id" || { echo 'Unable to resolve dispatched CI run' >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+
+      - name: Enqueue publication PR after required CI
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash
+          {
+            echo '## Marketplace publication queued'
+            echo "- PR: #$PR_NUMBER"
+            echo '- protected main / merge queue remains authoritative'
+            echo '- publication becomes effective only after canonical-main merge/readback'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record no-op publication
+        if: steps.changes.outputs.changed != 'true'
+        run: |
+          {
+            echo '## Marketplace publication'
+            echo '- No public catalog change is required.'
+            echo '- The canonical approved ledger already matches every registered plugin digest/version.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload publication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-auto-publish-${{ steps.source.outputs.short || github.run_id }}
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 90

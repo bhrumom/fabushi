@@ -1,0 +1,45 @@
+rules:
+  - id: fabushi.marketplace.remote-pipe-shell
+    message: Remote content must not be piped directly into an interpreter or shell.
+    severity: ERROR
+    languages: [generic]
+    paths:
+      include:
+        - '*.sh'
+        - '*.zsh'
+        - '*.ps1'
+        - '*.js'
+        - '*.mjs'
+        - '*.cjs'
+        - '*.ts'
+        - '*.tsx'
+        - '*.py'
+        - '*.rb'
+        - '*.rs'
+    pattern-regex: '(?i)(curl|wget)\b[^\n|]{0,500}\|\s*(sudo\s+)?(bash|sh|zsh|python3?|node|powershell|pwsh)\b'
+
+  - id: fabushi.marketplace.powershell-remote-exec
+    message: PowerShell remote download plus Invoke-Expression is forbidden in marketplace plugin source.
+    severity: ERROR
+    languages: [generic]
+    paths:
+      include:
+        - '*.ps1'
+        - '*.js'
+        - '*.ts'
+        - '*.cmd'
+        - '*.bat'
+    pattern-regex: '(?i)(iex|invoke-expression)[^\n]{0,500}(downloadstring|invoke-webrequest|invoke-restmethod|\biwr\b|\birm\b)'
+
+  - id: fabushi.marketplace.remote-dynamic-eval
+    message: Remote content must not be evaluated dynamically.
+    severity: ERROR
+    languages: [generic]
+    paths:
+      include:
+        - '*.js'
+        - '*.mjs'
+        - '*.cjs'
+        - '*.ts'
+        - '*.tsx'
+    pattern-regex: '(?i)(eval|new\s+Function)\s*\([^\n]{0,500}(fetch\s*\(|https?://)'
