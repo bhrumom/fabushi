@@ -139,6 +139,20 @@ active_work:
     parent_pr: PENDING
     exact_main_runs: []
     blocker: parent protected-main, exact-main Chrome package/E2E/evidence and production Marketplace readback pending
+  - task: TFI-USERSCRIPT-RECOVERY-019
+    branch: codex/tfi-userscript-019-final-reply-stall-refresh-20260915
+    source_branch: codex/final-reply-stall-refresh-2.9.32-20260915
+    source_pr: 25
+    source_main_sha: 50569be0ab88909408ed8880a24c185906d760eb
+    source_version: 2.9.32
+    source_release: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.32
+    source_sha256: 30ec1f70e0c14a8ebbd530b2cf0186a2d63690bf85e45b8ec8d0e1a81090e9e7
+    source_size: 234862
+    chrome_version: 0.6.10
+    state: IN_PROGRESS
+    parent_pr: 2652
+    exact_main_runs: []
+    blocker: parent CI, protected-main, exact-main Chrome packaged evidence and production Marketplace readback pending
 completed_stage_evidence:
   M0: PR-1987
   M1: M1-ACCEPT-001
