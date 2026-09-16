@@ -2,8 +2,9 @@ const APP_PROXY_ROUTE = /^\/api\/app\/(.+)$/;
 const APP_API_BASE = "https://api.ombhrum.com/api";
 const DACHENG_AI_PROXY_ROUTE = /^\/api\/dacheng-ai\/(.+)$/;
 const DEFAULT_DACHENG_AI_API_BASE = "https://ai.ombhrum.com";
-const OFFICIAL_SITE_HOST = "fabushi.ombhrum.com";
-const ROOT_DOMAIN_REDIRECT_HOSTS = new Set(["ombhrum.com"]);
+const OFFICIAL_SITE_HOST = "ombhrum.com";
+const WEB_APP_HOST = "web.ombhrum.com";
+const LEGACY_OFFICIAL_SITE_HOSTS = new Set(["www.ombhrum.com", "fabushi.ombhrum.com"]);
 const RELEASES_JSON_ROUTE = "/api/releases.json";
 const RELEASES_JSON_R2_OBJECT = {
   key: "api/releases.json",
@@ -29,7 +30,9 @@ const ANDROID_R2_DOWNLOADS = new Map([
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (ROOT_DOMAIN_REDIRECT_HOSTS.has(url.hostname.toLowerCase())) {
+    const hostname = url.hostname.toLowerCase();
+
+    if (LEGACY_OFFICIAL_SITE_HOSTS.has(hostname)) {
       return redirectToOfficialSite(url);
     }
 
@@ -54,6 +57,10 @@ export default {
       return proxyApiRequest(request, aiBase, dachengAiMatch[1], ["GET", "POST", "HEAD", "OPTIONS"]);
     }
 
+    if (hostname === WEB_APP_HOST) {
+      return serveWebApplication(request, env, url);
+    }
+
     return env.ASSETS.fetch(request);
   },
 };
@@ -63,6 +70,24 @@ function redirectToOfficialSite(url) {
   redirectUrl.protocol = "https:";
   redirectUrl.host = OFFICIAL_SITE_HOST;
   return Response.redirect(redirectUrl.toString(), 308);
+}
+
+function serveWebApplication(request, env, url) {
+  if (url.pathname === "/web" || url.pathname === "/web/") {
+    const canonical = new URL(url.toString());
+    canonical.protocol = "https:";
+    canonical.host = WEB_APP_HOST;
+    canonical.pathname = "/";
+    return Response.redirect(canonical.toString(), 308);
+  }
+
+  if (url.pathname === "/" || url.pathname === "/index.html") {
+    const assetUrl = new URL(url.toString());
+    assetUrl.pathname = "/web/";
+    return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
+  }
+
+  return env.ASSETS.fetch(request);
 }
 
 async function serveReleaseStateR2Object(request, env, objectConfig) {
@@ -225,7 +250,6 @@ async function proxyApiRequest(request, upstreamBase, upstreamPath, allowedMetho
   responseHeaders.delete("Content-Length");
   responseHeaders.delete("Set-Cookie");
   responseHeaders.set("X-Fabushi-Proxy", "official-site");
-
   responseHeaders.set("Cache-Control", "no-store");
 
   return new Response(upstreamResponse.body, {
