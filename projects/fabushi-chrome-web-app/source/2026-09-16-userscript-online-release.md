@@ -22,3 +22,10 @@ Release 不在本任务中重复生成。
 `https://raw.githubusercontent.com/<owner>/<repo>/<sourceRef>/<entry>`，并在生产目录回读
 确认 `deploymentUrl`、`install.artifacts[0].source.url`、`releaseManifest.artifacts[0].source.url`
 都绑定 `50569be0ab88909408ed8880a24c185906d760eb`。本轮仍不运行、不新增脚本/插件 E2E。
+
+## 修复已部署并完成线上合同回读
+
+Follow-up PR #2665 已通过保护队列合入并部署。线上 `deploymentUrl`、
+`install.artifacts[0].source.url`、`releaseManifest.artifacts[0].source.url` 现在都使用
+同一个 commit-pinned raw URL；raw 文件返回 HTTP 200，大小和 SHA-256 与目录声明一致。
+客户端可重新刷新市场后重试安装。本轮仍不运行脚本/插件 E2E。
