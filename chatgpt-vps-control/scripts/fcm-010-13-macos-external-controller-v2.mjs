@@ -6,6 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { serializeDeviceCallArguments } from "./fcm-010-13-find-contract.mjs";
 import { runLiveJourney } from "./fcm-010-13-macos-live-journey.mjs";
+import { retryTransientNetwork } from "./fcm-010-13-transient-retry.mjs";
 
 const FROZEN_SOURCE = String(process.env.FROZEN_SOURCE_SHA || "").trim();
 const IMMUTABLE_TAG = String(process.env.IMMUTABLE_RELEASE_TAG || "").trim();
@@ -43,7 +44,7 @@ function sanitizeError(error) {
   return String(error?.message || error || "unknown error").replaceAll(password, "[REDACTED]").slice(0, 1600);
 }
 
-async function authorizeMcp() {
+async function authorizeMcpOnce() {
   record("oauth-start", { origin });
   const redirectUri = "http://127.0.0.1/callback";
   const verifier = randomBytes(48).toString("base64url");
@@ -106,6 +107,23 @@ async function authorizeMcp() {
   if (!tokens?.access_token) throw new Error("MCP token exchange returned no access token");
   record("oauth-complete", { account: `${username.slice(0, 2)}***` });
   return tokens.access_token;
+}
+
+async function authorizeMcp() {
+  return retryTransientNetwork(
+    ({ attempt, maxAttempts }) => {
+      record("oauth-attempt", { attempt, maxAttempts });
+      return authorizeMcpOnce();
+    },
+    {
+      maxAttempts: 3,
+      baseDelayMs: 250,
+      sleepFn: sleep,
+      onRetry: ({ attempt, nextAttempt, maxAttempts, code, delayMs }) => {
+        record("oauth-transient-retry", { attempt, nextAttempt, maxAttempts, code, delayMs });
+      },
+    },
+  );
 }
 
 function parseRelay(result, toolName) {
