@@ -12,5 +12,6 @@
 - parent candidate：Chrome `0.6.11`，bundled userscript 与 source 逐字节一致；parent CI/PR 尚未闭合。
 - parent candidate commit：`fd5e3bdbbb423d1a32a12766f577c74adce80f41`。
 - parent record follow-up commit：`39e376af50df1a8ab3b7d307ee94c5e13efc45f9`。
+- parent source-release pin commit：`5c8ee77b0bda913536ca8e303c9a372dbb236334`。
 - 待补证据：parent PR/merge SHA、Chrome package 与 packaged simulated-user 分步 PNG/全程视频/trace/HTML report/native logs、post-main Release、Worker/catalog readback。
 - 本机未构建或运行应用级 E2E；不得以本地结果替代 GitHub Actions 交付证据。

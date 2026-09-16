@@ -53,6 +53,7 @@
 - parent 分支：`codex/tfi-userscript-020-unbounded-stall-refresh-20260916`
 - parent implementation/initial-record commit：`fd5e3bdbbb423d1a32a12766f577c74adce80f41`
 - parent record follow-up commit：`39e376af50df1a8ab3b7d307ee94c5e13efc45f9`
+- parent source-release pin commit：`5c8ee77b0bda913536ca8e303c9a372dbb236334`
 - parent 候选：Chrome `0.6.11`，内置 userscript v2.9.33；parent PR/CI/主线交付仍待完成。
 - source Actions：PR run `35099639206`、merge-to-main run `35099720957` 均成功；Release 资产已公开并绑定上述 canonical main。
 
