@@ -14,9 +14,19 @@ jobs:
   ci-result:
     name: CI result
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v5
+      - name: Marketplace deterministic security gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fabushi-marketplace-audit
+          python3 scripts/audit-official-plugin-marketplace.py \
+            --source-sha "$GITHUB_SHA" \
+            --report /tmp/fabushi-marketplace-audit/report.json
+          python3 scripts/check-official-plugin-marketplace.py
+          echo "Marketplace audit: $(jq -r .decision /tmp/fabushi-marketplace-audit/report.json)" >> "$GITHUB_STEP_SUMMARY"
       - name: Release-control integrity
         shell: bash
         run: |
@@ -42,4 +52,4 @@ jobs:
           node --test chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js
           node --test chatgpt-vps-control/tests/fabushi-embedded-runtime-source.test.js
           git diff --check HEAD^ HEAD || true
-          echo 'Required CI result: fast release-control, canonical test-release source gate, embedded release-source architecture contract, macOS stable-target rebase, App-owned packaged native-helper binding, Action-owned App Agent smoke, exact-source macOS release dispatch, macOS/iOS interactive contracts, Mahayana CLI-first fast-gate contracts, real validation-surface latency observability, and direct native platform release-gate contracts.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Required CI result: deterministic Marketplace security policy, fast release-control, canonical test-release source gate, embedded release-source architecture contract, macOS stable-target rebase, App-owned packaged native-helper binding, Action-owned App Agent smoke, exact-source macOS release dispatch, macOS/iOS interactive contracts, Mahayana CLI-first fast-gate contracts, real validation-surface latency observability, and direct native platform release-gate contracts.' >> "$GITHUB_STEP_SUMMARY"
