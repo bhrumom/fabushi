@@ -8,16 +8,19 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: fcm-024-disable-auto-tests-once
+  cancel-in-progress: true
+
 jobs:
   cleanup:
     name: Convert remaining automatic test workflows to manual-only
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout cleanup branch
-        uses: actions/checkout@v5
+      - name: Checkout triggering exact commit
+        uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref_name }}
           fetch-depth: 0
 
       - name: Rewrite only workflows that still execute product tests automatically
@@ -137,4 +140,4 @@ jobs:
           git config user.email 'fabushi-fcm-cleanup[bot]@users.noreply.github.com'
           git add -A .github/workflows projects/fabushi-cicd-merge-governance/source/2026-09-16-automatic-test-workflow-cleanup.md
           git commit -m 'ci(fcm): make remaining product-test workflows manual-only'
-          git push origin HEAD:${GITHUB_REF_NAME}
+          git push origin HEAD:refs/heads/fix/fcm-disable-all-auto-tests-20260916
