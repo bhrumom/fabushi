@@ -2,176 +2,293 @@ name: Marketplace Auto Publish
 
 on:
   workflow_run:
-    workflows: ['Marketplace Security Review']
+    workflows: ['CI']
     types: [completed]
   workflow_dispatch:
     inputs:
-      source_sha:
-        description: 'Canonical main SHA to publish; defaults to current main'
-        required: false
-        type: string
+      pr_number:
+        description: 'Open same-repository plugin PR to stage; workflow_run resolves this automatically'
+        required: true
+        type: number
 
 permissions:
-  contents: write
-  pull-requests: write
   actions: write
+  contents: write
+  issues: write
+  pull-requests: read
 
 concurrency:
-  group: marketplace-auto-publish
+  group: marketplace-auto-publish-${{ github.event.workflow_run.head_sha || inputs.pr_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
-  publish:
+  stage:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'main')
+       github.event.workflow_run.event == 'pull_request')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Resolve canonical source
-        id: source
-        shell: bash
+      - name: Resolve reviewed source PR
+        id: resolve
+        uses: actions/github-script@v9
         env:
-          REQUESTED_SHA: ${{ inputs.source_sha }}
-          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          set -euo pipefail
-          source_sha="${REQUESTED_SHA:-${WORKFLOW_SHA:-}}"
-          if test -z "$source_sha"; then
-            source_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
-          fi
-          canonical="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
-          test "$source_sha" = "$canonical" || {
-            echo "Refusing stale publication: reviewed=$source_sha canonical=$canonical" >&2
-            exit 1
-          }
-          echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
-          echo "short=${source_sha:0:12}" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@v5
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          REVIEWED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         with:
-          ref: ${{ steps.source.outputs.sha }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const requested = Number(process.env.INPUT_PR_NUMBER || 0);
+            const reviewedSha = process.env.REVIEWED_HEAD_SHA || '';
+
+            let pr;
+            if (requested > 0) {
+              pr = (await github.rest.pulls.get({ owner, repo, pull_number: requested })).data;
+            } else {
+              const pulls = (await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner,
+                repo,
+                commit_sha: reviewedSha,
+              })).data;
+              pr = pulls.find((candidate) =>
+                candidate.state === 'open' &&
+                candidate.base.ref === 'main' &&
+                candidate.head.sha === reviewedSha
+              );
+            }
+
+            if (!pr) {
+              core.info('No open main-targeting PR is associated with this successful CI head; nothing to publish.');
+              core.setOutput('should_stage', 'false');
+              return;
+            }
+            if (pr.state !== 'open' || pr.base.ref !== 'main') {
+              core.setFailed(`PR #${pr.number} is not an open main-targeting PR.`);
+              return;
+            }
+            if (pr.head.repo.full_name !== `${owner}/${repo}`) {
+              core.info(`PR #${pr.number} comes from a fork; privileged staging is intentionally disabled.`);
+              core.setOutput('should_stage', 'false');
+              return;
+            }
+            if (reviewedSha && pr.head.sha !== reviewedSha) {
+              core.info(`PR #${pr.number} moved after reviewed CI (${reviewedSha} -> ${pr.head.sha}); a newer CI run owns staging.`);
+              core.setOutput('should_stage', 'false');
+              return;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const names = files.map((file) => file.filename);
+            const hasPluginChanges = names.some((name) =>
+              name === '.agents/plugins/marketplace.json' ||
+              name.startsWith('.agents/plugins/plugins/')
+            );
+            if (!hasPluginChanges) {
+              core.info(`PR #${pr.number} does not change official plugin source/registry; no marketplace staging is needed.`);
+              core.setOutput('should_stage', 'false');
+              return;
+            }
+
+            // This workflow has a write-capable token because it runs from trusted
+            // default-branch code after CI. Never execute marketplace security or
+            // publisher tooling supplied by the PR itself. Infrastructure changes
+            // must be reviewed/merged separately before they can stage plugins.
+            const trustedToolingChange = names.some((name) =>
+              name.startsWith('scripts/') ||
+              name.startsWith('.github/') ||
+              name.startsWith('.semgrep/') ||
+              name === 'sitecustomize.py' ||
+              name === 'usercustomize.py'
+            );
+            if (trustedToolingChange) {
+              core.info(`PR #${pr.number} changes security/publisher tooling; automatic write-back is intentionally disabled for this PR.`);
+              core.setOutput('should_stage', 'false');
+              core.setOutput('blocked_by_tooling_change', 'true');
+              return;
+            }
+
+            core.setOutput('should_stage', 'true');
+            core.setOutput('pr_number', String(pr.number));
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('head_ref', pr.head.ref);
+
+      - name: Checkout exact reviewed plugin head
+        if: steps.resolve.outputs.should_stage == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.resolve.outputs.head_sha }}
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Re-audit canonical source and generate publication
+      - name: Bind publisher tooling to current canonical main
+        if: steps.resolve.outputs.should_stage == 'true'
         shell: bash
         run: |
           set -euo pipefail
+          git fetch --no-tags origin main
+          trusted_paths=(
+            scripts/marketplace_security.py
+            scripts/audit-official-plugin-marketplace.py
+            scripts/generate-official-plugin-marketplace.py
+            scripts/check-official-plugin-marketplace.py
+            scripts/test-marketplace-security.py
+          )
+          for path in "${trusted_paths[@]}"; do
+            git diff --quiet "origin/main" -- "$path" || {
+              echo "Reviewed PR does not use the current canonical publisher policy: $path" >&2
+              echo 'Rebase/update the PR onto current main; refusing privileged staging.' >&2
+              exit 1
+            }
+          done
+
+      - name: Re-audit reviewed plugin source and stage generated listing
+        if: steps.resolve.outputs.should_stage == 'true'
+        id: generate
+        shell: bash
+        env:
+          REVIEWED_SHA: ${{ steps.resolve.outputs.head_sha }}
+        run: |
+          set -euo pipefail
           mkdir -p evidence
+          python3 scripts/test-marketplace-security.py
           python3 scripts/audit-official-plugin-marketplace.py \
-            --source-sha '${{ steps.source.outputs.sha }}' \
+            --source-sha "$REVIEWED_SHA" \
             --report evidence/marketplace-audit.json
           python3 scripts/generate-official-plugin-marketplace.py --write
           python3 scripts/generate-official-plugin-marketplace.py --check
           python3 scripts/check-official-plugin-marketplace.py
+          git diff --check
 
-      - name: Detect catalog change
-        id: changes
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- \
-            frontend/apps/web/public/.well-known/mahayana/marketplace.json \
-            frontend/apps/web/public/.well-known/mahayana/marketplace-approvals.json; then
+          mapfile -t changed < <(git diff --name-only)
+          allowed_one='frontend/apps/web/public/.well-known/mahayana/marketplace.json'
+          allowed_two='frontend/apps/web/public/.well-known/mahayana/marketplace-approvals.json'
+          for path in "${changed[@]}"; do
+            case "$path" in
+              "$allowed_one"|"$allowed_two") ;;
+              *) echo "Generator changed an unexpected path: $path" >&2; exit 1 ;;
+            esac
+          done
+          if ((${#changed[@]} == 0)); then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
             echo 'changed=true' >> "$GITHUB_OUTPUT"
-            git diff --check
             git diff --stat
           fi
 
-      - name: Create governed publication PR
-        if: steps.changes.outputs.changed == 'true'
-        id: pr
+      - name: Commit generated approval/catalog into the reviewed source PR
+        if: steps.resolve.outputs.should_stage == 'true' && steps.generate.outputs.changed == 'true'
+        id: push
         shell: bash
         env:
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
-          SHORT_SHA: ${{ steps.source.outputs.short }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          HEAD_REF: ${{ steps.resolve.outputs.head_ref }}
         run: |
           set -euo pipefail
-          branch="automation/marketplace-publish-$SHORT_SHA"
           git config user.name 'fabushi-marketplace-bot'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git checkout -B "$branch"
           git add \
             frontend/apps/web/public/.well-known/mahayana/marketplace.json \
             frontend/apps/web/public/.well-known/mahayana/marketplace-approvals.json
-          git commit -m "chore(marketplace): publish approved plugins from $SHORT_SHA"
-          git push --force-with-lease origin "$branch"
+          git commit -m "chore(marketplace): stage approved listing for #$PR_NUMBER"
+          git push origin "HEAD:$HEAD_REF"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-          pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --base main --state open --json number --jq '.[0].number // empty')"
-          if test -z "$pr"; then
-            body=$(cat <<EOF
-          Automatic publication of plugins approved by Marketplace Security Review.
+      - name: Add Marketplace automerge authorization label
+        if: steps.resolve.outputs.should_stage == 'true'
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = Number(process.env.PR_NUMBER);
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: issue_number })).data;
+            if (!pr.labels.some((label) => label.name === 'automerge')) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['automerge'] });
+            }
 
-          - canonical reviewed source: \`$SOURCE_SHA\`
-          - audit protocol: \`fabushi.marketplace.audit.v1\`
-          - policy: deterministic Fabushi policy + CodeQL + Semgrep CE + Trivy + OSV + Syft/Grype
-          - generated files only: public catalog + immutable approval ledger
-
-          This PR must still pass the protected \`CI result\` gate and merge queue. It does not bypass protected \`main\`.
-          EOF
-          )
-            pr_url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" --title "chore(marketplace): publish approved plugins ($SHORT_SHA)" --body "$body")"
-            pr="${pr_url##*/}"
-          fi
-          echo "number=$pr" >> "$GITHUB_OUTPUT"
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
-
-      - name: Explicitly run protected CI on bot branch
-        if: steps.changes.outputs.changed == 'true'
+      - name: Dispatch protected CI for generated head
+        if: steps.resolve.outputs.should_stage == 'true' && steps.generate.outputs.changed == 'true'
         id: ci
         shell: bash
         env:
-          BRANCH: ${{ steps.pr.outputs.branch }}
+          HEAD_REF: ${{ steps.resolve.outputs.head_ref }}
+          GENERATED_SHA: ${{ steps.push.outputs.sha }}
         run: |
           set -euo pipefail
           before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
           run_id=''
-          for _ in $(seq 1 30); do
-            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch "$BRANCH" --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$before\")][0].databaseId // empty")"
+          for _ in $(seq 1 45); do
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch "$HEAD_REF" --event workflow_dispatch --limit 20 --json databaseId,headSha,createdAt --jq "[.[] | select(.headSha == \"$GENERATED_SHA\" and .createdAt >= \"$before\")][0].databaseId // empty")"
             test -n "$run_id" && break
             sleep 2
           done
-          test -n "$run_id" || { echo 'Unable to resolve dispatched CI run' >&2; exit 1; }
+          test -n "$run_id" || { echo 'Unable to resolve generated-head CI run' >&2; exit 1; }
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
           gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
 
-      - name: Enqueue publication PR after required CI
-        if: steps.changes.outputs.changed == 'true'
+      - name: Invoke the existing protected merge controller
+        if: steps.resolve.outputs.should_stage == 'true' && (steps.generate.outputs.changed != 'true' || steps.ci.outcome == 'success')
+        id: automerge
         shell: bash
         env:
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
         run: |
           set -euo pipefail
-          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash
-          {
-            echo '## Marketplace publication queued'
-            echo "- PR: #$PR_NUMBER"
-            echo '- protected main / merge queue remains authoritative'
-            echo '- publication becomes effective only after canonical-main merge/readback'
-          } >> "$GITHUB_STEP_SUMMARY"
+          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run automerge.yml --repo "$GITHUB_REPOSITORY" --ref main -f "pr_number=$PR_NUMBER"
+          run_id=''
+          for _ in $(seq 1 30); do
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow automerge.yml --branch main --event workflow_dispatch --limit 20 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$before\")][0].databaseId // empty")"
+            test -n "$run_id" && break
+            sleep 2
+          done
+          test -n "$run_id" || { echo 'Unable to resolve Explicit automerge run' >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
 
-      - name: Record no-op publication
-        if: steps.changes.outputs.changed != 'true'
+      - name: Summarize publication
+        if: always()
+        shell: bash
+        env:
+          SHOULD_STAGE: ${{ steps.resolve.outputs.should_stage }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          GENERATED: ${{ steps.generate.outputs.changed }}
+          BLOCKED_TOOLING: ${{ steps.resolve.outputs.blocked_by_tooling_change }}
+          CI_RUN: ${{ steps.ci.outputs.run_id }}
+          AUTOMERGE_RUN: ${{ steps.automerge.outputs.run_id }}
         run: |
           {
-            echo '## Marketplace publication'
-            echo '- No public catalog change is required.'
-            echo '- The canonical approved ledger already matches every registered plugin digest/version.'
+            echo '## Marketplace Auto Publish'
+            echo "- source PR: ${PR_NUMBER:-n/a}"
+            echo "- eligible plugin PR: ${SHOULD_STAGE:-false}"
+            echo "- generated listing commit required: ${GENERATED:-false}"
+            echo "- privileged staging blocked by security-tooling change: ${BLOCKED_TOOLING:-false}"
+            echo "- generated-head CI run: ${CI_RUN:-not-needed}"
+            echo "- protected merge-controller run: ${AUTOMERGE_RUN:-not-run}"
+            if test "${GENERATED:-false}" = true; then
+              echo '- generated catalog/approval ledger were committed into the same source PR, revalidated by CI, then handed to the existing protected merge controller.'
+            elif test "${SHOULD_STAGE:-false}" = true; then
+              echo '- catalog/approval ledger already matched the reviewed source; the existing protected merge controller was invoked explicitly.'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload publication evidence
-        if: always()
+      - name: Upload staging evidence
+        if: always() && steps.resolve.outputs.should_stage == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: marketplace-auto-publish-${{ steps.source.outputs.short || github.run_id }}
+          name: marketplace-auto-publish-${{ steps.resolve.outputs.pr_number || github.run_id }}-${{ github.run_id }}
           path: evidence/
           if-no-files-found: warn
           retention-days: 90
