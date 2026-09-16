@@ -767,7 +767,7 @@ impl MahayanaProductClient {
         platform: Option<&str>,
     ) -> Result<Value, ProductError> {
         let query = query.map(str::trim).filter(|query| !query.is_empty());
-        let platform = platform.map(safe_marketplace_platform).transpose()?;
+        let platform = platform.map(safe_marketplace_browse_platform).transpose()?;
         let mut parameters = Vec::new();
         if let Some(query) = query {
             parameters.push(("q", query));
@@ -2731,6 +2731,13 @@ fn safe_sha256(value: &str) -> Result<&str, ProductError> {
     }
 }
 
+fn safe_marketplace_browse_platform(value: &str) -> Result<&str, ProductError> {
+    match safe_marketplace_platform(value)? {
+        "ios" | "android" => Ok("mobile"),
+        platform => Ok(platform),
+    }
+}
+
 fn safe_marketplace_platform(value: &str) -> Result<&str, ProductError> {
     match value.trim() {
         "cli" => Ok("cli"),
@@ -3346,6 +3353,18 @@ mod tests {
         assert_eq!(
             safe_platform_path("/api/../admin"),
             Err(ProductError::InvalidParameter("path"))
+        );
+    }
+
+    #[test]
+    fn marketplace_browse_normalizes_native_mobile_platforms() {
+        assert_eq!(safe_marketplace_browse_platform("ios"), Ok("mobile"));
+        assert_eq!(safe_marketplace_browse_platform("android"), Ok("mobile"));
+        assert_eq!(safe_marketplace_browse_platform("mobile"), Ok("mobile"));
+        assert_eq!(safe_marketplace_browse_platform("desktop"), Ok("desktop"));
+        assert_eq!(
+            safe_marketplace_browse_platform("unknown"),
+            Err(ProductError::InvalidParameter("platform"))
         );
     }
 
