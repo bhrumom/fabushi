@@ -47,6 +47,10 @@ jobs:
             --source-sha "$SOURCE_SHA" \
             --report evidence/marketplace-audit.json
           python3 scripts/check-official-plugin-marketplace.py
+      - name: Require generated catalog and approval ledger on publish candidates
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
           python3 scripts/generate-official-plugin-marketplace.py --check
       - name: Summarize deterministic audit
         if: always()
@@ -55,6 +59,7 @@ jobs:
           {
             echo '## Fabushi Marketplace deterministic security review'
             echo "- source SHA: $SOURCE_SHA"
+            echo "- event: ${{ github.event_name }}"
             if test -f evidence/marketplace-audit.json; then
               echo "- decision: $(jq -r .decision evidence/marketplace-audit.json)"
               echo "- plugins: $(jq -r .summary.pluginCount evidence/marketplace-audit.json)"
