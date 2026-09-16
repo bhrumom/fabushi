@@ -414,12 +414,12 @@ func taskSpecSourceList(_ task: AutomationTask) -> String {
 }
 
 let sharedTaskExecutionSkillPath =
-  ".agents/plugins/plugins/chatgpt-auto-confirm/skills/actions-first-task-queue/SKILL.md"
+  "skills/actions-first-task-queue/SKILL.md"
 
 func taskDocumentDirectory(_ task: AutomationTask) -> String {
   guard let first = task.specSources?.first,
         !first.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-    return ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/\(task.id)"
+    return "tasks/\(task.id)"
   }
   return (first as NSString).deletingLastPathComponent
 }
@@ -439,7 +439,7 @@ func refreshAutomationTaskDefinitionFromDisk(_ task: inout AutomationTask) -> Bo
   let relativeControl = task.taskControlPath?.trimmingCharacters(in: .whitespacesAndNewlines)
   let controlPath = (relativeControl?.isEmpty == false)
     ? relativeControl!
-    : ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/actions-inbox.json"
+    : "tasks/actions-inbox.json"
   let controlURL = URL(fileURLWithPath: controlPath, relativeTo: workspaceURL).standardizedFileURL
   guard controlURL.path.hasPrefix(workspaceURL.path + "/"),
         let data = try? Data(contentsOf: controlURL),
@@ -520,6 +520,9 @@ func restartAutomationTaskForUpdatedGoal(_ task: inout AutomationTask) {
   task.workerStatePath = nil
   task.workerProfilePath = nil
   task.conversationId = nil
+  task.dispatchMarkerVerifiedAt = nil
+  task.dispatchLocalConversationId = nil
+  task.attachedConversationWithoutDispatchMarker = nil
   task.chatURL = nil
   task.reviewConversationId = nil
   task.reviewStatus = nil
@@ -535,154 +538,63 @@ func restartAutomationTaskForUpdatedGoal(_ task: inout AutomationTask) {
 }
 
 func automationTaskMessage(_ task: AutomationTask, forceFullGoal: Bool = false) -> String {
-  let revision = max(1, task.currentRevision ?? 1)
-  let digest = task.specDigest ?? ""
-  let directory = taskDocumentDirectory(task)
-  let hasTaskDocuments = !(task.specSources ?? []).isEmpty
-  let repository = task.repository?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-  let codeDirectory = task.codeDirectory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-  let updatedGoalFirstRound = task.appliedRevision != nil &&
-    (max(1, task.appliedRevision ?? 1) != revision || (task.appliedSpecDigest ?? "") != digest)
-  let isContinuation = !forceFullGoal && !updatedGoalFirstRound &&
-    ((task.continuationDepth ?? 0) > 0 || task.attempts > 0)
-  var sections: [String]
-  if isContinuation {
-    sections = [
-      "继续完成任务 \(task.id)，不要重新规划、不要只检查结果、不要中途总结。",
-      hasTaskDocuments
-        ? "先重新读取共享执行技能 `\(sharedTaskExecutionSkillPath)` 和已配置任务目录 `\(directory)` 中的全部文件，确认文件是否更新；再检查同一 checkout 已落盘改动与仍在运行的操作，只做剩余实际工作，持续到全部目标与验证完成。"
-        : "本任务没有配置任务文档，这是合法状态。重新读取共享执行技能 `\(sharedTaskExecutionSkillPath)`，然后依据当前目标检查同一 checkout 已落盘改动与仍在运行的操作，只做剩余实际工作，持续到全部目标与验证完成。",
-      "本轮开始使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 是否有新增要求并纳入工作。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 `[需人工介入][\(task.id)]` 邮件。本轮结束时只输出末尾统一模板；只有整个任务全部完成才设置 all_tasks_complete=true。",
-    ]
-  } else {
-    let emailInstruction = updatedGoalFirstRound
-      ? "这是更新后的新目标首轮。使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 的新增要求；不要复用旧目标内容，也不要发送新立项邮件。"
-      : "第一件事：完整读取共享执行技能 `\(sharedTaskExecutionSkillPath)` 和所有已配置任务文件（如有），并使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 是否有新增要求。不得发送立项邮件。"
-    sections = [
-      taskPromptPrefix(task.promptTemplate),
-      "目标：\n\(task.prompt)",
-      hasTaskDocuments
-        ? "任务目录：`\(directory)`"
-        : "任务文件：未配置（允许为零；不得要求补建任务文档）",
-      emailInstruction,
-      "检查邮件要求后直接实现、测试和验证，不要只阅读、评估或汇报计划。只有确实需要人工信息、权限、凭证或决策时才发送 `[需人工介入][\(task.id)]` 邮件，其他情况一律不发邮件。",
-    ]
+  // Queue snapshots can outlive a plugin upgrade. Strip every historical
+  // report contract before adding the current Work-only context, so a retry
+  // can never accidentally teach a Work Chat to emit the planner protocol.
+  var goal = messageWithoutTaskReportContract(
+    task.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+  )
+  if let directive = task.pendingDirective?.trimmingCharacters(in: .whitespacesAndNewlines),
+     !directive.isEmpty, !goal.contains(directive) {
+    goal += "\n\n\(directive)"
   }
-  var executionCoordinates = [
-    "本轮发送前小程序必须重新选择并确认模型 `GPT-5.6 Sol`、推理强度 `Extra High`；未确认成功不得发送。这个要求适用于第一轮、每一轮续作和验收 Chat。"
-  ]
-  if !repository.isEmpty {
-    let repositoryURL = "https://github.com/\(repository)"
-    if hasTaskDocuments {
-      let taskDirectoryURL = "\(repositoryURL)/tree/main/\(directory)"
-      executionCoordinates.append("GitHub 代码源（每轮都必须明确使用）：使用本轮已选择的 GitHub 连接器打开并操作仓库 `\(repository)`（\(repositoryURL)）。任务文件位于该仓库的 `\(directory)`（\(taskDirectoryURL)）；必须先通过 GitHub 连接器读取这些已配置任务文件，再读取并修改同一仓库中的实际代码。不要在其他仓库、父目录或临时示例里工作。")
-    } else {
-      executionCoordinates.append("GitHub 代码源（每轮都必须明确使用）：使用本轮已选择的 GitHub 连接器打开并操作仓库 `\(repository)`（\(repositoryURL)）。本任务未配置任务文件，直接以本轮目标为准读取并修改实际代码；不要在其他仓库、父目录或临时示例里工作。")
-    }
+  if let reviewFeedback = task.reviewFeedback?.trimmingCharacters(in: .whitespacesAndNewlines),
+     !reviewFeedback.isEmpty {
+    goal += "\n\n插件编排上下文（请直接执行，不要输出规划/验收 Chat 的固定回执或下一步模板）：\n\(reviewFeedback)"
   }
-  if !codeDirectory.isEmpty {
-    executionCoordinates.append("代码修改位置：仓库 `\(repository)` 下的 `\(codeDirectory)`。从这里定位首个未通过验收项涉及的源文件，直接编辑代码并运行相应测试；任务文档目录只用于读取目标，不能把只改文档当作实现。")
-  }
-  executionCoordinates.append("本轮工作门槛：除非正在等待已启动的外部作业或确有需要人工介入的卡点，否则本轮必须产生可核验的实际代码变更并完成相应测试。只阅读代码、查看状态、复述结果、发邮件或说明计划，都不算完成本轮工作，也不允许因此结束回复。结束前检查 Git diff/提交状态和测试证据；任务未全部完成就继续实现。")
-  sections.insert(contentsOf: executionCoordinates, at: 0)
-  sections.append("实际工作只允许在 Chat 页面完成，不进入 Work 页面。")
-  sections.append("当前修订：\(revision)；规范指纹：\(digest)；连接器：\(task.connector)。任务发送轮次：\(task.attempts + 1)。")
-  sections.append("每轮开始都必须重新读取任务控制定义，并在存在已配置任务文件时读取这些文件以发现更新。任务文件数量不受限制，也允许为零。未全部完成就继续工作；本轮必须结束时，阶段未完成、等待、阻塞和全部完成都只使用末尾同一个模板。只有整个任务全部完成才设置 all_tasks_complete=true。")
-  sections.append("邮件读取是每轮硬性步骤：第一轮、续作轮和验收轮开始时都必须用 Gmail 按任务 id 只读检查 1315518325@qq.com 的新增要求。禁止发送立项、进展、里程碑、完成或普通等待邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 `[需人工介入][\(task.id)]` 邮件。其他情况一律不发邮件。")
-  if let directive = task.pendingDirective, !directive.isEmpty {
-    sections.append("本修订新增要求：\n\(directive)")
-  }
-  return sections.joined(separator: "\n\n")
+  // `forceFullGoal` is retained for persisted queue compatibility. Every Work
+  // Chat now receives the executable goal and any planner handoff, but never a
+  // completion-report contract.
+  _ = forceFullGoal
+  return messageWithoutTaskReportContract(goal)
 }
 
-func automationReviewMessage(
-  _ task: AutomationTask,
-  report: AutomationTaskReport
-) -> String {
-  let completed = chatOnlyInstruction(report.completed.joined(separator: "；"))
-  let verification = chatOnlyInstruction(report.verification.joined(separator: "；"))
-  let summary = chatOnlyInstruction(report.summary)
-  let repository = task.repository ?? "未指定"
-  let codeDirectory = task.codeDirectory ?? "未指定"
-  let taskDirectory = taskDocumentDirectory(task)
-  return """
-  这是任务 \(task.id) 的独立验收 Chat。请在当前 checkout 中只做复核，不要凭上一轮 Chat 的自报结果认定完成，也不要覆盖或重置任何改动。验收必须在 Chat 页面完成，不要进入 Work 页面。
-
-  本轮发送前小程序必须重新确认 GPT-5.6 Sol 与 Extra High。使用 GitHub 连接器操作仓库 `\(repository)`；任务文件路径是 `\(taskDirectory)`，代码修改路径是 `\(codeDirectory)`。如果验收发现问题，必须直接修改代码并运行测试；只阅读或汇报不算通过。
-
-  验收开始前使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 是否有新增要求。禁止发送立项、进展或完成邮件；只有验收确实需要人工信息、权限、凭证或决策时，才创建或回复 `[需人工介入][\(task.id)]` 邮件。
-
-  原始任务目标（不可变）：
-  \(task.originalPrompt ?? task.prompt)
-
-  当前任务目标摘要：
-  \(task.prompt)
-
-  当前任务修订：\(max(1, task.currentRevision ?? 1))
-  当前规范指纹：\(task.specDigest ?? "")
-  被验收结果应用修订：\(report.appliedTaskRevision ?? task.appliedRevision ?? 1)
-  被验收结果规范指纹：\(report.appliedSpecDigest ?? task.appliedSpecDigest ?? "")
-
-  当前规范文件（不要把正文复制进提示词；请在当前 checkout 中逐一读取后验收）：
-  \(taskSpecSourceList(task))
-
-  验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)
-
-  被验收 Chat 的总结：\(summary)
-  已完成项：\(completed)
-  被验收 Chat 的验证：\(verification)
-
-  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。云端 GitHub 状态必须通过 GitHub 连接器核验；本地 checkout 仅通过 bhrum2 读取或安全同步。若 Actions、部署、发布审核或网络恢复仍在进行，留在本 Chat 内轮询。验收未通过就直接修复并继续验证；本轮必须结束时使用消息末尾唯一模板。只有全部通过才可同时输出 `status=complete` 和 `all_tasks_complete=true`。`MAHAYANA_REVIEW_ACCEPTED` 只能作为辅助证据。
-  """
-}
-
-func startAutomationReview(
+func startAutomationPlanner(
   _ task: inout AutomationTask,
-  report: AutomationTaskReport,
+  workResult: String,
   port: Int,
   targetId: String,
   state: PluginState
 ) -> Bool {
-  guard let parentConversationId = normalizedConversationId(task.conversationId) else {
-    queueTrace("task=\(task.id) stage=review-branch failed reason=missing_parent_conversation")
+  _ = state
+  let trimmedWorkResult = messageWithoutTaskReportContract(workResult)
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !trimmedWorkResult.isEmpty else {
+    queueTrace("task=\(task.id) stage=planner-branch failed reason=missing_work_result")
     return false
   }
-  let restoration = restoreHiddenConversation(
+
+  // The planner is intentionally a separate conversation. It receives the
+  // completed Work Chat's natural result and is the only role that receives
+  // the machine-readable report contract.
+  guard let prepared = prepareNewChatTarget(
     port: port,
     targetId: targetId,
-    conversationId: parentConversationId,
-    allowVisible: queueTargetStateIsUsableForQueue(
-      .visible,
-      workerMode: state.queueWorkerMode
-    )
-  )
-  guard restoration["ok"] as? Bool == true else {
-    queueTrace(
-      "task=\(task.id) stage=review-branch failed "
-        + "reason=parent_restore_failed error=\(restoration["error"] as? String ?? "unknown")"
-    )
-    return false
-  }
-  guard let prepared = cdpValue(
-    port: port,
-    targetId: targetId,
-    expression: continueInNewTaskJS(expectedConversationId: parentConversationId),
-    timeout: 35.0
+    timeout: 35.0,
+    allowBlankConversationReuse: false
   ), prepared["ok"] as? Bool == true else {
-    queueTrace("task=\(task.id) stage=review-branch failed reason=branch_not_confirmed")
+    queueTrace("task=\(task.id) stage=planner-branch failed reason=new_chat_not_confirmed")
     return false
   }
-  queueTrace(
-    "task=\(task.id) stage=review-branch complete "
-      + "parentConversation=\(parentConversationId) "
-      + "conversation=\(prepared["conversationId"] as? String ?? "none")"
-  )
-  let outbound = messageWithTaskReportContract(
-    automationReviewMessage(task, report: report),
+  let nextReviewRound = task.reviewRound + 1
+  let dispatchMarker = "规划验收 Chat 标识：\(task.id)-\(task.attempts)-\(nextReviewRound)"
+  let outbound = acceptancePlannerMessage(
+    originalGoal: task.originalPrompt ?? task.prompt,
+    workResult: trimmedWorkResult,
     taskId: task.id,
     appliedRevision: task.currentRevision,
     appliedDigest: task.specDigest
-  )
+  ) + "\n\n插件调度标记：\(dispatchMarker)"
   guard let sendResult = cdpValue(
     port: port,
     targetId: targetId,
@@ -692,8 +604,9 @@ func startAutomationReview(
       newChat: false,
       expectedConversationId: normalizedConversationId(prepared["conversationId"] as? String)
     ),
-    timeout: 35.0
+    timeout: 65.0
   ), sendResult["ok"] as? Bool == true else {
+    queueTrace("task=\(task.id) stage=planner-branch failed reason=send_not_confirmed")
     return false
   }
   _ = cdpValue(
@@ -702,7 +615,6 @@ func startAutomationReview(
     expression: autoConfirmChatContinuationJS(),
     timeout: 4.0
   )
-  let dispatchMarker = "验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)"
   let resolvedConversation = cdpValue(
     port: port,
     targetId: targetId,
@@ -715,14 +627,51 @@ func startAutomationReview(
   let resolvedConversationId = normalizedConversationId(
     resolvedConversation?["conversationId"] as? String
   )
+  task.reviewRound = nextReviewRound
   task.reviewConversationId = resolvedConversationId
     ?? normalizedConversationId(prepared["conversationId"] as? String)
   task.reviewStatus = "running"
+  task.reviewReport = nil
+  task.lastResultJSON = jsonString([
+    "plannerInput": trimmedWorkResult,
+    "plannerConversationId": task.reviewConversationId as Any,
+    "dispatchMarker": dispatchMarker,
+    "sendResult": sendResult,
+  ])
   task.lastError = nil
   task.lastActivitySignature = nil
   task.lastProgressAt = isoFormatter.string(from: Date())
   task.updatedAt = task.lastProgressAt ?? isoFormatter.string(from: Date())
+  queueTrace(
+    "task=\(task.id) stage=planner-branch complete "
+      + "conversation=\(task.reviewConversationId ?? "none")"
+  )
   return true
+}
+
+// Kept as a compatibility shim for queue snapshots created by older runtimes.
+// New Work completion always goes through startAutomationPlanner with the
+// natural Work reply; it never sends a report contract to the Work Chat.
+func startAutomationReview(
+  _ task: inout AutomationTask,
+  report: AutomationTaskReport,
+  port: Int,
+  targetId: String,
+  state: PluginState
+) -> Bool {
+  let legacyResult = [
+    "摘要：\(report.summary)",
+    "已完成：\(report.completed.joined(separator: "；"))",
+    "剩余：\(report.remaining.joined(separator: "；"))",
+    "卡点：\(report.blockers.joined(separator: "；"))",
+  ].joined(separator: "\n")
+  return startAutomationPlanner(
+    &task,
+    workResult: legacyResult,
+    port: port,
+    targetId: targetId,
+    state: state
+  )
 }
 
 func dependencyCycle(in tasks: [AutomationTask]) -> [String]? {
@@ -765,7 +714,7 @@ func decodeLastJSONLine(at path: String?) -> (String, [String: Any])? {
   guard let path,
         let data = FileManager.default.contents(atPath: path),
         let text = String(data: data, encoding: .utf8) else { return nil }
-  for line in text.split(whereSeparator: \Character.isNewline).reversed() {
+  for line in text.split(whereSeparator: \.isNewline).reversed() {
     let raw = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
     guard let lineData = raw.data(using: .utf8),
           let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
@@ -810,6 +759,9 @@ func taskPublicPayload(_ task: AutomationTask, includeResult: Bool = false) -> [
     "workerTargetId": task.workerTargetId as Any,
     "workerProfilePath": task.workerProfilePath as Any,
     "conversationId": task.conversationId as Any,
+    "dispatchMarkerVerifiedAt": task.dispatchMarkerVerifiedAt as Any,
+    "dispatchLocalConversationId": task.dispatchLocalConversationId as Any,
+    "attachedConversationWithoutDispatchMarker": task.attachedConversationWithoutDispatchMarker ?? false,
     "reviewConversationId": task.reviewConversationId as Any,
     "reviewStatus": task.reviewStatus as Any,
     "chatUrl": task.chatURL as Any,
@@ -980,6 +932,7 @@ func queueStatusPayload(_ state: PluginState) -> [String: Any] {
 }
 
 func startQueueWatcher(_ state: inout PluginState) throws {
+  cleanupOrphanedDedicatedTaskWorkerArtifacts(state)
   if watcherIsAlive(state.queueWatcherPid),
      state.queueRuntimeRevision == currentQueueRuntimeRevision { return }
   if watcherIsAlive(state.queueWatcherPid), let pid = state.queueWatcherPid {
@@ -996,9 +949,9 @@ func startQueueWatcher(_ state: inout PluginState) throws {
   environment["CHATGPT_AUTO_CONFIRM_STATE"] = queueStateURL().path
   environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"] = queueStateURL().path
   // A local queue watcher is allowed to reuse its controller only when the
-  // general confirmer has already proved that exact renderer is hidden. This
-  // carries the safety decision into the detached watcher automatically, so
-  // local queue retries do not depend on callers remembering a HEADLESS env.
+  // general confirmer has already proved that exact renderer is plugin-owned
+  // and is a real Chat surface. Visibility is telemetry, not the ownership
+  // decision, so local retries do not depend on a hidden-only environment flag.
   let approvalState = generalApprovalStateForQueue()
   let backgroundPort = state.backgroundAppPort ?? approvalState?.backgroundAppPort
   let backgroundTargetId = state.backgroundChatTargetId
