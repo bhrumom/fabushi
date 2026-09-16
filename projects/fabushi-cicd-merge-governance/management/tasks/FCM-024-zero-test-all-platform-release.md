@@ -22,20 +22,24 @@ Finish the FCM-023 migration by eliminating the remaining automatic product-test
 7. No workflow-authored autonomous E2E is accepted as formal behavioral evidence.
 8. Existing open PRs are merged where GitHub permits; merge-queue/conflict truth is reported without pretending queued PRs are already merged.
 9. A strictly newer full-platform test version is published after the accepted PR set and final workflow cleanup reach canonical main.
+10. Chrome test/release artifact construction remains available as a zero-test packaging path: exact source -> deterministic ZIP/content manifest/checksums -> immutable Action artifact. It must not install Playwright or run Node test/E2E suites merely to create the package.
 
 ## Implementation branch
 
 `project/fcm-024-zero-test-release-20260916`
 
+Follow-up repair branch: `codex/fcm024-chrome-zero-test-package-20260916` restores only the artifact-construction half of the Chrome workflow after the earlier FCM-024 cleanup correctly removed its automated product tests but also unintentionally removed the package artifact needed by downstream publication.
+
 ## Current blockers
 
-- Fabushi official MCP account/device calls return a connection-layer HTTP 400. This blocks formal MCP validation and therefore blocks stable publication; it does not block no-test prerelease construction.
-- Protected main merge queue is serial and is still consuming the previously opened/authorized PR set. Final workflow cleanup must be rebound to the then-current canonical main so older PRs cannot reintroduce test workflows.
+- Fabushi official MCP account/device calls return a connection-layer HTTP 400. This blocks formal MCP validation and therefore blocks stable publication; it does not block no-test prerelease/package construction.
+- Chrome Web Store formal submission remains blocked until the exact candidate has the required official-MCP validation; older autonomous Chrome journey runs are not accepted as substitutes.
 
 ## Verification
 
 - GitHub readback of active workflow directory and triggers.
 - GitHub protected-main readback after merge.
+- GitHub Actions exact-source package artifact with ZIP, content manifest and SHA256SUMS; no behavioral-test step in the Chrome package workflow.
 - GitHub Actions run/release evidence for the exact no-test prerelease.
 - Fabushi official MCP device/tool/finish evidence before any stable publication.
 
