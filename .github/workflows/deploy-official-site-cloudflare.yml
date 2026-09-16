@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: cloudflare-worker
-      url: https://fabushi.ombhrum.com
+      url: https://ombhrum.com
     steps:
       - name: Checkout official site source
         uses: actions/checkout@v5
@@ -77,16 +77,16 @@ jobs:
         working-directory: frontend
         run: pnpm install --no-frozen-lockfile
 
-      - name: Build official site
+      - name: Build official site and Web application
         working-directory: frontend
         env:
           NEXT_TELEMETRY_DISABLED: "1"
-          NEXT_PUBLIC_SITE_ORIGIN: ${{ vars.OFFICIAL_SITE_ORIGIN || 'https://fabushi.ombhrum.com' }}
+          NEXT_PUBLIC_SITE_ORIGIN: ${{ vars.OFFICIAL_SITE_ORIGIN || 'https://ombhrum.com' }}
           NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_REPO: ${{ vars.OFFICIAL_SITE_RELEASE_REPO || github.repository }}
           NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL: ${{ vars.IOS_TESTFLIGHT_PUBLIC_URL || '' }}
         run: pnpm build:web
 
-      - name: Deploy official site to Cloudflare Worker
+      - name: Deploy official site and dedicated Web host to Cloudflare Worker
         working-directory: frontend
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
@@ -105,6 +105,10 @@ jobs:
           name = "fabushi-official-site"
           main = "official-site-worker.js"
           compatibility_date = "2026-05-06"
+          routes = [
+            { pattern = "fabushi.ombhrum.com", custom_domain = true },
+            { pattern = "web.ombhrum.com", custom_domain = true }
+          ]
 
           [assets]
           directory = "apps/web/out"
@@ -114,8 +118,7 @@ jobs:
           bucket_name = "${official_site_r2_bucket}"
           EOF
 
-          npx --yes wrangler@latest deploy --config wrangler.official-site.toml \
-            --domain fabushi.ombhrum.com
+          npx --yes wrangler@latest deploy --config wrangler.official-site.toml
 
           api_base="https://api.cloudflare.com/client/v4"
           root_domain="ombhrum.com"
@@ -187,10 +190,10 @@ jobs:
             jq -n \
               --arg root "https://${root_domain}/" \
               --arg index "https://${root_domain}/index.html" \
-              --arg download "https://${root_domain}/download" \
-              --arg download_slash "https://${root_domain}/download/" \
+              --arg download "https://${root_domain}/download/" \
               --arg releases_api "https://${root_domain}/api/releases.json" \
-              '{files: [$root, $index, $download, $download_slash, $releases_api]}'
+              --arg web "https://web.ombhrum.com/" \
+              '{files: [$root, $index, $download, $releases_api, $web]}'
           )"
           if purge_response="$(
             curl -sS -X POST "${api_base}/zones/${zone_id}/purge_cache" \
@@ -200,7 +203,7 @@ jobs:
           )"; then
             purge_success="$(jq -r '.success // false' <<< "${purge_response}" 2>/dev/null || echo false)"
             if [ "${purge_success}" = "true" ]; then
-              echo "Purged Cloudflare cache for official site entry points."
+              echo "Purged Cloudflare cache for official site and Web entry points."
             else
               echo "::warning::Cloudflare cache purge failed after deploy; continuing because Worker and assets were deployed." >&2
               jq '.' <<< "${purge_response}" >&2 || true
@@ -208,3 +211,14 @@ jobs:
           else
             echo "::warning::Cloudflare cache purge request failed after deploy; continuing because Worker and assets were deployed." >&2
           fi
+
+      - name: Verify official site and Web application entry points
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSIL --retry 12 --retry-all-errors --retry-delay 5 https://ombhrum.com/ >/tmp/official-site-head.txt
+          curl -fsSIL --retry 12 --retry-all-errors --retry-delay 5 https://web.ombhrum.com/ >/tmp/web-app-head.txt
+          curl -fsSIL --retry 12 --retry-all-errors --retry-delay 5 https://fabushi.ombhrum.com/ >/tmp/legacy-site-head.txt
+          grep -qi '200' /tmp/official-site-head.txt
+          grep -qi '200' /tmp/web-app-head.txt
+          grep -qi 'ombhrum.com' /tmp/legacy-site-head.txt
