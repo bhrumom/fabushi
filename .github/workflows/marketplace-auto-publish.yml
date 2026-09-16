@@ -120,7 +120,6 @@ jobs:
             core.setOutput('pr_number', String(pr.number));
             core.setOutput('head_sha', pr.head.sha);
             core.setOutput('head_ref', pr.head.ref);
-            core.setOutput('head_repo', pr.head.repo.full_name);
 
       - name: Checkout exact reviewed plugin head
         if: steps.resolve.outputs.should_stage == 'true'
@@ -203,6 +202,21 @@ jobs:
           git push origin "HEAD:$HEAD_REF"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Add Marketplace automerge authorization label
+        if: steps.resolve.outputs.should_stage == 'true'
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = Number(process.env.PR_NUMBER);
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: issue_number })).data;
+            if (!pr.labels.some((label) => label.name === 'automerge')) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['automerge'] });
+            }
+
       - name: Dispatch protected CI for generated head
         if: steps.resolve.outputs.should_stage == 'true' && steps.generate.outputs.changed == 'true'
         id: ci
@@ -224,22 +238,25 @@ jobs:
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
           gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
 
-      - name: Authorize protected merge after generated head passes CI
+      - name: Invoke the existing protected merge controller
         if: steps.resolve.outputs.should_stage == 'true' && (steps.generate.outputs.changed != 'true' || steps.ci.outcome == 'success')
-        uses: actions/github-script@v9
+        id: automerge
+        shell: bash
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const issue_number = Number(process.env.PR_NUMBER);
-            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: issue_number })).data;
-            const labels = pr.labels.map((label) => label.name);
-            if (!labels.includes('automerge')) {
-              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['automerge'] });
-            }
-            core.info(`PR #${issue_number} has an approved/reproducible Marketplace listing and is authorized for the existing protected automerge controller.`);
+        run: |
+          set -euo pipefail
+          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run automerge.yml --repo "$GITHUB_REPOSITORY" --ref main -f "pr_number=$PR_NUMBER"
+          run_id=''
+          for _ in $(seq 1 30); do
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow automerge.yml --branch main --event workflow_dispatch --limit 20 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$before\")][0].databaseId // empty")"
+            test -n "$run_id" && break
+            sleep 2
+          done
+          test -n "$run_id" || { echo 'Unable to resolve Explicit automerge run' >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
 
       - name: Summarize publication
         if: always()
@@ -249,6 +266,8 @@ jobs:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           GENERATED: ${{ steps.generate.outputs.changed }}
           BLOCKED_TOOLING: ${{ steps.resolve.outputs.blocked_by_tooling_change }}
+          CI_RUN: ${{ steps.ci.outputs.run_id }}
+          AUTOMERGE_RUN: ${{ steps.automerge.outputs.run_id }}
         run: |
           {
             echo '## Marketplace Auto Publish'
@@ -256,10 +275,12 @@ jobs:
             echo "- eligible plugin PR: ${SHOULD_STAGE:-false}"
             echo "- generated listing commit required: ${GENERATED:-false}"
             echo "- privileged staging blocked by security-tooling change: ${BLOCKED_TOOLING:-false}"
+            echo "- generated-head CI run: ${CI_RUN:-not-needed}"
+            echo "- protected merge-controller run: ${AUTOMERGE_RUN:-not-run}"
             if test "${GENERATED:-false}" = true; then
-              echo '- generated catalog/approval ledger were committed back to the same source PR and its new head was revalidated by CI.'
+              echo '- generated catalog/approval ledger were committed into the same source PR, revalidated by CI, then handed to the existing protected merge controller.'
             elif test "${SHOULD_STAGE:-false}" = true; then
-              echo '- catalog/approval ledger already matched the reviewed source; the PR was authorized for the existing merge queue controller.'
+              echo '- catalog/approval ledger already matched the reviewed source; the existing protected merge controller was invoked explicitly.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
