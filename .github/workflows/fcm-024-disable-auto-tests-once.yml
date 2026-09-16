@@ -1,0 +1,140 @@
+name: FCM-024 one-shot automatic-test cleanup
+
+on:
+  push:
+    branches:
+      - fix/fcm-disable-all-auto-tests-20260916
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: Convert remaining automatic test workflows to manual-only
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout cleanup branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Rewrite only workflows that still execute product tests automatically
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+
+          helper = 'fcm-024-disable-auto-tests-once.yml'
+          workflow_root = Path('.github/workflows')
+          explicit = {
+              'chatgpt-auto-confirm-runtime.yml',
+              'deploy-production.yml',
+              'telegram-rust.yml',
+              'ci_codex_sync.yml',
+              'platform-worker-refactor-phase3.yml',
+              'douyin-batch-downloader.yml',
+              'platform-control-plane.yml',
+              'fabushi-pay-production.yml',
+              'wechat-article-downloader.yml',
+              'fabushi-commerce-production.yml',
+              'standalone-commerce-site.yml',
+              'global-dharma-exact-main-evidence-publish.yml',
+          }
+          command_patterns = [
+              r'\bcargo\s+test\b',
+              r'\bnpm\s+(?:run\s+)?test\b',
+              r'\bpnpm\s+(?:run\s+)?test\b',
+              r'\byarn\s+(?:run\s+)?test\b',
+              r'\bnode\s+--test\b',
+              r'\bplaywright\s+test\b',
+              r'\bflutter\s+test\b',
+              r'\bgo\s+test\b',
+              r'\bpytest\b',
+              r'\bxcodebuild[^\n]*\btest\b',
+              r'\bgradlew[^\n]*(?:\btest\b|connectedAndroidTest)',
+              r'\bnode\s+[^\n]*(?:tests?/[^\s]+|[^\s]+\.test\.(?:js|mjs|cjs|ts))',
+              r'\bbash\s+[^\n]*(?:test-[^\s]*|tests?/[^\s]*|e2e[^\s]*)',
+          ]
+          automatic_event_re = re.compile(r'^  (?:push|pull_request|pull_request_target|merge_group|workflow_run|schedule|release):', re.M)
+          top_key_re = re.compile(r'^[A-Za-z_][A-Za-z0-9_-]*:\s*(?:#.*)?$')
+          event_key_re = re.compile(r'^  [A-Za-z_][A-Za-z0-9_-]*:\s*(?:#.*)?$')
+
+          changed = []
+          candidates = []
+          for path in sorted(workflow_root.glob('*.y*ml')):
+              if path.name == helper:
+                  continue
+              text = path.read_text(encoding='utf-8')
+              test_like = path.name in explicit or any(re.search(pattern, text, re.I | re.M) for pattern in command_patterns)
+              if not test_like or not automatic_event_re.search(text):
+                  continue
+              candidates.append(path.name)
+              lines = text.splitlines(keepends=True)
+              try:
+                  start = next(i for i, line in enumerate(lines) if line.rstrip('\n') == 'on:')
+              except StopIteration:
+                  raise SystemExit(f'{path}: missing top-level on block')
+              end = len(lines)
+              for i in range(start + 1, len(lines)):
+                  raw = lines[i].rstrip('\n')
+                  if raw and not raw.startswith((' ', '\t', '#')) and top_key_re.match(raw):
+                      end = i
+                      break
+              on_lines = lines[start + 1:end]
+              wd_start = None
+              wd_end = None
+              for i, line in enumerate(on_lines):
+                  if line.startswith('  workflow_dispatch:'):
+                      wd_start = i
+                      break
+              if wd_start is not None:
+                  wd_end = len(on_lines)
+                  for i in range(wd_start + 1, len(on_lines)):
+                      raw = on_lines[i].rstrip('\n')
+                      if event_key_re.match(raw):
+                          wd_end = i
+                          break
+                  replacement = ['on:\n'] + on_lines[wd_start:wd_end]
+              else:
+                  replacement = ['on:\n', '  workflow_dispatch:\n']
+              new_lines = lines[:start] + replacement + ['\n'] + lines[end:]
+              new_text = ''.join(new_lines)
+              if new_text != text:
+                  path.write_text(new_text, encoding='utf-8')
+                  changed.append(path.name)
+
+          evidence = Path('projects/fabushi-cicd-merge-governance/source/2026-09-16-automatic-test-workflow-cleanup.md')
+          evidence.parent.mkdir(parents=True, exist_ok=True)
+          source_sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          evidence.write_text(
+              '# FCM-024 automatic test workflow cleanup\n\n'
+              f'- Cleanup source before rewrite: `{source_sha}`\n'
+              '- Policy: workflows containing product-test/E2E commands must not start from push, PR, merge-group, workflow-run, schedule, or release events.\n'
+              '- Preserved capability: existing workflow bodies remain available only through explicit `workflow_dispatch`; formal release evidence still comes only from the Fabushi official MCP controlling App-owned Action Runner devices.\n'
+              f'- Automatic test workflows detected: {len(candidates)}\n'
+              f'- Workflows converted to manual-only: {len(changed)}\n\n'
+              '## Converted workflows\n\n' + ''.join(f'- `{name}`\n' for name in changed) +
+              '\n## Detection\n\n'
+              'The one-shot cleanup matched explicit known residual workflows plus executable test commands such as Cargo/npm/node/Playwright/Flutter/Go/Pytest/Xcode/Gradle test invocations. It did not select packaging-only release workflows merely because their names mention “test release”.\n',
+              encoding='utf-8',
+          )
+
+          if not changed:
+              raise SystemExit('No automatic product-test workflows were found; refusing an empty cleanup commit.')
+          print(f'Converted {len(changed)} workflows to manual-only:')
+          for name in changed:
+              print(f'  - {name}')
+          PY
+
+          rm -f .github/workflows/fcm-024-disable-auto-tests-once.yml
+          git diff --check
+          git config user.name 'fabushi-fcm-cleanup[bot]'
+          git config user.email 'fabushi-fcm-cleanup[bot]@users.noreply.github.com'
+          git add -A .github/workflows projects/fabushi-cicd-merge-governance/source/2026-09-16-automatic-test-workflow-cleanup.md
+          git commit -m 'ci(fcm): make remaining product-test workflows manual-only'
+          git push origin HEAD:${GITHUB_REF_NAME}
