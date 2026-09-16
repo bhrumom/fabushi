@@ -217,24 +217,38 @@ jobs:
         run: |
           set -euo pipefail
 
-          verify_url() {
+          verify_final_url() {
             local url="$1"
-            local output="$2"
+            local expected_final_url="$2"
             local label="$3"
+            local final_status=""
+            local final_url=""
+            local body_file="/tmp/$(echo "${label}" | tr ' ' '-' | tr '[:upper:]' '[:lower:]').html"
+
             for attempt in $(seq 1 60); do
-              if curl -fsSIL --connect-timeout 10 --max-time 30 "${url}" >"${output}"; then
+              read -r final_status final_url < <(
+                curl -sS -L \
+                  --connect-timeout 10 \
+                  --max-time 30 \
+                  -o "${body_file}" \
+                  -w '%{http_code} %{url_effective}' \
+                  "${url}?deploy=${GITHUB_SHA}" || true
+              )
+
+              if [ "${final_status}" = "200" ] && [[ "${final_url}" == "${expected_final_url}"* ]]; then
+                grep -qi 'Fabushi' "${body_file}"
+                echo "${label} verified: ${final_status} ${final_url}"
                 return 0
               fi
-              echo "${label} is not reachable yet (attempt ${attempt}/60); waiting for DNS/edge propagation..."
+
+              echo "${label} is not ready yet (attempt ${attempt}/60): status=${final_status:-none} final=${final_url:-none}"
               sleep 5
             done
-            echo "::error::${label} did not become reachable: ${url}" >&2
+
+            echo "::error::${label} verification failed: expected final URL ${expected_final_url} with HTTP 200" >&2
             return 1
           }
 
-          verify_url https://ombhrum.com/ /tmp/official-site-head.txt "official site"
-          verify_url https://web.ombhrum.com/ /tmp/web-app-head.txt "Web application"
-          verify_url https://fabushi.ombhrum.com/ /tmp/legacy-site-head.txt "legacy official host"
-          grep -qi '200' /tmp/official-site-head.txt
-          grep -qi '200' /tmp/web-app-head.txt
-          grep -qi 'ombhrum.com' /tmp/legacy-site-head.txt
+          verify_final_url "https://ombhrum.com/" "https://ombhrum.com/" "official site"
+          verify_final_url "https://web.ombhrum.com/" "https://web.ombhrum.com/" "Web application"
+          verify_final_url "https://fabushi.ombhrum.com/" "https://ombhrum.com/" "legacy official host"
