@@ -7,112 +7,6 @@
   "homepage": "https://fabushi.ombhrum.com/miniapps/",
   "documentation": "https://github.com/bhrumom/fabushi/blob/main/docs/plugin-marketplace.md",
   "releaseTag": "plugin-marketplace-v1.0.0",
-  "plugins": [
-    {
-      "id": "global-dharma",
-      "version": "1.0.0",
-      "title": "全球法布施",
-      "description": "通过 MCP 管理全球法布施",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/global-dharma/",
-      "platforms": ["cli", "desktop", "mobile", "web"]
-    },
-    {
-      "id": "faliu-flashcards",
-      "version": "1.0.0",
-      "title": "法流记忆卡",
-      "description": "创建和复习法流记忆卡",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/faliu-flashcards/",
-      "platforms": ["cli", "desktop", "mobile", "web"]
-    },
-    {
-      "id": "platform-publish",
-      "version": "1.0.0",
-      "title": "平台发布",
-      "description": "草稿和跨平台发布",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/platform-publish/",
-      "platforms": ["cli", "desktop", "mobile", "web"]
-    },
-    {
-      "id": "hermes-installer",
-      "version": "1.0.0",
-      "title": "Hermes 安装器",
-      "description": "安全安装和运行 Hermes",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/hermes-installer/",
-      "platforms": ["cli", "desktop", "mobile", "web"]
-    },
-    {
-      "id": "bot-father",
-      "version": "1.0.0",
-      "title": "机器人之父",
-      "description": "创建完整可移植的 Codex 插件",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/bot-father/",
-      "platforms": ["cli", "desktop", "mobile", "web"]
-    },
-    {
-      "id": "mahayana-assistant",
-      "version": "1.0.0",
-      "title": "大乘助手",
-      "description": "插件帮助和诊断",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/mahayana-assistant/",
-      "platforms": ["cli", "desktop", "mobile", "web"]
-    },
-    {
-      "id": "chatgpt-auto-confirm",
-      "version": "1.0.0+codex.20260810093000",
-      "title": "ChatGPT 自动确认",
-      "description": "自动确认、任务续作、队列并发和独立验收",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/chatgpt-auto-confirm/",
-      "platforms": ["cli", "desktop"]
-    },
-    {
-      "id": "chatgpt-android-controller",
-      "version": "0.1.0",
-      "title": "ChatGPT Android 自动化",
-      "description": "在 GitHub Actions 或桌面宿主中持续操控 Android ChatGPT APK，复用加密登录态并运行可恢复任务队列",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/chatgpt-android-controller/",
-      "platforms": ["cli", "desktop"]
-    },
-    {
-      "id": "computer-cleaner",
-      "version": "0.1.0",
-      "title": "电脑清理器",
-      "description": "安全预览和清理严格白名单内的可再生缓存与构建输出",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/computer-cleaner/",
-      "platforms": ["cli", "desktop"]
-    },
-    {
-      "id": "parallel-queue-probe",
-      "version": "0.1.0",
-      "title": "并行队列探针",
-      "description": "核验动态入队、真实任务重叠和隐藏 Chat 隔离",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/parallel-queue-probe/",
-      "platforms": ["cli", "desktop"]
-    },
-    {
-      "id": "wechat-article-downloader",
-      "version": "0.1.0",
-      "title": "微信公众号归档器",
-      "description": "从任意公开文章链接归档同一公众号公开可访问的文章",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/wechat-article-downloader/",
-      "platforms": ["cli", "desktop"]
-    },
-    {
-      "id": "douyin-batch-downloader",
-      "version": "1.0.0",
-      "title": "抖音批量无水印下载",
-      "description": "把有权访问的抖音分享批量保存为本地无水印 MP4，并生成可核对的下载清单",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/douyin-batch-downloader/",
-      "platforms": ["cli", "desktop"]
-    },
-    {
-      "id": "xhttp-split",
-      "version": "0.2.0+codex.20260811090326",
-      "title": "XHTTP 上下行分离",
-      "description": "登录云平台并通过 SSH 一键搭建、验证 Cloudflare + CloudFront XHTTP 分离线路",
-      "homepage": "https://fabushi.ombhrum.com/miniapps/xhttp-split/",
-      "platforms": ["cli", "desktop"]
-    }
-  ],
   "artifacts": {
     "linux-x64": {
       "archiveFormat": "tar.gz",
@@ -138,5 +32,240 @@
   "install": {
     "shell": "https://raw.githubusercontent.com/bhrumom/fabushi/main/scripts/install-official-plugin.sh",
     "powershell": "https://raw.githubusercontent.com/bhrumom/fabushi/main/scripts/install-official-plugin.ps1"
-  }
+  },
+  "plugins": [
+    {
+      "id": "global-dharma",
+      "version": "1.0.0",
+      "title": "全球法布施",
+      "description": "通过 MCP 管理全球法布施",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/global-dharma/",
+      "platforms": [
+        "cli",
+        "desktop",
+        "mobile",
+        "web"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "deed3a5e3a1a77f4ed11f80819ddc39997362d63301ef0ab5bdc8cc7c2945306"
+      }
+    },
+    {
+      "id": "faliu-flashcards",
+      "version": "1.0.0",
+      "title": "法流记忆卡",
+      "description": "创建和复习法流记忆卡",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/faliu-flashcards/",
+      "platforms": [
+        "cli",
+        "desktop",
+        "mobile",
+        "web"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "2878662dfded40086db7e8188d2dec29676c3ec4275ef8532309045854ee4e27"
+      }
+    },
+    {
+      "id": "platform-publish",
+      "version": "1.0.0",
+      "title": "平台发布",
+      "description": "草稿和跨平台发布",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/platform-publish/",
+      "platforms": [
+        "cli",
+        "desktop",
+        "mobile",
+        "web"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "ef82725714dd089ba4b7233c191f1bd06d11993537257b36d938a83b6a48680c"
+      }
+    },
+    {
+      "id": "hermes-installer",
+      "version": "1.0.0",
+      "title": "Hermes 安装器",
+      "description": "安全安装和运行 Hermes",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/hermes-installer/",
+      "platforms": [
+        "cli",
+        "desktop",
+        "mobile",
+        "web"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "123f802fc073b7268d4ed421771b68c222b74b4cf427a59b8d2cb22d9f261c4e"
+      }
+    },
+    {
+      "id": "bot-father",
+      "version": "1.0.0",
+      "title": "Bot Father",
+      "description": "创建完整可移植 Codex 插件",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/bot-father/",
+      "platforms": [
+        "cli",
+        "desktop",
+        "mobile",
+        "web"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "1dbc0a15e178d9b4a2de824656e1d62416b168356b70aa3929e8c004700a1b0c"
+      }
+    },
+    {
+      "id": "mahayana-assistant",
+      "version": "1.0.0",
+      "title": "大乘助手",
+      "description": "插件帮助和诊断",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/mahayana-assistant/",
+      "platforms": [
+        "cli",
+        "desktop",
+        "mobile",
+        "web"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "d7b0d2f0745c22afd723fce98cad4ae7d9f5ab7e7c5ee59341eac69c43802876"
+      }
+    },
+    {
+      "id": "chatgpt-auto-confirm",
+      "version": "1.0.0+codex.20260810093000",
+      "title": "ChatGPT 自动确认",
+      "description": "后台确认隐藏会话，并在同一实例的隐藏页面执行可恢复任务队列",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/chatgpt-auto-confirm/",
+      "platforms": [
+        "cli",
+        "desktop"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "300b2cfe32c7d44f29b2509e2b48a02484e3fac9326575fd33898be794c4b1db"
+      }
+    },
+    {
+      "id": "chatgpt-android-controller",
+      "version": "0.1.0",
+      "title": "ChatGPT Android 自动化",
+      "description": "持续操控 Android ChatGPT APK，自动确认、发消息并运行可恢复任务队列",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/chatgpt-android-controller/",
+      "platforms": [
+        "cli",
+        "desktop"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "17c7378279996a7fa04ea52366b7046f9fb19ebedccb4f802ad2191d86aa98db"
+      }
+    },
+    {
+      "id": "computer-cleaner",
+      "version": "0.1.0",
+      "title": "Computer Cleaner",
+      "description": "Safely reclaim disk space from regenerable files.",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/computer-cleaner/",
+      "platforms": [
+        "cli",
+        "desktop"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "67abd615f40afc1b7c7fed2b046d31073db0263a50b7b993bc68492bee632c45"
+      }
+    },
+    {
+      "id": "parallel-queue-probe",
+      "version": "0.1.0",
+      "title": "并行队列探针",
+      "description": "核验动态入队、真实重叠和隐藏 Chat 隔离。",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/parallel-queue-probe/",
+      "platforms": [
+        "cli",
+        "desktop"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "ab3de40a545c5ef6418780877c69fe67bcdae32cd404d018064fce2baf9fc3b9"
+      }
+    },
+    {
+      "id": "wechat-article-downloader",
+      "version": "0.1.0",
+      "title": "微信公众号归档器",
+      "description": "下载公众号公开文章的完整正文和图片到本地。",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/wechat-article-downloader/",
+      "platforms": [
+        "cli",
+        "desktop"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "3f80b46f8a2439dea5169b6ef1ab4031ed7bf726f5d302b2f54b0bf4172f6dbf"
+      }
+    },
+    {
+      "id": "douyin-batch-downloader",
+      "version": "1.0.0",
+      "title": "抖音批量无水印下载",
+      "description": "把有权访问的抖音分享批量保存为本地无水印 MP4。",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/douyin-batch-downloader/",
+      "platforms": [
+        "cli",
+        "desktop"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "421e7900fafd0c3ab09f379773dc2ffab009c3f8014ce2387bececac701343b0"
+      }
+    },
+    {
+      "id": "xhttp-split",
+      "version": "0.2.0+codex.20260811090326",
+      "title": "XHTTP 上下行分离",
+      "description": "登录云账号、填写 SSH，一键搭建并验证 XHTTP 分离线路。",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/xhttp-split/",
+      "platforms": [
+        "cli",
+        "desktop"
+      ],
+      "audit": {
+        "protocol": "fabushi.marketplace.audit.v1",
+        "policyVersion": 1,
+        "decision": "approved",
+        "digest": "740424d468c153533814880be69925e02f9cad7af36ccc677de355f2480244d8"
+      }
+    }
+  ]
 }
