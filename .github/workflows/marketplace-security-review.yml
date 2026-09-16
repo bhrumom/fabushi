@@ -176,7 +176,12 @@ jobs:
         with:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
-          submodules: recursive
+          filter: blob:none
+          sparse-checkout: |
+            .agents/plugins/plugins
+            third_party/mahayana/mahayana-rs/providers/official-miniapps
+            .github/codeql/marketplace-security.yml
+          sparse-checkout-cone-mode: false
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
