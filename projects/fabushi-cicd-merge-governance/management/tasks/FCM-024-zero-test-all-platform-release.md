@@ -70,3 +70,11 @@ No local build/test is permitted.
 - That workflow violated the FCM-024 automatic-workflow whitelist and failed, so it was not ignored as an optional red status.
 - The workflow is now changed to manual `workflow_dispatch` only on this branch. No local test/build substitutes for the fresh exact-head GitHub checks that must rerun after this governance repair.
 - PR #2698 remains the single release/version PR and must re-enter the protected SQUASH merge queue only after the repaired exact head satisfies repository gates.
+
+### 2026-09-17 same-version candidate repair after canonical `63a273cf...`
+
+- The preliminary `e96c9bb1752036d3796d61d762d745bcdb9ef111` test delivery is diagnostic only because governance follow-up #2699 subsequently changed canonical main.
+- Desktop no-test release run `35218893260` failed on Linux job `105193998581`, macOS job `105193998632`, and Windows job `105193998638` during renderer TypeScript compilation. Root causes: generated Mini App rendering expected a missing `TranscriptCard.kind = miniApp` union member, and Agent Bot conversation projection could receive `assistant-turn` while `BotTranscriptMessage` did not model/render it.
+- Mobile parent run `35218893282` reached both stores. iOS TestFlight child run `35218919317` succeeded. Android internal child run `35218921320`, job `105193996429`, failed at `:app:compileReleaseKotlin` because `FabushiScreen.kt` referenced `MobileChatEntryKind.MINI_APP`, `miniAppName`, and `miniAppDescription` that were absent from `MarketplaceViewModel.kt`.
+- Repair branch `fix/fcm024-1.2.71-renderer-contracts-20260917` starts from canonical `63a273cf47c0c600b63912487885cfff795ccae7` and repairs only those compile-time projection contracts.
+- No local build or behavioral test is accepted. Final exact-head CI, protected SQUASH queue merge, and a fresh all-platform no-test delivery against the resulting canonical SHA remain required.
