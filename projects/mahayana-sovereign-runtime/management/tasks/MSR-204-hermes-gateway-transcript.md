@@ -38,6 +38,14 @@ Introduce the first production-compatible slice of a Mahayana-owned Hermes-style
 - This synchronization does **not** close the pre-existing MSR-204 blockers: canonical restart durability, shared Host dispatcher/peer registry, non-approval server-request families, and the in-scope latest-Hermes OpenRPC method matrix remain implementation work until separately evidenced.
 - The exact resulting head is read back from GitHub metadata after push rather than self-embedded into the same commit.
 
+
+## 2026-09-17 post-merge acceptance repair — durability round
+
+- Protected merge queue placed PR #2620 into canonical `main@52cee303e6e8c599af0a5247b412b068bfce20f1` while this task record still had explicit acceptance blockers. Merge is therefore source integration evidence, not task completion evidence.
+- This follow-up round restores the previously reviewed Rust durability wrappers for gateway replay and peer open-request state, activates them as the crate entry points, and changes the CLI gateway to use the persistent peer registry. Both wrappers share the same private, atomic `gateway-state-v1.json` document and preserve each other's subtree.
+- No local build/test is accepted or represented here. Exact-head GitHub Actions must prove compilation, durability restart tests, gateway/peer tests and affected product gates before the durability acceptance item may be checked.
+- Remaining MSR-204 acceptance work after this round still includes the shared production Host dispatcher/transport path, non-approval server-request producers/resolution semantics, Workbench/Inspector responsibility split, exact-main packaged proof, and explicit ownership decisions for broader Hermes parity rows.
+
 ## Acceptance criteria
 
 - [x] Rust code defines a Mahayana-owned gateway event/frame contract with exact serialized event names including `message.delta`, `reasoning.delta`, `tool.start`, `tool.complete`, `approval.request`, `clarify.request`, subagent lifecycle and `message.complete`.
