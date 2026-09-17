@@ -93,6 +93,50 @@ jobs:
           publish_workflow_path.write_text(publish_workflow)
           PY
 
+          cat > .github/workflows/publish-chrome-0.6.12-on-package.yml <<'YAML'
+          name: Publish Chrome 0.6.12 after package
+
+          on:
+            workflow_run:
+              workflows:
+                - Chrome Extension Package (zero-test)
+              types:
+                - completed
+
+          permissions:
+            actions: write
+            contents: read
+
+          jobs:
+            dispatch:
+              if: >-
+                github.event.workflow_run.conclusion == 'success' &&
+                github.event.workflow_run.head_branch == 'main'
+              runs-on: ubuntu-latest
+              timeout-minutes: 5
+              steps:
+                - name: Checkout exact packaged source
+                  uses: actions/checkout@v6
+                  with:
+                    ref: ${{ github.event.workflow_run.head_sha }}
+
+                - name: Dispatch exact-source Web Store publication
+                  shell: bash
+                  env:
+                    GH_TOKEN: ${{ github.token }}
+                    SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+                  run: |
+                    set -euo pipefail
+                    test "$(jq -r '.version' chatgpt-vps-control/chrome-platform/extension/manifest.json)" = '0.6.12' || exit 0
+                    grep -Fq '// @version      2.9.37' chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js
+                    gh workflow run chrome-extension-web-store-publish.yml \
+                      --ref main \
+                      -f source_sha="$SOURCE_SHA" \
+                      -f dry_run=false \
+                      -f wait_for_published=false
+                    echo "Dispatched Chrome Web Store publication for $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          YAML
+
           git diff --check
           grep -Fq '"version": "0.6.12"' chatgpt-vps-control/chrome-platform/extension/manifest.json
           grep -Fq 'latestVersion: "2.9.37"' chatgpt-vps-control/chrome-platform/extension/app.js
@@ -103,18 +147,39 @@ jobs:
           grep -Fq '0.6.12' .github/workflows/chrome-extension-web-store.yml
           grep -Fq '0.6.12' .github/workflows/chrome-extension-web-store-publish.yml
 
-      - name: Commit prepared release
+      - name: Create immutable release commit object
+        id: release-commit
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js \
-            chatgpt-vps-control/chrome-platform/extension/app.js \
-            chatgpt-vps-control/chrome-platform/extension/manifest.json \
-            chatgpt-vps-control/scripts/package-chrome-extension.mjs \
-            .github/workflows/chrome-extension-web-store.yml \
-            .github/workflows/chrome-extension-web-store-publish.yml
-          git commit -m 'release(chrome): ship 0.6.12 with userscript 2.9.37'
-          git push origin HEAD:release/chrome-0.6.12-v2937-20260918
+          paths=(
+            'chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js'
+            'chatgpt-vps-control/chrome-platform/extension/app.js'
+            'chatgpt-vps-control/chrome-platform/extension/manifest.json'
+            'chatgpt-vps-control/scripts/package-chrome-extension.mjs'
+            '.github/workflows/chrome-extension-web-store.yml'
+            '.github/workflows/chrome-extension-web-store-publish.yml'
+            '.github/workflows/publish-chrome-0.6.12-on-package.yml'
+          )
+
+          tree_entries='[]'
+          for path in "${paths[@]}"; do
+            base64 -w0 "$path" > /tmp/blob.b64
+            jq -n --rawfile content /tmp/blob.b64 '{content:$content,encoding:"base64"}' > /tmp/blob.json
+            blob_sha="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input /tmp/blob.json --jq '.sha')"
+            tree_entries="$(jq --arg path "$path" --arg sha "$blob_sha" '. + [{path:$path,mode:"100644",type:"blob",sha:$sha}]' <<<"$tree_entries")"
+          done
+          tree_entries="$(jq --arg path '.github/workflows/prepare-chrome-0.6.12-v2937.yml' '. + [{path:$path,mode:"100644",type:"blob",sha:null}]' <<<"$tree_entries")"
+
+          base_tree="$(git rev-parse 'HEAD^{tree}')"
+          jq -n --arg base_tree "$base_tree" --argjson tree "$tree_entries" '{base_tree:$base_tree,tree:$tree}' > /tmp/tree.json
+          release_tree="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/trees" --input /tmp/tree.json --jq '.sha')"
+
+          parent="$(git rev-parse HEAD)"
+          jq -n --arg message 'release(chrome): ship 0.6.12 with userscript 2.9.37' --arg tree "$release_tree" --arg parent "$parent" '{message:$message,tree:$tree,parents:[$parent]}' > /tmp/commit.json
+          release_commit="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/commits" --input /tmp/commit.json --jq '.sha')"
+          echo "release_commit=$release_commit" >> "$GITHUB_OUTPUT"
+          echo "PREPARED_RELEASE_COMMIT=$release_commit"
+          echo "Prepared server-side commit object: $release_commit" >> "$GITHUB_STEP_SUMMARY"
