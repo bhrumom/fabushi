@@ -22,17 +22,27 @@ import {
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   MARKETPLACE_CATEGORY_LABELS,
+  getMarketplaceRelease,
   getMarketplaceApp,
   marketplaceApps,
   searchMarketplace,
   type MarketplaceApp,
   type MarketplaceCategory,
 } from "../../lib/marketplace";
+import {
+  installMarketplaceApp,
+  marketplaceAppInstallAction,
+  marketplaceInstallActionLabel,
+  marketplaceInstalledIds,
+  readMarketplaceInstallRecords,
+  subscribeMarketplaceInstallState,
+  type MarketplaceAppInstallAction,
+  type MarketplaceInstallRecord,
+} from "../../lib/marketplace-install-state";
 import { siteHref } from "../../lib/site-url";
 import { AppIcon } from "./app-icon";
 import styles from "./marketplace.module.css";
 
-const INSTALLED_KEY = "fabushi.installed-miniapps";
 const RECENT_KEY = "fabushi.marketplace.recent-apps.v1";
 
 type MarketplaceSection = "discover" | "installed" | "content";
@@ -73,16 +83,21 @@ function contentTypeLabel(type: MarketplaceApp["content"][number]["type"]) {
 function AppFeedCard({
   app,
   installed,
+  action,
   onInstall,
   onOpen,
   onPreview,
 }: {
   app: MarketplaceApp;
-  installed: boolean;
+  installed?: MarketplaceInstallRecord;
+  action: MarketplaceAppInstallAction;
   onInstall: (app: MarketplaceApp) => void;
   onOpen: (app: MarketplaceApp) => void;
   onPreview: (app: MarketplaceApp) => void;
 }) {
+  const release = getMarketplaceRelease(app.id);
+  const releaseRef = release?.sourceRef.slice(0, 9);
+  const canInstall = action !== "current" && action !== "blocked" && action !== "unavailable";
   return (
     <article className={styles.appCard}>
       <AppIcon label={app.icon} tone={app.tone} />
@@ -110,12 +125,18 @@ function AppFeedCard({
           <span className={styles.metaChip}>
             <AppWindow /> Mini App
           </span>
+          <span className={styles.metaChip}>
+            <Package /> {release ? `GitHub · ${releaseRef}` : "GitHub 待发布"}
+          </span>
+          <span className={styles.metaChip}>v{release?.version ?? app.version}</span>
+          {release ? <span className={styles.metaChip}>已审核发布</span> : null}
           {app.tags.slice(0, 2).map((tag) => (
             <span key={tag} className={styles.metaChip}>{tag}</span>
           ))}
         </div>
+        {release ? <p className={styles.releaseNotes}>发布说明：{release.releaseNotes}</p> : null}
         <div className={styles.appCardActions}>
-          {installed ? (
+          {installed && action === "current" ? (
             <a
               className={styles.primaryButton}
               href={siteHref(`/miniapps/${app.id}`)}
@@ -124,8 +145,14 @@ function AppFeedCard({
               打开 <ExternalLink />
             </a>
           ) : (
-            <button className={styles.primaryButton} type="button" onClick={() => onInstall(app)}>
-              安装 <Download />
+            <button
+              className={styles.primaryButton}
+              type="button"
+              onClick={() => onInstall(app)}
+              disabled={!canInstall}
+              title={action === "unavailable" ? "该应用还没有发布可校验的 GitHub 版本" : undefined}
+            >
+              {marketplaceInstallActionLabel(action)} <Download />
             </button>
           )}
           <button className={styles.secondaryButton} type="button" onClick={() => onPreview(app)}>
@@ -144,15 +171,14 @@ export function MarketplaceShell() {
   const [section, setSection] = useState<MarketplaceSection>("discover");
   const [category, setCategory] = useState<MarketplaceCategory>("featured");
   const [query, setQuery] = useState("");
-  const [installedIds, setInstalledIds] = useState<string[]>([]);
+  const [installedRecords, setInstalledRecords] = useState<Record<string, MarketplaceInstallRecord>>(() => readMarketplaceInstallRecords());
   const [recentIds, setRecentIds] = useState<string[]>([]);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setInstalledIds(readStringArray(INSTALLED_KEY));
+    setInstalledRecords(readMarketplaceInstallRecords());
     setRecentIds(readStringArray(RECENT_KEY));
-
     const params = new URLSearchParams(window.location.search);
     const requestedCategory = params.get("category");
     if (requestedCategory && categoryOrder.includes(requestedCategory as MarketplaceCategory)) {
@@ -160,6 +186,7 @@ export function MarketplaceShell() {
     }
     const requestedQuery = params.get("q")?.trim();
     if (requestedQuery) setQuery(requestedQuery);
+    return subscribeMarketplaceInstallState(setInstalledRecords);
   }, []);
 
   useEffect(() => {
@@ -177,6 +204,7 @@ export function MarketplaceShell() {
   }, [previewId]);
 
   const results = useMemo(() => searchMarketplace(query), [query]);
+  const installedIds = useMemo(() => marketplaceInstalledIds(installedRecords), [installedRecords]);
   const installedSet = useMemo(() => new Set(installedIds), [installedIds]);
   const previewApp = previewId ? getMarketplaceApp(previewId) : undefined;
 
@@ -197,15 +225,11 @@ export function MarketplaceShell() {
     .filter((app): app is MarketplaceApp => Boolean(app))
     .slice(0, 4);
 
-  const saveInstalled = (ids: string[]) => {
-    const unique = [...new Set(ids)];
-    setInstalledIds(unique);
-    window.localStorage.setItem(INSTALLED_KEY, JSON.stringify(unique));
-    window.dispatchEvent(new CustomEvent("fabushi:marketplace-installed", { detail: { ids: unique } }));
-  };
-
   const installApp = (app: MarketplaceApp) => {
-    saveInstalled([...installedIds, app.id]);
+    const action = marketplaceAppInstallAction(app.id, installedRecords[app.id]);
+    if (action === "current" || action === "blocked" || action === "unavailable") return;
+    installMarketplaceApp(app.id);
+    setInstalledRecords(readMarketplaceInstallRecords());
   };
 
   const markOpened = (app: MarketplaceApp) => {
@@ -382,7 +406,8 @@ export function MarketplaceShell() {
                   <AppFeedCard
                     key={app.id}
                     app={app}
-                    installed={installedSet.has(app.id)}
+                    installed={installedRecords[app.id]}
+                    action={marketplaceAppInstallAction(app.id, installedRecords[app.id])}
                     onInstall={installApp}
                     onOpen={markOpened}
                     onPreview={(candidate) => setPreviewId(candidate.id)}
@@ -578,11 +603,20 @@ export function MarketplaceShell() {
                 <span className={styles.metaChip}>{previewApp.content.length} 个内容入口</span>
               </div>
             </section>
+            {getMarketplaceRelease(previewApp.id) ? (
+              <section className={styles.previewSection}>
+                <h3>GitHub 版本</h3>
+                <p>
+                  {getMarketplaceRelease(previewApp.id)?.releaseStatus === "approved" ? "已审核；" : ""}
+                  {getMarketplaceRelease(previewApp.id)?.releaseNotes}
+                </p>
+              </section>
+            ) : null}
             <div className={styles.previewActions}>
               <a className={styles.secondaryButton} href={siteHref(`/apps/${previewApp.slug}`)}>
                 完整详情
               </a>
-              {installedSet.has(previewApp.id) ? (
+              {installedRecords[previewApp.id] && marketplaceAppInstallAction(previewApp.id, installedRecords[previewApp.id]) === "current" ? (
                 <a
                   className={styles.primaryButton}
                   href={siteHref(`/miniapps/${previewApp.id}`)}
@@ -591,8 +625,13 @@ export function MarketplaceShell() {
                   打开应用 <ExternalLink />
                 </a>
               ) : (
-                <button className={styles.primaryButton} type="button" onClick={() => installApp(previewApp)}>
-                  安装应用 <Download />
+                <button
+                  className={styles.primaryButton}
+                  type="button"
+                  onClick={() => installApp(previewApp)}
+                  disabled={["blocked", "unavailable"].includes(marketplaceAppInstallAction(previewApp.id, installedRecords[previewApp.id]))}
+                >
+                  {marketplaceInstallActionLabel(marketplaceAppInstallAction(previewApp.id, installedRecords[previewApp.id]))} <Download />
                 </button>
               )}
             </div>

@@ -37,7 +37,6 @@ export const metadata: Metadata = {
     canonical: homeUrl,
   },
   category: "software",
-  manifest: siteUrl("/manifest.webmanifest"),
   openGraph: {
     title: siteTitle,
     description: siteDescription,

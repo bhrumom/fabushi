@@ -558,6 +558,7 @@ export class WasmMahayanaHostTransport implements MahayanaHostTransport {
   async marketplaceRelease(pluginId: string, version: string): Promise<MarketplaceReleaseMetadata> { return await this.surfaceFallback.marketplaceRelease(pluginId, version); }
   async pluginInstall(release: Record<string, unknown>, platform?: string): Promise<InstalledPluginPointer> { return await this.surfaceFallback.pluginInstall(release, platform); }
   async pluginUninstall(pluginId: string): Promise<PluginUninstallResult> { return await this.surfaceFallback.pluginUninstall(pluginId); }
+  async pluginRollback(pluginId: string): Promise<InstalledPluginPointer | null> { return await this.surfaceFallback.pluginRollback(pluginId); }
   async pluginActive(pluginId: string): Promise<InstalledPluginPointer | null> { return await this.surfaceFallback.pluginActive(pluginId); }
   async pluginListInstalled(): Promise<InstalledPluginList> { return await this.surfaceFallback.pluginListInstalled(); }
   async pluginUiDocument(pluginId: string): Promise<PluginUiDocument> { return await this.surfaceFallback.pluginUiDocument(pluginId); }

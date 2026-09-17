@@ -8,6 +8,7 @@ import {
   Download,
   ExternalLink,
   Package,
+  RefreshCw,
   Search,
   X,
 } from "lucide-react";
@@ -15,15 +16,23 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   MARKETPLACE_CATEGORY_LABELS,
+  getMarketplaceRelease,
   searchMarketplace,
   type MarketplaceApp,
   type MarketplaceContentItem,
 } from "../../lib/marketplace";
+import {
+  installMarketplaceApp,
+  marketplaceAppInstallAction,
+  marketplaceInstallActionLabel,
+  readMarketplaceInstallRecords,
+  subscribeMarketplaceInstallState,
+  type MarketplaceInstallRecord,
+} from "../../lib/marketplace-install-state";
 import { siteHref } from "../../lib/site-url";
 import { AppIcon } from "./app-icon";
 import styles from "./marketplace.module.css";
 
-const INSTALLED_KEY = "fabushi.installed-miniapps";
 const RECENT_KEY = "fabushi.marketplace.recent-apps.v1";
 
 function readList(key: string): string[] {
@@ -55,10 +64,11 @@ export function MarketplaceSearch() {
   const initialQuery = searchParams.get("q")?.trim() ?? "";
   const [query, setQuery] = useState(initialQuery);
   const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
-  const [installedIds, setInstalledIds] = useState<string[]>([]);
+  const [installedRecords, setInstalledRecords] = useState<Record<string, MarketplaceInstallRecord>>(() => readMarketplaceInstallRecords());
 
   useEffect(() => {
-    setInstalledIds(readList(INSTALLED_KEY));
+    setInstalledRecords(readMarketplaceInstallRecords());
+    return subscribeMarketplaceInstallState(setInstalledRecords);
   }, []);
 
   useEffect(() => {
@@ -68,8 +78,6 @@ export function MarketplaceSearch() {
   }, [searchParams]);
 
   const results = useMemo(() => searchMarketplace(submittedQuery), [submittedQuery]);
-  const installedSet = useMemo(() => new Set(installedIds), [installedIds]);
-
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalized = query.trim();
@@ -79,10 +87,10 @@ export function MarketplaceSearch() {
   };
 
   const install = (app: MarketplaceApp) => {
-    const next = [...new Set([...installedIds, app.id])];
-    setInstalledIds(next);
-    window.localStorage.setItem(INSTALLED_KEY, JSON.stringify(next));
-    window.dispatchEvent(new CustomEvent("fabushi:marketplace-installed", { detail: { ids: next } }));
+    const action = marketplaceAppInstallAction(app.id, installedRecords[app.id]);
+    if (action === "current" || action === "blocked" || action === "unavailable") return;
+    installMarketplaceApp(app.id);
+    setInstalledRecords(readMarketplaceInstallRecords());
   };
 
   const markOpened = (app: MarketplaceApp) => {
@@ -149,12 +157,20 @@ export function MarketplaceSearch() {
                     </div>
                     <p className={styles.appDescription}>{app.subtitle}</p>
                     <div className={styles.appMeta}>
+                      <span className={styles.metaChip}><Package /> {getMarketplaceRelease(app.id) ? `GitHub · v${getMarketplaceRelease(app.id)?.version}` : "GitHub 待发布"}</span>
+                      {getMarketplaceRelease(app.id) ? <span className={styles.metaChip}>已审核发布</span> : null}
                       {app.tags.slice(0, 3).map((tag) => (
                         <span key={tag} className={styles.metaChip}>{tag}</span>
                       ))}
                     </div>
+                    {getMarketplaceRelease(app.id) ? <small className={styles.releaseNotes}>发布说明：{getMarketplaceRelease(app.id)?.releaseNotes}</small> : null}
                     <div className={styles.appCardActions}>
-                      {installedSet.has(app.id) ? (
+                      {(() => {
+                        const installed = installedRecords[app.id];
+                        const action = marketplaceAppInstallAction(app.id, installed);
+                        const isInstalled = Boolean(installed);
+                        const canInstall = action !== "current" && action !== "blocked" && action !== "unavailable";
+                        return isInstalled && action === "current" ? (
                         <a
                           className={styles.primaryButton}
                           href={siteHref(`/miniapps/${app.id}`)}
@@ -162,11 +178,12 @@ export function MarketplaceSearch() {
                         >
                           打开 <ExternalLink />
                         </a>
-                      ) : (
-                        <button className={styles.primaryButton} type="button" onClick={() => install(app)}>
-                          安装 <Download />
-                        </button>
-                      )}
+                        ) : (
+                          <button className={styles.primaryButton} type="button" onClick={() => install(app)} disabled={!canInstall}>
+                            {marketplaceInstallActionLabel(action)} {action === "update" || action === "reinstall" ? <RefreshCw /> : <Download />}
+                          </button>
+                        );
+                      })()}
                       <a className={styles.secondaryButton} href={siteHref(`/apps/${app.slug}`)}>
                         查看详情 <ChevronRight />
                       </a>

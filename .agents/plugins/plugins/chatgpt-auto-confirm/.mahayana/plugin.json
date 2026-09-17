@@ -18,7 +18,8 @@
       "mcp.call",
       "storage.local",
       "desktop.accessibility",
-      "desktop.chatgpt.approvals"
+      "desktop.chatgpt.approvals",
+      "browser.in-app.dispatch-and-watch"
     ]
   },
   "commands": [
@@ -45,6 +46,10 @@
     {
       "name": "diagnose",
       "tool": "diagnose"
+    },
+    {
+      "name": "dispatch-goal",
+      "tool": "dispatch_goal"
     },
     {
       "name": "send",

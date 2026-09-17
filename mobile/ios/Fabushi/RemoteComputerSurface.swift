@@ -71,6 +71,7 @@ struct RemoteComputerSurface: View {
             )
         }
         .background(Color(uiColor: .systemBackground))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("remote-computer-surface")
     }
 }

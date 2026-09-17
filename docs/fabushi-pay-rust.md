@@ -1,6 +1,6 @@
 # Fabushi Pay Rust 支付基础设施
 
-更新日期：2026-08-22
+更新日期：2026-09-11
 
 ## 目标与许可证边界
 
@@ -18,7 +18,7 @@ Mini App / Electron / iOS / Android
 https://pay.ombhrum.com
 Fabushi Pay Rust Worker
         |
-        +-- Trusted Product Catalog
+        +-- Developer Commerce Catalog（按开发者 / Mini App 隔离）
         +-- Payment Intent / Idempotency
         +-- Apple App Store Server API
         +-- Google Play Developer API
@@ -49,7 +49,7 @@ Mini App 属于不可信执行环境。`pay.createIntent` 只允许提交：
 }
 ```
 
-价格、币种、开发者、商品类型、平台费率、允许的支付 rail、Apple/Google product id 均由服务端 Trusted Product Catalog 决定。客户端注入 `amount` / `currency` 等字段会被协议拒绝。
+价格、币种、开发者、商品类型、平台费率、允许的支付 rail、Apple/Google product id 均由服务端的 Developer Commerce Catalog 决定；目录的所有者是对应第三方开发者。客户端注入 `amount` / `currency` 等字段会被协议拒绝。
 
 Mini App Host 暴露：
 
@@ -58,6 +58,18 @@ Mini App Host 暴露：
 - `pay.getStatus`
 
 全部要求 `commerce.purchase`。Mini App 不获得退款、结算、提现、Provider secret 或平台管理权限。
+
+## 第三方开发者商品目录（唯一上架入口）
+
+商品不再通过 Fabushi 内置商品分支创建。开发者先绑定自己的开发者资料和 Mini App，再通过 Developer Commerce API 上架商品；SKU 是开发者在同一个 Mini App 内的稳定商品身份，重复提交同一 SKU 会更新价格版本，不会隐式创建第二个商品。
+
+规范接口：
+
+- `GET /v1/developer/commerce/miniapps/:mini_app_id/products`：读取目录及 Provider 状态。
+- `POST /v1/developer/commerce/miniapps/:mini_app_id/products/batch`：批量创建 / 更新 1–100 个商品；金额由开发者提交，Fabushi Pay 只负责权威存储、幂等和结算。
+- `POST /v1/developer/commerce/miniapps/:mini_app_id/google/sync`：批量同步或对账 Google Play，最多 50 个商品；省略商品 ID 时同步该 Mini App 的有效 Google 商品。
+
+Apple、Google、Web 的商品映射和 provider binding 都从这份开发者目录生成。历史迁移中的官方商品只为保留既有商品 ID、订单和权益而被迁入同一目录，并不构成新的内置上架路径；后续商品一律走上述开发者接口。旧的 `POST /v1/pay/admin/products` 管理入口已移除，结算、对账和提现管理接口仍保留在内部管理面。
 
 ## HTTP API
 
@@ -74,9 +86,8 @@ Provider 接口：
 
 - `POST /v1/pay/providers/:provider/webhook`
 
-平台管理接口（`FABUSHI_PAY_ADMIN_TOKEN`）：
+内部结算 / 资金管理接口（`FABUSHI_PAY_ADMIN_TOKEN`）：
 
-- `POST /v1/pay/admin/products`
 - `POST /v1/pay/admin/settlements/release`
 - `POST /v1/pay/admin/payout-accounts`
 - `POST /v1/pay/admin/payouts`
@@ -193,6 +204,18 @@ Web 与 Merchant Provider 不直接信任浏览器回调。Provider gateway 向�
 
 标准事件覆盖 payment success/failure/cancel、refund、chargeback open/won/lost、payout paid/failed。
 
+当前 Web Provider 的最小生产桥接位于 `fabushi/web`：
+
+- 原生客户端继续使用 `POST /api/alipay/create-order` 的 `platform=app` 分支；服务端生成 `alipay.trade.app.pay` / `QUICK_MSECURITY_PAY` 签名订单串，交给支付宝 SDK 调起支付宝 APP。
+- `GET /api/pay/checkout` 使用服务端 Payment Intent 的整数金额创建 Stripe Checkout Session；使用 `price_data` 动态传价，不要求开发者在 Stripe Dashboard 为每次改价创建 Product/Price。
+- `GET /api/pay/alipay/checkout` 使用同一 Payment Intent 的 CNY 金额生成支付宝 RSA2 网页支付请求。
+- Checkout Action 默认返回 Stripe，并在配置了 `FABUSHI_PAY_ALIPAY_CHECKOUT_URL` 时同时返回支付宝备用跳转地址。
+- `POST /api/pay/stripe/webhook` 验证 Stripe `Stripe-Signature` 后，`checkout.session.*` 事件归一化到 Fabushi Pay。
+- `POST /api/pay/alipay/webhook` 验证支付宝 RSA2 回调、订单金额和 app id 后，归一化到 Fabushi Pay。
+- Pay Worker 给 checkout URL 附加 15 分钟、绑定 `paymentId + userId` 的 HMAC token；网关没有该 token 时拒绝创建外部订单。
+
+Stripe 网关不提交 `payment_method_types`，由 Stripe 根据账户、币种和支付能力动态展示可用方式；个人 Stripe 账户只能作为平台自身的收款账户使用，开发者分账/提现仍需另行通过 Connect/KYC/KYB。Stripe 与支付宝密钥只允许放在 Worker secrets，不能写入仓库。
+
 ## 开发者 Revenue 与提现
 
 销售收入先进入 `developer-pending`；超过 hold period 后根据 reserve bps 释放到 `developer-available`。同一 payment 可以在降低 reserve 后分阶段继续释放，但每次 release 都有唯一 idempotency key。
@@ -230,6 +253,15 @@ Electron / Mini App 使用同一 Payment Intent / Checkout contract；只有具�
 - `FABUSHI_PAY_ADMIN_TOKEN`
 - `FABUSHI_PAY_WEBHOOK_SECRET`
 - `FABUSHI_PAY_CHECKOUT_URL`
+
+生产 Web Worker（`api.ombhrum.com`）还需要按需配置：
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- 与 Pay Worker 相同的 `FABUSHI_PAY_WEBHOOK_SECRET`
+- 已有的 `ALIPAY_PRIVATE_KEY`（以及现有 `ALIPAY_PUBLIC_KEY` / `ALIPAY_APP_ID` 配置）
+
+启用 Stripe 时将 `STRIPE_LIVEMODE=true` 固定为 live-only；测试环境应显式设置为 `false` 并使用 test webhook secret。生产密钥缺失时网关保持 fail closed，不创建外部订单。
 
 GitHub 部署 workflow 可从现有 App Store Connect 与 Google Play release secrets 派生对应服务端凭证；secret 不写入仓库。
 

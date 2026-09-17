@@ -114,11 +114,89 @@ test('packaged Fabushi publishes a generation-safe semantic App MCP over the pri
       return assertion.passed;
     }).toBe(true);
 
-    await expect(client.call('action', {
+    const rebasedAction = await client.call('action', {
       generation: snapshot.generation,
       agentId: 'test:profile-navigation-trigger',
       action: 'invoke',
+    }) as { status?: string; target?: { agentId?: string } };
+    expect(rebasedAction).toMatchObject({
+      status: 'completed',
+      target: { agentId: 'test:profile-navigation-trigger' },
+    });
+    await expect(page.getByTestId('profile-navigation-menu')).toBeHidden();
+
+    await expect(client.call('action', {
+      generation: snapshot.generation,
+      agentId: 'test:profile-navigation-trigger',
+      ref: 'g0:volatile',
+      action: 'invoke',
     })).rejects.toThrow(/stale_app_surface_generation/u);
+
+    await page.getByTestId('messenger-input').fill('semantic message action probe');
+    await page.getByTestId('messenger-send').click();
+    const semanticMessage = page.locator('[data-agent-id^="message-actions:"][data-agent-invoke="contextmenu"][data-agent-message-role="me"]').filter({ hasText: 'semantic message action probe' }).last();
+    await expect(semanticMessage).toBeVisible();
+    await expect(semanticMessage).toHaveAttribute('data-agent-message-role', 'me');
+    const semanticMessageAgentId = await semanticMessage.getAttribute('data-agent-id');
+    expect(semanticMessageAgentId).toBeTruthy();
+
+    await page.evaluate(() => {
+      const overflow = document.createElement('div');
+      overflow.id = 'semantic-overflow-decoys';
+      overflow.style.display = 'none';
+      for (let index = 0; index < 520; index += 1) {
+        const button = document.createElement('button');
+        button.dataset.agentId = `semantic-overflow-decoy:${index}`;
+        button.textContent = `semantic overflow decoy ${index}`;
+        overflow.appendChild(button);
+      }
+      document.body.prepend(overflow);
+    });
+    await page.waitForTimeout(50);
+
+    const messageSnapshot = await client.call('snapshot', { maxElements: 500, includeText: true }) as {
+      generation: number;
+      truncated: boolean;
+      elements: Array<{ agentId?: string }>;
+    };
+    expect(messageSnapshot.truncated).toBe(true);
+    expect(messageSnapshot.elements.some((element) => element.agentId === semanticMessageAgentId)).toBe(false);
+    const freshSemanticMessage = await client.call('find', { agentId: semanticMessageAgentId, limit: 1 }) as {
+      generation: number;
+      count: number;
+      matches: Array<{ agentId?: string }>;
+    };
+    expect(freshSemanticMessage.count).toBe(1);
+    expect(freshSemanticMessage.matches[0]?.agentId).toBe(semanticMessageAgentId);
+    await client.call('action', {
+      generation: freshSemanticMessage.generation,
+      agentId: semanticMessageAgentId,
+      action: 'invoke',
+    });
+    await expect(page.getByTestId('message-context-menu')).toBeVisible();
+
+    for (const actionName of ['reply', 'copy', 'react', 'edit', 'pin', 'forward', 'delete']) {
+      const found = await client.call('find', { agentId: `test:message-action-${actionName}`, limit: 2 }) as {
+        generation: number;
+        count: number;
+        matches: Array<{ agentId?: string }>;
+      };
+      await expect(page.getByTestId(`message-action-${actionName}`), `DOM menu action ${actionName} must be rendered for the authored message`).toBeVisible();
+      expect(found.count, `semantic find must resolve message action ${actionName}`).toBe(1);
+      expect(found.matches[0]?.agentId).toBe(`test:message-action-${actionName}`);
+    }
+    const freshReply = await client.call('find', { agentId: 'test:message-action-reply', limit: 1 }) as {
+      generation: number;
+      count: number;
+    };
+    expect(freshReply.count).toBe(1);
+    await client.call('action', {
+      generation: freshReply.generation,
+      agentId: 'test:message-action-reply',
+      action: 'invoke',
+    });
+    await expect(page.getByTestId('reply-message-banner')).toBeVisible();
+    await page.evaluate(() => document.getElementById('semantic-overflow-decoys')?.remove());
 
     const webFallback = await page.evaluate(async () => {
       const registry = (window as unknown as {

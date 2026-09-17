@@ -14,6 +14,11 @@ const MAX_DIAGNOSTIC_BYTES = 256 * 1024;
 const SENSITIVE_KEY = /(secret|token|password|authorization|cookie|credential|private.?key)/i;
 const LOCAL_TOOL_PERMISSIONS = new Set(['never', 'ask', 'always']);
 const UPDATE_TRACKS = new Set(['stable', 'beta', 'alpha']);
+const GLOBAL_DHARMA_ID = 'global-dharma';
+const LOCAL_PRAYER_WHEEL_CAPABILITY = 'local.prayer-wheel.start';
+const LOCAL_PRAYER_WHEEL_LIFETIME_SKU = 'local-prayer-wheel.lifetime';
+const LOCAL_PRAYER_WHEEL_LIFETIME_AMOUNT = 108000;
+const LOCAL_PRAYER_WHEEL_CURRENCY = 'CNY';
 const DEFAULT_DOCKER_IMAGE = 'mcr.microsoft.com/devcontainers/base:ubuntu24.04@sha256:c5cc2b45afe06a1df3aba17e58ba0dc4a02b999493198dab37dd0ccd4e2b0705';
 
 function cleanString(value, limit = 4096) {
@@ -103,6 +108,58 @@ async function readLimitedFile(filePath, maxBytes) {
   if (!stat.isFile()) throw new Error('Requested path is not a file.');
   if (stat.size > maxBytes) throw new Error(`File exceeds ${maxBytes} byte limit.`);
   return { stat, bytes: await fs.readFile(filePath) };
+}
+
+function recordValue(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function miniAppEntitlementPath(pluginId, capability) {
+  return `/v1/plugins/${encodeURIComponent(pluginId)}/entitlements/${encodeURIComponent(capability)}`;
+}
+
+function normalizedMiniAppId(value) {
+  const id = cleanString(value, 200).toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(id)) throw new Error('Invalid Mini App id.');
+  return id;
+}
+
+function normalizedCapability(value) {
+  const capability = cleanString(value, 200);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{1,199}$/.test(capability)) throw new Error('Invalid capability.');
+  return capability;
+}
+
+function lifetimePrayerWheelOption(entitlement) {
+  const options = Array.isArray(entitlement?.purchaseOptions) ? entitlement.purchaseOptions : [];
+  const option = options.find((candidate) => candidate?.sku === LOCAL_PRAYER_WHEEL_LIFETIME_SKU);
+  if (!option) throw new Error('Fabushi Pay did not return the lifetime local prayer-wheel product.');
+  if (option.productId !== 'prod.global-dharma.local-prayer-wheel.lifetime'
+    || option.productKind !== 'digital_durable'
+    || option.currency !== LOCAL_PRAYER_WHEEL_CURRENCY
+    || Number(option.amount) !== LOCAL_PRAYER_WHEEL_LIFETIME_AMOUNT) {
+    throw new Error('Fabushi Pay lifetime local prayer-wheel product does not match the canonical CNY 1080 contract.');
+  }
+  const activeRails = Array.isArray(option.activeRails) ? option.activeRails.map((value) => String(value)) : [];
+  if (!activeRails.includes('web_provider')) {
+    throw new Error('The CNY 1080 lifetime local prayer-wheel web payment rail is not active.');
+  }
+  return option;
+}
+
+function paymentIdFromIntent(intent) {
+  return cleanString(intent?.payment?.paymentId ?? intent?.paymentId, 160);
+}
+
+function safeCheckoutRedirect(checkout) {
+  const url = cleanString(checkout?.checkoutAction?.url, 4096);
+  if (!url) return null;
+  let parsed;
+  try { parsed = new URL(url); } catch { throw new Error('Fabushi Pay returned an invalid checkout URL.'); }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+    throw new Error('Fabushi Pay checkout URL must be HTTPS and credential-free.');
+  }
+  return parsed.toString();
 }
 
 function createNativeCapabilityHandlers(deps) {
@@ -1103,7 +1160,7 @@ function createNativeCapabilityHandlers(deps) {
       const body = { sku, displayName, description, productKind, entitlementCapability, currency, amount, rails };
       if (taxCode) body.taxCode = taxCode;
       if (productKind === 'subscription') body.subscriptionPeriodSeconds = 2592000;
-      return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/products`, { body });
+      return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/products/batch`, { body: { products: [body] } });
     },
 
     async updateDeveloperCommerceProduct(params) {
@@ -1127,7 +1184,10 @@ function createNativeCapabilityHandlers(deps) {
       if (productKind === 'subscription') body.subscriptionPeriodSeconds = 2592000;
       const productId = cleanString(params.productId, 128);
       if (!productId) throw new Error('Product ID is required.');
-      return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/products/${encodeURIComponent(productId)}`, { body });
+      // Product identity is the developer SKU. Use the same batch upsert path
+      // for edits so desktop and web cannot diverge into a privileged product
+      // creation flow.
+      return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/products/batch`, { body: { products: [body] } });
     },
 
     async syncDeveloperCommerceGoogleProduct(params) {
@@ -1135,6 +1195,23 @@ function createNativeCapabilityHandlers(deps) {
       const productId = cleanString(params.productId, 128);
       if (!miniAppId || !productId) throw new Error('Mini App ID and product ID are required.');
       return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/products/${encodeURIComponent(productId)}/google/sync`, { body: {} });
+    },
+
+    async upsertDeveloperCommerceProductsBatch(params) {
+      const miniAppId = cleanString(params.miniAppId, 128);
+      const products = Array.isArray(params.products) ? params.products : [];
+      if (!miniAppId || !/^[A-Za-z0-9._:-]+$/.test(miniAppId) || products.length < 1 || products.length > 100 || products.some((product) => !product || typeof product !== 'object')) {
+        throw new Error('A valid Mini App ID and 1-100 product drafts are required.');
+      }
+      return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/products/batch`, { body: { products } });
+    },
+
+    async syncDeveloperCommerceGoogleProducts(params) {
+      const miniAppId = cleanString(params.miniAppId, 128);
+      const productIds = Array.isArray(params.productIds) ? params.productIds.map((value) => cleanString(value, 128)).filter(Boolean) : [];
+      if (!miniAppId || !/^[A-Za-z0-9._:-]+$/.test(miniAppId)) throw new Error('Valid Mini App ID is required.');
+      if (productIds.length > 50) throw new Error('At most 50 Google product IDs can be synchronized at once.');
+      return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/google/sync`, { body: { productIds } });
     },
 
     async getDeveloperPayoutOverview() {
@@ -1586,6 +1663,121 @@ function createNativeCapabilityHandlers(deps) {
       return platformRequest('POST', `/v1/marketplace/plugins/${encodeURIComponent(pluginId)}/route`, {
         body: { input },
       });
+    },
+
+    async callMiniAppRuntimeTool(params) {
+      const pluginId = normalizedMiniAppId(params.pluginId ?? params.id);
+      const name = cleanString(params.name ?? params.tool, 128);
+      if (!/^[A-Za-z0-9_.-]{1,128}$/.test(name)) throw new Error('Invalid Mini App runtime tool name.');
+      const argumentsValue = params.arguments ?? params.input ?? {};
+      const argumentsObject = recordValue(argumentsValue);
+      if (!argumentsObject) throw new Error('Mini App runtime tool arguments must be an object.');
+
+      const account = await platformRequest('GET', '/v1/marketplace/added');
+      const apps = Array.isArray(account?.apps) ? account.apps : [];
+      const app = apps.find((candidate) => cleanString(candidate?.id ?? candidate?.pluginId, 200).toLowerCase() === pluginId);
+      if (!app) throw new Error(`Mini App ${pluginId} is not installed for this account.`);
+      const commands = Array.isArray(app.commands) ? app.commands : [];
+      const allowed = commands.some((candidate) => {
+        const command = recordValue(candidate);
+        return command && cleanString(command.tool ?? command.name, 128) === name;
+      });
+      if (!allowed) throw new Error(`Mini App runtime tool ${name} is outside ${pluginId}'s installed Tool Contract.`);
+
+      if (pluginId === GLOBAL_DHARMA_ID && name === 'start') {
+        const entitlement = await platformRequest('GET', miniAppEntitlementPath(pluginId, LOCAL_PRAYER_WHEEL_CAPABILITY));
+        if (entitlement?.access?.allowed !== true) {
+          throw new Error(`Mini App runtime tool ${name} requires an active ${LOCAL_PRAYER_WHEEL_CAPABILITY} entitlement.`);
+        }
+      }
+
+      return host.request('runtime.call', { pluginId, name, arguments: argumentsObject });
+    },
+
+    async getMiniAppSessionProjection(params) {
+      const pluginId = normalizedMiniAppId(params.pluginId ?? params.id);
+      const auth = await host.request('feature.auth.status', {});
+      const user = recordValue(auth?.user) ?? {};
+      return {
+        protocol: 'fabushi.miniapp.session.v1',
+        pluginId,
+        loggedIn: auth?.loggedIn === true,
+        provider: cleanString(auth?.provider, 80) || null,
+        account: auth?.loggedIn === true ? {
+          id: user.id == null ? null : String(user.id),
+          username: cleanString(user.username, 160) || null,
+          nickname: cleanString(user.nickname, 160) || null,
+          avatar: cleanString(user.avatar, 4096) || null,
+        } : null,
+        tokenExposed: false,
+      };
+    },
+
+    async getMiniAppEntitlement(params) {
+      const pluginId = normalizedMiniAppId(params.pluginId ?? params.id);
+      const capability = normalizedCapability(params.capability);
+      return platformRequest('GET', miniAppEntitlementPath(pluginId, capability));
+    },
+
+    async purchaseMiniAppLifetime(params) {
+      const pluginId = normalizedMiniAppId(params.pluginId ?? params.id);
+      const capability = normalizedCapability(params.capability ?? LOCAL_PRAYER_WHEEL_CAPABILITY);
+      if (pluginId !== GLOBAL_DHARMA_ID || capability !== LOCAL_PRAYER_WHEEL_CAPABILITY) {
+        throw new Error('This desktop lifetime purchase facade is scoped to the official Global Dharma local prayer-wheel capability.');
+      }
+      const auth = await host.request('feature.auth.status', {});
+      const sessionUser = recordValue(auth?.user) ?? {};
+      const session = {
+        protocol: 'fabushi.miniapp.session.v1', pluginId, loggedIn: auth?.loggedIn === true,
+        provider: cleanString(auth?.provider, 80) || null,
+        account: auth?.loggedIn === true ? {
+          id: sessionUser.id == null ? null : String(sessionUser.id),
+          username: cleanString(sessionUser.username, 160) || null,
+          nickname: cleanString(sessionUser.nickname, 160) || null,
+          avatar: cleanString(sessionUser.avatar, 4096) || null,
+        } : null,
+        tokenExposed: false,
+      };
+      if (!session.loggedIn) throw new Error('Fabushi login is required before purchasing a Mini App entitlement.');
+      const before = await platformRequest('GET', miniAppEntitlementPath(pluginId, capability));
+      if (before?.access?.allowed === true) {
+        return { status: 'already-entitled', session, entitlement: before, checkout: null };
+      }
+      const option = lifetimePrayerWheelOption(before);
+      const idempotencyKey = cleanString(params.idempotencyKey, 160);
+      if (!idempotencyKey || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(idempotencyKey)) {
+        throw new Error('A stable Fabushi Pay idempotency key is required.');
+      }
+      const intent = await platformRequest('POST', `/v1/miniapps/${encodeURIComponent(pluginId)}/pay/intents`, {
+        body: { sku: option.sku, rail: 'web_provider', idempotencyKey },
+      });
+      const paymentId = paymentIdFromIntent(intent);
+      if (!paymentId) throw new Error('Fabushi Pay did not return a payment id.');
+      const checkout = await platformRequest('POST', `/v1/pay/intents/${encodeURIComponent(paymentId)}/checkout`, { body: {} });
+      const redirect = safeCheckoutRedirect(checkout);
+      if (redirect) await shell.openExternal(redirect);
+      const entitlement = await platformRequest('GET', miniAppEntitlementPath(pluginId, capability));
+      return {
+        status: entitlement?.access?.allowed === true ? 'entitled' : 'checkout-required',
+        session,
+        product: option,
+        paymentId,
+        intent,
+        checkout,
+        checkoutOpened: Boolean(redirect),
+        entitlement,
+      };
+    },
+
+    async restoreMiniAppPurchases(params) {
+      const pluginId = normalizedMiniAppId(params.pluginId ?? params.id);
+      const capability = normalizedCapability(params.capability ?? LOCAL_PRAYER_WHEEL_CAPABILITY);
+      const auth = await host.request('feature.auth.status', {});
+      const session = { protocol: 'fabushi.miniapp.session.v1', pluginId, loggedIn: auth?.loggedIn === true, tokenExposed: false };
+      if (!session.loggedIn) throw new Error('Fabushi login is required before restoring Mini App purchases.');
+      const restored = await platformRequest('POST', '/v1/purchases/restore', { body: { pluginId } });
+      const entitlement = await platformRequest('GET', miniAppEntitlementPath(pluginId, capability));
+      return { session, restored, entitlement };
     },
 
     async getAccountSync(params) {

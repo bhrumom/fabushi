@@ -49,6 +49,77 @@ fn remote_computer_migration_keeps_control_plane_separate_from_desktop_data() {
 }
 
 #[test]
+fn marketplace_account_install_migration_is_account_scoped_and_manifest_projected() {
+    assert_eq!(
+        validate_marketplace_account_install_schema(MARKETPLACE_ACCOUNT_INSTALL_SCHEMA_V18),
+        Ok(())
+    );
+    for required in [
+        "PRIMARY KEY (account_user_id, plugin_id)",
+        "REFERENCES marketplace_plugins(plugin_id) ON DELETE RESTRICT",
+        "global-dharma-bot",
+        "open-miniapp",
+        "miniapp:global-dharma",
+    ] {
+        assert!(
+            MARKETPLACE_ACCOUNT_INSTALL_SCHEMA_V18.contains(required),
+            "missing {required}"
+        );
+    }
+    assert!(!MARKETPLACE_ACCOUNT_INSTALL_SCHEMA_V18.contains("access_token"));
+    assert!(!MARKETPLACE_ACCOUNT_INSTALL_SCHEMA_V18.contains("refresh_token"));
+}
+
+#[test]
+fn marketplace_route_projection_declares_and_resolves_official_webmcp_status() {
+    for required in [
+        "remote-mcp",
+        "mcp-http",
+        "https://api.ombhrum.com/api/mcp/apps/global-dharma",
+        "naturalLanguageHints",
+        "validate_config",
+        "deploy_latest",
+    ] {
+        assert!(
+            MARKETPLACE_ROUTE_PROJECTION_SCHEMA_V19.contains(required),
+            "missing {required}"
+        );
+    }
+    let projection = serde_json::json!({
+        "bot": {"id": "global-dharma-bot"},
+        "surfaces": [{"id": "remote-mcp", "kind": "mcp-http", "url": "https://api.ombhrum.com/api/mcp/apps/global-dharma"}],
+        "commands": [{
+            "name": "status",
+            "description": "Read status",
+            "surfaceId": "remote-mcp",
+            "tool": "status",
+            "approval": "none",
+            "aliases": ["状态"],
+            "naturalLanguageHints": ["show status"]
+        }]
+    });
+    let natural = crate::marketplace_route::route_marketplace_input(
+        "global-dharma",
+        &projection,
+        "please show status now",
+    )
+    .expect("natural route");
+    assert_eq!(natural["execution"]["kind"], "mcp-http");
+    assert_eq!(natural["execution"]["tool"], "status");
+    assert_eq!(natural["requiresApproval"], false);
+    assert_eq!(natural["arguments"]["input"], "please show status now");
+
+    let slash = crate::marketplace_route::route_marketplace_input(
+        "global-dharma",
+        &projection,
+        "/global-dharma:status {\"detail\":true}",
+    )
+    .expect("slash route");
+    assert_eq!(slash["command"]["slash"], "/global-dharma:status");
+    assert_eq!(slash["arguments"]["detail"], true);
+}
+
+#[test]
 fn remote_computer_inventory_migration_is_additive_and_secret_free() {
     for required in [
         "provider TEXT NOT NULL DEFAULT 'fabushi-webrtc'",
@@ -198,6 +269,9 @@ fn worker_router_rejects_duplicate_developer_commerce_regressions() {
     let source = include_str!("worker_api.rs");
     let compact = source.split_whitespace().collect::<String>();
     for (method, route) in [
+        ("get", "/v1/marketplace/added"),
+        ("post", "/v1/marketplace/plugins/:plugin_id/add"),
+        ("post", "/v1/marketplace/plugins/:plugin_id/route"),
         ("get", "/v1/developer/commerce/profile"),
         ("post", "/v1/developer/commerce/profile"),
         ("get", "/v1/developer/commerce/miniapps"),
@@ -212,11 +286,19 @@ fn worker_router_rejects_duplicate_developer_commerce_regressions() {
         ),
         (
             "post",
+            "/v1/developer/commerce/miniapps/:mini_app_id/products/batch",
+        ),
+        (
+            "post",
             "/v1/developer/commerce/miniapps/:mini_app_id/products/:product_id",
         ),
         (
             "post",
             "/v1/developer/commerce/miniapps/:mini_app_id/products/:product_id/google/sync",
+        ),
+        (
+            "post",
+            "/v1/developer/commerce/miniapps/:mini_app_id/google/sync",
         ),
         (
             "post",

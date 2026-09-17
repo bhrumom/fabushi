@@ -22,8 +22,8 @@ Make the official Global Dharma local prayer-wheel capability a canonical Fabush
 - [x] Extend canonical entitlement endpoint with `access` and server-authoritative `purchaseOptions` while preserving `entitlement` compatibility.
 - [x] Hide Apple/Google from active rails until provider bindings are active.
 - [x] Add static contract coverage for SKU/price/capability/provider invariants.
-- [ ] Compile/test through protected PR CI.
-- [ ] Merge through protected `main`, then re-read canonical main SHA.
+- [x] Compile/test through protected PR CI.
+- [x] Merge through protected `main`; PR #2135 merged as `db287caa1b8495c94bf9ecafe7f064bca2ee57a0` on 2026-08-25.
 
 ### Round B — Host enforcement and checkout
 
@@ -54,9 +54,61 @@ Until those provider-side facts exist, the corresponding rail must remain unavai
 
 - #2132 merged canonical Monetization convergence into main.
 - #2133 merged dynamic fiat commerce and Global Dharma product seed into main.
-- Round A PR: #2135 from `feat/m9-global-dharma-paid-capability-v2`.
+- Round A PR: #2135 from `feat/m9-global-dharma-paid-capability-v2`, merged as `db287caa1b8495c94bf9ecafe7f064bca2ee57a0`.
 - Core Round A files:
   - `migrations/0013_global_dharma_paid_capability_gate.sql`
   - `src/capability_access.rs`
   - `src/worker_api/commerce.rs`
   - `fabushi/web/tests/global-dharma-paid-capability.test.js`
+
+
+## 2026-09-06 — Desktop Round B execution
+
+- Intake canonical main: `8f7e83902a616ecdb62fdaded65ea79227e745f3`.
+- Governed branch: `feat/tfi-global-dharma-desktop-webmcp-commerce-20260906`.
+- Source capture: `../../source/2026-09-06-global-dharma-desktop-bot-webmcp-commerce.md`.
+- This round is desktop-first; mobile remains a later atomic task and is not claimed here.
+
+Implementation slice:
+
+- [x] Narrow authenticated Platform Router user-Pay proxy: create-intent / get-intent / checkout only; admin/provider verification routes excluded.
+- [x] Electron native session projection, canonical entitlement read, CNY 1080 lifetime purchase facade and restore facade.
+- [x] Bot natural-language route resolves the installed Tool Contract and executes through the same app-scoped `runtime.call` WebMCP function used by the iframe.
+- [x] One host-owned durable `fabushi.miniapp.execution.v1` revision shared by Bot and Mini App UI, mirrored through native client persistence and deleted on account-session reset.
+- [x] Exact `local.prayer-wheel.start` entitlement gate before prayer-wheel start and before accepting a returned hostRequest for that capability.
+- [x] Explicit deterministic CI-only payment provider under `FABUSHI_FEATURE_HOST_MODE=test`, with intent idempotency, callback dedupe, durable entitlement and restore; production stays on canonical Pay/entitlement authority.
+- [x] Packaged Electron E2E now covers search -> install -> Bot -> natural language -> WebMCP -> open app same revision -> safe account projection -> CNY 1080 purchase -> restore -> prayer-wheel start -> restart recovery, with 11 named screenshots plus repository-level video/trace recording.
+- [x] Linux light native contract gate: 35/35 PASS; no local heavy build/E2E.
+- [ ] Protected PR CI green.
+- [ ] Protected merge to canonical main and exact-main readback.
+- [ ] Canonical-main packaged Electron Linux/macOS/Windows journey green with screenshots/video/trace/report and real downloadable links.
+
+Evidence: `../../evidence/M9-GLOBAL-DHARMA-003/README.md`.
+## 2026-09-07 Web/service credential dependency
+
+The Host-controlled Mini App credential now has an explicit server-consumer contract: five-minute, session-bound, exact-plugin scope; canonical entitlement may consume it only for the matching plugin/capability read. Purchase/restore remain Host-authenticated Platform Router operations. This closes the Web/service side of the AAC-004 bootstrap/revoke gap without creating a second payment or identity authority. Packaged proof remains pending until the protected PR lands and desktop/mobile exact-main journeys run.
+
+## 2026-09-07 desktop evidence and Android blocker readback
+
+- Desktop #2448 functional evidence head `1655ea8070e07ad7dd8ab8e9347fbcb43f6ddf8f` passed Electron run `34051925481`. Artifact `9994834346` contains checkpoints `01`-`12`, including exact CNY `108000` purchase, restore, entitled `local.prayer-wheel.start`, restart recovery and logout cleanup; Global Dharma journey WebM and trace are included.
+- No real provider charge occurred: the desktop evidence uses the existing deterministic `FABUSHI_FEATURE_HOST_MODE=test` provider path while server-authoritative product/entitlement semantics remain unchanged.
+- Android release `android-v1.2.52-262491811@380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab` is immutable and checksummed. Interactive run `34051316405` did not reach terminal success; artifact `9994884584` reports `failed-timeout` after stale generation calls and App-owned connection refresh failure. Android purchase/restore/terminal evidence remains PENDING.
+- Final completion still requires #2448 protected merge, accepted-main packaged Electron rerun, and a fresh Android terminal journey.
+
+## 2026-09-08 — current-main desktop acceptance reconciliation
+
+This section supersedes the stale desktop `PENDING` wording above; it does not close the unrelated mobile or production-provider gates.
+
+- Desktop consumer PR #2448 is protected-merged as `d7c8b45c3a7409d14d11bbf49107ff320b05ad84`.
+- Exact desktop entry repair #2476 makes literal query `小程序` discover/install the official `全球法布施` Mini App, and evidence-gate repair #2481 requires that exact entry in packaged macOS evidence.
+- Follow-up #2486 is merged as `f4364d9b79449d2c55deeeca18204ff93ef1ed3e`; it repairs production WebMCP routing/natural-language `content` mapping and keeps the official Global Dharma app graphical Web UI on the canonical tool path.
+- Canonical readback for this reconciliation is `main@77f72b13304b75a45530de03fb807f52c3624be1`, which contains #2448/#2476/#2481/#2486. Electron desktop quality run `34115411357` is SUCCESS; Linux job `101720936725`, macOS job `101720937161`, Windows job `101720937232`, and aggregate result job `101724595866` all succeeded.
+- The current-main macOS diagnostics artifact is `10016406321` (`fabushi-electron-mac-e2e-diagnostics`, digest `sha256:1c60a3d9725d08ec65044c94fd1c31d128663bba9b0b52819f24d99f8d49ea97`). It contains exact-entry screenshots/video, checkpoints `01`-`12`, `global-dharma-user-journey.webm`, `global-dharma-user-journey-restart-logout.webm`, Playwright traces and report.
+- The packaged current-main desktop journey therefore objectively covers: `小程序` search -> install 全球法布施 -> Messenger Bot projection -> natural-language WebMCP -> 打开应用 same shared revision -> bounded Fabushi account session -> server-authoritative CNY `108000` lifetime test purchase -> restore -> entitled `local.prayer-wheel.start` -> restart recovery -> logout cleanup.
+- No real-money payment was made in CI. Desktop acceptance exercises the deterministic test provider while preserving canonical Fabushi Pay product/intent/entitlement authority; production PSP/KYC/provider activation remains a fail-closed external dependency.
+- Status interpretation: the requested **desktop** Global Dharma loop is current-main packaged-E2E accepted. `M9-GLOBAL-DHARMA-003` remains `IN_PROGRESS` only because native-mobile terminal acceptance and production payment/provider deployment are broader project gates and are not claimed by this desktop reconciliation.
+
+## 2026-09-10 — Web Provider activation implementation
+
+- Latest-main follow-up adds the canonical dynamic Stripe/Alipay web-provider bridge used by the Global Dharma CNY 1080 PaymentIntent.
+- The implementation is fail-closed until production secrets, webhook configuration and provider account approval are present; no real-money charge has been performed in this worktree.

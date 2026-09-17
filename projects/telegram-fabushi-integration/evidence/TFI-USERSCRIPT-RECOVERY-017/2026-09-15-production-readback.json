@@ -1,0 +1,53 @@
+{
+  "taskId": "TFI-USERSCRIPT-RECOVERY-017",
+  "projectId": "FAB-P0001",
+  "canonicalMainSha": "4f484be2fd72f13289473f9c4917e03b78a92022",
+  "mergePullRequest": 2641,
+  "chromePackageWorkflow": {
+    "runId": 34922024248,
+    "conclusion": "success",
+    "artifact": "fabushi-chrome-web-store-4f484be2fd72f13289473f9c4917e03b78a92022",
+    "artifactId": 10378058000,
+    "artifactBytes": 948633
+  },
+  "platformControlPlaneWorkflow": {
+    "runId": 34922024310,
+    "conclusion": "success",
+    "productionDeploy": "success"
+  },
+  "productionCatalog": {
+    "url": "https://api.ombhrum.com/v1/marketplace/plugins?platform=chrome-extension",
+    "pluginId": "chatgpt-auto-confirm",
+    "latestVersion": "2.9.30",
+    "runtimeForm": "userscript",
+    "platforms": ["chrome-extension"],
+    "sourceRepository": "https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript",
+    "sourceRef": "480ebe61ba039f15e7023bbc0253ea23c373aba0",
+    "releaseUrl": "https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.30",
+    "artifactUrl": "https://raw.githubusercontent.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/480ebe61ba039f15e7023bbc0253ea23c373aba0/chatgpt-auto-confirm.user.js",
+    "artifactBytes": 224113,
+    "artifactSha256": "d15040a5d420b0fa4cc38b195f178143a2d22a166e3357f88c7159c6b7a3b14a",
+    "releaseStatus": "approved"
+  },
+  "productionRelease": {
+    "url": "https://api.ombhrum.com/v1/marketplace/plugins/chatgpt-auto-confirm/releases/2.9.30?platform=chrome-extension",
+    "pluginId": "chatgpt-auto-confirm",
+    "version": "2.9.30",
+    "runtime": "userscript",
+    "sourceRef": "480ebe61ba039f15e7023bbc0253ea23c373aba0",
+    "artifactBytes": 224113,
+    "artifactSha256": "d15040a5d420b0fa4cc38b195f178143a2d22a166e3357f88c7159c6b7a3b14a"
+  },
+  "rawArtifactSmoke": {
+    "url": "https://raw.githubusercontent.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/480ebe61ba039f15e7023bbc0253ea23c373aba0/chatgpt-auto-confirm.user.js",
+    "versionHeader": "2.9.30",
+    "bytes": 224113,
+    "sha256": "d15040a5d420b0fa4cc38b195f178143a2d22a166e3357f88c7159c6b7a3b14a"
+  },
+  "desktopCliRegression": {
+    "desktopLatestVersion": "1.0.1",
+    "cliLatestVersion": "1.0.1",
+    "catalogSource": "existing D1 Mini App package"
+  },
+  "capturedAt": "2026-09-15T02:46:00Z"
+}

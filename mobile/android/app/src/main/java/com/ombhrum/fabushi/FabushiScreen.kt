@@ -89,6 +89,7 @@ object TestTags {
     const val ComposeName = "compose-name"
     const val ComposeCreate = "compose-create"
     const val MarketplaceEntry = "marketplace-entry"
+    const val MarketplaceBack = "marketplace-back"
     const val RemoteComputerEntry = "remote-computer-entry"
     const val RemoteComputerSurface = "remote-computer-surface"
     const val RemoteComputerClose = "remote-computer-close"
@@ -189,6 +190,7 @@ fun FabushiScreen(
     onReopenBrowserLogin: () -> Unit = {},
     onCancelBrowserLogin: () -> Unit = {},
     onLogout: () -> Unit = {},
+    onExitLegacy: () -> Unit = {},
     onChatDraftChange: (String) -> Unit = {},
     onSendChat: () -> Unit = {},
     onStopChat: () -> Unit = {},
@@ -196,6 +198,9 @@ fun FabushiScreen(
     var destination by remember { mutableStateOf(MobileDestination.HOME) }
     var showAddMenu by remember { mutableStateOf(false) }
     var showAgentChat by remember { mutableStateOf(false) }
+    var showHomeSearch by remember { mutableStateOf(false) }
+    var homeSearchQuery by remember { mutableStateOf("") }
+    var showComposeMenu by remember { mutableStateOf(false) }
 
     if (authGateEnabled && state.onboardingStep < 3) {
         MobileOnboarding(state.onboardingStep, onAdvanceOnboarding, onSkipOnboarding)
@@ -214,7 +219,7 @@ fun FabushiScreen(
         return
     }
 
-    LaunchedEffect(destination, showAddMenu, state, updateState.phase, appAgentSurface) {
+    LaunchedEffect(destination, showAddMenu, showHomeSearch, homeSearchQuery, showComposeMenu, state, updateState.phase, appAgentSurface) {
         val elements = mutableListOf<FabushiAppAgentSurface.Element>()
         val actions = linkedMapOf<String, FabushiAppAgentSurface.Action>()
         fun element(
@@ -239,10 +244,34 @@ fun FabushiScreen(
         }
         val screen = when (destination) {
             MobileDestination.HOME -> {
-                element(TestTags.AppShell, "application", "Fabushi")
-                element(TestTags.HomeSearchButton, "button", "搜索对话")
+                element(
+                    TestTags.AppShell,
+                    "application",
+                    "Fabushi",
+                    action = FabushiAppAgentSurface.Action(setOf("pressKey")) { key ->
+                        require(key?.trim()?.equals("BACK", ignoreCase = true) == true) { "unsupported_app_surface_key" }
+                        onExitLegacy()
+                    },
+                )
+                element(
+                    TestTags.HomeSearchButton,
+                    "button",
+                    if (showHomeSearch) "关闭搜索" else "搜索对话",
+                    action = FabushiAppAgentSurface.Action(setOf("invoke")) {
+                        showHomeSearch = !showHomeSearch
+                        if (!showHomeSearch) homeSearchQuery = ""
+                    },
+                )
+                if (showHomeSearch) {
+                    element(
+                        TestTags.HomeSearchField,
+                        "textbox",
+                        "搜索对话",
+                        action = FabushiAppAgentSurface.Action(setOf("setValue")) { homeSearchQuery = it.orEmpty() },
+                    )
+                }
                 element(TestTags.ProfileAvatar, "button", "个人菜单", action = FabushiAppAgentSurface.Action(setOf("invoke")) { showAddMenu = true })
-                element(TestTags.AddButton, "button", "新建对话")
+                element(TestTags.AddButton, "button", "新建对话", action = FabushiAppAgentSurface.Action(setOf("invoke")) { showComposeMenu = true })
                 if (showAddMenu) {
                     element(
                         TestTags.MarketplaceEntry,
@@ -266,6 +295,12 @@ fun FabushiScreen(
                 "home"
             }
             MobileDestination.MARKETPLACE -> {
+                element(
+                    TestTags.MarketplaceBack,
+                    "button",
+                    "返回消息",
+                    action = FabushiAppAgentSurface.Action(setOf("invoke")) { destination = MobileDestination.HOME },
+                )
                 element(
                     TestTags.SearchField,
                     "textbox",
@@ -368,6 +403,15 @@ fun FabushiScreen(
             onOpenRemoteComputer = { destination = MobileDestination.REMOTE_COMPUTER },
             showAddMenu = showAddMenu,
             onShowAddMenuChange = { showAddMenu = it },
+            showComposeMenu = showComposeMenu,
+            onShowComposeMenuChange = { showComposeMenu = it },
+            showSearch = showHomeSearch,
+            searchQuery = homeSearchQuery,
+            onShowSearchChange = { visible ->
+                showHomeSearch = visible
+                if (!visible) homeSearchQuery = ""
+            },
+            onSearchQueryChange = { homeSearchQuery = it },
             messagingState = messagingState,
             messagingActorId = messagingActorId,
             onMessagingRefresh = onMessagingRefresh,
@@ -609,6 +653,12 @@ private fun ConversationHome(
     onOpenRemoteComputer: () -> Unit,
     showAddMenu: Boolean,
     onShowAddMenuChange: (Boolean) -> Unit,
+    showComposeMenu: Boolean,
+    onShowComposeMenuChange: (Boolean) -> Unit,
+    showSearch: Boolean,
+    searchQuery: String,
+    onShowSearchChange: (Boolean) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
     messagingState: MessagingUiState,
     messagingActorId: String,
     onMessagingRefresh: () -> Unit,
@@ -643,9 +693,6 @@ private fun ConversationHome(
     onOpenAgentChat: () -> Unit,
     onLogout: () -> Unit,
 ) {
-    var showSearch by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
-    var showComposeMenu by remember { mutableStateOf(false) }
     var showContactPicker by remember { mutableStateOf(false) }
     var pendingKind by remember { mutableStateOf<ConversationKind?>(null) }
     var composeName by remember { mutableStateOf("") }
@@ -796,16 +843,16 @@ private fun ConversationHome(
         floatingActionButton = {
             if (!showSearch) Box {
                 FloatingActionButton(
-                    onClick = { showComposeMenu = true },
+                    onClick = { onShowComposeMenuChange(true) },
                     modifier = Modifier.testTag(TestTags.AddButton),
                     containerColor = homeAccent,
                     contentColor = Color.Black,
                 ) { PlusGlyph() }
-                DropdownMenu(expanded = showComposeMenu, onDismissRequest = { showComposeMenu = false }, containerColor = homeSurface) {
-                    DropdownMenuItem(text = { Text("新消息", color = homePrimaryText) }, onClick = { showComposeMenu = false; showContactPicker = true })
-                    DropdownMenuItem(text = { Text("新建群组", color = homePrimaryText) }, onClick = { showComposeMenu = false; pendingKind = ConversationKind.GROUP })
-                    DropdownMenuItem(text = { Text("新建频道", color = homePrimaryText) }, onClick = { showComposeMenu = false; pendingKind = ConversationKind.CHANNEL })
-                    DropdownMenuItem(text = { Text("联系人分组", color = homePrimaryText) }, onClick = { showComposeMenu = false })
+                DropdownMenu(expanded = showComposeMenu, onDismissRequest = { onShowComposeMenuChange(false) }, containerColor = homeSurface) {
+                    DropdownMenuItem(text = { Text("新消息", color = homePrimaryText) }, onClick = { onShowComposeMenuChange(false); showContactPicker = true })
+                    DropdownMenuItem(text = { Text("新建群组", color = homePrimaryText) }, onClick = { onShowComposeMenuChange(false); pendingKind = ConversationKind.GROUP })
+                    DropdownMenuItem(text = { Text("新建频道", color = homePrimaryText) }, onClick = { onShowComposeMenuChange(false); pendingKind = ConversationKind.CHANNEL })
+                    DropdownMenuItem(text = { Text("联系人分组", color = homePrimaryText) }, onClick = { onShowComposeMenuChange(false) })
                 }
             }
         },
@@ -836,12 +883,12 @@ private fun ConversationHome(
                         }
                     }
                     Text("聊天", color = homePrimaryText, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-                    CircularActionButton(TestTags.HomeSearchButton, if (showSearch) "关闭搜索" else "搜索对话", { showSearch = !showSearch; if (!showSearch) searchQuery = "" }) { SearchGlyph() }
+                    CircularActionButton(TestTags.HomeSearchButton, if (showSearch) "关闭搜索" else "搜索对话", { onShowSearchChange(!showSearch) }) { SearchGlyph() }
                 }
             }
             if (showSearch) item {
                 OutlinedTextField(
-                    value = searchQuery, onValueChange = { searchQuery = it },
+                    value = searchQuery, onValueChange = onSearchQueryChange,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).testTag(TestTags.HomeSearchField),
                     singleLine = true, placeholder = { Text("搜索", color = homeSecondaryText) },
                     colors = OutlinedTextFieldDefaults.colors(focusedTextColor = homePrimaryText, unfocusedTextColor = homePrimaryText, focusedContainerColor = homeSurface, unfocusedContainerColor = homeSurface),
@@ -1637,7 +1684,7 @@ private fun MarketplaceContent(
                         Text("MAHAYANA RUST HOST", style = MaterialTheme.typography.labelSmall)
                         Text("全球法布施", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
                     }
-                    OutlinedButton(onClick = onBack) { Text("返回消息") }
+                    OutlinedButton(onClick = onBack, modifier = Modifier.testTag(TestTags.MarketplaceBack)) { Text("返回消息") }
                 }
             }
 
@@ -1653,7 +1700,7 @@ private fun MarketplaceContent(
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("本地插件市场", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                        Text("Android 主壳使用 Jetpack Compose；MiniApp 使用受控 WebMCP Surface；插件安装、权限与后台运行由共享 Mahayana Rust Host 管理。")
+                        Text("Android 主壳使用 Jetpack Compose；MiniApp 使用受控 WebMCP Surface；代码从 GitHub 固定版本拉取并由共享 Mahayana Rust Host 校验、安装、更新。")
                         OutlinedTextField(
                             value = state.query,
                             onValueChange = onQueryChange,
@@ -1695,7 +1742,12 @@ private fun MarketplaceContent(
                         Text(plugin.pluginId, style = MaterialTheme.typography.labelSmall)
                         Text(plugin.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text(plugin.description)
-                        plugin.latestVersion?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
+                        plugin.latestVersion?.let { version ->
+                            Text(
+                                "$version · GitHub ${plugin.sourceRef?.take(9) ?: "待确认"}",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
                                 onClick = { onOpen(plugin) },

@@ -30,6 +30,10 @@ const QUERY_SELECTOR = [
   "[role]",
   "[contenteditable='true']",
 ].join(",");
+const TEXT_ACTION_TAGS = new Set(["button", "input", "textarea", "select", "a", "summary"]);
+const TEXT_ACTION_ROLES = new Set([
+  "button", "checkbox", "combobox", "link", "menuitem", "option", "radio", "slider", "switch", "tab", "textbox",
+]);
 
 type ElementState = {
   ref: string;
@@ -188,6 +192,40 @@ function stableAgentId(element: Element): string {
   return id ? `id:${id}` : "";
 }
 
+function textMutationTarget(node: Node): Element | null {
+  let element = node instanceof Element ? node : node.parentElement;
+  while (element) {
+    const tag = element.tagName.toLowerCase();
+    const role = lower(element.getAttribute("role"));
+    if (
+      TEXT_ACTION_TAGS.has(tag)
+      || TEXT_ACTION_ROLES.has(role)
+      || element.getAttribute("contenteditable") === "true"
+      || cleanText(element.getAttribute("data-agent-id"), 200)
+    ) {
+      return element;
+    }
+    element = element.parentElement;
+  }
+  return null;
+}
+
+function changedNodeContainsSemanticElement(node: Node): boolean {
+  if (!(node instanceof Element)) return false;
+  return node.matches(QUERY_SELECTOR) || Boolean(node.querySelector(QUERY_SELECTOR));
+}
+
+function mutationChangesActionSurface(mutation: MutationRecord): boolean {
+  if (mutation.type === "attributes") return true;
+  if (mutation.type === "characterData") return textMutationTarget(mutation.target) != null;
+  if (mutation.type === "childList") {
+    const changedNodes = [...mutation.addedNodes, ...mutation.removedNodes];
+    if (changedNodes.some(changedNodeContainsSemanticElement)) return true;
+    return textMutationTarget(mutation.target) != null;
+  }
+  return true;
+}
+
 function sensitiveElement(element: Element, agentId: string, name: string): boolean {
   const attributes = [
     agentId,
@@ -271,15 +309,18 @@ class DomAppSurface implements AppSurface {
   ) {
     this.appId = appId;
     this.lastRoute = routeValue();
-    this.observer = new MutationObserver(() => this.queueGeneration());
+    this.observer = new MutationObserver((mutations) => {
+      if (mutations.some(mutationChangesActionSurface)) this.queueGeneration();
+    });
     this.observer.observe(document.documentElement, {
       subtree: true,
       childList: true,
       attributes: true,
       characterData: true,
       attributeFilter: [
-        "aria-disabled", "aria-expanded", "aria-hidden", "aria-selected", "aria-checked",
-        "class", "data-agent-id", "data-agent-screen", "data-testid", "disabled", "hidden", "open", "role", "value",
+        "alt", "aria-checked", "aria-description", "aria-disabled", "aria-expanded", "aria-hidden", "aria-label",
+        "aria-labelledby", "aria-selected", "contenteditable", "data-agent-id", "data-agent-screen", "data-testid",
+        "disabled", "hidden", "href", "id", "name", "open", "placeholder", "role", "selected", "title", "type", "value",
       ],
     });
     this.onRouteEvent = () => this.bumpGeneration();
@@ -317,6 +358,66 @@ class DomAppSurface implements AppSurface {
     if (next !== this.lastRoute) this.bumpGeneration();
   }
 
+  private elementState(
+    element: HTMLElement,
+    includeText: boolean,
+    uniqueStableId: string,
+    volatileIndex: number,
+  ): ElementState | null {
+    const candidateId = stableAgentId(element);
+    const name = elementName(element);
+    const role = elementRole(element);
+    if (!uniqueStableId && !name && !["textbox", "button", "link", "checkbox", "radio", "combobox"].includes(role)) return null;
+    const sensitive = sensitiveElement(element, candidateId, name);
+    const ref = uniqueStableId ? `agent:${uniqueStableId}` : `g${this.generation}:${volatileIndex}`;
+    const visibleText = elementText(element, sensitive, includeText);
+    return {
+      ref,
+      ...(uniqueStableId ? { agentId: uniqueStableId } : {}),
+      stable: Boolean(uniqueStableId),
+      role,
+      name,
+      ...(cleanText(element.getAttribute("aria-description"), 300)
+        ? { description: cleanText(element.getAttribute("aria-description"), 300) }
+        : {}),
+      ...(visibleText ? { text: visibleText } : {}),
+      visible: elementVisible(element),
+      enabled: elementEnabled(element),
+      focused: document.activeElement === element,
+      ...(element instanceof HTMLInputElement && ["checkbox", "radio"].includes(element.type)
+        ? { checked: element.checked }
+        : element.getAttribute("aria-checked") != null
+          ? { checked: element.getAttribute("aria-checked") === "true" }
+          : {}),
+      ...(element.getAttribute("aria-selected") != null
+        ? { selected: element.getAttribute("aria-selected") === "true" }
+        : {}),
+      ...(element.getAttribute("aria-expanded") != null
+        ? { expanded: element.getAttribute("aria-expanded") === "true" }
+        : {}),
+      sensitive,
+      ...elementValueMetadata(element, sensitive),
+      ...(cleanText(element.getAttribute("placeholder"), 240)
+        ? { placeholder: cleanText(element.getAttribute("placeholder"), 240) }
+        : {}),
+      tag: element.tagName.toLowerCase(),
+    };
+  }
+
+  private stableTarget(agentId: string, includeText: boolean, caseInsensitive = false): { element: HTMLElement; state: ElementState } | null {
+    const expected = caseInsensitive ? lower(agentId) : agentId;
+    const matches = [...document.querySelectorAll<Element>("[data-agent-id],[data-testid],[id]")]
+      .filter((element): element is HTMLElement => element instanceof HTMLElement)
+      .filter((element) => {
+        const candidate = stableAgentId(element);
+        return caseInsensitive ? lower(candidate) === expected : candidate === expected;
+      });
+    if (matches.length !== 1) return null;
+    const resolvedAgentId = stableAgentId(matches[0]);
+    const state = this.elementState(matches[0], includeText, resolvedAgentId, 1);
+    return state ? { element: matches[0], state } : null;
+  }
+
   private semanticElements(includeText: boolean, maximum: number): { elements: ElementState[]; truncated: boolean } {
     this.refs.clear();
     const nodes = [...document.querySelectorAll<Element>(QUERY_SELECTOR)]
@@ -333,44 +434,9 @@ class DomAppSurface implements AppSurface {
       seen.add(element);
       const candidateId = stableAgentId(element);
       const uniqueStableId = candidateId && stableCounts.get(candidateId) === 1 ? candidateId : "";
-      const name = elementName(element);
-      const role = elementRole(element);
-      if (!uniqueStableId && !name && !["textbox", "button", "link", "checkbox", "radio", "combobox"].includes(role)) continue;
-      const sensitive = sensitiveElement(element, candidateId, name);
-      const ref = uniqueStableId ? `agent:${uniqueStableId}` : `g${this.generation}:${elements.length + 1}`;
-      const visibleText = elementText(element, sensitive, includeText);
-      const state: ElementState = {
-        ref,
-        ...(uniqueStableId ? { agentId: uniqueStableId } : {}),
-        stable: Boolean(uniqueStableId),
-        role,
-        name,
-        ...(cleanText(element.getAttribute("aria-description"), 300)
-          ? { description: cleanText(element.getAttribute("aria-description"), 300) }
-          : {}),
-        ...(visibleText ? { text: visibleText } : {}),
-        visible: elementVisible(element),
-        enabled: elementEnabled(element),
-        focused: document.activeElement === element,
-        ...(element instanceof HTMLInputElement && ["checkbox", "radio"].includes(element.type)
-          ? { checked: element.checked }
-          : element.getAttribute("aria-checked") != null
-            ? { checked: element.getAttribute("aria-checked") === "true" }
-            : {}),
-        ...(element.getAttribute("aria-selected") != null
-          ? { selected: element.getAttribute("aria-selected") === "true" }
-          : {}),
-        ...(element.getAttribute("aria-expanded") != null
-          ? { expanded: element.getAttribute("aria-expanded") === "true" }
-          : {}),
-        sensitive,
-        ...elementValueMetadata(element, sensitive),
-        ...(cleanText(element.getAttribute("placeholder"), 240)
-          ? { placeholder: cleanText(element.getAttribute("placeholder"), 240) }
-          : {}),
-        tag: element.tagName.toLowerCase(),
-      };
-      this.refs.set(ref, element);
+      const state = this.elementState(element, includeText, uniqueStableId, elements.length + 1);
+      if (!state) continue;
+      this.refs.set(state.ref, element);
       elements.push(state);
       if (elements.length >= maximum) break;
     }
@@ -414,14 +480,19 @@ class DomAppSurface implements AppSurface {
   }
 
   private find(input: Record<string, unknown>) {
-    const snapshot = this.snapshot({ maxElements: MAX_ELEMENTS, includeText: true });
-    const agentId = lower(input.agentId);
+    this.syncRoute();
+    const requestedAgentId = cleanText(input.agentId, 200);
+    const agentId = lower(requestedAgentId);
     const ref = cleanText(input.ref, 240);
     const role = lower(input.role);
     const name = lower(input.name);
     const text = lower(input.text);
     const limit = boundedInteger(input.limit, 25, 1, 100);
-    const matches = snapshot.elements.filter((element) => {
+    const exactTarget = requestedAgentId ? this.stableTarget(requestedAgentId, true, true) : null;
+    const sourceElements = requestedAgentId
+      ? (exactTarget ? [exactTarget.state] : [])
+      : this.snapshot({ maxElements: MAX_ELEMENTS, includeText: true }).elements;
+    const matches = sourceElements.filter((element) => {
       if (agentId && lower(element.agentId) !== agentId) return false;
       if (ref && element.ref !== ref) return false;
       if (role && lower(element.role) !== role) return false;
@@ -431,9 +502,9 @@ class DomAppSurface implements AppSurface {
     }).slice(0, limit);
     return {
       appId: this.appId,
-      generation: snapshot.generation,
-      route: snapshot.route,
-      screen: snapshot.screen,
+      generation: this.generation,
+      route: routeValue(),
+      screen: screenValue(),
       matches,
       count: matches.length,
     };
@@ -448,16 +519,20 @@ class DomAppSurface implements AppSurface {
     const ref = cleanText(input.ref, 240);
     const agentId = cleanText(input.agentId, 200);
     if (!ref && !agentId) throw new Error("App MCP action requires ref or agentId.");
-    this.semanticElements(true, MAX_ELEMENTS);
-    let element = ref ? this.refs.get(ref) : undefined;
-    if (!element && agentId) {
-      element = [...this.refs.entries()].find(([, candidate]) => stableAgentId(candidate) === agentId)?.[1];
+
+    if (ref) {
+      const snapshot = this.snapshot({ maxElements: MAX_ELEMENTS, includeText: true });
+      const state = snapshot.elements.find((candidate) => candidate.ref === ref);
+      const element = state ? this.refs.get(ref) : undefined;
+      if (element && state) return { element, state };
     }
-    if (!element) throw new Error("app_surface_element_not_found");
-    const state = this.snapshot({ maxElements: MAX_ELEMENTS, includeText: true }).elements
-      .find((candidate) => candidate.ref === ref || (agentId && candidate.agentId === agentId));
-    if (!state) throw new Error("app_surface_element_not_found");
-    return { element, state };
+
+    if (agentId) {
+      const exactTarget = this.stableTarget(agentId, true);
+      if (exactTarget) return exactTarget;
+    }
+
+    throw new Error("app_surface_element_not_found");
   }
 
   private async action(input: Record<string, unknown>) {
@@ -473,7 +548,21 @@ class DomAppSurface implements AppSurface {
     }
 
     if (action === "invoke") {
-      element.click();
+      if (element.getAttribute("data-agent-invoke") === "contextmenu") {
+        const rect = element.getBoundingClientRect();
+        element.dispatchEvent(new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          clientX: Math.round(rect.left + (rect.width / 2)),
+          clientY: Math.round(rect.top + (rect.height / 2)),
+          button: 2,
+          buttons: 2,
+        }));
+      } else {
+        element.click();
+      }
     } else if (action === "focus") {
       element.focus({ preventScroll: false });
     } else if (action === "toggle") {

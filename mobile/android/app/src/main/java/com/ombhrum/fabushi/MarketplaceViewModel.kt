@@ -27,6 +27,7 @@ data class MarketplacePlugin(
     val displayName: String,
     val description: String,
     val latestVersion: String?,
+    val sourceRef: String? = null,
     val tools: List<MiniAppToolContract> = emptyList(),
 )
 
@@ -48,6 +49,7 @@ data class MobileChatMessage(
     val actionTitle: String? = null,
     val actionDetail: String? = null,
     val actionStatus: String? = null,
+    val streaming: Boolean = false,
 )
 
 data class MarketplaceUiState(
@@ -75,6 +77,7 @@ data class MarketplaceUiState(
 
 class MarketplaceViewModel(application: Application) : AndroidViewModel(application) {
     private val host = MahayanaHost(application)
+    private val miniApps = MiniAppPlatformBridge(host)
     private val mutableState = MutableStateFlow(MarketplaceUiState())
     val state: StateFlow<MarketplaceUiState> = mutableState.asStateFlow()
 
@@ -414,12 +417,17 @@ class MarketplaceViewModel(application: Application) : AndroidViewModel(applicat
                             if (pluginId.isBlank()) continue
                             val commands = item.optJSONObject("source")?.optJSONArray("commands")
                                 ?: item.optJSONArray("commands")
+                            val install = item.optJSONObject("install")
+                                ?: item.optJSONObject("releaseManifest")?.optJSONObject("install")
+                            val sourceRef = install?.optJSONObject("source")?.optString("sourceRef")
+                                ?.takeIf(String::isNotBlank)
                             add(
                                 MarketplacePlugin(
                                     pluginId = pluginId,
                                     displayName = item.optString("displayName", pluginId),
                                     description = item.optString("description", "无描述"),
                                     latestVersion = item.optString("latestVersion").takeIf(String::isNotBlank),
+                                    sourceRef = sourceRef,
                                     tools = commands.toToolContracts(),
                                 ),
                             )
@@ -459,10 +467,27 @@ class MarketplaceViewModel(application: Application) : AndroidViewModel(applicat
                     )
                     val release = metadata.optJSONObject("releaseManifest")
                         ?: error("marketplace release has no releaseManifest")
-                    host.request(
+                    val install = metadata.optJSONObject("install")
+                        ?: release.optJSONObject("install")
+                        ?: error("marketplace release has no unified install contract")
+                    check(install.optString("protocol") == "fabushi.marketplace.install.v1") {
+                        "marketplace release has an unsupported install contract"
+                    }
+                    check(install.optString("strategy") == "github-immutable") {
+                        "marketplace release is not pinned to GitHub"
+                    }
+                    val source = install.optJSONObject("source")
+                        ?: error("marketplace release has no GitHub source")
+                    check(source.optString("sourceRef").isNotBlank() && !source.optBoolean("marketplaceHostsPackage")) {
+                        "marketplace release is missing an immutable GitHub source"
+                    }
+                    val installed = host.request(
                         "feature.plugin.install",
                         JSONObject().put("release", release).put("platform", "android"),
                     )
+                    val installedPluginId = installed.optString("pluginId", plugin.pluginId)
+                    miniApps.confirmInstalledMiniApp(installedPluginId)
+                    installed
                 }
             }.onSuccess { installed ->
                 val pluginId = installed.optString("pluginId", plugin.pluginId)
@@ -480,7 +505,7 @@ class MarketplaceViewModel(application: Application) : AndroidViewModel(applicat
             }.onFailure { error ->
                 mutableState.value = mutableState.value.copy(
                     installingPluginId = null,
-                    message = "安装失败：${error.message ?: error::class.java.simpleName}",
+                    message = "安装未完成：${error.message ?: error::class.java.simpleName}",
                 )
             }
         }

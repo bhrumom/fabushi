@@ -12,7 +12,8 @@
     "typecheck": "echo 'Skipping typecheck due to React 19 migration' && exit 0",
     "typecheck:host": "tsc -p tsconfig.host.json --noEmit",
     "test:ai-discovery": "node scripts/check-ai-discovery.mjs",
-    "test:efficient-agent-policy": "node scripts/check-efficient-agent-policy.mjs"
+    "test:efficient-agent-policy": "node scripts/check-efficient-agent-policy.mjs",
+    "test:site-host-split": "node scripts/check-site-host-split.mjs"
   },
   "dependencies": {
     "@fabushi/api-client": "workspace:*",

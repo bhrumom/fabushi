@@ -94,10 +94,78 @@ test('official catalog is searchable and uses immutable external artifacts', () 
     assert.equal(release.releaseManifest.protocol, 'mahayana.external-release.v1');
     assert.equal(release.releaseManifest.artifacts[0].runtime, 'local-web');
     assert.equal(release.releaseManifest.artifacts[0].format, 'tar-gz');
+    assert.equal(release.install.protocol, 'fabushi.marketplace.install.v1');
+    assert.equal(release.install.strategy, 'github-immutable');
+    assert.equal(release.install.source.sourceRef, MINIAPP_PACKAGE_COMMIT);
+    assert.equal(release.install.artifacts[0].sha256, manifest.distribution.artifacts[0].sha256);
+    assert.equal(release.install.artifacts[0].runtime, 'local-web');
+    assert.ok(release.install.artifacts[0].platforms.includes('desktop'));
+    assert.ok(release.install.artifacts[0].platforms.includes('chrome-extension'));
+    assert.equal(release.install.update.allowDowngrade, false);
+    assert.equal(release.releaseManifest.install.protocol, 'fabushi.marketplace.install.v1');
     assert.equal(release.source.marketplaceHostsPackage, false);
   } finally {
     scope.cleanup();
   }
+});
+
+test('repaired official packages use immutable GitHub Release assets', () => {
+  const expected = {
+    'chatgpt-auto-confirm': ['1.0.1', 'ce5beae5f3b8a29dccb65cb91744f2a82bb19186c3f7031ca75f405ab4effb76', 983],
+    'faliu-flashcards': ['1.0.1', 'fb2a8fa187fde312069c9facb49657c366cfa4176f27a90abff5aa407e260356', 1729],
+    'hermes-installer': ['1.0.1', 'e693cb2378d580cb86d88fb391a04b8c96dcf6614b445c32339bfb7358e0c4cd', 1731],
+  };
+  const seeds = Object.fromEntries(officialMiniAppPackageSeeds().map((manifest) => [manifest.id, manifest]));
+  for (const [id, [version, sha256, sizeBytes]] of Object.entries(expected)) {
+    const manifest = seeds[id];
+    assert.equal(manifest.version, version);
+    assert.equal(manifest.distribution.sourceRef, MINIAPP_PACKAGE_COMMIT);
+    assert.equal(manifest.distribution.artifacts[0].sha256, sha256);
+    assert.equal(manifest.distribution.artifacts[0].sizeBytes, sizeBytes);
+    assert.match(manifest.distribution.artifacts[0].url, /github\.com\/bhrumom\/fabushi\/releases\/download\/marketplace-v1\.0\.1-cc23420c56c9/);
+  }
+});
+
+test('package manifests must pin their executable bytes to an immutable sourceRef', () => {
+  const manifest = thirdPartyManifest();
+  manifest.distribution = {
+    ...manifest.distribution,
+    installMode: 'package',
+    sourceRef: undefined,
+    artifacts: [{
+      id: 'example-package',
+      platform: 'all',
+      archiveFormat: 'tar-gz',
+      url: 'https://github.com/example/example-tool/releases/download/v1.2.3/app.tar.gz',
+      sha256: 'a'.repeat(64),
+      sizeBytes: 128,
+    }],
+  };
+  assert.throws(
+    () => normalizeMiniAppManifest(manifest),
+    /immutable GitHub sourceRef/,
+  );
+});
+
+test('package manifests must keep code and artifacts on GitHub', () => {
+  const manifest = thirdPartyManifest();
+  manifest.distribution = {
+    ...manifest.distribution,
+    installMode: 'package',
+    sourceRef: 'a'.repeat(40),
+    artifacts: [{
+      id: 'example-package',
+      platform: 'all',
+      archiveFormat: 'tar-gz',
+      url: 'https://example.com/releases/download/v1.2.3/app.tar.gz',
+      sha256: 'a'.repeat(64),
+      sizeBytes: 128,
+    }],
+  };
+  assert.throws(
+    () => normalizeMiniAppManifest(manifest),
+    /GitHub-hosted HTTPS URL/,
+  );
 });
 
 test('Douyin downloader is searchable in Chinese and installable from an immutable package', () => {

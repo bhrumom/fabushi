@@ -17,13 +17,28 @@ func taskReportContract(
   let reportDigest = jsonStringLiteral(appliedDigest ?? "CURRENT_SPEC_DIGEST")
   return """
 
-MAHAYANA_TASK_REPORT_CONTRACT_V4
-每轮结束都只允许输出下面这一种模板，不要放进 Markdown 代码块。`completed` 只记录本轮或此前已完成的项目，绝不代表整个任务完成。只有当前任务目标、已配置的验收和必要验证都完成时，才可同时填写 `"status":"complete"` 和 `"all_tasks_complete":true`；任务文件数量不受限制，也允许完全没有任务文件。此时 `remaining`、`blockers` 必须为空，`wait_seconds` 必须为 0，`next_task` 必须为空。只完成一项或仍有任何剩余工作时，必须填写 `"status":"incomplete"`、`"all_tasks_complete":false` 并写明 `remaining` 与 `next_task`，程序会继续下一轮。外部等待或人工卡点也使用同一模板，设置 `status` 为 `incomplete` 或 `blocked`、`all_tasks_complete` 为 false，并填写 `wait_seconds`、`wait_reason` 和 `next_task`。
+MAHAYANA_TASK_REPORT_CONTRACT_V6
+你是规划/验收 Chat，不是工作 Chat。请根据工作 Chat 的自然结果和当前 checkout 的实际状态决定下一步安排。
+只有规划/验收 Chat 可以输出 MAHAYANA_TASK_REPORT_V1；工作 Chat 只输出自然语言结果。
+必须在回复末尾输出一次且仅一次 MAHAYANA_TASK_REPORT_V1。完成时使用 status=complete、all_tasks_complete=true、remaining=[]、blockers=[]、next_task=""；未完成或被阻塞时使用 status=incomplete 或 blocked、all_tasks_complete=false，并把下一轮工作 Chat 要执行的完整安排写入 next_task。不要把规划说明或模板要求转发给工作 Chat。
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","task_id":\(reportTaskId),"applied_task_revision":\(reportRevision),"applied_spec_digest":\(reportDigest),"status":"incomplete","all_tasks_complete":false,"summary":"本轮实际结果","completed":["本轮已完成项"],"remaining":["整个任务仍未完成项"],"blockers":[],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"下一轮必须继续完成的具体工作"}
+{"protocol":"mahayana.task-report.v1","task_id":\(reportTaskId),"applied_task_revision":\(reportRevision),"applied_spec_digest":\(reportDigest),"status":"complete","all_tasks_complete":true,"summary":"整个目标已完成","completed":["列出实现、验证和发布证据"],"remaining":[],"blockers":[],"verification":["列出可复核证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":""}
 MAHAYANA_TASK_REPORT_V1_END
-需要人工介入时，先按共享技能通过 Gmail 创建或回复 `[需人工介入][任务 id]` 邮件，再输出同一模板。禁止发送立项、进展或完成邮件；除这一种模板外不要输出第二套完成、未完成或等待格式。
 """
+}
+
+func messageWithoutTaskReportContract(_ message: String) -> String {
+  [
+    "MAHAYANA_TASK_REPORT_CONTRACT_V6",
+    "MAHAYANA_TASK_REPORT_CONTRACT_V5",
+    "MAHAYANA_TASK_REPORT_V1_BEGIN",
+  ]
+  .reduce(message) { current, marker in
+    guard let range = current.range(of: marker) else { return current }
+    return String(current[..<range.lowerBound])
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+  .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 func messageWithTaskReportContract(
@@ -32,27 +47,68 @@ func messageWithTaskReportContract(
   appliedRevision: Int? = nil,
   appliedDigest: String? = nil
 ) -> String {
-  message.contains("MAHAYANA_TASK_REPORT_CONTRACT_V4")
-    ? message
-    : message + taskReportContract(
-      taskId: taskId,
-      appliedRevision: appliedRevision,
-      appliedDigest: appliedDigest
-    )
+  let goal = messageWithoutTaskReportContract(message)
+  return goal + taskReportContract(
+    taskId: taskId,
+    appliedRevision: appliedRevision,
+    appliedDigest: appliedDigest
+  )
+}
+
+func acceptancePlannerMessage(
+  originalGoal: String,
+  workResult: String,
+  taskId: String?,
+  appliedRevision: Int?,
+  appliedDigest: String?
+) -> String {
+  let goal = messageWithoutTaskReportContract(originalGoal)
+  let result = messageWithoutTaskReportContract(workResult)
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  return """
+  你是本轮任务的规划/验收 Chat。插件刚刚从一个独立的工作 Chat 收到自然语言结果。请读取同一 checkout 的最新落盘状态、项目记录和验证证据，判断原始目标是否真正完成，并决定下一轮是否需要继续。
+
+  重要边界：你负责规划、验收和编排，不要代替工作 Chat 执行实现。你的回复必须按末尾的 MAHAYANA_TASK_REPORT_V1 模板输出；如果未完成或被阻塞，必须在 next_task 写出下一轮工作 Chat 应直接执行的安排。插件会把 next_task 原文发送给新的工作 Chat；工作 Chat 不会收到本模板。
+
+  原始总目标 BEGIN
+  \(goal)
+  原始总目标 END
+
+  工作 Chat 自然结果 BEGIN
+  \(result)
+  工作 Chat 自然结果 END
+
+  当前任务标识：\(taskId ?? "CURRENT_TASK_ID")
+  \(taskReportContract(
+    taskId: taskId,
+    appliedRevision: appliedRevision,
+    appliedDigest: appliedDigest
+  ))
+  """
 }
 
 func continuationFromTaskReport(
   _ report: [String: Any], originalGoal: String, iteration: Int
 ) -> String {
-  let body = """
-继续完成同一任务（自动续作第 \(iteration) 轮）。重新读取共享队列技能；如果配置了任务文件，再读取全部当前任务文件。随后使用 Gmail 按任务 id 只读检查 1315518325@qq.com 是否有新增要求并纳入工作。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 `[需人工介入][任务 id]` 邮件。检查同一 checkout 的落盘进度与仍在运行的操作，然后持续做剩余实际工作。不要从头开始，不要只检查或总结，不要中途回复；本轮必须结束时使用消息末尾唯一的统一模板，只有整个任务全部完成才设置 all_tasks_complete=true。
-"""
-  return messageWithTaskReportContract(
-    body,
-    taskId: report["task_id"] as? String,
-    appliedRevision: report["applied_task_revision"] as? Int,
-    appliedDigest: report["applied_spec_digest"] as? String
-  )
+  let nextTask = messageWithoutTaskReportContract(report["next_task"] as? String ?? "")
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  let summary = (report["summary"] as? String ?? "")
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  let blockers = (report["blockers"] as? [String] ?? [])
+    .joined(separator: "；")
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  if !nextTask.isEmpty {
+    var prompt = nextTask
+    if !summary.isEmpty {
+      prompt += "\n\n规划 Chat 上轮摘要（仅供工作 Chat 了解上下文）：\n\(summary)"
+    }
+    if !blockers.isEmpty {
+      prompt += "\n\n需要处理的卡点：\n\(blockers)"
+    }
+    prompt += "\n\n这是第 \(iteration) 轮续作。请直接执行以上安排，并在回复中给出自然语言结果；不要输出规划/验收 Chat 的固定回执或下一步模板。"
+    return prompt
+  }
+  return "请从同一 checkout 的最新落盘进度继续原始目标，先检查尚未完成的步骤并直接执行。第 \(iteration) 轮续作。只输出自然语言工作结果，不要输出规划/验收 Chat 的固定回执或下一步模板。\n\n原始目标：\n\(messageWithoutTaskReportContract(originalGoal))"
 }
 
 func relayFreshChatContinuation(_ params: [String: Any]) -> Never {
@@ -124,7 +180,8 @@ func verifySentMessageJS(message: String) -> String {
         currentUserCount: users.length
       }],
       url: window.location.href || '',
-      backgroundOnly: true,
+      backgroundOnly: document.visibilityState === 'hidden',
+      runtimeState: document.visibilityState === 'hidden' ? 'hidden' : 'visible',
       workerUsed: false,
       surface: 'chat'
     };
@@ -190,7 +247,9 @@ func sendMessageJS(
     const expectedConversationId = \(expectedConversation);
     const result = {
       ok: false, sent: false, connectorAdded: false, error: null,
-      url: window.location.href || '', backgroundOnly: true,
+      url: window.location.href || '',
+      backgroundOnly: document.visibilityState === 'hidden',
+      runtimeState: document.visibilityState === 'hidden' ? 'hidden' : 'visible',
       workerUsed: false, surface: 'chat', failedStage: null,
       stages: [], inputConfirmed: false, connectorConfirmed: false,
       messageConfirmed: false
@@ -2200,18 +2259,17 @@ func chatStatusJS() -> String {
   const activeConversationId = activeRowConversationIds.find(id => !id.startsWith('local-chatgpt:'))
     || activeRowConversationIds[0]
     || null;
-  const conversationId = routeConversationId
-    || (portalConversationId && !portalConversationId.startsWith('local-chatgpt:')
-      ? portalConversationId : null)
+  // The composer portal belongs to the live message surface. Sidebar
+  // aria-current and initialRoute can both lag after New Chat or a renderer
+  // replacement, so never let either override a present portal identity.
+  const conversationId = portalConversationId
+    || routeConversationId
     || activeConversationId
-    || portalConversationId
     || null;
-  const conversationSource = routeConversationId
-    ? 'route'
-    : (portalConversationId && !portalConversationId.startsWith('local-chatgpt:')
-      ? 'portal'
-      : (activeConversationId ? 'active-row'
-        : (portalConversationId ? 'portal-local' : 'none')));
+  const conversationSource = portalConversationId
+    ? (portalConversationId.startsWith('local-chatgpt:') ? 'portal-local' : 'portal')
+    : (routeConversationId ? 'route'
+      : (activeConversationId ? 'active-row' : 'none'));
   const chatUrl = conversationId && !conversationId.startsWith('local-chatgpt:')
     ? `https://chatgpt.com/c/${conversationId}`
     : null;
@@ -2229,7 +2287,8 @@ func chatStatusJS() -> String {
     surface: (!!quickChatRoot || currentChatGPTMode || chatModel || webChat)
       && (hasInput || !!continueInChatButton) && !workComposer ? 'chat' : 'not-chat',
     continueInChatPrompt: !!continueInChatButton,
-    backgroundOnly: true,
+    backgroundOnly: document.visibilityState === 'hidden',
+    runtimeState: document.visibilityState === 'hidden' ? 'hidden' : 'visible',
     workerUsed: false,
     title: title || '',
     connectors: [...new Set(connectors)].slice(0, 20),
@@ -2237,6 +2296,9 @@ func chatStatusJS() -> String {
     url: pageURL,
     conversationId,
     conversationSource,
+    portalConversationId: portalConversationId || null,
+    routeConversationId: routeConversationId || null,
+    activeConversationId: activeConversationId || null,
     conversationRoute,
     chatUrl
   };
@@ -2251,7 +2313,9 @@ func addConnectorJS(connector: String) -> String {
     const connector = "\(escaped)";
     const result = {
       ok: false, added: false, error: null, url: window.location.href || '',
-      backgroundOnly: true, workerUsed: false, surface: 'chat'
+      backgroundOnly: document.visibilityState === 'hidden',
+      runtimeState: document.visibilityState === 'hidden' ? 'hidden' : 'visible',
+      workerUsed: false, surface: 'chat'
     };
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     const target = connector.toLowerCase();
@@ -2375,8 +2439,9 @@ func cdpEvaluateOnChatGPT(
 ) -> [String: Any]? {
   let state = loadState()
   guard let port = state.backgroundAppPort,
-        let targetId = state.backgroundChatTargetId else {
-    cdpDebug("Hidden Chat target is not prepared; refusing visible Work/worker fallback")
+        let targetId = state.backgroundChatTargetId,
+        pluginOwnsBackgroundTarget(port: port, targetId: targetId, state: state) else {
+    cdpDebug("Plugin-owned Chat target is not prepared; refusing unowned Chat/Work fallback")
     return nil
   }
   return cdpValue(

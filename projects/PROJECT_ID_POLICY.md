@@ -28,6 +28,18 @@ Historical values that were previously called `project_id` are retained in `lega
 8. Project merge/consolidation keeps all historical IDs registered. One project may become canonical, but other IDs are marked superseded/merged rather than reused.
 9. Concurrent project creation intentionally contends on `PORTFOLIO.json`. Resolve the merge conflict by re-reading canonical `main` and reallocating the later project to the new `next_sequence`.
 
+## Canonical-main commit finalization
+
+`first_canonical_main_commit` means the **earliest commit on protected canonical `main` whose tree contains `projects/<slug>/PROJECT.yaml` for that project**. It is not the branch's first project commit, the PR head, the PR base, or a guessed future merge SHA.
+
+Because `main` is protected by a squash merge queue, the final canonical commit SHA does not exist while the registering pull request is being validated. New-project registration therefore uses a two-phase lifecycle:
+
+1. The registration pull request MUST set `first_canonical_main_commit` to the literal sentinel `PENDING_CANONICAL_MAIN`. Supplying any 40-character SHA for a project that is absent from the canonical baseline is rejected; this prevents a current-base SHA or predicted merge SHA from being recorded as if it were canonical history.
+2. After the protected merge queue lands that registration, a records-only follow-up MUST replace the sentinel with the exact earliest canonical `main` commit that introduced the project folder. The validator derives that commit from the canonical base history and accepts only that exact one-time transition.
+3. Once finalized to a SHA, `first_canonical_main_commit` is immutable. It may never return to the sentinel or change to another SHA.
+
+The Project ID, project key, slug allocation, and `next_sequence` rules remain immutable from the registration merge onward; only the sentinel-to-verified-SHA finalization described above is permitted. Before a registering PR enters the merge queue, canonical `main` and `next_sequence` MUST be re-read. If another project has claimed the sequence, the later project must be reallocated before queuing.
+
 ## Backfill rule for pre-policy projects
 
 Existing canonical projects are numbered by the timestamp of their first formal `projects/<slug>/` project-folder commit merged to GitHub `main`. This provides deterministic, auditable ordering and avoids subjective priority-based numbering.
@@ -55,7 +67,10 @@ CI validates:
 - `next_sequence == max(sequence) + 1`;
 - exact parity between registry entries and canonical project folders;
 - `PROJECT.yaml` identity/path consistency;
-- immutable Project ID and project key for already-registered slugs when compared with the pull request base branch;
+- new projects allocate exactly from the canonical baseline's `next_sequence`;
+- new projects use `PENDING_CANONICAL_MAIN` rather than a guessed `first_canonical_main_commit` SHA;
+- the only permitted `first_canonical_main_commit` mutation is `PENDING_CANONICAL_MAIN` -> the exact earliest canonical-main project-folder commit derived from Git history;
+- immutable Project ID, project key, and finalized `first_canonical_main_commit` for already-registered projects;
 - preservation of prior registry entries, preventing silent deletion/reuse.
 
 ## External systems

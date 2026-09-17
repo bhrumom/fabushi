@@ -54,3 +54,5 @@ Electron：
 - 支付 intent 成功/失败/重复 webhook 指标。
 
 每个核心请求至少携带 trace/request ID；日志、metrics、trace 可以关联，但敏感内容必须脱敏。
+
+M8-MARKET-003 的 required packaged journeys 使用 always-upload 证据路径保留逐步截图、完整操作视频、Playwright/platform trace、HTML/native reports、diagnostics 和日志；这些证据按平台、run/job、版本与 accepted source SHA 绑定，当前包的保留期为 90 天（至 `2026-12-13`）。这属于交付可观测性证据，不等同于已经定义生产 SLO；Marketplace 的下载/校验失败、回滚和 Host-required 状态仍应继续作为可观测事件维护。

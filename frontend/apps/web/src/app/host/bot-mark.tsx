@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
@@ -104,8 +105,24 @@ type BotMarkProps = {
   eyeColor?: string;
 };
 
+type PeerUnreadSemanticState = {
+  agentId: string;
+  positive: boolean;
+};
+
 const COLORS: readonly BotMarkColor[] = [
   "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray",
+];
+
+/**
+ * OpenBot makes coworkers immediately distinguishable by silhouette as well as
+ * color. Keep that affordance while retaining Fabushi's own stateful SVG
+ * renderer: the canonical Bot identity deterministically chooses one of every
+ * silhouette the engine already supports, so the same Bot never changes shape
+ * between the roster, header, transcript, or a later session.
+ */
+const SHAPES: readonly BotMarkShape[] = [
+  "blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop",
 ];
 
 const AMBIENT_MOTION_STATES = new Set<BotMarkState>([
@@ -199,16 +216,15 @@ function identityRandom(seed: number): () => number {
   };
 }
 
-/**
- * The default body remains visually stable for dense lists. Persisted shape
- * overrides still support richer persona silhouettes in profile/hero surfaces.
- */
-export function botMarkShape(_botId: string): BotMarkShape {
-  return "blob";
+export function botMarkShape(botId: string): BotMarkShape {
+  const identity = canonicalBotIdentity(botId);
+  const seed = (hashIdentity(identity) ^ Math.imul(2, 2654435769)) >>> 0;
+  const index = Math.floor(identityRandom((seed ^ 2246822519) >>> 0)() * SHAPES.length);
+  return SHAPES[index] ?? "blob";
 }
 
-export function botMarkShapeIndex(_botId: string): number {
-  return 0;
+export function botMarkShapeIndex(botId: string): number {
+  return Math.max(0, SHAPES.indexOf(botMarkShape(botId)));
 }
 
 export function botMarkColorId(botId: string): BotMarkColor {
@@ -271,6 +287,8 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
   const effectivePaused = paused || !animated || !motionAllowed;
   const shape = shapeOverride ?? botMarkShape(identityId);
   const color = colorOverride ?? botMarkColorId(identityId);
+  const hostRef = useRef<HTMLSpanElement>(null);
+  const [peerUnreadSemantic, setPeerUnreadSemantic] = useState<PeerUnreadSemanticState | null>(null);
   const style = {
     width: size,
     height: size,
@@ -278,9 +296,37 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
     "--bot-mark-eye-color": eyeColor ?? "var(--app, #fff)",
   } as CSSProperties;
 
+  useEffect(() => {
+    const mark = hostRef.current;
+    const peerButton = mark?.closest<HTMLElement>('button[data-testid^="peer-"]') ?? null;
+    const testId = peerButton?.dataset.testid ?? "";
+    if (!peerButton || !testId.startsWith("peer-")) {
+      setPeerUnreadSemantic(null);
+      return;
+    }
+    const agentId = `peer-unread:${testId.slice("peer-".length)}`;
+    const update = () => {
+      const positive = peerButton.querySelector("b") != null;
+      setPeerUnreadSemantic((current) => current?.agentId === agentId && current.positive === positive
+        ? current
+        : { agentId, positive });
+    };
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(peerButton, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [botId, label]);
+
+  const semanticLabel = peerUnreadSemantic
+    ? (peerUnreadSemantic.positive ? "unread-positive" : "unread-none")
+    : label;
+  const semanticDescription = peerUnreadSemantic ? label : undefined;
+
   return (
     <span
+      ref={hostRef}
       className={`${styles.botMark} ${className}`.trim()}
+      data-agent-id={peerUnreadSemantic?.agentId}
       data-bot-id={botId}
       data-canonical-bot-id={identityId}
       data-agent-state={state}
@@ -291,9 +337,10 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
       data-engine="fabushi-motion-v3"
       data-renderer="fabushi-owned-svg-runtime"
       style={style}
-      aria-label={label}
-      aria-hidden={label ? undefined : true}
-      role={label ? "img" : undefined}
+      aria-label={semanticLabel}
+      aria-description={semanticDescription}
+      aria-hidden={semanticLabel ? undefined : true}
+      role={semanticLabel ? "img" : undefined}
     >
       <FabushiBotMarkEngine
         ref={ref}

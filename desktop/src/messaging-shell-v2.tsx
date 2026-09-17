@@ -52,10 +52,11 @@ import type {
   SandboxRuntime,
   UpdateState,
 } from '../../frontend/apps/web/src/lib/mahayana-host/contracts';
-import { ElectronMahayanaHostTransport, isElectronMahayanaHostAvailable, MAHAYANA_ACCOUNT_SESSION_RESET_EVENT } from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
+import { ElectronMahayanaHostTransport, isElectronMahayanaHostAvailable, MAHAYANA_ACCOUNT_SESSION_RESET_EVENT, readCachedConversationMessages } from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
 import { MockMahayanaHostTransport } from '../../frontend/apps/web/src/lib/mahayana-host/mock-transport';
 import { invokeNativeDesktop, subscribeNativeDesktopEvents } from '../../frontend/apps/web/src/lib/fabushi-runtime/native-desktop';
 import type { InstalledPluginPointer, MahayanaHostTransport, MarketplacePluginSummary } from '../../frontend/apps/web/src/lib/mahayana-host/transport';
+import { marketplaceInstallAction, marketplaceInstallActionLabel } from '../../frontend/apps/web/src/lib/marketplace-install-contract';
 import {
   RemoteComputerDesktopController,
   type RemoteComputerDesktopState,
@@ -95,7 +96,9 @@ import {
   type MiniAppBotCommand,
 } from './miniapp-bot-projection';
 import { MiniAppCallDialog } from './miniapp-call-dialog';
-import { prepareDesktopMiniAppWebMcpDocument } from './miniapp-webmcp-host';
+import { executeDesktopMiniAppBotInput, prepareDesktopMiniAppWebMcpDocument } from './miniapp-webmcp-host';
+import BotConversationView from './bot-conversation-view';
+import type { BotTranscriptMessage } from './bot-conversation-view';
 import {
   accountMiniAppsAsMarketplaceSummaries,
   appendMiniAppBotMessages,
@@ -114,6 +117,29 @@ import {
   projectSidebarContactGroups,
   useSidebarContactGroups,
 } from './sidebar-contact-groups';
+
+function miniAppMarketplaceAction(
+  app: MarketplacePluginSummary,
+  installed: InstalledPluginPointer | undefined,
+) {
+  return marketplaceInstallAction(
+    {
+      id: app.pluginId,
+      latestVersion: app.latestVersion,
+      install: app.install,
+      releaseManifest: app.releaseManifest,
+    },
+    installed
+      ? { version: installed.version, artifactSha256: installed.artifactSha256 }
+      : undefined,
+  );
+}
+
+function miniAppReleaseLabel(app: MarketplacePluginSummary): string {
+  const source = app.install?.source as { sourceRef?: unknown } | undefined;
+  const sourceRef = typeof source?.sourceRef === 'string' ? source.sourceRef.slice(0, 9) : '';
+  return sourceRef ? `GitHub · ${sourceRef}` : 'GitHub 来源待确认';
+}
 
 type MessengerSection =
   | 'chats'
@@ -183,9 +209,12 @@ type DisplayMessage = {
   kind?: 'message' | 'action' | 'thinking';
   operationId?: string;
   streaming?: boolean;
+  optimistic?: boolean;
+  queued?: boolean;
   actionTitle?: string;
   actionDetail?: string;
-  actionStatus?: 'running' | 'completed' | 'failed';
+  actionStatus?: 'running' | 'completed' | 'failed' | 'interrupted';
+  miniAppId?: string;
   pinned?: boolean;
   reactions?: string[];
   invoiceId?: string;
@@ -278,6 +307,7 @@ const messengerSidebarWidthKey = 'fabushi.desktop.sidebar-width.v3';
 const messengerProjectionKey = 'fabushi.desktop.messenger-projection.v1';
 const accountSyncCursorKey = 'fabushi.desktop.account-sync-cursor.v1';
 const messengerConversationJournalKey = 'fabushi.desktop.mahayana-conversation-journal.v1';
+const miniAppExecutionPersistencePrefix = 'fabushi.desktop.miniapp-execution.v1:';
 const messengerPreferencesKey = 'fabushi.desktop.telegram-settings.v1';
 const initialPeerRenderCount = 120;
 const initialMessageRenderCount = 240;
@@ -407,14 +437,19 @@ async function clearAccountScopedDesktopCaches(): Promise<void> {
       window.localStorage.removeItem(messengerProjectionKey);
       window.localStorage.removeItem(messengerDraftsKey);
       window.localStorage.removeItem(messengerConversationJournalKey);
+      for (const key of Object.keys(window.localStorage)) {
+        if (key.startsWith(miniAppExecutionPersistencePrefix)) window.localStorage.removeItem(key);
+      }
     } catch {
       // Native persistence cleanup below remains authoritative for fast-start.
     }
   }
   try {
+    const executionKeys = await invokeNativeDesktop<string[]>('listClientPersistenceKeys', { prefix: miniAppExecutionPersistencePrefix }).catch(() => []);
     await Promise.all([
       invokeNativeDesktop<boolean>('removeClientPersistence', { key: messengerProjectionKey }),
       invokeNativeDesktop<boolean>('removeClientPersistence', { key: accountSyncCursorKey }),
+      ...executionKeys.map((key) => invokeNativeDesktop<boolean>('removeClientPersistence', { key })),
     ]);
   } catch {
     // Older/unavailable native edges must not block signing out locally.
@@ -587,6 +622,131 @@ function upsertById<T extends { id: string }>(items: T[], item: T): T[] {
   return [...items.filter((current) => current.id !== item.id), item];
 }
 
+function cachedLegacyDisplayMessages(conversationId: string): DisplayMessage[] {
+  return readCachedConversationMessages(conversationId).map((message) => ({
+    id: message.id,
+    source: 'legacy',
+    role: message.role === 'user' ? 'me' : 'peer',
+    text: message.text,
+    createdAtMs: message.createdAtMs,
+    kind: 'message',
+    streaming: message.streaming,
+  }));
+}
+
+type StructuredMessageBlock =
+  | { type: 'paragraph'; text: string }
+  | { type: 'heading'; level: number; text: string }
+  | { type: 'table'; headers: string[]; rows: string[][] }
+  | { type: 'sources'; files: string[] };
+
+function markdownTableCells(line: string): string[] {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+}
+
+function isMarkdownTableDivider(line: string): boolean {
+  const cells = markdownTableCells(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function sourceFileNames(line: string): string[] {
+  if (!/^source files?\s*:/i.test(line.trim())) return [];
+  const body = line.replace(/^source files?\s*:/i, '');
+  const names = new Set<string>();
+  for (const match of body.matchAll(/`([^`]+)`/g)) names.add(match[1].trim());
+  for (const match of body.matchAll(/\b[\w@./-]+\.(?:md|csv|txt|json|pdf|docx?|xlsx?|png|jpe?g|ts|tsx|js|jsx|rs|swift|kt)\b/gi)) names.add(match[0]);
+  return [...names].filter(Boolean);
+}
+
+export function parseStructuredMessage(text: string): StructuredMessageBlock[] {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const blocks: StructuredMessageBlock[] = [];
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index].trim();
+    if (!line) { index += 1; continue; }
+    const heading = /^(#{1,3})\s+(.+)$/.exec(line);
+    if (heading) {
+      blocks.push({ type: 'heading', level: heading[1].length, text: heading[2].trim() });
+      index += 1;
+      continue;
+    }
+    if (index + 1 < lines.length && line.includes('|') && isMarkdownTableDivider(lines[index + 1])) {
+      const headers = markdownTableCells(line);
+      const rows: string[][] = [];
+      index += 2;
+      while (index < lines.length && lines[index].trim().includes('|') && lines[index].trim()) {
+        const cells = markdownTableCells(lines[index]);
+        if (cells.length !== headers.length) break;
+        rows.push(cells);
+        index += 1;
+      }
+      blocks.push({ type: 'table', headers, rows });
+      continue;
+    }
+    const files = sourceFileNames(line);
+    if (files.length) {
+      blocks.push({ type: 'sources', files });
+      index += 1;
+      continue;
+    }
+    const paragraph: string[] = [line];
+    index += 1;
+    while (index < lines.length) {
+      const candidate = lines[index].trim();
+      if (!candidate) break;
+      if (/^(#{1,3})\s+/.test(candidate)) break;
+      if (index + 1 < lines.length && candidate.includes('|') && isMarkdownTableDivider(lines[index + 1])) break;
+      if (sourceFileNames(candidate).length) break;
+      paragraph.push(candidate);
+      index += 1;
+    }
+    blocks.push({ type: 'paragraph', text: paragraph.join(' ') });
+  }
+  return blocks;
+}
+
+function StructuredMessageBody({ text, peers }: { text: string; peers: PeerItem[] }) {
+  const blocks = parseStructuredMessage(text);
+  const rich = blocks.some((block) => block.type !== 'paragraph');
+  if (!rich) return <p>{text}</p>;
+  return <div className={extra.structuredMessage} data-testid="structured-message-body">
+    {blocks.map((block, blockIndex) => {
+      if (block.type === 'heading') {
+        return <strong key={`heading-${blockIndex}`} className={extra.structuredHeading} data-level={block.level}>{block.text}</strong>;
+      }
+      if (block.type === 'table') {
+        return <div key={`table-${blockIndex}`} className={extra.structuredTableWrap}>
+          <table className={extra.structuredTable} data-testid="assistant-result-table">
+            <thead><tr>{block.headers.map((cell, index) => <th key={`${index}:${cell}`}>{cell}</th>)}</tr></thead>
+            <tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => {
+              const peer = peers.find((candidate) => candidate.title.trim().toLocaleLowerCase() === cell.trim().replace(/^@/, '').toLocaleLowerCase());
+              return <td key={`${rowIndex}:${cellIndex}`}>{peer ? <span className={extra.structuredPeerChip} data-testid="assistant-owner-chip"><BotMark botId={`peer:${peer.kind}:${peer.actorId ?? peer.id}`} state="result" size={16} label={peer.title} />{cell}</span> : cell}</td>;
+            })}</tr>)}</tbody>
+          </table>
+        </div>;
+      }
+      if (block.type === 'sources') {
+        return <div key={`sources-${blockIndex}`} className={extra.sourceFiles} data-testid="assistant-source-files">
+          <span>Source files:</span>
+          {block.files.map((file) => <span key={file} className={extra.sourceFileChip}><FileText size={13} />{file}</span>)}
+        </div>;
+      }
+      return <p key={`paragraph-${blockIndex}`}>{block.text}</p>;
+    })}
+  </div>;
+}
+
+function startupLegacyConversationId(projection: MessengerProjection | null | undefined): string | null {
+  const key = projection?.activePeerKey;
+  if (!key) return null;
+  if (key.startsWith('legacy:conversation:')) return key.slice('legacy:conversation:'.length) || null;
+  if (key.startsWith('legacy:bot:')) {
+    const botId = key.slice('legacy:bot:'.length);
+    return projection?.legacyBots?.find((bot) => bot.id === botId)?.conversationId ?? null;
+  }
+  return null;
+}
+
 export default function DesktopShellV2() {
   const authTransport = useMemo(() => createTransport(), []);
   const localProjection = useMemo(() => readMessengerProjection(), []);
@@ -726,6 +886,7 @@ function DesktopFastStartBootstrap() {
 function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection?: MessengerProjection | null; onLogout: () => Promise<void> }) {
   const transport = useMemo(() => createTransport(), []);
   const startupProjection = useMemo(() => initialProjection ?? readMessengerProjection(), [initialProjection]);
+  const startupLegacyConversation = useMemo(() => startupLegacyConversationId(startupProjection), [startupProjection]);
   const selfHosted = useMemo(() => new SelfHostedMessagingClientV2(transport, { actorId: startupProjection?.actorId }), [transport, startupProjection]);
   const [hostReady, setHostReady] = useState(false);
   const [remoteAccountScope, setRemoteAccountScope] = useState<string | null>(null);
@@ -750,7 +911,9 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
   const [walletAccount, setWalletAccount] = useState<MessagingWalletAccount | null>(null);
   const [walletEntries, setWalletEntries] = useState<MessagingLedgerEntry[]>([]);
   const [activePeerKey, setActivePeerKey] = useState<string | null>(startupProjection?.activePeerKey ?? null);
-  const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  const [messages, setMessages] = useState<DisplayMessage[]>(() =>
+    startupLegacyConversation ? cachedLegacyDisplayMessages(startupLegacyConversation) : [],
+  );
   const [composer, setComposer] = useState('');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
@@ -781,6 +944,8 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
   const [remoteComputerState, setRemoteComputerState] = useState<RemoteComputerDesktopState | null>(null);
   const [pendingSend, setPendingSend] = useState(false);
   const [agentOperationId, setAgentOperationId] = useState<string | null>(null);
+  const [showScrollToLatest, setShowScrollToLatest] = useState(false);
+  const [queuedAgentPrompts, setQueuedAgentPrompts] = useState<Record<string, DisplayMessage[]>>({});
   const [typingByConversation, setTypingByConversation] = useState<Record<string, Record<string, number>>>({});
   const [newDialog, setNewDialog] = useState<NewDialog>(null);
   const [messageMenu, setMessageMenu] = useState<MessageMenu>(null);
@@ -794,6 +959,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
   const [miniApp, setMiniApp] = useState<{ id: string; title: string; url: string } | null>(null);
   const [miniAppCall, setMiniAppCall] = useState<MiniAppCallSession | null>(null);
   const miniAppBotThreadsRef = useRef<Record<string, DisplayMessage[]>>({});
+  const botThreadsRef = useRef<Record<string, DisplayMessage[]>>({});
   const [accountBots, setAccountBots] = useState<AccountBotMembership[]>([]);
   const [marketplaceApps, setMarketplaceApps] = useState<MarketplacePluginSummary[]>([]);
   const [miniAppIdentityCatalog, setMiniAppIdentityCatalog] = useState<MarketplacePluginSummary[]>([]);
@@ -824,6 +990,11 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
   const sessionResetInFlightRef = useRef(false);
   const agentOperationIdRef = useRef<string | null>(null);
   const agentRequestPendingRef = useRef(false);
+  const agentRequestPeerRef = useRef<string | null>(null);
+  const finishedAgentOperationsRef = useRef(new Set<string>());
+  const agentPeerKeyRef = useRef<Record<string, string>>({});
+  const messageAreaRef = useRef<HTMLDivElement | null>(null);
+  const stickToLatestRef = useRef(true);
   const remoteControlEnabledRef = useRef(hostSettings.remoteControlEnabled);
   remoteControlEnabledRef.current = hostSettings.remoteControlEnabled;
 
@@ -859,10 +1030,14 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
   }, [desktopPreferences]);
 
   useEffect(() => {
-    if (!startupProjection?.activePeerKey?.startsWith('selfhosted:')) return;
-    const conversationId = startupProjection.activePeerKey.slice('selfhosted:'.length);
-    const cached = (startupProjection.selfMessages[conversationId] ?? []).filter((message) => !message.deleted);
-    setMessages(cached.map(displaySelfMessage));
+    if (startupProjection?.activePeerKey?.startsWith('selfhosted:')) {
+      const conversationId = startupProjection.activePeerKey.slice('selfhosted:'.length);
+      const cached = (startupProjection.selfMessages[conversationId] ?? []).filter((message) => !message.deleted);
+      setMessages(cached.map(displaySelfMessage));
+      return;
+    }
+    const legacyConversationId = startupLegacyConversationId(startupProjection);
+    if (legacyConversationId) setMessages(cachedLegacyDisplayMessages(legacyConversationId));
   }, [startupProjection]);
 
   useEffect(() => {
@@ -1086,6 +1261,13 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         setHostReady(true);
         void execute({ type: 'settings.get', requestId: nextRequestId('settings-get') });
         refreshLegacy();
+        if (startupLegacyConversation) {
+          void execute({
+            type: 'conversation.open',
+            requestId: nextRequestId('conversation-open-startup'),
+            conversationId: startupLegacyConversation,
+          });
+        }
         try {
           const account = await transport.authStatus().catch(() => null);
           const cachedActor = startupProjection?.selfActors.find((actor) => actor.id === selfHosted.actorId);
@@ -1294,32 +1476,67 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     };
   }
 
+  function rememberAgentPeer(operationId: string, peerKey: string | null | undefined) {
+    if (peerKey) agentPeerKeyRef.current[operationId] = peerKey;
+  }
+
+  function updateAgentThread(operationId: string | undefined, update: (current: DisplayMessage[]) => DisplayMessage[]) {
+    const peerKey = operationId ? agentPeerKeyRef.current[operationId] : undefined;
+    if (peerKey && peerKey !== activePeerKeyRef.current) {
+      botThreadsRef.current[peerKey] = update(botThreadsRef.current[peerKey] ?? []);
+      return;
+    }
+    setMessages(update);
+  }
+
+  function rememberActiveBotThread() {
+    const peerKey = activePeerKeyRef.current;
+    const peer = peersRef.current.find((candidate) => candidate.key === peerKey);
+    if (!peerKey || !peer || !isAgentPeer(peer) || peer.miniAppId) return;
+    botThreadsRef.current[peerKey] = messages;
+  }
+
   function claimAgentOperation(operationId?: string): boolean {
-    if (!operationId) return false;
-    if (agentOperationIdRef.current === operationId) return true;
+    if (!operationId || finishedAgentOperationsRef.current.has(operationId)) return false;
+    if (agentOperationIdRef.current === operationId) {
+      rememberAgentPeer(operationId, agentPeerKeyRef.current[operationId] ?? agentRequestPeerRef.current);
+      return true;
+    }
     if (!agentRequestPendingRef.current) return false;
+    rememberAgentPeer(operationId, agentPeerKeyRef.current[operationId] ?? agentRequestPeerRef.current);
     agentRequestPendingRef.current = false;
     agentOperationIdRef.current = operationId;
     setAgentOperationId(operationId);
     return true;
   }
 
-  function clearAgentOperation(operationId: string, terminalStatus: 'completed' | 'failed' = 'completed') {
-    if (agentOperationIdRef.current !== operationId) return;
+  function clearAgentOperation(operationId: string, terminalStatus: 'completed' | 'failed' | 'interrupted' = 'completed') {
+    if (agentOperationIdRef.current !== operationId) return false;
+    finishedAgentOperationsRef.current.add(operationId);
+    if (finishedAgentOperationsRef.current.size > 500) {
+      finishedAgentOperationsRef.current.delete(finishedAgentOperationsRef.current.values().next().value!);
+    }
     agentOperationIdRef.current = null;
     setAgentOperationId(null);
     agentRequestPendingRef.current = false;
-    setMessages((current) => current
+    updateAgentThread(operationId, (current) => current
       .filter((message) => !(message.kind === 'thinking' && message.operationId === operationId))
-      .map((message) => message.kind === 'action' &&
-        message.operationId === operationId &&
-        message.actionStatus === 'running'
-        ? { ...message, actionStatus: terminalStatus }
-        : message));
+      .map((message) => {
+        if (message.kind === 'action' &&
+          message.operationId === operationId &&
+          message.actionStatus === 'running') {
+          return { ...message, actionStatus: terminalStatus };
+        }
+        if (message.kind === 'message' && message.operationId === operationId && message.streaming) {
+          return { ...message, streaming: false, optimistic: false };
+        }
+        return message;
+      }));
+    return true;
   }
 
   function appendAgentThinking(operationId: string, label: string) {
-    setMessages((current) => [
+    updateAgentThread(operationId, (current) => [
       ...current.filter((message) => !(message.kind === 'thinking' && message.operationId === operationId)),
       {
         id: `${operationId}:thinking`,
@@ -1342,7 +1559,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     detail?: string;
     status: 'running' | 'completed' | 'failed';
   }) {
-    setMessages((current) => {
+    updateAgentThread(input.operationId, (current) => {
       const next: DisplayMessage = {
         id: input.id,
         source: 'legacy',
@@ -1357,7 +1574,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
       };
       const index = current.findIndex((message) => message.kind === 'action' && message.id === input.id);
       if (index < 0) return [...current, next];
-      return current.map((message, messageIndex) => messageIndex === index ? { ...message, ...next } : message);
+      return current.map((message, messageIndex) => messageIndex === index ? { ...message, ...next, createdAtMs: message.createdAtMs } : message);
     });
   }
 
@@ -1562,11 +1779,17 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         if (!activePeerKeyRef.current && event.conversations[0]) {
           const conversation = event.conversations[0];
           setActivePeerKey(`legacy:conversation:${conversation.id}`);
+          setMessages(cachedLegacyDisplayMessages(conversation.id));
           void execute({ type: 'conversation.open', requestId: nextRequestId('conversation-open'), conversationId: conversation.id });
         }
         break;
       case 'conversation.opened':
-        if (activePeerKeyRef.current === `legacy:conversation:${event.conversationId}`) {
+        if (agentOperationIdRef.current
+          && agentPeerKeyRef.current[agentOperationIdRef.current] === activePeerKeyRef.current) break;
+        if (activePeerKeyRef.current === `legacy:conversation:${event.conversationId}`
+          || peersRef.current.some((peer) => peer.key === activePeerKeyRef.current
+            && peer.source === 'legacy'
+            && peer.conversationId === event.conversationId)) {
           setMessages(event.messages.map((message) => ({
             id: message.id,
             source: 'legacy',
@@ -1610,21 +1833,32 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         setHostSettings(event.settings);
         break;
       case 'chat.message':
+        if (event.operationId && finishedAgentOperationsRef.current.has(event.operationId)) break;
         if (event.role === 'assistant' && claimAgentOperation(event.operationId)) {
-          setMessages((current) => current.filter((message) => !(message.kind === 'thinking' && message.operationId === event.operationId)));
+          updateAgentThread(event.operationId, (current) => current.filter((message) => !(message.kind === 'thinking' && message.operationId === event.operationId)));
         }
-        setMessages((current) => {
+        updateAgentThread(event.operationId, (current) => {
           const existingIndex = event.role === 'assistant' && event.operationId
-            ? current.findIndex((message) => message.kind === 'message' && message.operationId === event.operationId && message.streaming)
+            ? current.findIndex((message) => message.kind === 'message' && message.role === 'peer' && message.operationId === event.operationId)
             : -1;
           if (existingIndex >= 0) {
             return current.map((message, messageIndex) => messageIndex === existingIndex
               ? { ...message, kind: 'message', text: event.text, streaming: false }
               : message);
           }
-          if (event.role === 'user' && current.some((message) =>
-            message.role === 'me' && message.text === event.text &&
-            (!event.operationId || message.operationId === event.operationId))) return current;
+          if (event.role === 'user') {
+            const optimisticIndex = current.findIndex((message) =>
+              message.role === 'me' && message.optimistic === true && message.text === event.text,
+            );
+            if (optimisticIndex >= 0) {
+              return current.map((message, messageIndex) => messageIndex === optimisticIndex
+                ? { ...message, optimistic: false, operationId: event.operationId ?? message.operationId }
+                : message);
+            }
+            if (current.some((message) =>
+              message.role === 'me' && message.text === event.text &&
+              (!event.operationId || message.operationId === event.operationId))) return current;
+          }
           return [...current, {
             id: nextRequestId('message'),
             source: 'legacy',
@@ -1638,9 +1872,10 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         });
         break;
       case 'chat.delta':
+        if (event.operationId && finishedAgentOperationsRef.current.has(event.operationId)) break;
         claimAgentOperation(event.operationId);
-        setMessages((current) => current.filter((message) => !(message.kind === 'thinking' && message.operationId === event.operationId)));
-        setMessages((current) => {
+        updateAgentThread(event.operationId, (current) => current.filter((message) => !(message.kind === 'thinking' && message.operationId === event.operationId)));
+        updateAgentThread(event.operationId, (current) => {
           const index = current.findIndex((message) => message.kind === 'message' && message.operationId === event.operationId && message.streaming);
           if (index < 0) return [...current, { id: `${event.operationId}:stream`, source: 'legacy', role: 'peer', text: event.delta, createdAtMs: Date.now(), kind: 'message', operationId: event.operationId, streaming: true }];
           return current.map((message, messageIndex) => messageIndex === index ? { ...message, text: `${message.text}${event.delta}`, kind: 'message', streaming: true } : message);
@@ -1675,12 +1910,10 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         }
         break;
       case 'operation.interrupted':
-        clearAgentOperation(event.operationId, 'failed');
-        setPendingSend(false);
+        if (clearAgentOperation(event.operationId, 'interrupted')) setPendingSend(false);
         break;
       case 'operation.completed':
-        clearAgentOperation(event.operationId);
-        setPendingSend(false);
+        if (clearAgentOperation(event.operationId)) setPendingSend(false);
         break;
       case 'miniapp.opened':
         if (event.html) {
@@ -1691,9 +1924,10 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
         }
         break;
       case 'operation.failed':
-        clearAgentOperation(event.operationId, 'failed');
-        setPendingSend(false);
-        setError(event.message);
+        if (clearAgentOperation(event.operationId, 'failed')) {
+          setPendingSend(false);
+          setError(event.message);
+        }
         break;
       case 'host.closed':
         setHostReady(false);
@@ -1761,7 +1995,10 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           ? miniAppBotProjections.find((candidate) => candidate.miniAppId === miniAppSource.sourceId)
           : miniAppByBotId.get(entry.bot.id);
         return {
-          key: `account:bot:${entry.bot.id}`,
+          // A Mini App-backed account Bot must keep the same peer identity before and
+          // after the asynchronous account-membership projection arrives. Otherwise
+          // activePeerKey points at the retired synthetic peer and the composer vanishes.
+          key: miniAppSource ? `miniapp:bot:${miniAppSource.sourceId}` : `account:bot:${entry.bot.id}`,
           id: entry.bot.id,
           source: 'legacy',
           kind: 'bot',
@@ -1770,8 +2007,8 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           actorId: entry.bot.id,
           conversationId: entry.bot.conversationId,
           unread: 0,
-          pinned: pinnedPeerKeys.has(`account:bot:${entry.bot.id}`),
-          archived: archivedPeerKeys.has(`account:bot:${entry.bot.id}`),
+          pinned: pinnedPeerKeys.has(miniAppSource ? `miniapp:bot:${miniAppSource.sourceId}` : `account:bot:${entry.bot.id}`),
+          archived: archivedPeerKeys.has(miniAppSource ? `miniapp:bot:${miniAppSource.sourceId}` : `account:bot:${entry.bot.id}`),
           updatedAtMs: entry.updatedAtMs ?? 0,
           miniAppId: miniAppSource?.sourceId,
           miniAppCommands: projection?.commands,
@@ -1863,12 +2100,23 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     : [];
   const matchingMessages = messages;
   const renderedMessages = matchingMessages.slice(Math.max(0, matchingMessages.length - messageRenderCount));
+  const botTranscriptMessages: BotTranscriptMessage[] = activePeer && isAgentPeer(activePeer)
+    ? [...renderedMessages, ...(queuedAgentPrompts[activePeer.key] ?? [])]
+    : renderedMessages;
+  const activeAgentOperationId = activePeer && agentOperationId
+    && agentPeerKeyRef.current[agentOperationId] === activePeer.key
+    ? agentOperationId
+    : null;
+  const activePeerBusy = Boolean(activePeer && (agentOperationId ? activeAgentOperationId : pendingSend));
 
   function renderPeerRow(peer: PeerItem) {
+    const peerBusy = peer.key === activePeerKey && (agentOperationId
+      ? agentPeerKeyRef.current[agentOperationId] === peer.key
+      : pendingSend);
     return <button data-testid={`peer-${peer.key}`} key={peer.key} type="button" className={peer.key === activePeerKey ? styles.peerActive : styles.peer} onClick={() => void openPeer(peer)}>
       <BotMark
         botId={`peer:${peer.kind}:${peer.actorId ?? peer.id}`}
-        state={isAgentPeer(peer) ? botMarkStateForPeer(peer, selfBotExecutions, peer.key === activePeerKey && pendingSend, hostReady) : peer.unread ? 'notifying' : 'idle'}
+        state={isAgentPeer(peer) ? botMarkStateForPeer(peer, selfBotExecutions, peerBusy, hostReady) : peer.unread ? 'notifying' : 'idle'}
         size={48}
         className={styles.agentAvatarMark}
         label={peer.title}
@@ -1909,8 +2157,129 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
     });
   }
 
+  function handleMessageAreaScroll(event: React.UIEvent<HTMLDivElement>) {
+    const node = event.currentTarget;
+    const distanceFromLatest = node.scrollHeight - node.scrollTop - node.clientHeight;
+    const atLatest = distanceFromLatest < 96;
+    stickToLatestRef.current = atLatest;
+    setShowScrollToLatest(!atLatest);
+  }
+
+  function scrollToLatest() {
+    const node = messageAreaRef.current;
+    if (!node) return;
+    stickToLatestRef.current = true;
+    setShowScrollToLatest(false);
+    node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+  }
+
+  async function copyBotMessage(message: BotTranscriptMessage): Promise<void> {
+    try {
+      await navigator.clipboard?.writeText(message.text);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '复制消息失败');
+    }
+  }
+
+  function editBotMessage(message: BotTranscriptMessage) {
+    updateComposer(message.text);
+    setReplyTo(null);
+  }
+
+  async function dispatchAgentPrompt(peer: PeerItem, text: string, existingMessageId?: string): Promise<void> {
+    if (agentOperationIdRef.current || agentRequestPendingRef.current) return;
+    const requestId = nextRequestId('chat-send');
+    rememberAgentPeer(requestId, peer.key);
+    const optimisticId = existingMessageId ?? 'optimistic:' + requestId;
+    updateAgentThread(requestId, (current) => {
+      const nextMessage: DisplayMessage = {
+        id: optimisticId,
+        source: 'legacy',
+        role: 'me',
+        text,
+        createdAtMs: Date.now(),
+        kind: 'message',
+        operationId: requestId,
+        optimistic: true,
+        queued: false,
+      };
+      const existingIndex = current.findIndex((message) => message.id === optimisticId);
+      if (existingIndex < 0) return [...current, nextMessage];
+      return current.map((message, index) => index === existingIndex
+        ? { ...message, ...nextMessage }
+        : message);
+    });
+    setPendingSend(true);
+    agentRequestPendingRef.current = true;
+    agentRequestPeerRef.current = peer.key;
+    try {
+      const accepted = await execute({
+        type: 'chat.send',
+        requestId,
+        text,
+        conversationId: peer.conversationId,
+        agentId: peer.actorId,
+      });
+      if (!accepted) {
+        updateAgentThread(requestId, (current) => current.filter((message) => message.id !== optimisticId));
+        return;
+      }
+      const operationId = accepted.operationId ?? requestId;
+      rememberAgentPeer(operationId, peer.key);
+      if (finishedAgentOperationsRef.current.has(operationId)) return;
+      updateAgentThread(operationId, (current) => current.map((message) => message.id === optimisticId
+        ? { ...message, operationId, optimistic: true, queued: false }
+        : message));
+      if (claimAgentOperation(operationId)) {
+        appendAgentThinking(operationId, '正在思考');
+      }
+    } catch (cause) {
+      updateAgentThread(requestId, (current) => current.filter((message) => message.id !== optimisticId));
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      agentRequestPendingRef.current = false;
+      if (!agentOperationIdRef.current) setPendingSend(false);
+    }
+  }
+
+  function regenerateBotMessage(message: BotTranscriptMessage) {
+    if (!activePeer || !isAgentPeer(activePeer) || activePeer.miniAppId || pendingSend) return;
+    const index = messages.findIndex((candidate) => candidate.id === message.id);
+    if (index < 0) return;
+    const prompt = [...messages.slice(0, index)].reverse().find((candidate) => candidate.role === 'me' && !candidate.queued);
+    if (!prompt) {
+      setError('找不到这条回复对应的用户消息。');
+      return;
+    }
+    setMessages((current) => current.filter((candidate) => candidate.id !== message.id));
+    void dispatchAgentPrompt(activePeer, prompt.text);
+  }
+
+  async function stopAgentOperation(): Promise<void> {
+    const operationId = agentOperationIdRef.current;
+    if (!operationId) return;
+    try {
+      await transport.interrupt(operationId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  useEffect(() => {
+    if (!activePeer || !isAgentPeer(activePeer) || !stickToLatestRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      const node = messageAreaRef.current;
+      if (node) node.scrollTop = node.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activePeerKey, messages, pendingSend, queuedAgentPrompts]);
+
   async function openPeer(peer: PeerItem) {
+    rememberActiveBotThread();
+    activePeerKeyRef.current = peer.key;
     setActivePeerKey(peer.key);
+    stickToLatestRef.current = true;
+    setShowScrollToLatest(false);
     setComposer(drafts[peer.key] ?? '');
     setSearch('');
     setGlobalSearchOpen(false);
@@ -1930,6 +2299,16 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
       if (last) void selfHosted.markRead(peer.conversationId, last.id).catch(() => {});
       return;
     }
+    if (isAgentPeer(peer)) {
+      const remembered = botThreadsRef.current[peer.key];
+      if (remembered) setMessages(remembered);
+      else if (peer.conversationId) setMessages(cachedLegacyDisplayMessages(peer.conversationId));
+      else setMessages([]);
+      if (peer.conversationId) {
+        await execute({ type: 'conversation.open', requestId: nextRequestId('conversation-open'), conversationId: peer.conversationId });
+      }
+      return;
+    }
     if (peer.kind === 'group' && peer.groupId) {
       const group = groups.find((item) => item.id === peer.groupId);
       setMessages(group?.messages.map((message) => ({
@@ -1942,7 +2321,7 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
       return;
     }
     if (peer.conversationId) {
-      setMessages([]);
+      setMessages(cachedLegacyDisplayMessages(peer.conversationId));
       await execute({ type: 'conversation.open', requestId: nextRequestId('conversation-open'), conversationId: peer.conversationId });
       return;
     }
@@ -1952,11 +2331,45 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     const text = composer.trim();
-    if (!text || !activePeer || pendingSend) return;
+    if (!text || !activePeer) return;
+    const agentRequest = activePeer.source === 'legacy'
+      && activePeer.kind !== 'group'
+      && !activePeer.miniAppId
+      && isAgentPeer(activePeer);
+    if (pendingSend) {
+      if (!agentRequest) return;
+      const queuedMessage: DisplayMessage = {
+        id: nextRequestId('queued-chat-send'),
+        source: 'legacy',
+        role: 'me',
+        text,
+        createdAtMs: Date.now(),
+        kind: 'message',
+        optimistic: true,
+        queued: true,
+      };
+      setQueuedAgentPrompts((current) => ({
+        ...current,
+        [activePeer.key]: [...(current[activePeer.key] ?? []), queuedMessage],
+      }));
+      updateComposer('');
+      setReplyTo(null);
+      return;
+    }
+    if (agentRequest) {
+      updateComposer('');
+      try {
+        await dispatchAgentPrompt(activePeer, text);
+        setReplyTo(null);
+        setScheduledAtMs(undefined);
+      } catch (cause) {
+        updateComposer(text);
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+      return;
+    }
     setPendingSend(true);
     updateComposer('');
-    const agentRequest = activePeer.source === 'legacy' && activePeer.kind !== 'group' && isAgentPeer(activePeer);
-    agentRequestPendingRef.current = agentRequest;
     try {
       if (activePeer.miniAppId) {
         const createdAtMs = Date.now();
@@ -1968,8 +2381,21 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           createdAtMs,
         };
         const pendingThread = [...(miniAppBotThreadsRef.current[activePeer.miniAppId] ?? []), userMessage];
-        miniAppBotThreadsRef.current = { ...miniAppBotThreadsRef.current, [activePeer.miniAppId]: pendingThread };
-        setMessages(pendingThread);
+        const thinkingMessage: DisplayMessage = {
+          id: userMessage.id + ':thinking',
+          source: 'legacy',
+          role: 'peer',
+          text: '',
+          createdAtMs: Date.now(),
+          kind: 'thinking',
+          operationId: userMessage.id,
+          actionTitle: '正在处理',
+          actionDetail: '正在调用 Mini App…',
+          actionStatus: 'running',
+        };
+        const pendingWithThinking = [...pendingThread, thinkingMessage];
+        miniAppBotThreadsRef.current = { ...miniAppBotThreadsRef.current, [activePeer.miniAppId]: pendingWithThinking };
+        setMessages(pendingWithThinking);
         await appendMiniAppBotMessages(activePeer.miniAppId, [{
           messageId: userMessage.id,
           role: 'user',
@@ -1980,20 +2406,23 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
           pluginId: activePeer.miniAppId,
           input: text,
         });
+        const executed = await executeDesktopMiniAppBotInput(activePeer.miniAppId, routed, text);
         const responseMessage: DisplayMessage = {
           id: nextRequestId('miniapp-bot-response'),
           source: 'legacy',
           role: 'peer',
-          text: miniAppBotResponseText(routed),
+          text: miniAppBotResponseText(executed),
+          miniAppId: activePeer.miniAppId,
           createdAtMs: Date.now(),
         };
         const completedThread = [...pendingThread, responseMessage];
         miniAppBotThreadsRef.current = { ...miniAppBotThreadsRef.current, [activePeer.miniAppId]: completedThread };
-        setMessages(completedThread);
+        if (activePeerKeyRef.current === activePeer.key) setMessages(completedThread);
         await appendMiniAppBotMessages(activePeer.miniAppId, [{
           messageId: responseMessage.id,
           role: 'assistant',
           text: responseMessage.text,
+          payload: { miniAppId: activePeer.miniAppId },
           createdAt: new Date(responseMessage.createdAtMs).toISOString(),
         }]);
       } else if (activePeer.source === 'selfhosted' && activePeer.conversationId) {
@@ -2005,27 +2434,70 @@ function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection
       } else if (activePeer.kind === 'group' && activePeer.groupId) {
         await execute({ type: 'group.send', requestId: nextRequestId('group-send'), id: activePeer.groupId, text });
       } else {
+        const requestId = nextRequestId('chat-send');
+        const optimisticId = `optimistic:${requestId}`;
+        setMessages((current) => [...current, {
+          id: optimisticId,
+          source: 'legacy',
+          role: 'me',
+          text,
+          createdAtMs: Date.now(),
+          kind: 'message',
+          operationId: requestId,
+          optimistic: true,
+        }]);
         const accepted = await execute({
           type: 'chat.send',
-          requestId: nextRequestId('chat-send'),
+          requestId,
           text,
           conversationId: activePeer.conversationId,
           agentId: activePeer.actorId,
         });
-        if (agentRequest && accepted?.operationId && claimAgentOperation(accepted.operationId)) {
+        if (!accepted) {
+          setMessages((current) => current.filter((message) => message.id !== optimisticId));
+          updateComposer(text);
+          return;
+        }
+        if (accepted.operationId) {
+          setMessages((current) => current.map((message) => message.id === optimisticId
+            ? { ...message, operationId: accepted.operationId }
+            : message));
+        }
+        if (agentRequest && accepted.operationId && claimAgentOperation(accepted.operationId)) {
           appendAgentThinking(accepted.operationId, '正在思考');
         }
       }
       setReplyTo(null);
       setScheduledAtMs(undefined);
     } catch (cause) {
+      if (activePeer.miniAppId) {
+        const thread = (miniAppBotThreadsRef.current[activePeer.miniAppId] ?? [])
+          .filter((message) => !(message.kind === 'thinking' && message.operationId));
+        miniAppBotThreadsRef.current = { ...miniAppBotThreadsRef.current, [activePeer.miniAppId]: thread };
+        if (activePeerKeyRef.current === activePeer.key) setMessages(thread);
+      }
       updateComposer(text);
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      agentRequestPendingRef.current = false;
-      if (!agentRequest || !agentOperationIdRef.current) setPendingSend(false);
+      setPendingSend(false);
     }
   }
+
+  useEffect(() => {
+    if (pendingSend || !activePeer || !isAgentPeer(activePeer) || activePeer.miniAppId) return;
+    const next = queuedAgentPrompts[activePeer.key]?.[0];
+    if (!next) return;
+    setQueuedAgentPrompts((current) => {
+      const pending = current[activePeer.key] ?? [];
+      if (pending[0]?.id !== next.id) return current;
+      const remaining = pending.slice(1);
+      const updated = { ...current };
+      if (remaining.length) updated[activePeer.key] = remaining;
+      else delete updated[activePeer.key];
+      return updated;
+    });
+    void dispatchAgentPrompt(activePeer, next.text, next.id);
+  }, [activePeerKey, pendingSend, queuedAgentPrompts]);
 
   async function saveNewDialog() {
     if (!newDialog || !newDialog.name.trim()) return;
@@ -2360,11 +2832,12 @@ async function saveInvoiceDialog() {
       pluginId: miniAppId,
       input,
     });
+    const executed = await executeDesktopMiniAppBotInput(miniAppId, routed, input);
     const responseMessage: DisplayMessage = {
       id: nextRequestId('miniapp-call-response'),
       source: 'legacy',
       role: 'peer',
-      text: miniAppBotResponseText(routed),
+      text: miniAppBotResponseText(executed),
       createdAtMs: Date.now(),
     };
     const completedThread = [...pendingThread, responseMessage];
@@ -2585,7 +3058,10 @@ async function saveInvoiceDialog() {
   }
 
   async function loadMiniAppBotThread(miniAppId: string): Promise<DisplayMessage[]> {
+    const beforeRead = miniAppBotThreadsRef.current[miniAppId];
     const page = await readMiniAppBotMessages(miniAppId, '', 500);
+    if (miniAppBotThreadsRef.current[miniAppId] !== beforeRead) return miniAppBotThreadsRef.current[miniAppId] ?? [];
+    if (beforeRead?.some((message) => message.kind === 'thinking' || message.streaming)) return beforeRead;
     const thread = (page.messages ?? []).map((message): DisplayMessage => {
       const mediaTypeValue = message.payload?.mediaType;
       const mediaType = mediaTypeValue === 'photo' || mediaTypeValue === 'video' || mediaTypeValue === 'document'
@@ -2603,6 +3079,7 @@ async function saveInvoiceDialog() {
         source: 'legacy',
         media,
         mediaType,
+        miniAppId: message.role !== 'user' && message.payload?.miniAppId === miniAppId ? miniAppId : undefined,
       };
     });
     miniAppBotThreadsRef.current = { ...miniAppBotThreadsRef.current, [miniAppId]: thread };
@@ -2731,6 +3208,17 @@ async function saveInvoiceDialog() {
       }
       if (release.releaseManifest?.protocol !== 'mahayana.external-release.v1') {
         throw new Error('Mini App release is missing a verified external release manifest');
+      }
+      const installContract = release.install
+        ?? (release.releaseManifest.install as Record<string, unknown> | undefined);
+      const installSource = installContract?.source as Record<string, unknown> | undefined;
+      if (installContract?.protocol !== 'fabushi.marketplace.install.v1'
+        || installContract.strategy !== 'github-immutable'
+        || installSource?.marketplaceHostsPackage === true
+        || typeof installSource?.repository !== 'string'
+        || typeof installSource?.sourceRef !== 'string'
+        || !installSource.sourceRef.trim()) {
+        throw new Error('Mini App release is not a GitHub immutable package');
       }
       const pointer = await transport.pluginInstall(release.releaseManifest, 'desktop');
       setInstalledMiniApps((current) => ({ ...current, [app.pluginId]: pointer }));
@@ -3005,7 +3493,7 @@ async function saveInvoiceDialog() {
               <div className={styles.chatIdentity}>
                 <BotMark
                   botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`}
-                  state={isAgentPeer(activePeer) ? botMarkStateForPeer(activePeer, selfBotExecutions, pendingSend, hostReady) : 'idle'}
+                  state={isAgentPeer(activePeer) ? botMarkStateForPeer(activePeer, selfBotExecutions, activePeerBusy, hostReady) : 'idle'}
                   size={40}
                   className={styles.agentAvatarMark}
                   label={activePeer.title}
@@ -3031,6 +3519,30 @@ async function saveInvoiceDialog() {
               </div>
             </header>
             {error ? <div className={styles.errorBanner} role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}><X size={14} /></button></div> : null}
+            {isAgentPeer(activePeer) ? (
+              <BotConversationView
+                title={activePeer.title}
+                description={activePeer.subtitle}
+                botId={'peer:' + activePeer.kind + ':' + (activePeer.actorId ?? activePeer.id)}
+                messages={botTranscriptMessages}
+                activeOperationId={activeAgentOperationId}
+                hasEarlierMessages={matchingMessages.length > renderedMessages.length}
+                messageAreaRef={messageAreaRef}
+                showScrollToLatest={showScrollToLatest}
+                onOpenMiniApp={(id) => void openMiniApp(id)}
+                onLoadEarlier={() => setMessageRenderCount((count) => count + initialMessageRenderCount)}
+                onScroll={handleMessageAreaScroll}
+                onScrollToLatest={scrollToLatest}
+                onCopyMessage={(message) => void copyBotMessage(message)}
+                onRegenerate={regenerateBotMessage}
+                onEdit={editBotMessage}
+                onContextMenu={(event, message) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setMessageMenu({ message: message as DisplayMessage, x: event.clientX, y: event.clientY });
+                }}
+              />
+            ) : (
             <div className={styles.messageArea} data-testid="message-list" data-agent-operation-id={agentOperationId ?? undefined}>
               <div className={styles.dayDivider}>今天</div>
               {matchingMessages.length > renderedMessages.length ? <button type="button" data-testid="message-list-load-earlier" onClick={() => setMessageRenderCount((count) => count + initialMessageRenderCount)}>加载更早消息</button> : null}
@@ -3053,6 +3565,9 @@ async function saveInvoiceDialog() {
                   key={`${message.source}:${message.id}`}
                   className={message.role === 'me' ? styles.messageMine : styles.messagePeer}
                   data-operation-id={message.operationId ?? undefined}
+                  data-agent-id={`message-actions:${message.source}:${message.id}`}
+                  data-agent-invoke="contextmenu"
+                  data-agent-message-role={message.role}
                   onContextMenu={(event) => {
                     if (message.kind === 'action' || message.kind === 'thinking') return;
                     event.preventDefault();
@@ -3063,19 +3578,29 @@ async function saveInvoiceDialog() {
                   {message.pinned ? <Pin size={11} /> : null}
                   {message.mediaType === 'photo' && blobMediaUrl(message.media) ? <img className={extra.messageMedia} src={blobMediaUrl(message.media)} alt={message.media?.fileName ?? '图片'} /> : null}
                   {message.mediaType === 'video' && blobMediaUrl(message.media) ? <video className={extra.messageMedia} controls playsInline autoPlay={desktopPreferences.autoPlayMedia} src={blobMediaUrl(message.media)} /> : null}
+                  {message.role === 'peer' ? <BotMark botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`} state="result" size={28} className={extra.messageAuthorAvatar} label={activePeer.title} /> : null}
                   {message.mediaType === 'document' && blobMediaUrl(message.media) ? <a className={extra.messageFile} href={blobMediaUrl(message.media)} download={message.media?.fileName}><FileText size={17} />{message.media?.fileName ?? '文件'}</a> : null}
                   {generatedPreview ? <div className={extra.generatedMiniAppCard} data-testid="generated-miniapp-card">
                     <AppWindow size={22} />
                     <div><strong>{generatedPreview.title}</strong><span>{generatedPreview.complete ? '小程序已生成，可以直接打开试玩。' : '正在生成可运行的小程序…'}</span></div>
                     {generatedPreview.complete ? <button type="button" data-testid="generated-miniapp-open" onClick={() => void showMiniAppDocument(generatedPreview.id, generatedPreview.title, generatedPreview.html)}>打开小程序</button> : null}
-                  </div> : <p>{message.text}</p>}
+                  </div> : <StructuredMessageBody text={message.text} peers={peers} />}
+                  <div className={extra.messageHoverActions} data-testid="message-hover-actions">
+                    <button type="button" title="回复" aria-label="回复" onClick={() => setReplyTo(message)}><span aria-hidden="true">↩</span></button>
+                    <button type="button" title="复制" aria-label="复制" onClick={() => void navigator.clipboard.writeText(message.text)}><span aria-hidden="true">⧉</span></button>
+                    <button type="button" title="更多" aria-label="更多" onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setMessageMenu({ message, x: rect.right, y: rect.bottom + 4 });
+                    }}><span aria-hidden="true">•••</span></button>
+                  </div>
                   {message.reactions?.length ? <div className={extra.reactions}>{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div> : null}
                   <small>{formatTime(message.createdAtMs)} {message.role === 'me' ? <Check size={12} /> : null}</small>
                 </article>;
               })())}
               {!matchingMessages.length ? <div className={styles.chatEmpty} data-testid="message-search-empty"><BotMark botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`} state={isAgentPeer(activePeer) ? botMarkStateForPeer(activePeer, selfBotExecutions, false, hostReady) : 'idle'} size={78} className={styles.agentAvatarMark} label={activePeer.title} /><strong>{activePeer.title}</strong><p>联系人、AI Bot、群组和频道使用同一个 Fabushi 消息产品层。</p></div> : null}
             </div>
-            {replyTo ? <div className={extra.composerBanner}><Reply size={15} /><div><strong>回复</strong><span>{replyTo.text}</span></div><button type="button" onClick={() => setReplyTo(null)}><X size={14} /></button></div> : null}
+            )}
+            {replyTo ? <div className={extra.composerBanner} data-testid="reply-message-banner"><Reply size={15} /><div><strong>回复</strong><span>{replyTo.text}</span></div><button type="button" data-testid="reply-message-cancel" onClick={() => setReplyTo(null)}><X size={14} /></button></div> : null}
             {scheduledAtMs ? <div className={extra.composerBanner}><span>⏱</span><div><strong>定时发送</strong><span>{new Date(scheduledAtMs).toLocaleString()}</span></div><button type="button" onClick={() => setScheduledAtMs(undefined)}><X size={14} /></button></div> : null}
             {activePeer.miniAppId && composer.trimStart().startsWith('/') && activePeer.miniAppCommands?.length ? <div className={extra.composerBanner} data-testid="miniapp-bot-commands"><AppWindow size={15} /><div><strong>小程序命令</strong><span>{activePeer.miniAppCommands.map((command) => `/${command.name}`).join(' · ')}</span></div>{activePeer.miniAppCommands.slice(0, 4).map((command) => <button key={command.name} type="button" title={command.description} onClick={() => updateComposer(command.usage)}>{`/${command.name}`}</button>)}</div> : null}
             <form className={styles.composer} onSubmit={(event) => void sendMessage(event)}>
@@ -3097,7 +3622,11 @@ async function saveInvoiceDialog() {
               }} placeholder="消息" rows={1} />
               <button type="button" title="表情"><Smile size={20} /></button>
               <button type="button" data-active={silentSend} title={silentSend ? '关闭静默发送' : '静默发送'} onClick={() => setSilentSend((value) => !value)}><BellOff size={19} /></button>
-              {composer.trim() ? <button data-testid="messenger-send" className={styles.sendButton} type="submit" disabled={!hostReady || pendingSend}><Send size={19} /></button> : <button type="button" title="语音消息"><Mic size={20} /></button>}
+              {composer.trim()
+                ? <button data-testid="messenger-send" className={styles.sendButton} type="submit" disabled={!hostReady || (pendingSend && (!isAgentPeer(activePeer) || Boolean(activePeer.miniAppId)))}><Send size={19} /></button>
+                : activeAgentOperationId && isAgentPeer(activePeer) && !activePeer.miniAppId
+                  ? <button data-testid="messenger-stop" className={styles.sendButton} type="button" title="停止生成" aria-label="停止生成" onClick={() => void stopAgentOperation()}><X size={19} /></button>
+                  : <button type="button" title="语音消息"><Mic size={20} /></button>}
             </form>
           </>
         ) : (
@@ -3112,7 +3641,7 @@ async function saveInvoiceDialog() {
         <aside className={styles.infoPanel} data-testid="messenger-info-panel" data-overlay={!wideInfoLayout || undefined}>
           <header><strong>资料</strong><button type="button" onClick={() => wideInfoLayout ? setInfoOpen(false) : setNarrowInfoOpen(false)}><X size={17} /></button></header>
           <div className={styles.profileCard}>
-            <BotMark botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`} state={isAgentPeer(activePeer) ? botMarkStateForPeer(activePeer, selfBotExecutions, pendingSend, hostReady) : 'idle'} size={92} className={styles.agentProfileMark} label={activePeer.title} />
+            <BotMark botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`} state={isAgentPeer(activePeer) ? botMarkStateForPeer(activePeer, selfBotExecutions, activePeerBusy, hostReady) : 'idle'} size={92} className={styles.agentProfileMark} label={activePeer.title} />
             <strong>{activePeer.title}</strong><small>{activePeer.subtitle}</small>
             <div className={styles.profileQuickActions} data-columns={isAgentPeer(activePeer) ? '4' : '3'}><button type="button" onClick={() => void startCall('voice')}><PhoneCall size={18} /><span>通话</span></button><button type="button" onClick={() => void startCall('video')}><Video size={18} /><span>视频</span></button><button type="button" onClick={() => { setConversationSearchOpen(true); setGlobalSearchOpen(true); setGlobalSearchCategory('posts'); setSearch(''); window.setTimeout(() => searchInputRef.current?.focus(), 0); }}><Search size={18} /><span>搜索</span></button>{isAgentPeer(activePeer) ? <button type="button" data-testid="bot-computer-toggle" data-active={computerProfileOpen} onClick={() => {
               setComputerProfileOpen((value) => !value);
@@ -3223,7 +3752,7 @@ function ProfileNavigationMenu({ section, onNavigate }: { section: MessengerSect
   ];
   return <div className={styles.profileNavigationMenu} data-testid="profile-navigation-menu" onClick={(event) => event.stopPropagation()}>
     <header><BotMark botId="fabushi:navigation" state="idle" size={34} label="Fabushi" /><div><strong>Fabushi</strong><small>统一导航</small></div></header>
-    <div>{items.map((item) => <button key={item.section} type="button" title={item.label} data-active={section === item.section} onClick={() => onNavigate(item.section)}>{item.icon}<span>{item.label}</span></button>)}</div>
+    <div>{items.map((item) => <button key={item.section} type="button" title={item.label} data-testid={"profile-navigation-" + item.section} data-active={section === item.section} onClick={() => onNavigate(item.section)}>{item.icon}<span>{item.label}</span></button>)}</div>
   </div>;
 }
 
@@ -3272,8 +3801,9 @@ function GlobalSearchWorkspace(props: GlobalSearchWorkspaceProps) {
       {!props.scopePeer && props.category === 'apps' ? <div className={styles.searchAppResults}>{props.miniAppLoading ? <div className={styles.marketplaceStatus}>正在搜索在线应用市场…</div> : appResults.map((app) => {
         const installed = props.installedMiniApps[app.pluginId];
         const busy = props.miniAppBusy.has(app.pluginId);
-        const update = Boolean(installed && installed.version !== app.latestVersion);
-        return <article key={app.pluginId} className={styles.searchAppCard} data-testid={`global-search-app-${app.pluginId}`}><BotMark botId={`miniapp:${app.pluginId}`} state={installed ? 'idle' : 'sleeping'} size={52} animated={false} label={app.displayName} /><div><strong>{app.displayName}</strong><small>{app.description}</small><em>{installed ? `已安装 ${installed.version}` : `在线 · ${app.latestVersion}`}</em></div><aside>{installed ? <button type="button" disabled={busy} onClick={() => void props.onOpenMiniApp(app.pluginId)}>打开</button> : null}{!installed || update ? <button type="button" disabled={busy} onClick={() => void props.onInstallMiniApp(app)}>{busy ? '处理中' : update ? '更新' : '安装'}</button> : null}{installed ? <button type="button" disabled={busy} onClick={() => void props.onUninstallMiniApp(app.pluginId)}>卸载</button> : null}</aside></article>;
+        const action = miniAppMarketplaceAction(app, installed);
+        const needsInstall = action === 'install' || action === 'update' || action === 'reinstall';
+        return <article key={app.pluginId} className={styles.searchAppCard} data-testid={`global-search-app-${app.pluginId}`}><BotMark botId={`miniapp:${app.pluginId}`} state={installed ? 'idle' : 'sleeping'} size={52} animated={false} label={app.displayName} /><div><strong>{app.displayName}</strong><small>{app.description}</small><em>{installed ? `已安装 ${installed.version}` : `在线 · ${app.latestVersion}`} · {miniAppReleaseLabel(app)}</em></div><aside>{installed ? <button type="button" disabled={busy} onClick={() => void props.onOpenMiniApp(app.pluginId)}>打开</button> : null}{needsInstall ? <button type="button" disabled={busy} onClick={() => void props.onInstallMiniApp(app)}>{busy ? '处理中' : marketplaceInstallActionLabel(action)}</button> : action === 'blocked' ? <button type="button" disabled>阻止降级</button> : null}{installed ? <button type="button" disabled={busy} onClick={() => void props.onUninstallMiniApp(app.pluginId)}>卸载</button> : null}</aside></article>;
       })}</div> : null}
       {['posts', 'images', 'videos', 'downloads', 'links', 'files'].includes(props.category) ? mediaResults.map((message) => <article key={message.id} className={styles.searchMessageResult}><BotMark botId={`search-message:${message.id}`} state="idle" size={38} animated={false} label="消息" /><div><p>{message.text || (message.mediaType === 'photo' ? '图片' : message.mediaType === 'video' ? '视频' : '文件')}</p><small>{new Date(message.createdAtMs).toLocaleString()}</small></div></article>) : null}
       {unsupportedMediaCategory ? <SearchEmptyState label="当前会话尚无可搜索的音频索引" /> : null}
@@ -3304,32 +3834,32 @@ function AttachmentMenu({ onMedia, onFile, onPoll, onLocation, onSchedule }: { o
 }
 
 function MessageContextMenu({ menu, onAction }: { menu: NonNullable<MessageMenu>; onAction: (action: 'copy' | 'reply' | 'forward' | 'checkout' | 'edit' | 'delete' | 'react' | 'pin') => void }) {
-  return <div className={extra.contextMenu} style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
-    <button type="button" onClick={() => onAction('reply')}><Reply size={16} />回复</button>
-    <button type="button" onClick={() => onAction('copy')}><Copy size={16} />复制</button>
-    <button type="button" onClick={() => onAction('react')}><Smile size={16} />👍 反应</button>
-    {menu.message.role === 'me' ? <button type="button" onClick={() => onAction('edit')}><Edit3 size={16} />编辑</button> : null}
-    <button type="button" onClick={() => onAction('pin')}><Pin size={16} />{menu.message.pinned ? '取消置顶' : '置顶'}</button>
-    <button type="button" onClick={() => onAction('forward')}><Forward size={16} />转发</button>
-    {menu.message.invoiceId ? <button type="button" onClick={() => onAction('checkout')}><WalletCards size={16} />支付账单</button> : null}
-    <button type="button" onClick={() => onAction('delete')}><Trash2 size={16} />删除</button>
+  return <div className={extra.contextMenu} data-testid="message-context-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
+    <button type="button" data-testid="message-action-reply" onClick={() => onAction('reply')}><Reply size={16} />回复</button>
+    <button type="button" data-testid="message-action-copy" onClick={() => onAction('copy')}><Copy size={16} />复制</button>
+    <button type="button" data-testid="message-action-react" onClick={() => onAction('react')}><Smile size={16} />👍 反应</button>
+    {menu.message.role === 'me' ? <button type="button" data-testid="message-action-edit" onClick={() => onAction('edit')}><Edit3 size={16} />编辑</button> : null}
+    <button type="button" data-testid="message-action-pin" onClick={() => onAction('pin')}><Pin size={16} />{menu.message.pinned ? '取消置顶' : '置顶'}</button>
+    <button type="button" data-testid="message-action-forward" onClick={() => onAction('forward')}><Forward size={16} />转发</button>
+    {menu.message.invoiceId ? <button type="button" data-testid="message-action-checkout" onClick={() => onAction('checkout')}><WalletCards size={16} />支付账单</button> : null}
+    <button type="button" data-testid="message-action-delete" onClick={() => onAction('delete')}><Trash2 size={16} />删除</button>
   </div>;
 }
 
 function ForwardMessageDialog({ message, peers, onClose, onSelect }: { message: DisplayMessage; peers: PeerItem[]; onClose: () => void; onSelect: (peer: PeerItem) => void }) {
-  return <div className={styles.backdrop} onMouseDown={onClose}><section className={styles.dialog} onMouseDown={(event) => event.stopPropagation()}>
+  return <div className={styles.backdrop} data-testid="forward-message-dialog" onMouseDown={onClose}><section className={styles.dialog} onMouseDown={(event) => event.stopPropagation()}>
     <header><div><strong>转发消息</strong><small>{message.text || '媒体消息'}</small></div><button type="button" onClick={onClose}><X size={17} /></button></header>
     <div className={extra.forwardList}>
-      {peers.length ? peers.map((peer) => <button key={peer.key} type="button" onClick={() => onSelect(peer)}><BotMark botId={`peer:${peer.kind}:${peer.actorId ?? peer.id}`} state="idle" size={40} label={peer.title} /><span><strong>{peer.title}</strong><small>{peer.subtitle}</small></span><Forward size={16} /></button>) : <p>暂无可转发的自建会话，请先创建群组、频道或收藏消息。</p>}
+      {peers.length ? peers.map((peer) => <button key={peer.key} type="button" data-agent-id={`forward-message-peer:${peer.key}`} onClick={() => onSelect(peer)}><BotMark botId={`peer:${peer.kind}:${peer.actorId ?? peer.id}`} state="idle" size={40} label={peer.title} /><span><strong>{peer.title}</strong><small>{peer.subtitle}</small></span><Forward size={16} /></button>) : <p>暂无可转发的自建会话，请先创建群组、频道或收藏消息。</p>}
     </div>
   </section></div>;
 }
 
 function EditMessageDialog({ value, onChange, onClose, onSave }: { value: string; onChange: (value: string) => void; onClose: () => void; onSave: () => void }) {
-  return <div className={styles.backdrop} onMouseDown={onClose}><section className={styles.dialog} onMouseDown={(event) => event.stopPropagation()}>
+  return <div className={styles.backdrop} data-testid="edit-message-dialog" onMouseDown={onClose}><section className={styles.dialog} onMouseDown={(event) => event.stopPropagation()}>
     <header><div><strong>编辑消息</strong><small>修改后会同步到 Fabushi 自建会话</small></div><button type="button" onClick={onClose}><X size={17} /></button></header>
     <label><span>消息内容</span><textarea autoFocus data-testid="edit-message-input" value={value} onChange={(event) => onChange(event.target.value)} rows={4} placeholder="编辑消息内容" /></label>
-    <footer><button type="button" onClick={onClose}>取消</button><button type="button" className={styles.primaryButton} disabled={!value.trim()} onClick={onSave}>保存</button></footer>
+    <footer><button type="button" data-testid="edit-message-cancel" onClick={onClose}>取消</button><button type="button" data-testid="edit-message-save" className={styles.primaryButton} disabled={!value.trim()} onClick={onSave}>保存</button></footer>
   </section></div>;
 }
 
@@ -3577,7 +4107,7 @@ function MiniAppDialog({ app, onClose }: { app: { id: string; title: string; url
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [app.id]);
-  return <div className={styles.backdrop} onMouseDown={onClose}><section className={styles.miniAppDialog} onMouseDown={(event) => event.stopPropagation()}><header><div><strong>{app.title}</strong><small>Mini App · 已安装线上包 · 账号云同步</small></div><button type="button" onClick={onClose}><X size={17} /></button></header><iframe ref={frameRef} title={app.id} sandbox="allow-scripts allow-forms" src={app.url} /></section></div>;
+  return <div className={styles.backdrop} onMouseDown={onClose}><section className={styles.miniAppDialog} onMouseDown={(event) => event.stopPropagation()}><header><div><strong>{app.title}</strong><small>Mini App · 已安装线上包 · 账号云同步</small></div><button type="button" data-testid="miniapp-close" aria-label="关闭小程序" onClick={onClose}><X size={17} /></button></header><iframe ref={frameRef} title={app.id} sandbox="allow-scripts allow-forms" src={app.url} /></section></div>;
 }
 
 type PaymentUiState = {
@@ -3634,13 +4164,14 @@ function MiniAppMarketplaceList(props: MiniAppMarketplaceProps) {
     {props.miniApps.map((app) => {
       const installed = props.installedMiniApps[app.pluginId];
       const busy = props.miniAppBusy.has(app.pluginId);
-      const update = Boolean(installed && installed.version !== app.latestVersion);
+      const action = miniAppMarketplaceAction(app, installed);
+      const needsInstall = action === 'install' || action === 'update' || action === 'reinstall';
       return <div className={styles.marketplaceRow} key={app.pluginId} data-testid={`miniapp-market-${app.pluginId}`}>
         <span className={styles.appIcon}><BotMark botId={`miniapp:${app.pluginId}`} state={installed ? "idle" : "sleeping"} size={34} label={app.displayName} /></span>
-        <div className={styles.marketplaceCopy}><strong>{app.displayName}</strong><small>{app.description}</small><em>{installed ? `已安装 ${installed.version}` : `在线 · ${app.latestVersion}`}</em></div>
+        <div className={styles.marketplaceCopy}><strong>{app.displayName}</strong><small>{app.description}</small><em>{installed ? `已安装 ${installed.version}` : `在线 · ${app.latestVersion}`} · {miniAppReleaseLabel(app)}</em></div>
         <div className={styles.marketplaceActions}>
           {installed ? <button type="button" disabled={busy} onClick={() => void props.onOpenMiniApp(app.pluginId)}>打开</button> : null}
-          {!installed || update ? <button type="button" disabled={busy} onClick={() => void props.onInstallMiniApp(app)}>{busy ? '处理中' : update ? '更新' : '安装'}</button> : null}
+          {needsInstall ? <button type="button" disabled={busy} onClick={() => void props.onInstallMiniApp(app)}>{busy ? '处理中' : marketplaceInstallActionLabel(action)}</button> : action === 'blocked' ? <button type="button" disabled>阻止降级</button> : null}
           {installed ? <button type="button" disabled={busy} title="卸载" onClick={() => void props.onUninstallMiniApp(app.pluginId)}><Trash2 size={13} /></button> : null}
         </div>
       </div>;
@@ -3658,15 +4189,16 @@ function MiniAppMarketplaceWorkspace(props: MiniAppMarketplaceProps) {
     <div className={styles.featureGrid}>{props.miniApps.map((app) => {
       const installed = props.installedMiniApps[app.pluginId];
       const busy = props.miniAppBusy.has(app.pluginId);
-      const update = Boolean(installed && installed.version !== app.latestVersion);
+      const action = miniAppMarketplaceAction(app, installed);
+      const needsInstall = action === 'install' || action === 'update' || action === 'reinstall';
       return <article className={styles.marketplaceCard} key={app.pluginId}>
         <BotMark botId={`miniapp:${app.pluginId}`} state={installed ? "idle" : "sleeping"} size={48} label={app.displayName} />
         <strong>{app.displayName}</strong>
         <small>{app.description}</small>
-        <em>{installed ? `已安装 ${installed.version}` : `线上版本 ${app.latestVersion}`}</em>
+        <em>{installed ? `已安装 ${installed.version}` : `线上版本 ${app.latestVersion}`} · {miniAppReleaseLabel(app)}</em>
         <div>
           {installed ? <button type="button" disabled={busy} onClick={() => void props.onOpenMiniApp(app.pluginId)}>打开</button> : null}
-          {!installed || update ? <button type="button" disabled={busy} onClick={() => void props.onInstallMiniApp(app)}>{busy ? '处理中…' : update ? '更新' : '安装'}</button> : null}
+          {needsInstall ? <button type="button" disabled={busy} onClick={() => void props.onInstallMiniApp(app)}>{busy ? '处理中…' : marketplaceInstallActionLabel(action)}</button> : action === 'blocked' ? <button type="button" disabled>阻止降级</button> : null}
           {installed ? <button type="button" disabled={busy} onClick={() => void props.onUninstallMiniApp(app.pluginId)}>卸载</button> : null}
         </div>
       </article>;
@@ -3792,6 +4324,7 @@ function SettingsWorkspace({ category, preferences, onPreference, actor, actorId
     {settingsActionError ? <div className={styles.settingsInlineError} role="alert"><span>{settingsActionError}</span><button type="button" aria-label="关闭设置错误" onClick={() => setSettingsActionError(null)}><X size={13} /></button></div> : null}
     {category === 'account' ? <section className={styles.settingsGroup}>
       <div className={styles.settingsProfile}><BotMark botId={`self:${actorId}`} state="idle" size={72} label={profileName} /><div><strong>{profileName}</strong><small>{actor?.username ? `@${actor.username}` : actorId}</small><p>{actor?.bio || 'Fabushi 统一 Actor 资料由 Rust 消息核心管理。'}</p></div></div>
+      <div className={styles.settingsActionRow}><div><strong>退出登录</strong><small>撤销当前 Fabushi 会话并清除本机账户快速启动缓存；设备通用偏好设置保留。</small></div><button data-agent-id="settings-logout" data-testid="settings-logout" data-danger="true" type="button" disabled={logoutBusy} onClick={() => { if (logoutBusy) return; setLogoutBusy(true); void onLogout().catch((cause: unknown) => setSettingsActionError(cause instanceof Error ? cause.message : String(cause))).finally(() => setLogoutBusy(false)); }}>{logoutBusy ? '退出中…' : '退出登录'}</button></div>
       <label className={styles.settingsSelectRow}><div><strong>Theme</strong><small>跟随系统，或固定浅色/深色界面。</small></div><select data-testid="settings-theme" value={themePreference} onChange={(event) => { const preference = event.target.value as 'system' | 'light' | 'dark'; setThemePreference(preference); runNativeSetting(invokeNativeDesktop('setThemePreference', { preference })); }}><option value="system">Follow System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
       <label className={styles.settingsSelectRow}><div><strong>Execution on Local Computer</strong><small>权限不能超过管理员上限：{localToolCeiling}。</small></div><select data-testid="settings-local-tool-permission" value={localToolPermission} onChange={(event) => { const permission = event.target.value as 'always' | 'ask' | 'never'; runNativeSetting(invokeNativeDesktop<'always' | 'ask' | 'never'>('setLocalToolPermission', { permission }), setLocalToolPermission); }}><option value="always" disabled={localToolCeiling !== 'always'}>Always allow</option><option value="ask" disabled={localToolCeiling === 'never'}>Ask every time</option><option value="never">Never allow</option></select></label>
       <form className={styles.settingsSecretRow} onSubmit={(event) => { event.preventDefault(); runNativeSetting(invokeNativeDesktop('setTimeZoneOverride', { timeZone: timeZone.trim() || null })); }}><div><strong>Timezone</strong><small>用于计划任务、消息时间和本地自动化。</small></div><input data-testid="settings-time-zone" value={timeZone} onChange={(event) => setTimeZone(event.target.value)} placeholder="Asia/Shanghai" /><button type="submit">保存</button></form>
@@ -3802,7 +4335,6 @@ function SettingsWorkspace({ category, preferences, onPreference, actor, actorId
       <SettingsToggleRow testId="settings-toggle-info-panel" title="显示资料侧栏" description="宽屏聊天时显示右侧资料栏。" checked={preferences.showInfoPanel} onChange={(value) => onPreference('showInfoPanel', value)} />
       <SettingsToggleRow testId="settings-toggle-enter-send" title="Enter 发送消息" description="关闭后使用 Command/Ctrl + Enter 发送。" checked={preferences.enterToSend} onChange={(value) => onPreference('enterToSend', value)} />
       <SettingsToggleRow testId="settings-toggle-reduced-motion" title="减少动态效果" description="关闭大部分界面过渡动画。" checked={preferences.reducedMotion} onChange={(value) => onPreference('reducedMotion', value)} />
-      <div className={styles.settingsActionRow}><div><strong>退出登录</strong><small>撤销当前 Fabushi 会话并清除本机账户快速启动缓存；设备通用偏好设置保留。</small></div><button data-testid="settings-logout" data-danger="true" type="button" disabled={logoutBusy} onClick={() => { if (logoutBusy) return; setLogoutBusy(true); void onLogout().catch((cause: unknown) => setSettingsActionError(cause instanceof Error ? cause.message : String(cause))).finally(() => setLogoutBusy(false)); }}>{logoutBusy ? '退出中…' : '退出登录'}</button></div>
     </section> : null}
     {category === 'router' ? <>
       <section className={styles.settingsGroup} data-testid="router-provider-settings">
