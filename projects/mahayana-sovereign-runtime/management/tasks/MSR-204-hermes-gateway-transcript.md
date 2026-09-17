@@ -27,6 +27,17 @@ Introduce the first production-compatible slice of a Mahayana-owned Hermes-style
 5. Routine successful runs no longer surface the oversized Workbench completion card in normal chat; exceptional approval/failure/interruption Inspector behavior remains during migration.
 6. Final parity still requires Rust-owned session/replay authority, the same dispatcher semantics over stdio/WebSocket/native clients, server→client request correlation, remaining Hermes capabilities, cross-surface proof and self-contained packaged releases.
 
+
+## 2026-09-17 governed resynchronization
+
+- Canonical main re-read before this sync: `55a7e167b728ebc6aa43e1523cc2de520f622e9b`, after #2297/#2299/#2316 landed.
+- Previous remote PR head: `5183d12b25fd0a90b0cdd2de86fd0df0ee2520de`.
+- The current sync keeps `main`'s finished-operation/interruption recovery and ordinary-message/generated-Mini-App behavior while retaining the canonical `AssistantTurn` projection for Mahayana replies.
+- The retired automatic `mahayana-fast-checks.yml` workflow remains deleted in accordance with current repository governance; no deleted automatic E2E gate is revived.
+- No local build or product test was run. Fresh GitHub Actions checks must bind to the pushed head.
+- This synchronization does **not** close the pre-existing MSR-204 blockers: canonical restart durability, shared Host dispatcher/peer registry, non-approval server-request families, and the in-scope latest-Hermes OpenRPC method matrix remain implementation work until separately evidenced.
+- The exact resulting head is read back from GitHub metadata after push rather than self-embedded into the same commit.
+
 ## Acceptance criteria
 
 - [x] Rust code defines a Mahayana-owned gateway event/frame contract with exact serialized event names including `message.delta`, `reasoning.delta`, `tool.start`, `tool.complete`, `approval.request`, `clarify.request`, subagent lifecycle and `message.complete`.

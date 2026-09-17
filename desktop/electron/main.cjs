@@ -14,6 +14,7 @@ const { createNativeCapabilityHandlers } = require('./native-capability-handlers
 const { MessagingSignalingClient } = require('./messaging-signaling-client.cjs');
 const { createAppAgentSurfaceServer } = require('./app-agent-surface-server.cjs');
 const { RemoteDeviceAgentSupervisor } = require('./remote-device-agent-supervisor.cjs');
+const { RustDeskSidecarProcess } = require('./rustdesk-sidecar-process.cjs');
 const { normalizeDesktopUpdateStatus } = require('./update-state.cjs');
 
 const appDataOverride = process.env.FABUSHI_APP_DATA?.trim();
@@ -37,6 +38,7 @@ protocol.registerSchemesAsPrivileged([
 const miniAppDocuments = new Map();
 const MINIAPP_DOCUMENT_TTL_MS = 10 * 60 * 1000;
 const MINIAPP_DOCUMENT_MAX_BYTES = 5 * 1024 * 1024;
+const HOST_EVENT_LONG_POLL_MS = 500;
 
 function pruneMiniAppDocuments(now = Date.now()) {
   for (const [token, entry] of miniAppDocuments) {
@@ -117,6 +119,7 @@ function providerEnvironment(inferenceProvider) {
 }
 
 const host = new MahayanaHostProcess({ providerEnvironment });
+const rustDeskSidecar = new RustDeskSidecarProcess({ app });
 let mahayanaEdgeServer = null;
 let nativeEdgeServer = null;
 let appAgentSurfaceServer = null;
@@ -137,6 +140,8 @@ let automaticDesktopUpdateCheckPromise = null;
 let mainWindow = null;
 let backgroundTray = null;
 let quitting = false;
+rustDeskSidecar.on('event', (payload) => broadcastNativeEvent('rustdesk-sidecar-event', payload));
+rustDeskSidecar.on('exit', (payload) => broadcastNativeEvent('rustdesk-sidecar-exit', payload));
 let desktopUpdateInstallationInProgress = false;
 const backgroundPersistenceEnabled = process.env.FABUSHI_E2E !== '1';
 
@@ -283,6 +288,7 @@ function focusMainWindow() {
 
 function requestApplicationQuit() {
   quitting = true;
+  rustDeskSidecar.close();
   app.quit();
 }
 
@@ -683,6 +689,21 @@ function installNativeEdge() {
         packaged: app.isPackaged,
       };
     },
+    getRustDeskStatus() {
+      return { available: Boolean(rustDeskSidecar.executablePath()), ready: rustDeskSidecar.ready, sessions: rustDeskSidecar.sessions.size };
+    },
+    openRustDeskSession(params) {
+      return rustDeskSidecar.open(params);
+    },
+    sendRustDeskCommand(params) {
+      const sessionId = String(params?.sessionId || '');
+      const command = params?.command;
+      if (!command || typeof command !== 'object' || Array.isArray(command)) throw new Error('RustDesk command is invalid.');
+      return rustDeskSidecar.command(sessionId, command);
+    },
+    closeRustDeskSession(params) {
+      return rustDeskSidecar.closeSession(String(params?.sessionId || ''));
+    },
     getWindowState(_params, event) {
       return describeWindow(windowForEvent(event));
     },
@@ -913,12 +934,14 @@ function startHostEventPump() {
   hostEventPump = (async () => {
     while (!hostEventPumpStopped) {
       try {
-        const event = await host.request('feature.receive', { timeoutMs: 500 });
+        const event = await host.request('feature.receive', { timeoutMs: HOST_EVENT_LONG_POLL_MS });
         if (event) broadcastMahayanaEvent(event);
-        // Yield after every receive, including a non-empty event. The Rust Host
-        // processes requests serially; immediately enqueueing the next long-poll
-        // from this Promise continuation can starve renderer IPC such as auth.
-        await sleep(10);
+        // The Rust channel wakes immediately when an event arrives. Keep this
+        // timeout bounded because the app-host request channel is serial: a very
+        // long receive would save wakeups by making auth/settings IPC stall.
+        // Yield one main-loop turn before the next receive so renderer IPC can
+        // enter the serial Host request queue.
+        await new Promise((resolve) => setImmediate(resolve));
       } catch (error) {
         if (hostEventPumpStopped) break;
         console.error('[mahayana-edge] runtime event pump failed', error);

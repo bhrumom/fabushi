@@ -1,4 +1,5 @@
 import {
+  AppWindow,
   Bot,
   CheckCircle2,
   ChevronDown,
@@ -232,6 +233,12 @@ function peerMessageArticles(messageArea: HTMLElement): HTMLElement[] {
 
 function matchingAssistantArticle(messageArea: HTMLElement, run: AgentRunProjection | undefined): HTMLElement | null {
   if (!run) return null;
+  if (run.operationId) {
+    const byOperation = peerMessageArticles(messageArea)
+      .reverse()
+      .find((article) => article.dataset.operationId === run.operationId);
+    if (byOperation) return byOperation;
+  }
   const targetText = latestAssistantText(run);
   if (!targetText) return null;
   const normalizedTarget = targetText.replace(/\s+/gu, ' ').trim();
@@ -354,6 +361,29 @@ function InlineActivity({
           )}
         </div>
         <time>{new Date(approval.requestedAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+      </div>
+    );
+  }
+
+  if (item.card.card.kind === 'miniApp') {
+    const card = item.card.card;
+    return (
+      <div className={styles.activity} data-testid="agent-inline-miniapp-artifact" data-status="completed" data-kind="miniApp">
+        <span className={styles.rail}><AppWindow size={15} /></span>
+        <div className={styles.activityCopy}>
+          <strong>{card.name}</strong>
+          <small>{card.description || '可直接运行的 Fabushi 小程序产物'}</small>
+          <span className={styles.actions}>
+            <button
+              type="button"
+              data-testid="agent-inline-miniapp-open"
+              onClick={() => window.dispatchEvent(new CustomEvent('fabushi:open-generated-miniapp', { detail: card }))}
+            >
+              <AppWindow size={13} />打开小程序
+            </button>
+          </span>
+        </div>
+        <time>{new Date(item.card.createdAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
       </div>
     );
   }
