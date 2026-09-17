@@ -5,73 +5,95 @@ import test from "node:test";
 const root = new URL("../../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
-test("iOS interactive workflow installs a logged-in app that owns device registration", async () => {
+test("iOS Global Dharma workflow preserves exact-package autonomous journey and evidence gates", async () => {
   const workflow = await read(".github/workflows/ios-interactive-app-e2e.yml");
   for (const required of [
     "branches: [main]",
     "mobile/ios/Fabushi/**",
     "mobile/ios/FabushiTests/**",
+    "mobile/ios/FabushiUITests/**",
     "mobile/ios/project.yml",
-    "Initialize runner-owned paths after runner allocation",
+    "Initialize evidence paths",
     "FABUSHI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/fabushi-account/session.json",
     "FABUSHI_CI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/fabushi-ci-app/session.json",
     "DERIVED_DATA=$RUNNER_TEMP/fabushi-ios-derived",
     "EVIDENCE_DIR=$GITHUB_WORKSPACE/ios-interactive-evidence",
     '>> "$GITHUB_ENV"',
-    "Select, erase, and boot compatible iOS Simulator",
+    "Boot isolated Simulator and start full-session video",
     "xcrun simctl list runtimes available -j",
     "xcrun simctl list devices available -j",
     "xcrun simctl erase",
     "xcrun simctl bootstatus",
-    "simulator-runtimes.json",
-    "simulator-devices.json",
-    "Install exact Simulator test build before protected account login",
-    "Login protected Fabushi test account and export bounded app session",
-    "Launch authenticated exact test build and let the app own device registration",
-    "secrets.FABUSHI_CI_TEST_USERNAME",
-    "secrets.FABUSHI_CI_TEST_PASSWORD",
-    "login-ci-test-account.mjs",
-    "export-ci-app-account-session.mjs",
+    "recordVideo",
+    "Build cached Mahayana Host for iOS Simulator",
+    "Build app and tests once",
+    "FabushiContracts.xcresult",
+    "Stage exact Simulator package and portable UI-test harness",
+    "Upload exact reusable Simulator test version before interaction",
+    "Install exact package before protected account login",
+    "Login protected Fabushi test account after install",
+    "Inject bounded session and require App-owned registration",
     "SIMCTL_CHILD_FABUSHI_CI_ACCOUNT_SESSION_FILE",
     "xcrun simctl install",
     "xcrun simctl launch",
-    "recordVideo",
-    "FabushiContracts.xcresult",
-    "Upload comparable Simulator test version before interaction",
+    "Run autonomous Global Dharma simulated-user journey",
+    "GlobalDharmaJourney.xcresult",
+    "GlobalDharmaJourneyUITests/testGlobalDharmaMarketplaceBotWebMcpCommerceJourney",
+    "Verify canonical restore ledger and server entitlement",
+    "/v1/purchases/restore",
+    "/v1/plugins/global-dharma/entitlements/local.prayer-wheel.start",
+    "local-prayer-wheel.lifetime",
+    "108000",
+    "canonical-commerce-status.txt",
+    "Observe optional external fabushi test evidence without blocking",
+    "Collect complete evidence",
     "Upload complete evidence even on failure",
     "if: always()",
-    "fabushi.app.status",
-    "fabushi.app.snapshot",
-    "fabushi.app.find",
-    "fabushi.app.action",
-    "fabushi.app.wait",
-    "fabushi.app.assert",
-  ]) assert.ok(workflow.includes(required), `missing iOS interactive invariant: ${required}`);
+    "ios-session.mp4",
+    "global-dharma-ui-state.json",
+    "sharedRuntimeSynced",
+    "entitlementAllowed",
+    "restoreTapped",
+  ]) assert.ok(workflow.includes(required), `missing iOS Global Dharma invariant: ${required}`);
 
   const bootIndex = workflow.indexOf('xcrun simctl boot "$udid"');
   const videoIndex = workflow.indexOf("recordVideo");
-  const rustBuildIndex = workflow.indexOf("Build Mahayana Host for iOS Simulator");
-  const installIndex = workflow.indexOf("Install exact Simulator test build before protected account login");
-  const loginIndex = workflow.indexOf("Login protected Fabushi test account and export bounded app session");
-  const launchIndex = workflow.indexOf("Launch authenticated exact test build and let the app own device registration");
-  const controlIndex = workflow.indexOf("Hold live app for @fabushi test semantic control");
-  const collectIndex = workflow.indexOf("Collect app, Simulator, trace, video, and report evidence", controlIndex);
+  const rustBuildIndex = workflow.indexOf("Build cached Mahayana Host for iOS Simulator");
+  const packageIndex = workflow.indexOf("Upload exact reusable Simulator test version before interaction");
+  const installIndex = workflow.indexOf("Install exact package before protected account login");
+  const loginIndex = workflow.indexOf("Login protected Fabushi test account after install");
+  const launchIndex = workflow.indexOf("Inject bounded session and require App-owned registration");
+  const journeyIndex = workflow.indexOf("Run autonomous Global Dharma simulated-user journey");
+  const restoreIndex = workflow.indexOf("Verify canonical restore ledger and server entitlement");
+  const optionalExternalIndex = workflow.indexOf("Observe optional external fabushi test evidence without blocking");
+  const collectIndex = workflow.indexOf("Collect complete evidence");
+
   assert.ok(bootIndex >= 0 && videoIndex > bootIndex && rustBuildIndex > videoIndex,
     "full-session video must start immediately after Simulator boot and before build/test/login/install");
-  assert.ok(videoIndex < installIndex && installIndex < loginIndex && loginIndex < launchIndex && launchIndex < controlIndex,
-    "journey order must be recording -> exact app install -> protected account login -> app-owned registration -> external control");
+  assert.ok(packageIndex > rustBuildIndex && installIndex > packageIndex && loginIndex > installIndex && launchIndex > loginIndex,
+    "exact package must be uploaded before install, then login must occur before app-owned registration");
+  assert.ok(journeyIndex > launchIndex && restoreIndex > journeyIndex,
+    "autonomous Global Dharma journey must run only after app-owned registration, then canonical restore must independently verify the ledger");
+  assert.ok(optionalExternalIndex > restoreIndex && collectIndex > optionalExternalIndex,
+    "optional external evidence must not gate the autonomous journey or canonical restore checks");
   assert.equal(workflow.match(/xcrun\s+simctl\s+install/g)?.length, 1,
     "the exact Simulator app should be installed once before protected account login");
 
-  const controlBlock = workflow.slice(controlIndex, collectIndex);
-  assert.ok(controlBlock.includes("deadline=$((SECONDS + 600))"),
-    "external semantic control must retain a ten-minute bounded live-device window for the full iOS matrix");
-  assert.doesNotMatch(controlBlock, /if \[ "\$missing" -eq 0 \]; then[\s\S]*?exit 0[\s\S]*?fi/u,
-    "the live iOS device must not be torn down immediately after the six tool names first pass");
-  assert.match(controlBlock, /if \[ "\$missing" -eq 0 \] && \[ "\$\(cat "\$EVIDENCE_DIR\/control-status\.txt" 2>\/dev\/null \|\| true\)" != passed \]; then/u,
-    "the six-tool prerequisite should be recorded once while the full-matrix hold remains live");
-  assert.match(controlBlock, /if \[ "\$\(cat "\$EVIDENCE_DIR\/control-status\.txt" 2>\/dev\/null \|\| true\)" = passed \]; then\s+exit 0/u,
-    "the bounded hold may pass only after the six-tool prerequisite has been observed");
+  const restoreBlock = workflow.slice(restoreIndex, optionalExternalIndex);
+  assert.match(restoreBlock, /curl[\s\S]*\/v1\/purchases\/restore/u,
+    "the CI ledger restore gate must issue a real authenticated restore request");
+  assert.match(restoreBlock, /entitlement-after-restore\.json/u,
+    "restore must be followed by a fresh server-authoritative entitlement fetch");
+  assert.match(restoreBlock, /\.access\.allowed == true/u,
+    "restore passes only when the server entitlement is allowed");
+  assert.match(restoreBlock, /\.restored == true[\s\S]*\.status == "fulfilled"/u,
+    "restore evidence must bind to a fulfilled canonical purchase ledger entry");
+
+  const optionalBlock = workflow.slice(optionalExternalIndex, collectIndex);
+  assert.match(optionalBlock, /optional|Optional|supplement/u,
+    "external fabushi test evidence must be explicitly optional/supplemental");
+  assert.doesNotMatch(optionalBlock, /exit 1/u,
+    "missing external device evidence must never fail the dedicated autonomous journey");
 
   assert.doesNotMatch(workflow, /xcrun\s+simctl\s+create/u);
   assert.doesNotMatch(workflow, /\$\{\{\s*runner\.temp\s*\}\}/u);
