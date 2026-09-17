@@ -19,6 +19,7 @@ Make the standalone Mahayana CLI an install-and-sign-in Fabushi device surface: 
 No local builds/tests. Use source inspection locally, GitHub Actions for compile/test/package verification, then official Fabushi MCP against the exact installed artifact/device.
 
 ## Current round
-- Official MCP account authentication is healthy but `list_devices` currently returns zero devices.
-- `bhrum2` is available through the legacy/unified control plane and will be used only as the installation/repair host until the new CLI-owned device appears in the official MCP.
-- Implementation and exact-device acceptance are in progress.
+- Implementation PR #2683 is merged to canonical main `c70eba65f38cd61c3cf6c5412868f7a1b92df4dd`.
+- Production official MCP is deployed from that canonical lineage and exact-main run `35173406319` passed same-account discovery/control plus ephemeral removal after `ci_session_finish`.
+- Public macOS/Linux and Windows bootstrap scripts are live and byte-identical to canonical main.
+- Remaining closure items are the no-test multi-platform standalone package/latest channel, one-line installer consumption of that release, and a green rerun of the corrected official-site verifier.
