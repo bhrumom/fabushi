@@ -180,3 +180,7 @@ GBF-805 remains `IN_PROGRESS`; do not recalibrate formal E2E around this broken 
 Source: `source/2026-09-03-mac-test-fix-until-clean.md`.
 
 This continuation is not accepted by source changes alone. Required real-device closure is: signed Mac test Host/auth boundary -> successful logout -> protected test-account login -> successful Mahayana send -> functional Mini App marketplace -> `fabushi test` connector device discovery/control -> restart/session recovery -> stable canonical Mahayana Bot identity -> materially reduced idle/near-idle CPU. Heavy build/package validation remains GitHub Actions only and only the macOS test lane may be dispatched.
+
+### 2026-09-17 release-discovered Mini App contract gap
+
+Desktop no-test release run `35218893260` showed that Mini App renderer branches introduced earlier expected `TranscriptCard.kind = miniApp` plus `miniAppId/name/description/html`, while the canonical union no longer included that variant. The current repair restores that exact structured variant so existing renderer paths type-check. This is release-blocker evidence only and does **not** change GBF-805 overall status from `in-progress`; remaining observable-parity acceptance still requires its own evidence.
