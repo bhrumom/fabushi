@@ -63,3 +63,10 @@ No local build/test is permitted.
 - Test publication remains zero-behavior-test: `electron-desktop.yml` for macOS/Windows/Linux immutable prerelease and `mobile-test-delivery.yml` for iOS TestFlight plus Android internal, both bound to the same accepted canonical SHA.
 - Formal publication remains fail-closed until interactive Action runners install the exact candidate, the installed App self-registers fresh run-scoped App-owned devices, and the Fabushi official MCP controls those devices with run/device/SHA/video/screenshot/log evidence.
 - MSR-204 remains separately `in-progress` for its explicitly recorded non-durability Hermes acceptance debt. This release round must not rewrite that product record as passed without corresponding implementation/evidence.
+
+### 2026-09-17 PR #2698 exact-head repair
+
+- First release head `b1a1b6aa1d000fdfdef20d5cb142df069894a41c` passed required `CI result` but exposed `RustDesk sidecar Linux / materialize-runtime` as an automatic PR test triggered only by the Desktop version change.
+- That workflow violated the FCM-024 automatic-workflow whitelist and failed, so it was not ignored as an optional red status.
+- The workflow is now changed to manual `workflow_dispatch` only on this branch. No local test/build substitutes for the fresh exact-head GitHub checks that must rerun after this governance repair.
+- PR #2698 remains the single release/version PR and must re-enter the protected SQUASH merge queue only after the repaired exact head satisfies repository gates.
