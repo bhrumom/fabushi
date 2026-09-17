@@ -1,5 +1,5 @@
 import { appEntityId, appMachineUrl } from "../../lib/ai-discovery";
-import { MARKETPLACE_CATEGORY_LABELS, marketplaceApps } from "../../lib/marketplace";
+import { MARKETPLACE_CATEGORY_LABELS, getMarketplaceRelease, marketplaceApps } from "../../lib/marketplace";
 import { siteUrl } from "../../lib/site-url";
 
 export const dynamic = "force-static";
@@ -30,6 +30,20 @@ export function GET() {
       pricing: app.pricing,
       version: app.version,
       updatedAt: app.updatedAt,
+      release: getMarketplaceRelease(app.id) ?? null,
+      installation: getMarketplaceRelease(app.id)
+        ? {
+          protocol: "fabushi.marketplace.install.v1",
+          strategy: "github-immutable",
+          webExecution: "host-required",
+          update: {
+            check: "marketplace-release",
+            comparison: "version-then-artifact-sha256",
+            allowDowngrade: false,
+            rollback: "previous-active",
+          },
+        }
+        : null,
       detailsUrl: siteUrl(`/apps/${app.slug}`),
       launchUrl: siteUrl(`/miniapps/${app.id}`),
       content: app.content.map((item) => ({

@@ -5,15 +5,19 @@ import { installDesktopAppAgentSurface } from './app-agent-surface';
 import { installBotIdentityAliases } from './agent-identity-aliases';
 import CredentialVault from './credential-vault';
 import { installDurableAgentState, restoreDurableAgentState } from './durable-agent-state';
+import { GrokChatParityRuntime, prepareGrokChatParityRuntime } from './grok-chat-parity-runtime';
 import DesktopShellV2 from './messaging-shell-v2';
 import { installMahayanaAgentInlineCompatibility } from './mahayana-agent-inline-compat';
 import MahayanaAgentInlineReport from './mahayana-agent-inline-report';
 import MahayanaAgentWorkbench from './mahayana-agent-workbench';
 import { installMahayanaAgentTranscriptSemantics } from './mahayana-agent-transcript-semantics';
+import { installMiniAppComposerOpenBridge } from './miniapp-composer-open-bridge';
+import { installDesktopMiniAppDiscoveryAliases } from './miniapp-discovery-aliases';
 import { installDesktopMiniAppWebMcpHost } from './miniapp-webmcp-host';
 import { installSelfHostedMahayanaInvocationBridge } from './selfhosted-mahayana-invocation-bridge';
 import './messenger-layout-regressions.css';
 import './grok-agent-ui-parity.css';
+import './openbot-ui-parity.css';
 import './mahayana-agent-transcript-semantics.css';
 import './credential-vault.css';
 import './sidebar-contact-groups.css';
@@ -29,7 +33,9 @@ async function bootstrapDesktop(rootElement: HTMLDivElement): Promise<void> {
   // read their first-frame local cache. This makes localStorage a projection;
   // canonical cloud/Rust authority is verified separately by GBF-601/602.
   await restoreDurableAgentState();
+  prepareGrokChatParityRuntime();
   installBotIdentityAliases();
+  installDesktopMiniAppDiscoveryAliases();
   installDurableAgentState();
   installDesktopMiniAppWebMcpHost();
   installDesktopAppAgentSurface();
@@ -37,12 +43,14 @@ async function bootstrapDesktop(rootElement: HTMLDivElement): Promise<void> {
   createRoot(rootElement).render(
     <StrictMode>
       <DesktopShellV2 />
+      <GrokChatParityRuntime />
       <MahayanaAgentWorkbench />
       <MahayanaAgentInlineReport />
       <CredentialVault />
     </StrictMode>,
   );
 
+  installMiniAppComposerOpenBridge(rootElement);
   installMahayanaAgentInlineCompatibility();
   installMahayanaAgentTranscriptSemantics();
   installSelfHostedMahayanaInvocationBridge();

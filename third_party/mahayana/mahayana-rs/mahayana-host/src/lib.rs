@@ -27,6 +27,8 @@ use mahayana_mcp_runtime::NativeMcpRegistry;
 use mahayana_miniapp::EntitlementChecker;
 use mahayana_miniapp::MiniAppConversationProvider;
 use mahayana_miniapp::MiniAppDefinition;
+use mahayana_model::ModelCredentialResolver;
+use mahayana_model::ModelError;
 use mahayana_model::ResponsesModelConfig;
 use mahayana_model::ResponsesModelRuntime;
 use mahayana_native_agent::NativeAgentBackend;
@@ -36,6 +38,7 @@ use mahayana_native_engine::NativeEngineConfig;
 use mahayana_native_engine::ProcessExecution;
 use mahayana_platform_core::HostPlatform;
 use mahayana_product::MahayanaProductClient;
+use mahayana_product::ProductError;
 use mahayana_product::default_mahayana_home;
 use mahayana_product::default_product_surface_state_path;
 use mahayana_runtime_core::MahayanaRuntime;
@@ -157,6 +160,46 @@ impl MahayanaHost {
         })
     }
 
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn create_with_engine_backend_for_test(
+        config: HostCreateConfig,
+        backend: Arc<dyn EngineBackend>,
+    ) -> Result<Self, HostError> {
+        let api_base_url = env::var("MAHAYANA_API_BASE_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "https://api.ombhrum.com".to_string());
+        let product_client = match (
+            config.product_session_path.clone(),
+            config.product_surface_state_path.clone(),
+        ) {
+            (Some(session_path), Some(surface_state_path)) => {
+                MahayanaProductClient::new_with_surface_state_path(
+                    api_base_url.clone(),
+                    session_path,
+                    surface_state_path,
+                )
+            }
+            (Some(session_path), None) => {
+                MahayanaProductClient::new(api_base_url.clone(), session_path)
+            }
+            (None, Some(surface_state_path)) => MahayanaProductClient::new_with_surface_state_path(
+                api_base_url,
+                default_product_session_path(),
+                surface_state_path,
+            ),
+            (None, None) => MahayanaProductClient::default(),
+        };
+        let runtime = RuntimeBuilder::new(config.runtime)
+            .with_engine_backend(backend)?
+            .build()?;
+        Ok(Self {
+            runtime: Arc::new(runtime),
+            product_client,
+        })
+    }
+
     pub fn status(&self) -> RuntimeStatus {
         self.runtime.status()
     }
@@ -201,7 +244,14 @@ impl MahayanaHost {
     /// Revoke and remove the Rust-owned product session without exposing any
     /// bearer or refresh credential to the host UI.
     pub fn clear_session(&self) -> Result<serde_json::Value, HostError> {
-        self.product_execute("mahayana.auth.logout", &serde_json::json!({}))
+        let response = self.product_execute("mahayana.auth.logout", &serde_json::json!({}))?;
+        self.runtime.reset_session().map_err(HostError::from)?;
+        Ok(response)
+    }
+
+    /// Drop all account-bound runtime state when the product session changes.
+    pub fn reset_session(&self) -> Result<(), HostError> {
+        self.runtime.reset_session().map_err(HostError::from)
     }
 }
 
@@ -370,6 +420,21 @@ fn build_runtime(
             .base_url
             .clone()
             .ok_or_else(|| HostError::new("Mahayana model base URL is required"))?;
+        let configured_model_token = create.model_bearer_token.clone();
+        let model_provider = runtime_config.model.provider;
+        let credential_client = product_client.clone();
+        let credential_resolver: ModelCredentialResolver = Arc::new(move || {
+            if matches!(model_provider, ModelProviderMode::UserConfiguredRemote) {
+                return Ok(configured_model_token.clone());
+            }
+            match credential_client.session_token() {
+                Ok(token) => Ok(Some(token)),
+                Err(ProductError::NotLoggedIn | ProductError::SessionExpired) => Ok(None),
+                Err(error) => Err(ModelError::Inference(format!(
+                    "unable to resolve Mahayana model credential: {error}"
+                ))),
+            }
+        });
         let model_runtime = Arc::new(
             ResponsesModelRuntime::new(ResponsesModelConfig {
                 base_url,
@@ -385,7 +450,8 @@ fn build_runtime(
                 provider_mode: runtime_config.model.provider,
                 wire_api: create.model_wire_api,
             })
-            .map_err(|error| HostError::new(error.to_string()))?,
+            .map_err(|error| HostError::new(error.to_string()))?
+            .with_credential_resolver(credential_resolver),
         );
         let mut engine_config = match runtime_config.build_profile {
             BuildProfile::DesktopFull => {

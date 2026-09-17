@@ -1,0 +1,389 @@
+name: Mahayana CLI installer live device (manual MCP validation)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_source_sha:
+        description: Exact canonical source SHA expected behind the newest immutable mahayana-cli-main-* channel
+        required: true
+        type: string
+      hold_minutes:
+        description: Maximum official-MCP validation window
+        required: true
+        default: '30'
+        type: choice
+        options: ['15', '30', '60']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mahayana-cli-installer-live-${{ inputs.expected_source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  installer-live-device:
+    name: Fresh one-line installer device
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-interactive
+      DEVICE_NAME: Mahayana installed CLI GitHub Actions ${{ github.run_id }}
+      FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+      MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+    steps:
+      - name: Checkout control scripts only
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            chatgpt-vps-control
+          persist-credentials: false
+
+      - name: Resolve private runtime paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ inputs.expected_source_sha }}'
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]] || { echo 'expected_source_sha must be a full commit SHA' >&2; exit 1; }
+          {
+            echo "EXPECTED_SOURCE_SHA=$expected"
+            echo "MAHAYANA_HOME=$RUNNER_TEMP/mahayana-home"
+            echo "MAHAYANA_INSTALL_DIR=$RUNNER_TEMP/mahayana-bin"
+            echo "FABUSHI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/mahayana-account-session.json"
+            echo "FABUSHI_CI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/mahayana-ci-session.json"
+            echo "FABUSHI_CI_FINISH_FILE=$RUNNER_TEMP/mahayana-home/device-agent/remote-finished.json"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify public protected-main channel points to the exact source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          channel="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.tag_name | startswith("mahayana-cli-main-"))][0].tag_name')"
+          test -n "$channel" || { echo 'No promoted Mahayana CLI main channel exists.' >&2; exit 1; }
+          target="$(gh release view "$channel" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          test "$target" = "$EXPECTED_SOURCE_SHA" || {
+            echo "$channel points to $target, expected $EXPECTED_SOURCE_SHA" >&2
+            exit 1
+          }
+          echo "MAHAYANA_VALIDATED_CHANNEL=$channel" >> "$GITHUB_ENV"
+          mapfile -t assets < <(gh release view "$channel" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)
+          printf '%s\n' "${assets[@]}"
+          printf '%s\n' "${assets[@]}" | grep -qx 'SHA256SUMS.txt'
+          printf '%s\n' "${assets[@]}" | grep -qx 'mahayana-linux-x86_64.tar.gz'
+
+      - name: Install released CLI through the public one-line bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$MAHAYANA_HOME" "$MAHAYANA_INSTALL_DIR"
+          curl -fsSL --retry 5 --retry-all-errors https://ombhrum.com/mahayana/install.sh \
+            | env \
+                MAHAYANA_HOME="$MAHAYANA_HOME" \
+                MAHAYANA_INSTALL_DIR="$MAHAYANA_INSTALL_DIR" \
+                FABUSHI_CI_ACCOUNT_SESSION_FILE="$FABUSHI_CI_ACCOUNT_SESSION_FILE" \
+                FABUSHI_CI_FINISH_FILE="$FABUSHI_CI_FINISH_FILE" \
+                DEVICE_ID="$DEVICE_ID" \
+                DEVICE_NAME="$DEVICE_NAME" \
+                GITHUB_SHA="$EXPECTED_SOURCE_SHA" \
+                sh
+          echo "$MAHAYANA_INSTALL_DIR" >> "$GITHUB_PATH"
+          "$MAHAYANA_INSTALL_DIR/mahayana" --version
+          "$MAHAYANA_INSTALL_DIR/mahayana" device status
+
+      - name: Bind the installed CLI to the dedicated Fabushi CI account
+        env:
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$FABUSHI_CI_TEST_USERNAME"
+          test -n "$FABUSHI_CI_TEST_PASSWORD"
+          node chatgpt-vps-control/scripts/login-ci-test-account.mjs
+          node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
+          rm -f "$FABUSHI_ACCOUNT_SESSION_FILE"
+          mahayana auth
+          mahayana device start
+          mahayana device status
+
+      - name: Wait for released CLI registration
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$MAHAYANA_HOME/device-agent/agent.log"
+          for attempt in $(seq 1 60); do
+            if grep -q "Mahayana controllable device online: $DEVICE_ID" "$log" 2>/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          if ! grep -q "Mahayana controllable device online: $DEVICE_ID" "$log" 2>/dev/null; then
+            mahayana device status >&2 || true
+            tail -n 120 "$log" >&2 2>/dev/null || true
+            exit 1
+          fi
+          {
+            echo '## Released Mahayana CLI installer device'
+            echo "- Protected-main channel source: \`$EXPECTED_SOURCE_SHA\`"
+            echo "- Device ID: \`$DEVICE_ID\`"
+            echo "- Installation path: public \`https://ombhrum.com/mahayana/install.sh\` -> immutable \`$MAHAYANA_VALIDATED_CHANNEL\` release asset."
+            echo '- Validate through the official Fabushi MCP, then call `ci_session_finish`.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Hold fresh installed device for official MCP validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          seconds=$(( ${{ inputs.hold_minutes }} * 60 ))
+          started="$(date +%s)"
+          while (( $(date +%s) - started < seconds )); do
+            if test -f "$FABUSHI_CI_FINISH_FILE"; then
+              mahayana device stop || true
+              exit 0
+            fi
+            mahayana device status | grep -q '"running": true'
+            sleep 5
+          done
+          echo 'Installer validation window expired without ci_session_finish.' >&2
+          exit 1
+
+      - name: Remove ephemeral account/device state
+        if: always()
+        shell: bash
+        run: |
+          mahayana logout || true
+          mahayana device stop || true
+          rm -f "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
+          sleep 2
+
+  installer-live-macos:
+    name: Fresh one-line installer device (macOS)
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-macos-app
+      DEVICE_NAME: Mahayana installed CLI macOS ${{ github.run_id }}
+      FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+      MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout account-binding scripts
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            chatgpt-vps-control
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Resolve private runtime paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ inputs.expected_source_sha }}'
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          {
+            echo "EXPECTED_SOURCE_SHA=$expected"
+            echo "MAHAYANA_HOME=$RUNNER_TEMP/mahayana-home"
+            echo "MAHAYANA_INSTALL_DIR=$RUNNER_TEMP/mahayana-bin"
+            echo "FABUSHI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/mahayana-account-session.json"
+            echo "FABUSHI_CI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/mahayana-ci-session.json"
+            echo "FABUSHI_CI_FINISH_FILE=$RUNNER_TEMP/mahayana-home/device-agent/remote-finished.json"
+          } >> "$GITHUB_ENV"
+
+      - name: Install exact released CLI through the public shell bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          channel="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.tag_name | startswith("mahayana-cli-main-"))][0].tag_name')"
+          test -n "$channel"
+          target="$(gh release view "$channel" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          test "$target" = "$EXPECTED_SOURCE_SHA"
+          mkdir -p "$MAHAYANA_HOME" "$MAHAYANA_INSTALL_DIR"
+          curl -fsSL --retry 5 --retry-all-errors https://ombhrum.com/mahayana/install.sh \
+            | env \
+                MAHAYANA_HOME="$MAHAYANA_HOME" \
+                MAHAYANA_INSTALL_DIR="$MAHAYANA_INSTALL_DIR" \
+                FABUSHI_CI_ACCOUNT_SESSION_FILE="$FABUSHI_CI_ACCOUNT_SESSION_FILE" \
+                FABUSHI_CI_FINISH_FILE="$FABUSHI_CI_FINISH_FILE" \
+                DEVICE_ID="$DEVICE_ID" \
+                DEVICE_NAME="$DEVICE_NAME" \
+                GITHUB_SHA="$EXPECTED_SOURCE_SHA" \
+                sh
+          echo "$MAHAYANA_INSTALL_DIR" >> "$GITHUB_PATH"
+          "$MAHAYANA_INSTALL_DIR/mahayana" --version
+          "$MAHAYANA_INSTALL_DIR/mahayana" device status
+
+      - name: Bind installed macOS CLI to the dedicated Fabushi CI account
+        env:
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node chatgpt-vps-control/scripts/login-ci-test-account.mjs
+          node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
+          rm -f "$FABUSHI_ACCOUNT_SESSION_FILE"
+          mahayana auth
+          mahayana device start
+          mahayana device status
+
+      - name: Wait for installed macOS CLI registration
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$MAHAYANA_HOME/device-agent/agent.log"
+          for attempt in $(seq 1 60); do
+            grep -q "Mahayana controllable device online: $DEVICE_ID" "$log" 2>/dev/null && break
+            sleep 2
+          done
+          grep -q "Mahayana controllable device online: $DEVICE_ID" "$log"
+
+      - name: Hold installed macOS device for official MCP validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          seconds=$(( ${{ inputs.hold_minutes }} * 60 ))
+          started="$(date +%s)"
+          while (( $(date +%s) - started < seconds )); do
+            test -f "$FABUSHI_CI_FINISH_FILE" && { mahayana device stop || true; exit 0; }
+            mahayana device status | grep -q '"running": true'
+            sleep 5
+          done
+          echo 'macOS installer validation window expired without ci_session_finish.' >&2
+          exit 1
+
+      - name: Remove ephemeral macOS account/device state
+        if: always()
+        shell: bash
+        run: |
+          mahayana logout || true
+          mahayana device stop || true
+          rm -f "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
+          sleep 2
+
+  installer-live-windows:
+    name: Fresh one-line installer device (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-windows-app
+      DEVICE_NAME: Mahayana installed CLI Windows ${{ github.run_id }}
+      FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+      MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout account-binding scripts
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            chatgpt-vps-control
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Resolve private runtime paths
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '${{ inputs.expected_source_sha }}'
+          if ($expected -notmatch '^[0-9a-f]{40}$') { throw 'expected_source_sha must be a full commit SHA' }
+          $mahayanaHome = Join-Path $env:RUNNER_TEMP 'mahayana-home'
+          $install = Join-Path $env:RUNNER_TEMP 'mahayana-bin'
+          $account = Join-Path $env:RUNNER_TEMP 'mahayana-account-session.json'
+          $ci = Join-Path $env:RUNNER_TEMP 'mahayana-ci-session.json'
+          $finish = Join-Path $mahayanaHome 'device-agent\remote-finished.json'
+          @(
+            "EXPECTED_SOURCE_SHA=$expected"
+            "MAHAYANA_HOME=$mahayanaHome"
+            "MAHAYANA_INSTALL_DIR=$install"
+            "FABUSHI_ACCOUNT_SESSION_FILE=$account"
+            "FABUSHI_CI_ACCOUNT_SESSION_FILE=$ci"
+            "FABUSHI_CI_FINISH_FILE=$finish"
+          ) | Add-Content $env:GITHUB_ENV
+
+      - name: Install exact released CLI through the public PowerShell bootstrap
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $channel = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.tag_name | startswith("mahayana-cli-main-"))][0].tag_name'
+          if (-not $channel) { throw 'No promoted Mahayana CLI main channel exists.' }
+          $target = gh release view $channel.Trim() --repo $env:GITHUB_REPOSITORY --json targetCommitish --jq .targetCommitish
+          if ($target.Trim() -ne $env:EXPECTED_SOURCE_SHA) { throw "$channel targets $target, expected $env:EXPECTED_SOURCE_SHA" }
+          New-Item -ItemType Directory -Force -Path $env:MAHAYANA_HOME, $env:MAHAYANA_INSTALL_DIR | Out-Null
+          $env:GITHUB_SHA = $env:EXPECTED_SOURCE_SHA
+          irm https://ombhrum.com/mahayana/install.ps1 | iex
+          $exe = Join-Path $env:MAHAYANA_INSTALL_DIR 'mahayana.exe'
+          & $exe --version
+          & $exe device status
+          $env:MAHAYANA_INSTALL_DIR | Add-Content $env:GITHUB_PATH
+
+      - name: Bind installed Windows CLI to the dedicated Fabushi CI account
+        env:
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node chatgpt-vps-control/scripts/login-ci-test-account.mjs
+          node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
+          Remove-Item -Force $env:FABUSHI_ACCOUNT_SESSION_FILE -ErrorAction SilentlyContinue
+          mahayana auth
+          mahayana device start
+          mahayana device status
+
+      - name: Wait for installed Windows CLI registration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:MAHAYANA_HOME 'device-agent\agent.log'
+          $ready = $false
+          1..60 | ForEach-Object {
+            if (Test-Path $log) {
+              $content = Get-Content -Raw $log
+              if ($content -match [regex]::Escape("Mahayana controllable device online: $env:DEVICE_ID")) { $ready = $true; return }
+            }
+            Start-Sleep -Seconds 2
+          }
+          if (-not $ready) { if (Test-Path $log) { Get-Content $log | Select-Object -Last 120 }; throw 'Windows CLI device did not register' }
+
+      - name: Hold installed Windows device for official MCP validation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $deadline = (Get-Date).AddMinutes([int]'${{ inputs.hold_minutes }}')
+          while ((Get-Date) -lt $deadline) {
+            if (Test-Path $env:FABUSHI_CI_FINISH_FILE) { mahayana device stop; exit 0 }
+            $status = mahayana device status | ConvertFrom-Json
+            if (-not $status.running) { throw 'Mahayana Windows device agent exited unexpectedly' }
+            Start-Sleep -Seconds 5
+          }
+          throw 'Windows installer validation window expired without ci_session_finish.'
+
+      - name: Remove ephemeral Windows account/device state
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $exe = $null
+          if ($env:MAHAYANA_INSTALL_DIR) {
+            $candidate = Join-Path $env:MAHAYANA_INSTALL_DIR 'mahayana.exe'
+            if (Test-Path $candidate) { $exe = $candidate }
+          }
+          if ($exe) {
+            & $exe logout 2>$null
+            & $exe device stop 2>$null
+          }
+          foreach ($path in @($env:FABUSHI_ACCOUNT_SESSION_FILE, $env:FABUSHI_CI_ACCOUNT_SESSION_FILE)) {
+            if ($path) { Remove-Item -Force $path -ErrorAction SilentlyContinue }
+          }
+          Start-Sleep -Seconds 2
+          exit 0

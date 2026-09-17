@@ -6,10 +6,8 @@ from pathlib import Path
 import sys
 
 deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(encoding='utf-8')
-legacy_combined_release = Path('.github/workflows/native-electron-release.yml').read_text(encoding='utf-8')
-desktop_fast_workflow = Path('.github/workflows/electron-desktop.yml').read_text(encoding='utf-8')
-desktop_release_workflow = Path('.github/workflows/release-desktop-platform.yml').read_text(encoding='utf-8')
-platform_release_workflows = {name: Path(f'.github/workflows/{name}').read_text(encoding='utf-8') for name in ('release-macos.yml','release-windows.yml','release-linux.yml','native-android-release.yml','release-ios.yml')}
+publish_release_workflow = Path('.github/workflows/native-electron-release.yml').read_text(encoding='utf-8')
+desktop_installers_workflow = Path('.github/workflows/electron-desktop.yml').read_text(encoding='utf-8')
 google_play_workflow = Path('.github/workflows/google-play-delivery.yml').read_text(encoding='utf-8')
 apple_store_workflow = Path('.github/workflows/apple-store-delivery.yml').read_text(encoding='utf-8')
 auth_utils = Path('fabushi/web/auth-utils.js').read_text(encoding='utf-8')
@@ -49,25 +47,39 @@ for required in (
     if required not in deploy_workflow:
         missing.append(f'deploy workflow missing: {required}')
 
-for name, workflow in platform_release_workflows.items():
-    if 'workflow_dispatch:' not in workflow or 'release_kind:' not in workflow or 'options: [test, formal]' not in workflow:
-        missing.append(f'platform release workflow must expose manual test/formal lanes: {name}')
+for required in (
+    'Signed native Android APK/AAB',
+    'bundleRelease assembleRelease',
+    'cargo ndk -t arm64-v8a',
+    'Signed native iOS IPA',
+    'xcodebuild archive',
+    'xcodebuild -exportArchive',
+    'mahayana-app-host-mobile',
+    'app-version.json',
+    'Publish native Electron GitHub Release',
+    'SHA256SUMS.txt',
+):
+    if required not in publish_release_workflow:
+        missing.append(f'publish release workflow missing: {required}')
 
 for required in (
-    "inputs.release_kind == 'formal'",
-    'npx electron-builder --${{ inputs.platform }} --publish never',
-    'npm run test:e2e',
-    '--prerelease --latest=false',
+    'ref: ${{ github.sha }}',
+    'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
 ):
-    if required not in desktop_release_workflow:
-        missing.append(f'reusable desktop release workflow missing: {required}')
+    if required not in publish_release_workflow:
+        missing.append(f'publish release workflow missing exact-source binding: {required}')
 
-if 'Legacy combined release (disabled)' not in legacy_combined_release:
-    missing.append('legacy combined five-platform release must remain disabled')
+if 'ref: main' in publish_release_workflow:
+    missing.append('publish release workflow must not re-resolve mutable main after dispatch')
 
-for forbidden in ('flutter build', 'flutter pub get', 'subosito/flutter-action', 'fabushi/pubspec.yaml'):
-    if forbidden in desktop_release_workflow or any(forbidden in workflow for workflow in platform_release_workflows.values()):
-        missing.append(f'platform release workflows must not contain legacy Flutter dependency: {forbidden}')
+for forbidden in (
+    'flutter build',
+    'flutter pub get',
+    'subosito/flutter-action',
+    'fabushi/pubspec.yaml',
+):
+    if forbidden in publish_release_workflow:
+        missing.append(f'publish release workflow must not contain legacy Flutter dependency: {forbidden}')
 
 for required in (
     'workflow_dispatch',
@@ -97,6 +109,7 @@ for forbidden in (
 
 for required in (
     'workflow_dispatch',
+    'workflow_run',
     'target="${INPUT_TARGET:-both}"',
     'Build and upload Electron macOS MAS package',
     'Build and upload native iOS IPA',
@@ -108,9 +121,6 @@ for required in (
 ):
     if required not in apple_store_workflow:
         missing.append(f'Apple Store workflow missing: {required}')
-
-if 'workflow_run:' in apple_store_workflow:
-    missing.append('Apple Store workflow must not auto-run from another workflow; platform delivery is explicit-only')
 
 if apple_store_workflow.count('run: bash .github/scripts/upload-app-store-connect.sh') != 2:
     missing.append('Apple Store workflow must route both macOS and iOS through the shared App Store Connect uploader')
@@ -129,20 +139,19 @@ for forbidden in (
 
 for required in (
     'Electron desktop quality gate',
-    'Electron desktop result',
-    'npx tsc --noEmit',
-    'npx vite build',
+    'npm run test:e2e',
+    'mahayana-app-host',
+    'mahayana-feature-host',
+    'mahayana-host-protocol',
 ):
-    if required not in desktop_fast_workflow:
-        missing.append(f'Electron fast workflow missing: {required}')
+    if required not in desktop_installers_workflow:
+        missing.append(f'Electron desktop workflow missing: {required}')
 
-for forbidden in ('npm run test:e2e', 'npx electron-builder', 'Build and stage CI native Host'):
-    if forbidden in desktop_fast_workflow:
-        missing.append(f'Electron automatic fast workflow must not contain long/heavy step: {forbidden}')
-
-for required in ('npx electron-builder --${{ inputs.platform }} --publish never', 'npm run test:e2e', "inputs.release_kind == 'formal'"):
-    if required not in desktop_release_workflow:
-        missing.append(f'desktop platform release workflow missing: {required}')
+if not (
+    'npm run package' in desktop_installers_workflow
+    or ('npm run build:renderer' in desktop_installers_workflow and 'npx electron-builder' in desktop_installers_workflow)
+):
+    missing.append('Electron desktop workflow must package with npm run package or build:renderer + electron-builder')
 
 for forbidden in (
     'flutter build',
@@ -150,8 +159,8 @@ for forbidden in (
     'subosito/flutter-action',
     'fabushi/pubspec.yaml',
 ):
-    if forbidden in desktop_fast_workflow or forbidden in desktop_release_workflow:
-        missing.append(f'desktop workflows must not contain legacy Flutter dependency: {forbidden}')
+    if forbidden in desktop_installers_workflow:
+        missing.append(f'desktop installers workflow must not contain legacy Flutter dependency: {forbidden}')
 
 for required in (
     'env?.DB?.prepare',

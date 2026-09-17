@@ -1,5 +1,53 @@
 # 更新日志
 
+## [1.2.21] - 2026-09-04
+
+### macOS 更新器连续版本验收
+- 发布连续验收目标版本，使用已经包含 macOS Squirrel.Mac 更新时序修复的 `1.2.20` 客户端真实更新到 `1.2.21`。
+- 覆盖更新按钮点击、下载进度、应用退出、应用包替换与新版本启动的完整链路。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.21`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `27`。
+
+## [1.2.20] - 2026-09-04
+
+### macOS 更新安装时序修复
+- 修复 macOS 更新器在旧应用已退出、但 Squirrel.Mac 尚未完成 ZIP 拉取时被提前关闭，导致应用包仍停留在旧版本的问题。
+- 将 macOS 手动更新流程交给 Squirrel.Mac 完成拉取、替换与重启；其他平台保留显式退出兜底。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.20`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `26`。
+
+## [1.2.19] - 2026-09-04
+
+### macOS 更新器真实验收目标
+- 将正式目标版本提升到 `1.2.19`，用于从已包含显式 `app.quit()` 兜底的 `1.2.18` Mac 应用执行真实升级验证。
+- 验证更新按钮点击后旧应用自动退出、安装包替换并重新启动到新版本的完整链路。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.19`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `25`。
+
+## [1.2.18] - 2026-09-04
+
+### macOS 更新退出兜底
+- 在 macOS 更新器从 IPC 回调返回但未自行触发退出时，显式调用 `app.quit()`，确保更新安装流程能够关闭旧应用并完成替换。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.18`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `24`。
+
+## [1.2.17] - 2026-09-04
+
+### 更新器安装链路验证版本
+- 将包含 macOS 更新退出修复的桌面版本提升到 `1.2.17`，让下一次真实升级从已修复的 `1.2.16` 发起，覆盖旧版本执行更新时的完整退出与替换链路。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.17`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `23`。
+
+## [1.2.16] - 2026-09-04
+
+### 桌面端更新安装修复
+- 修复 macOS 一键更新进入“正在安装并重启”后，被 App Agent Surface 异步退出清理阻塞、无法自动关闭旧版本并替换应用包的问题。
+- 更新安装期间让 Electron 更新器优先完成退出与替换；控制桥连接也会在退出时强制释放，避免 keep-alive 连接拖住更新流程。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.16`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `22`。
+
+## [1.2.15] - 2026-09-04
+
+### Mahayana 智能对话流程修复
+- 将 Mahayana/DeepSeek 的 Responses 链路接入真实 SSE 增量输出，前端按独立消息气泡收敛每一条公开回复，并保留模型推理、工具调用和完成状态。
+- 增加面向多步骤任务的公开消息边界；`send_message` 只显示真实里程碑或最终回复，不再把多条回复覆盖成一条或伪造进度。
+- 在退出登录、切换账号和生产消息边界清理运行时会话、凭据解析和持久化状态，避免历史消息跨账号泄漏。
+- 桌面、Android 与 iOS 产品版本统一提升到 `1.2.15`，Android `versionCode` 与 iOS `CURRENT_PROJECT_VERSION` 统一提升到 `21`。
+
 ## [1.2.14] - 2026-09-03
 
 ### 全新正式版本发布

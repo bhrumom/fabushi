@@ -1,0 +1,137 @@
+# TFI-CI-OPT-015 — 按变更范围选择自动化检查
+
+- portfolio project_id: FAB-P0001
+- project_key: TFI
+- task_id: TFI-CI-OPT-015
+- status: IN_PROGRESS
+- started: 2026-09-14 Asia/Shanghai
+- updated: 2026-09-14 Asia/Shanghai
+- owner: Fabushi CI/release engineering
+- source: projects/telegram-fabushi-integration/source/2026-09-14-ci-scope-aware-automation.md
+- dependency: product baseline main@27a9112325f8506fecf5060ebdf0a6d9d986f2d2
+
+## 目标
+
+让自动化工作流先识别当前 PR、merge queue 或 main push 实际触及的产品边界，再只启动受影响的检查。未受影响的 job 保留稳定的 skipped/success 结果，并由现有聚合检查接受 success 或 skipped，避免绕过保护主线或让 Merge Queue 等待不存在的状态。
+
+## 范围
+
+- Computer control security gate：保留 Chrome/Node 相关检查；Chrome-only 变更跳过 Rust contracts、platform-worker 与 Linux managed desktop。
+- Electron desktop quality gate：Chrome-only 变更跳过 Linux Electron PR 旅程；main push 的完整三平台打包与 post-main 交付不变。
+- GBF security closure：只有 GBF/共享安全边界变更才运行闭环；Chrome-only 变更跳过。
+- Global Dharma Web Service Contract：只在 backend、Web Mini App 或 commerce contract 相关路径变更时运行对应 job；项目治理文档变更不安装这些依赖。
+- 使用固定提交的成熟路径过滤动作；scope 配置或 workflow 变更采用保守全量策略。
+- 更新项目 WBS、验收、状态、变更、风险/行动、质量及发布记录。
+
+非范围：删除现有安全检查、降低 Rust/依赖审计/打包/主线发布门禁、修改业务运行时、改变 Chrome Web Store 发布策略、在本地执行重型构建或测试。
+
+## 依赖
+
+- main@27a9112325f8506fecf5060ebdf0a6d9d986f2d2 已包含本轮用户脚本/Chrome 宿主修复和本需求源记录。
+- GitHub protected main / merge queue 的稳定 check name 不得消失。
+- 需要通过 GitHub Actions 验证 workflow YAML、scope 输出、skipped 聚合和 main push 全量路径。
+
+## 验收标准
+
+- [ ] 每个受治理 workflow 有轻量 scope job，输出可审计的 global/backend/web/commerce/gbf/node/rust/platform-worker/electron 等范围。
+- [ ] PR 与 merge_group 按 changed paths 选择 job；push main 与 workflow_dispatch 保持完整验证/交付。
+- [ ] Chrome-only 变更不启动 Computer Control Rust 三 OS、platform-worker、Linux managed desktop、Electron Linux PR journey、GBF closure 与无关 Global Dharma job；Chrome package/相关 Node 检查仍运行。
+- [ ] 纯项目治理文档变更不启动 Global Dharma backend/web/commerce 依赖安装。
+- [ ] scope/action/config/workflow/安全边界变化触发保守全量路径。
+- [ ] skipped job 及结果聚合均返回可接受的成功状态，Merge Queue 不因缺少 required context 阻塞。
+- [ ] GitHub Actions 保留 scope 输出、各 job 结果和缓存/耗时摘要；不在本地运行应用构建、原生测试或 E2E。
+- [ ] 实际 Actions 运行证明至少一个 Chrome-only/非目标变更跳过无关重作业，并记录 run/job URLs；main 合并后 canonical readback 完整。
+
+## 开源优先调查与决策
+
+已调查：
+
+- dorny/paths-filter (https://github.com/dorny/paths-filter)：MIT；成熟的 changed-path filter，支持 pull_request、push、merge_group、inline filters、排除规则、boolean outputs 和 changes 输出。v4 固定提交为 ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d。
+- tj-actions/changed-files (https://github.com/tj-actions/changed-files)：MIT；支持 merge queue、矩阵和丰富 changed-file 输出，固定候选为 v47 提交 24d32ffd492484c1d75e0c0b894501ddb9d30d62。
+- actions/github-script (https://github.com/actions/github-script)：MIT；可自定义 GitHub API 脚本，但会引入自维护 diff/规则代码。
+
+决策：采用 dorny/paths-filter v4 的固定 commit 和 inline filter。它已经覆盖本任务所需的 PR/merge_group/base/ref/排除语义，减少自定义 diff 解析和 token 权限面；不复制第三方代码、不新增运行时依赖。tj-actions 保留为拒绝候选，因为本轮不需要逐文件列表/动态矩阵；github-script 保留为拒绝候选，因为自定义 API 逻辑会增加维护和权限复杂度。
+
+## 验证方法
+
+- 轻量本地检查：只读 workflow、项目记录和 diff；不运行构建、Cargo/npm 安装、应用测试或 E2E。
+- GitHub Actions：workflow syntax/各受影响 job、scope 输出、skipped 结果、protected PR checks、merge_group/main push。
+- 交付证据：记录 exact main SHA、run/job/check URL、scope 输出与跳过矩阵；如 workflow 改动触发产品包交付，按项目 post-main gate 记录 packaged/E2E/release evidence。
+
+## 分支 / PR / 实现状态
+
+- branch: codex/tfi-ci-scope-aware-015-20260914
+- PR: pending implementation
+- implementation: task record created; workflow changes pending
+- status: IN_PROGRESS
+
+## 风险与下一动作
+
+- 风险：过滤规则过窄会漏掉真实影响，过宽会继续浪费矩阵；对 workflow、scope、脚本、全局工具链和安全边界采用保守全量，并以 Actions 实际 run 验证。
+- 风险：merge_group 的 changed-base 语义必须由 GitHub Actions 回读确认；scope job 使用完整 checkout 和空 token 的 git diff 路径。
+- 下一动作：更新四个 workflow，增加 scope job、受控 job if 和 skipped-tolerant result；提交 PR 后先验证保守全量，再用后续非目标变更 run 验证跳过效果。
+
+
+## 2026-09-14 — Chrome-only scope proof follow-up
+
+- proof branch: codex/tfi-ci-scope-proof-chrome-only-20260914
+- test change: chatgpt-vps-control/chrome-platform/README.md plus this task record; no Rust, Worker, Electron, GBF, backend, Web Mini App or commerce source changed.
+- expected selection: Chrome package and Computer Control Node security remain relevant; Computer Control Rust/platform-worker/Linux desktop, Electron platform, GBF closure and Global Dharma backend/web/commerce are skipped while their workflow/scope/result contexts remain present.
+- status: awaiting Actions scope/skipped evidence.
+
+
+## 2026-09-14 — Chrome-only scope proof r2
+
+- base main: e525adb298066ab4e234cacca51525f921bb6736 (policy plus stable Electron skipped-name fallback).
+- fixture: documentation-only change under chatgpt-vps-control/chrome-platform/.
+- expected result: Electron Linux must remain a named skipped check; Computer Control Rust/platform-worker/Linux desktop, GBF closure and Global Dharma service jobs must remain skipped; Chrome package and Node security remain selected.
+- status: awaiting final Actions readback.
+
+
+## 2026-09-14 — Chrome-only scope proof final
+
+- proof branch: codex/tfi-ci-scope-proof-chrome-only-final-20260914
+- only changed boundary: chatgpt-vps-control/chrome-platform/README.md.
+- expected final Actions evidence: Chrome package and Node security selected; Rust contracts, platform-worker, Linux managed desktop, Electron platform, GBF closure, and Global Dharma service jobs skipped; Electron desktop result remains successful.
+- status: awaiting final Actions readback and protected merge.
+
+## 2026-09-14 — 用户追加：main push 同样按范围选择
+
+用户明确指出 main 仍在运行大量无关 CI，要求 main 与 PR/merge_group 使用相同的变更范围选择。此前实现保留了 `push` 全量旁路，这与最新要求不一致，本轮撤销该旁路。
+
+- source: `projects/telegram-fabushi-integration/source/2026-09-14-ci-scope-aware-main.md`
+- implementation branch: `codex/tfi-ci-scope-main-015-20260914`
+- base main: `a1237b382f1a83aa52bd021abe7a17aad2a22802`
+- selected policy: `pull_request` / `merge_group` / `push(main)` 均使用 scope 输出；只有显式 `workflow_dispatch` 保留全量。
+- top-level main paths are narrowed for Electron, Native mobile and Chrome so an unrelated main commit does not create a downstream product workflow merely to skip it.
+- post-main delivery selection is being made tolerant of an upstream Electron workflow whose platform matrix was skipped; it must not wait for Native/Chrome artifacts that were never selected.
+
+### 本轮验收新增标准
+
+- [ ] main Chrome-only push: Chrome package/旅程和必要 Node 检查可运行；Rust 三 OS、platform-worker、Linux managed desktop、Electron platform、GBF、Native mobile、Global Dharma 服务重 job 不运行。
+- [ ] main Electron-only / Native-only / Global-Dharma-only push: 只启动对应边界；其他产品矩阵保持 skipped 或不被顶层调度。
+- [ ] main 纯项目/记录变更不会触发 Electron、Native mobile、Chrome package 等产品构建。
+- [ ] 被 scope 跳过的 Electron workflow 不会触发 post-main 去等待不存在的 Native/Chrome artifact；确有 Electron 构建时仍保持 exact-SHA 发布门禁。
+- [ ] GitHub Actions main push 实际回读至少一轮 Chrome-only 或非目标变更，记录 selected/skipped job、workflow run、canonical main SHA 和下游触发结果。
+- [ ] 本地只做静态审阅；所有构建、原生测试、E2E、发布验证仍由 GitHub Actions 执行。
+
+## 风险与处置
+
+- 风险：顶层 main path 过窄会漏掉需要发布的产品边界。处置：PR/merge_group 保留稳定 scope/result；共享输入（版本、协议、宿主桥接）加入对应边界白名单；workflow_dispatch 可人工全量兜底；Actions proof 逐项回读。
+- 风险：post-main 是 workflow_run 触发，无法直接读取上游 scope outputs。处置：先根据上游 Electron run 是否包含实际平台 job 选择是否进入 exact-main gate，并让 gate 对未选中的独立边界不等待缺失结果。
+- status: IN_PROGRESS
+
+## 2026-09-14 — Native matrix expansion fix
+
+- observed regression: the first main/merge-queue policy version referenced `matrix.target` in the platform job-level `if`; GitHub Actions does not expose `matrix` in that evaluation context, producing failed workflow runs with zero jobs.
+- fix branch: `codex/tfi-ci-native-matrix-fix-20260914`, based on main merge `7e8c493090ee9f8cd9aa754e9acd99f89fd9e25d`.
+- implementation: the scope job now emits a JSON matrix containing only affected Android/iOS runners; the platform job-level condition uses only `needs.scope.outputs`, and the strategy consumes `fromJSON(needs.scope.outputs.matrix)`. Manual dispatch and reusable workflow calls remain full-platform runs; PR/merge_group retain a single selected fast-path runner.
+- contract coverage: the native workflow contract test asserts dynamic matrix selection and rejects matrix context in the job-level condition.
+- status: awaiting PR checks, protected merge, canonical-main readback, and the Chrome-only main proof.
+
+## 2026-09-15 — CI-only contract fixture boundary
+
+- implementation branch: `codex/tfi-ci-boundary-negative-tests-20260915`
+- product-boundary filters now exclude `chatgpt-vps-control/tests/native-direct-platform-gates-contract.test.js` from Electron, GBF, Chrome package and Linux managed desktop paths; Computer Control Node security remains selected for JavaScript coverage.
+- this prevents a future CI contract-only edit from starting unrelated product matrices; the existing Chrome-only main proof remains the end-to-end scope evidence.
+- status: awaiting PR checks, protected merge, and canonical-main readback.

@@ -9,7 +9,7 @@ import test from "node:test";
 const execFileAsync = promisify(execFile);
 const script = new URL("../scripts/export-ci-app-account-session.mjs", import.meta.url);
 
-test("exports a bounded refresh-token-free application session", async () => {
+test("exports a bounded refresh-token-free application session for an App-owned macOS Actions device", async () => {
   const directory = await mkdtemp(join(tmpdir(), "fabushi-ci-app-session-"));
   const sourcePath = join(directory, "ordinary.json");
   const outputPath = join(directory, "application.json");
@@ -21,7 +21,7 @@ test("exports a bounded refresh-token-free application session", async () => {
     accessTokenExpiresAt: expiresAt,
     refreshTokenExpiresAt: expiresAt + 60 * 60,
     sessionId: "ordinary-session",
-    deviceId: "gha-12345-1-interactive",
+    deviceId: "gha-12345-1-macos-app",
     username: "test-user",
     userId: "42",
     user: { id: "42", username: "test-user" },
@@ -36,7 +36,7 @@ test("exports a bounded refresh-token-free application session", async () => {
       RUNNER_TEMP: directory,
       GITHUB_RUN_ID: "12345",
       GITHUB_RUN_ATTEMPT: "1",
-      DEVICE_ID: "gha-12345-1-interactive",
+      DEVICE_ID: "gha-12345-1-macos-app",
       FABUSHI_ACCOUNT_SESSION_FILE: sourcePath,
       FABUSHI_CI_ACCOUNT_SESSION_FILE: outputPath,
     },
@@ -46,7 +46,7 @@ test("exports a bounded refresh-token-free application session", async () => {
   assert.equal(exported.provider, "github-actions");
   assert.equal(exported.ciRunner, true);
   assert.equal(exported.sessionId, "ci-runner:12345:1");
-  assert.equal(exported.deviceId, "gha-12345-1-interactive");
+  assert.equal(exported.deviceId, "gha-12345-1-macos-app");
   assert.equal(exported.accessTokenExpiresAt, expiresAt);
   assert.equal(exported.refreshToken, undefined);
   assert.equal((await stat(outputPath)).mode & 0o077, 0);

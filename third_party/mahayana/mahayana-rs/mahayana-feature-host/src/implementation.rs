@@ -230,7 +230,6 @@ struct FeatureState {
     pending_approvals: BTreeMap<String, PendingApproval>,
     operations: BTreeSet<String>,
     operation_agents: BTreeMap<String, String>,
-    generated_mini_app_operations: BTreeSet<String>,
     background_operations: BTreeMap<String, BackgroundOperationContext>,
     remote_computer_sessions: BTreeMap<String, RemoteComputerLocalSession>,
     remote_computer_device_secrets: BTreeMap<String, String>,
@@ -262,7 +261,6 @@ impl Default for FeatureState {
             pending_approvals: BTreeMap::new(),
             operations: BTreeSet::new(),
             operation_agents: BTreeMap::new(),
-            generated_mini_app_operations: BTreeSet::new(),
             background_operations: BTreeMap::new(),
             remote_computer_sessions: BTreeMap::new(),
             remote_computer_device_secrets: BTreeMap::new(),
@@ -305,6 +303,10 @@ pub struct FeatureHostController {
     memory_root_path: Option<PathBuf>,
     workflow_root_path: Option<PathBuf>,
     teach_recording: Mutex<Option<TeachCaptureProcess>>,
+    /// The authenticated account currently owning in-memory feature state.
+    /// This is deliberately not a credential; it is only an identity marker
+    /// used to prevent transcript/state reuse across account boundaries.
+    active_account_id: Mutex<Option<String>>,
     state: Mutex<FeatureState>,
 }
 
@@ -372,6 +374,7 @@ impl FeatureHostController {
             memory_root_path,
             workflow_root_path,
             teach_recording: Mutex::new(None),
+            active_account_id: Mutex::new(None),
             state: Mutex::new(state),
         }
     }
@@ -440,20 +443,6 @@ impl FeatureHostController {
             platform,
         };
         let mut state = FeatureState::default();
-        if let Some(path) = automation_path.as_deref() {
-            state.automations = load_automations(path);
-        }
-        if let Some(path) = bot_state_path.as_deref() {
-            for (id, bot) in load_bots(path) {
-                state.bots.insert(id, bot);
-            }
-        }
-        if let Some(path) = group_state_path.as_deref() {
-            state.groups = load_groups(path);
-        }
-        if let Some(path) = peer_messages_path.as_deref() {
-            state.peer_messages = load_peer_messages(path);
-        }
         if let Some(path) = settings_path.as_deref() {
             state.settings = load_product_host_settings(path);
             // The bundled Computer Use MCP independently rereads this canonical
@@ -470,7 +459,7 @@ impl FeatureHostController {
             timestamp: timestamp(),
             info: info.clone(),
         });
-        Ok(Self {
+        let controller = Self {
             config,
             info,
             runtime: Some(runtime),
@@ -484,8 +473,15 @@ impl FeatureHostController {
             memory_root_path,
             workflow_root_path,
             teach_recording: Mutex::new(None),
+            active_account_id: Mutex::new(None),
             state: Mutex::new(state),
-        })
+        };
+        controller.ensure_account_boundary(&controller.auth_status()?)?;
+        controller.state()?.events.push_back(HostEvent::HostReady {
+            timestamp: timestamp(),
+            info: controller.info.clone(),
+        });
+        Ok(controller)
     }
 
     pub fn info(&self) -> HostInfo {
@@ -519,15 +515,18 @@ impl FeatureHostController {
                     // account from the Rust-owned session is immediate and
                     // lets an offline macOS launch remain signed in. Network
                     // operations still validate the token at their boundary.
-                    if let Ok(session) = self
+                    let session = if let Ok(session) = self
                         .runtime()?
                         .product_execute("mahayana.auth.session.restore", &json!({}))
                     {
-                        return Ok(session);
-                    }
-                    self.runtime()?
-                        .product_execute("mahayana.auth.status", &json!({}))
-                        .map_err(FeatureHostError::from)
+                        session
+                    } else {
+                        self.runtime()?
+                            .product_execute("mahayana.auth.status", &json!({}))
+                            .map_err(FeatureHostError::from)?
+                    };
+                    self.ensure_account_boundary(&session)?;
+                    Ok(session)
                 }
                 #[cfg(not(feature = "production"))]
                 Err(FeatureHostError::ProductionUnavailable)
@@ -651,13 +650,17 @@ impl FeatureHostController {
             }
             HostMode::Production => {
                 #[cfg(feature = "production")]
-                return self
-                    .runtime()?
-                    .product_execute(
-                        "mahayana.auth.password.login",
-                        &json!({"username": username, "password": password}),
-                    )
-                    .map_err(FeatureHostError::from);
+                {
+                    let response = self
+                        .runtime()?
+                        .product_execute(
+                            "mahayana.auth.password.login",
+                            &json!({"username": username, "password": password}),
+                        )
+                        .map_err(FeatureHostError::from)?;
+                    self.ensure_account_boundary(&response)?;
+                    Ok(response)
+                }
                 #[cfg(not(feature = "production"))]
                 return Err(FeatureHostError::ProductionUnavailable);
             }
@@ -758,13 +761,23 @@ impl FeatureHostController {
             }
             HostMode::Production => {
                 #[cfg(feature = "production")]
-                return self
-                    .runtime()?
-                    .product_execute(
-                        "mahayana.auth.browser.poll",
-                        &json!({"attemptId": attempt_id}),
-                    )
-                    .map_err(FeatureHostError::from);
+                {
+                    let response = self
+                        .runtime()?
+                        .product_execute(
+                            "mahayana.auth.browser.poll",
+                            &json!({"attemptId": attempt_id}),
+                        )
+                        .map_err(FeatureHostError::from)?;
+                    if auth_payload(&response)
+                        .get("loggedIn")
+                        .and_then(Value::as_bool)
+                        == Some(true)
+                    {
+                        self.ensure_account_boundary(&response)?;
+                    }
+                    Ok(response)
+                }
                 #[cfg(not(feature = "production"))]
                 return Err(FeatureHostError::ProductionUnavailable);
             }
@@ -839,13 +852,23 @@ impl FeatureHostController {
             }
             HostMode::Production => {
                 #[cfg(feature = "production")]
-                return self
-                    .runtime()?
-                    .product_execute(
-                        "mahayana.auth.oauth.poll",
-                        &json!({"attemptId": attempt_id}),
-                    )
-                    .map_err(FeatureHostError::from);
+                {
+                    let response = self
+                        .runtime()?
+                        .product_execute(
+                            "mahayana.auth.oauth.poll",
+                            &json!({"attemptId": attempt_id}),
+                        )
+                        .map_err(FeatureHostError::from)?;
+                    if auth_payload(&response)
+                        .get("loggedIn")
+                        .and_then(Value::as_bool)
+                        == Some(true)
+                    {
+                        self.ensure_account_boundary(&response)?;
+                    }
+                    Ok(response)
+                }
                 #[cfg(not(feature = "production"))]
                 return Err(FeatureHostError::ProductionUnavailable);
             }
@@ -867,10 +890,11 @@ impl FeatureHostController {
             }
             HostMode::Production => {
                 #[cfg(feature = "production")]
-                return self
-                    .runtime()?
-                    .clear_session()
-                    .map_err(FeatureHostError::from);
+                {
+                    let response = self.runtime()?.clear_session()?;
+                    self.ensure_account_boundary(&response)?;
+                    Ok(response)
+                }
                 #[cfg(not(feature = "production"))]
                 return Err(FeatureHostError::ProductionUnavailable);
             }
@@ -1062,14 +1086,11 @@ impl FeatureHostController {
             .get_or_init(|| Mutex::new(()))
             .lock()
             .map_err(|_| FeatureHostError::Contract("messaging storage lock is poisoned".into()))?;
-        let root = self
-            .memory_root_path
-            .as_deref()
-            .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))?;
         let client_envelope: MessagingClientEnvelope =
             serde_json::from_value(envelope).map_err(|error| {
                 FeatureHostError::Contract(format!("invalid messaging envelope: {error}"))
             })?;
+        let root = self.messaging_root_for(&client_envelope)?;
         let messaging_root = root.join("_messaging");
         let store = JsonFileStateStore::new(messaging_root.join("snapshot.json"));
         let mut service = MessagingService::load_with_blob_store(
@@ -1105,8 +1126,7 @@ impl FeatureHostController {
         length: u64,
     ) -> Result<(fabushi_messaging_core::BlobMetadata, Vec<u8>), FeatureHostError> {
         let root = self
-            .memory_root_path
-            .as_deref()
+            .active_account_root(self.memory_root_path.as_deref())
             .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))?;
         let blob_id = BlobId::new(blob_id.to_string())
             .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
@@ -1777,9 +1797,11 @@ impl FeatureHostController {
                     )));
                 }
 
-                let root = self.memory_root_path.as_deref().ok_or_else(|| {
-                    FeatureHostError::Contract("teach recording storage is unavailable".into())
-                })?;
+                let root = self
+                    .active_account_root(self.memory_root_path.as_deref())
+                    .ok_or_else(|| {
+                        FeatureHostError::Contract("teach recording storage is unavailable".into())
+                    })?;
                 let started_at_ms = now_millis();
                 let session_dir = root
                     .join(&agent_id)
@@ -2069,8 +2091,8 @@ impl FeatureHostController {
             helper_scripts: Vec::new(),
             file_path: file_path.to_string_lossy().to_string(),
         };
-        if let Some(agent_root) = self.memory_root_path.as_deref() {
-            let _ = set_workflow_enabled(agent_root, agent_id, &workflow.id, true);
+        if let Some(agent_root) = self.active_account_root(self.memory_root_path.as_deref()) {
+            let _ = set_workflow_enabled(&agent_root, agent_id, &workflow.id, true);
         }
         Ok(workflow)
     }
@@ -3553,9 +3575,11 @@ impl FeatureHostController {
         command: FeatureCommand,
     ) -> Result<CommandAccepted, FeatureHostError> {
         let request_id = command.request_id().to_string();
-        let agent_root = self.memory_root_path.as_deref().ok_or_else(|| {
-            FeatureHostError::Contract("attachment storage is unavailable".into())
-        })?;
+        let agent_root = self
+            .active_account_root(self.memory_root_path.as_deref())
+            .ok_or_else(|| {
+                FeatureHostError::Contract("attachment storage is unavailable".into())
+            })?;
         match command {
             FeatureCommand::AttachmentUpload {
                 agent_id,
@@ -3630,7 +3654,7 @@ impl FeatureHostController {
                 });
             }
             FeatureCommand::AttachmentReadText { agent_id, path, .. } => {
-                let resolved = resolve_agent_attachment_path(agent_root, &agent_id, &path)?;
+                let resolved = resolve_agent_attachment_path(&agent_root, &agent_id, &path)?;
                 let metadata = std::fs::metadata(&resolved).map_err(|error| {
                     FeatureHostError::Contract(format!("read attachment metadata: {error}"))
                 })?;
@@ -3658,7 +3682,7 @@ impl FeatureHostController {
                 length,
                 ..
             } => {
-                let resolved = resolve_agent_attachment_path(agent_root, &agent_id, &path)?;
+                let resolved = resolve_agent_attachment_path(&agent_root, &agent_id, &path)?;
                 let metadata = std::fs::metadata(&resolved).map_err(|error| {
                     FeatureHostError::Contract(format!("read attachment metadata: {error}"))
                 })?;
@@ -3682,7 +3706,7 @@ impl FeatureHostController {
                     });
             }
             FeatureCommand::AttachmentReadImage { agent_id, path, .. } => {
-                let resolved = resolve_agent_attachment_path(agent_root, &agent_id, &path)?;
+                let resolved = resolve_agent_attachment_path(&agent_root, &agent_id, &path)?;
                 let mime = media_mime_type(resolved.to_string_lossy().as_ref())
                     .filter(|mime| mime.starts_with("image/"))
                     .ok_or_else(|| {
@@ -3817,7 +3841,8 @@ impl FeatureHostController {
                 let limit = limit.clamp(1, AGENT_CONTENT_SEARCH_MAX_RESULTS);
                 let bots = self.state()?.bots.values().cloned().collect::<Vec<_>>();
                 let mut matches = Vec::new();
-                if let Some(agent_root) = self.memory_root_path.as_deref() {
+                if let Some(agent_root) = self.active_account_root(self.memory_root_path.as_deref())
+                {
                     for bot in bots {
                         collect_agent_media_matches(
                             &agent_root.join(&bot.id).join("attachments"),
@@ -4177,7 +4202,7 @@ impl FeatureHostController {
         if !is_safe_memory_agent_id(agent_id) {
             return Ok(());
         }
-        let Some(root) = self.memory_root_path.as_deref() else {
+        let Some(root) = self.active_account_root(self.memory_root_path.as_deref()) else {
             return Ok(());
         };
         let path = root.join(agent_id).join("audit.jsonl");
@@ -5510,44 +5535,197 @@ impl FeatureHostController {
         &self,
         automations: &BTreeMap<String, AutomationSummary>,
     ) -> Result<(), FeatureHostError> {
-        let Some(path) = self.automation_path.as_deref() else {
+        let Some(path) = self.active_account_root(self.automation_path.as_deref()) else {
             return Ok(());
         };
-        persist_automations(path, automations)
+        persist_automations(&path, automations)
     }
 
     fn persist_bots(&self, bots: &BTreeMap<String, BotSummary>) -> Result<(), FeatureHostError> {
-        let Some(path) = self.bot_state_path.as_deref() else {
+        let Some(path) = self.active_account_root(self.bot_state_path.as_deref()) else {
             return Ok(());
         };
-        persist_bots(path, bots)
+        persist_bots(&path, bots)
     }
 
     fn persist_groups(
         &self,
         groups: &BTreeMap<String, GroupSummary>,
     ) -> Result<(), FeatureHostError> {
-        let Some(path) = self.group_state_path.as_deref() else {
+        let Some(path) = self.active_account_root(self.group_state_path.as_deref()) else {
             return Ok(());
         };
-        persist_groups(path, groups)
+        persist_groups(&path, groups)
     }
 
     fn persist_peer_messages(&self, messages: &[AgentPeerMessage]) -> Result<(), FeatureHostError> {
-        let Some(path) = self.peer_messages_path.as_deref() else {
+        let Some(path) = self.active_account_root(self.peer_messages_path.as_deref()) else {
             return Ok(());
         };
-        persist_peer_messages(path, messages)
+        persist_peer_messages(&path, messages)
+    }
+
+    fn active_account_root(&self, base: Option<&Path>) -> Option<PathBuf> {
+        let base = base?;
+        #[cfg(feature = "production")]
+        {
+            // The production feature is also enabled by the cross-platform
+            // test harness, while HostMode::Test deliberately has no live
+            // MahayanaHost or product account. Keep that harness on its
+            // isolated temporary root; real production hosts use the
+            // account-scoped branch below.
+            if self.config.mode == HostMode::Test {
+                Some(base.to_path_buf())
+            } else {
+                let account_id = self
+                    .active_account_id
+                    .lock()
+                    .ok()
+                    .and_then(|account| account.clone())?;
+                Some(account_scoped_path(base, &account_id))
+            }
+        }
+        #[cfg(not(feature = "production"))]
+        {
+            Some(base.to_path_buf())
+        }
+    }
+
+    #[cfg(feature = "production")]
+    fn messaging_root_for(
+        &self,
+        envelope: &MessagingClientEnvelope,
+    ) -> Result<PathBuf, FeatureHostError> {
+        let auth_status = self.auth_status()?;
+        let auth = auth_payload(&auth_status);
+        if auth.get("loggedIn").and_then(Value::as_bool) != Some(true) {
+            return Err(FeatureHostError::Contract(
+                "messaging commands require an authenticated Fabushi account session".into(),
+            ));
+        }
+        let account_id = auth_account_id(auth).ok_or_else(|| {
+            FeatureHostError::Contract("authenticated account has no stable user id".into())
+        })?;
+        let expected_actor = actor_id_for_account_id(&account_id);
+        if envelope.context.actor_id != expected_actor {
+            return Err(FeatureHostError::Contract(
+                "messaging actor does not match the authenticated Fabushi account".into(),
+            ));
+        }
+        let base = self
+            .memory_root_path
+            .as_deref()
+            .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))?;
+        Ok(account_scoped_path(base, &account_id))
+    }
+
+    #[cfg(not(feature = "production"))]
+    fn messaging_root_for(
+        &self,
+        _envelope: &MessagingClientEnvelope,
+    ) -> Result<PathBuf, FeatureHostError> {
+        self.memory_root_path
+            .clone()
+            .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))
+    }
+
+    #[cfg(feature = "production")]
+    fn ensure_account_boundary(&self, response: &Value) -> Result<(), FeatureHostError> {
+        let auth = auth_payload(response);
+        let logged_in = auth.get("loggedIn").and_then(Value::as_bool) == Some(true);
+        let next_account_id = logged_in.then(|| auth_account_id(auth)).flatten();
+        let changed = {
+            let active = self
+                .active_account_id
+                .lock()
+                .map_err(|_| FeatureHostError::StatePoisoned)?;
+            *active != next_account_id
+        };
+        if changed {
+            self.runtime()?.reset_session()?;
+            let account_id = next_account_id.as_deref();
+            let automations = self
+                .automation_path
+                .as_deref()
+                .map(|path| {
+                    account_id
+                        .map(|id| load_automations(&account_scoped_path(path, id)))
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            let mut bots = default_bots();
+            if let (Some(path), Some(account_id)) = (self.bot_state_path.as_deref(), account_id) {
+                bots.extend(load_bots(&account_scoped_path(path, account_id)));
+            }
+            let groups = self
+                .group_state_path
+                .as_deref()
+                .map(|path| {
+                    account_id
+                        .map(|id| load_groups(&account_scoped_path(path, id)))
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            let peer_messages = self
+                .peer_messages_path
+                .as_deref()
+                .map(|path| {
+                    account_id
+                        .map(|id| load_peer_messages(&account_scoped_path(path, id)))
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            let remote_device_secrets = self
+                .remote_device_state_path
+                .as_deref()
+                .map(|path| {
+                    account_id
+                        .map(|id| {
+                            load_remote_computer_device_secrets(&account_scoped_path(path, id))
+                        })
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            let mut state = self.state()?;
+            state.events.clear();
+            state.pending_approvals.clear();
+            state.operations.clear();
+            state.operation_agents.clear();
+            state.background_operations.clear();
+            state.automations = automations;
+            state.bots = bots;
+            state.peer_messages = peer_messages;
+            state.groups.clear();
+            state.groups = groups;
+            state.group_runs.clear();
+            state.group_operations.clear();
+            state.remote_computer_device_secrets = remote_device_secrets;
+            state.auth_user = None;
+            state.session_active = logged_in;
+            drop(state);
+            *self
+                .active_account_id
+                .lock()
+                .map_err(|_| FeatureHostError::StatePoisoned)? = next_account_id.clone();
+        }
+        let mut state = self.state()?;
+        state.session_active = logged_in;
+        state.auth_user = if logged_in {
+            auth.get("user").cloned()
+        } else {
+            None
+        };
+        Ok(())
     }
 
     fn persist_remote_device_secrets(
         &self,
         secrets: &BTreeMap<String, String>,
     ) -> Result<(), FeatureHostError> {
-        let Some(path) = self.remote_device_state_path.as_deref() else {
+        let Some(path) = self.active_account_root(self.remote_device_state_path.as_deref()) else {
             return Ok(());
         };
-        persist_remote_computer_device_secrets(path, secrets)
+        persist_remote_computer_device_secrets(&path, secrets)
     }
 
     fn remote_device_secret(
@@ -5685,6 +5863,23 @@ impl FeatureHostController {
             .ok_or(FeatureHostError::ProductionUnavailable)
     }
 
+    #[cfg(feature = "production")]
+    fn require_authenticated_account(&self) -> Result<(), FeatureHostError> {
+        let auth_status = self.auth_status()?;
+        let auth = auth_payload(&auth_status);
+        if auth.get("loggedIn").and_then(Value::as_bool) != Some(true) {
+            return Err(FeatureHostError::Contract(
+                "this operation requires an authenticated Fabushi account session".into(),
+            ));
+        }
+        if auth_account_id(auth).is_none() {
+            return Err(FeatureHostError::Contract(
+                "authenticated account has no stable user id".into(),
+            ));
+        }
+        Ok(())
+    }
+
     #[cfg(not(feature = "production"))]
     fn execute_production(
         &self,
@@ -5732,14 +5927,16 @@ impl FeatureHostController {
             let new_messages = group_messages_since_member_last_spoke(&group.messages, &member.id);
             let system_prompt = build_group_member_system_prompt(&member, &group, &peers);
             let turn_prompt = build_group_turn_prompt(&member, &group, &peers, new_messages);
-            let memory_prompt = self
-                .memory_root_path
+            let account_memory_root = self.active_account_root(self.memory_root_path.as_deref());
+            let account_workflow_root =
+                self.active_account_root(self.workflow_root_path.as_deref());
+            let memory_prompt = account_memory_root
                 .as_deref()
                 .map(|root| render_memory_system_prompt(&root.join(&member.id).join("memory")))
                 .unwrap_or_default();
             let workflow_catalog = match (
-                self.workflow_root_path.as_deref(),
-                self.memory_root_path.as_deref(),
+                account_workflow_root.as_deref(),
+                account_memory_root.as_deref(),
             ) {
                 (Some(workflow_root), Some(agent_root)) => {
                     render_workflow_catalog(workflow_root, agent_root, &member.id)
@@ -5987,30 +6184,9 @@ impl FeatureHostController {
                         None
                     }
                 } else {
-                    let expects_generated_mini_app =
-                        if message.role == RuntimeMessageRole::Assistant {
-                            self.state()?
-                                .generated_mini_app_operations
-                                .remove(&operation_id)
-                        } else {
-                            false
-                        };
                     let mut cards = transcript_cards_from_metadata(&message.metadata);
-                    let mut message_text = message.text;
-                    if message.role == RuntimeMessageRole::Assistant
-                        && !cards
-                            .iter()
-                            .any(|card| matches!(card, TranscriptCard::MiniApp { .. }))
-                        && let Some((card, visible_text)) = generated_mini_app_card_from_text(
-                            &message_text,
-                            expects_generated_mini_app,
-                        )
-                    {
-                        cards.push(card);
-                        message_text = visible_text;
-                    }
                     let message_id = message.id.to_string();
-                    if message_text.trim().is_empty() && !cards.is_empty() {
+                    if message.text.trim().is_empty() && !cards.is_empty() {
                         let first = cards.remove(0);
                         let mut state = self.state()?;
                         for (index, card) in cards.into_iter().enumerate() {
@@ -6049,7 +6225,7 @@ impl FeatureHostController {
                         Some(HostEvent::ChatMessage {
                             timestamp: timestamp(),
                             role,
-                            text: message_text,
+                            text: message.text,
                             operation_id: Some(operation_id),
                         })
                     }
@@ -6063,9 +6239,6 @@ impl FeatureHostController {
             } => Some(self.translate_runtime_approval(approval_id, title, details)?),
             RuntimeEvent::OperationCompleted { operation_id } => {
                 let operation_id = operation_id.to_string();
-                self.state()?
-                    .generated_mini_app_operations
-                    .remove(&operation_id);
                 let group_context = self.state()?.group_operations.remove(&operation_id);
                 if let Some(context) = group_context {
                     let _ = self.advance_group_run_after_turn(&context)?;
@@ -6097,9 +6270,6 @@ impl FeatureHostController {
                 message,
             } => {
                 let operation_id = operation_id.to_string();
-                self.state()?
-                    .generated_mini_app_operations
-                    .remove(&operation_id);
                 let group_context = self.state()?.group_operations.remove(&operation_id);
                 if let Some(context) = group_context {
                     let group = {
@@ -6721,6 +6891,7 @@ impl FeatureHostController {
         model: Option<String>,
         attachments: Vec<AttachmentContext>,
     ) -> Result<CommandAccepted, FeatureHostError> {
+        self.require_authenticated_account()?;
         let text = required(text, "chat text")?;
         let bot_conversation_id = if let Some(agent_id) = agent_id.as_deref() {
             self.state()?
@@ -6781,7 +6952,6 @@ impl FeatureHostController {
             .map(ConversationId)
             .or_else(|| bot_conversation_id.map(ConversationId))
             .unwrap_or_else(|| ConversationId(MAHAYANA_AI_CONVERSATION_ID.to_string()));
-        let expects_generated_mini_app = requests_runnable_mini_app(&text);
         let (provider, routed_model) = match self.runtime()?.execute(RuntimeCommand::Status)? {
             RuntimeResponse::Status(status) => (
                 format!("{:?}", status.model_provider).to_lowercase(),
@@ -6801,7 +6971,7 @@ impl FeatureHostController {
         }
         let memory_agent_id = agent_id.as_deref().unwrap_or("mahayana-assistant");
         if is_safe_memory_agent_id(memory_agent_id) {
-            if let Some(root) = self.memory_root_path.as_deref() {
+            if let Some(root) = self.active_account_root(self.memory_root_path.as_deref()) {
                 let memory_dir = root.join(memory_agent_id).join("memory");
                 let memory_prompt = render_memory_system_prompt(&memory_dir);
                 if !memory_prompt.is_empty() {
@@ -6810,9 +6980,12 @@ impl FeatureHostController {
                     );
                 }
             }
+            let account_workflow_root =
+                self.active_account_root(self.workflow_root_path.as_deref());
+            let account_memory_root = self.active_account_root(self.memory_root_path.as_deref());
             if let (Some(workflow_root), Some(agent_root)) = (
-                self.workflow_root_path.as_deref(),
-                self.memory_root_path.as_deref(),
+                account_workflow_root.as_deref(),
+                account_memory_root.as_deref(),
             ) {
                 let workflow_catalog =
                     render_workflow_catalog(workflow_root, agent_root, memory_agent_id);
@@ -6834,11 +7007,6 @@ impl FeatureHostController {
         };
         let mut state = self.state()?;
         state.operations.insert(operation_id.clone());
-        if expects_generated_mini_app {
-            state
-                .generated_mini_app_operations
-                .insert(operation_id.clone());
-        }
         state.operation_agents.insert(
             operation_id.clone(),
             agent_id
@@ -6891,6 +7059,16 @@ impl FeatureHostController {
         request_id: String,
         query: Option<String>,
     ) -> Result<CommandAccepted, FeatureHostError> {
+        self.require_authenticated_account()?;
+        self.production_list_conversations_from_runtime(request_id, query)
+    }
+
+    #[cfg(feature = "production")]
+    fn production_list_conversations_from_runtime(
+        &self,
+        request_id: String,
+        query: Option<String>,
+    ) -> Result<CommandAccepted, FeatureHostError> {
         let conversations = match self.runtime()?.execute(RuntimeCommand::ListConversations)? {
             RuntimeResponse::Conversations { data } => data,
             other => return Err(unexpected_response("conversation.list", other)),
@@ -6927,6 +7105,16 @@ impl FeatureHostController {
 
     #[cfg(feature = "production")]
     fn production_open_conversation(
+        &self,
+        request_id: String,
+        conversation_id: String,
+    ) -> Result<CommandAccepted, FeatureHostError> {
+        self.require_authenticated_account()?;
+        self.production_open_conversation_from_runtime(request_id, conversation_id)
+    }
+
+    #[cfg(feature = "production")]
+    fn production_open_conversation_from_runtime(
         &self,
         request_id: String,
         conversation_id: String,
@@ -7334,157 +7522,6 @@ impl FeatureHostController {
             .lock()
             .map_err(|_| FeatureHostError::StatePoisoned)
     }
-}
-
-const GENERATED_MINI_APP_MAX_BYTES: usize = 5 * 1024 * 1024;
-
-fn requests_runnable_mini_app(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    [
-        "小程序",
-        "mini app",
-        "miniapp",
-        "web app",
-        "网页应用",
-        "交互应用",
-    ]
-    .iter()
-    .any(|marker| lower.contains(*marker))
-        && [
-            "做", "创建", "生成", "实现", "开发", "build", "create", "make", "generate",
-        ]
-        .iter()
-        .any(|marker| lower.contains(*marker))
-}
-
-fn safe_generated_mini_app_id(value: &str) -> Option<String> {
-    let value = value.trim().to_ascii_lowercase();
-    (2..=64)
-        .contains(&value.len())
-        .then_some(())
-        .filter(|_| {
-            value
-                .as_bytes()
-                .first()
-                .is_some_and(u8::is_ascii_alphanumeric)
-        })
-        .filter(|_| {
-            value
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-        })
-        .map(|_| value)
-}
-
-fn generated_mini_app_id(value: Option<&str>, html: &str) -> String {
-    if let Some(value) = value.and_then(safe_generated_mini_app_id) {
-        return value;
-    }
-    let digest = Sha256::digest(html.as_bytes());
-    let suffix = digest[..8]
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    format!("generated-{suffix}")
-}
-
-fn fenced_block<'a>(text: &'a str, language: &str) -> Option<(usize, usize, &'a str)> {
-    let marker = format!("```{language}");
-    let start = text.find(&marker)?;
-    let content_start = text[start + marker.len()..]
-        .find('\n')
-        .map(|offset| start + marker.len() + offset + 1)?;
-    let closing_offset = text[content_start..].find("```")?;
-    let end = content_start + closing_offset + 3;
-    Some((
-        start,
-        end,
-        &text[content_start..content_start + closing_offset],
-    ))
-}
-
-fn mini_app_visible_text(text: &str, start: usize, end: usize, name: &str) -> String {
-    let remainder = format!("{}{}", &text[..start], &text[end..]);
-    let remainder = remainder.trim();
-    let launch = format!("小程序「{name}」已生成，可点击下方卡片直接打开。");
-    if remainder.is_empty() {
-        launch
-    } else {
-        format!("{remainder}\n\n{launch}")
-    }
-}
-
-fn mini_app_card_from_parts(metadata: &Value, html: &str) -> Option<TranscriptCard> {
-    let html = html.trim();
-    if html.is_empty() || html.len() > GENERATED_MINI_APP_MAX_BYTES {
-        return None;
-    }
-    let lower = html.to_ascii_lowercase();
-    if !lower.contains("<html") && !lower.contains("<!doctype html") {
-        return None;
-    }
-    let name = metadata
-        .get("name")
-        .or_else(|| metadata.get("title"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("生成的小程序")
-        .chars()
-        .take(120)
-        .collect::<String>();
-    let description = metadata
-        .get("description")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| value.chars().take(300).collect::<String>());
-    let id = generated_mini_app_id(
-        metadata
-            .get("id")
-            .or_else(|| metadata.get("miniAppId"))
-            .and_then(Value::as_str),
-        html,
-    );
-    Some(TranscriptCard::MiniApp {
-        mini_app_id: id,
-        name,
-        html: html.to_string(),
-        description,
-    })
-}
-
-fn generated_mini_app_card_from_text(
-    text: &str,
-    allow_html_fallback: bool,
-) -> Option<(TranscriptCard, String)> {
-    if let Some((start, end, body)) = fenced_block(text, "fabushi-miniapp") {
-        let mut lines = body.lines();
-        let metadata_line = lines.next()?.trim();
-        let metadata: Value = serde_json::from_str(metadata_line).ok()?;
-        let html = lines.collect::<Vec<_>>().join("\n");
-        let card = mini_app_card_from_parts(&metadata, &html)?;
-        let name = match &card {
-            TranscriptCard::MiniApp { name, .. } => name.clone(),
-            _ => unreachable!(),
-        };
-        return Some((card, mini_app_visible_text(text, start, end, &name)));
-    }
-    if !allow_html_fallback {
-        return None;
-    }
-    for language in ["html", "htm"] {
-        if let Some((start, end, html)) = fenced_block(text, language) {
-            let metadata = json!({"name":"生成的小程序"});
-            let card = mini_app_card_from_parts(&metadata, html)?;
-            let name = match &card {
-                TranscriptCard::MiniApp { name, .. } => name.clone(),
-                _ => unreachable!(),
-            };
-            return Some((card, mini_app_visible_text(text, start, end, &name)));
-        }
-    }
-    None
 }
 
 fn transcript_cards_from_metadata(metadata: &Value) -> Vec<TranscriptCard> {
@@ -8940,8 +8977,7 @@ fn compose_agent_input(
     mode_statement: Option<&str>,
     attachments: &[AttachmentContext],
 ) -> String {
-    let wants_runnable_mini_app = mode == AgentMode::Agent && requests_runnable_mini_app(text);
-    if mode == AgentMode::Agent && attachments.is_empty() && !wants_runnable_mini_app {
+    if mode == AgentMode::Agent && attachments.is_empty() {
         return text.to_string();
     }
     let mode_instruction = match mode {
@@ -8955,11 +8991,6 @@ fn compose_agent_input(
         "[Agent 模式]\n{}\n{mode_instruction}\n\n[用户请求]\n{text}",
         mode_statement.unwrap_or("")
     );
-    if wants_runnable_mini_app {
-        input.push_str(
-            "\n\n[可运行 Mini App 产物协议]\n如果最终交付物是可直接运行的自包含 HTML 小程序，不要只把源码作为普通代码块结束。请在最终回复中附加且只附加一个如下 fenced block：\n```fabushi-miniapp\n{\"id\":\"short-kebab-id\",\"name\":\"用户可见名称\",\"description\":\"一句话说明\"}\n<!doctype html>...完整自包含 HTML...\n```\n普通代码示例不要使用 fabushi-miniapp 标记。Fabushi 会把这个 block 转换为可点击打开的小程序卡片。",
-        );
-    }
     for attachment in attachments {
         input.push_str("\n\n[附件: ");
         input.push_str(&attachment.name);
@@ -11476,6 +11507,44 @@ fn stable_authenticated_account_id(auth: &Value) -> Option<String> {
         })
 }
 
+#[cfg(feature = "production")]
+fn auth_payload(response: &Value) -> &Value {
+    response
+        .get("auth")
+        .filter(|value| value.is_object())
+        .unwrap_or(response)
+}
+
+#[cfg(feature = "production")]
+fn auth_account_id(auth: &Value) -> Option<String> {
+    stable_authenticated_account_id(auth)
+}
+
+#[cfg(feature = "production")]
+fn account_fingerprint(account_id: &str) -> String {
+    Sha256::digest(account_id.as_bytes())[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+#[cfg(feature = "production")]
+fn account_scoped_path(base: &Path, account_id: &str) -> PathBuf {
+    base.parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("accounts")
+        .join(account_fingerprint(account_id))
+        .join(
+            base.file_name()
+                .unwrap_or_else(|| std::ffi::OsStr::new("state.json")),
+        )
+}
+
+#[cfg(feature = "production")]
+fn actor_id_for_account_id(account_id: &str) -> ActorId {
+    ActorId::new(format!("human:account:{}", account_fingerprint(account_id)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -13017,48 +13086,201 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn mini_app_agent_turn_adds_structured_artifact_instruction() {
-        let input = compose_agent_input(
-            "帮我创建一个可以点击计数的小程序",
-            AgentMode::Agent,
-            None,
-            &[],
-        );
-        assert!(input.contains("```fabushi-miniapp"));
-        assert!(input.contains("完整自包含 HTML"));
+    #[cfg(feature = "production")]
+    #[derive(Default)]
+    struct FcmUnreadBackend;
 
-        let ordinary = compose_agent_input("解释 HTML 是什么", AgentMode::Agent, None, &[]);
-        assert_eq!(ordinary, "解释 HTML 是什么");
-    }
-
-    #[test]
-    fn generated_mini_app_envelope_becomes_clickable_card_without_raw_source() {
-        let text = "已完成。\n```fabushi-miniapp\n{\"id\":\"counter-demo\",\"name\":\"计数器\",\"description\":\"点击按钮计数\"}\n<!doctype html><html><body><button>+1</button></body></html>\n```";
-        let (card, visible) =
-            generated_mini_app_card_from_text(text, false).expect("promote generated Mini App");
-        match card {
-            TranscriptCard::MiniApp {
-                mini_app_id,
-                name,
-                html,
-                description,
-            } => {
-                assert_eq!(mini_app_id, "counter-demo");
-                assert_eq!(name, "计数器");
-                assert!(html.contains("<button>+1</button>"));
-                assert_eq!(description.as_deref(), Some("点击按钮计数"));
+    #[cfg(feature = "production")]
+    #[async_trait::async_trait]
+    impl mahayana_kernel::EngineBackend for FcmUnreadBackend {
+        fn descriptor(&self) -> mahayana_kernel::BackendDescriptor {
+            mahayana_kernel::BackendDescriptor {
+                id: "fcm-unread-test".into(),
+                display_name: "FCM unread deterministic backend".into(),
+                native: true,
+                capabilities: mahayana_kernel::CapabilitySet::new([
+                    mahayana_kernel::Capability::Model,
+                ]),
             }
-            other => panic!("unexpected card: {other:?}"),
         }
-        assert!(visible.contains("可点击下方卡片直接打开"));
-        assert!(!visible.contains("<!doctype html>"));
+
+        async fn open_session(
+            &self,
+            _request: mahayana_kernel::OpenSessionRequest,
+        ) -> Result<mahayana_kernel::SessionId, mahayana_kernel::KernelError> {
+            Ok(mahayana_kernel::SessionId::new())
+        }
+
+        async fn run(
+            &self,
+            request: mahayana_kernel::RunRequest,
+            events: mahayana_kernel::SharedKernelEventSink,
+        ) -> Result<(), mahayana_kernel::KernelError> {
+            events.emit(mahayana_kernel::KernelEvent::MessageCompleted {
+                operation_id: request.operation_id,
+                text: "deterministic assistant completion".into(),
+            })
+        }
+
+        async fn interrupt(
+            &self,
+            _operation_id: &mahayana_kernel::OperationId,
+        ) -> Result<(), mahayana_kernel::KernelError> {
+            Ok(())
+        }
+
+        async fn resolve_approval(
+            &self,
+            _resolution: mahayana_kernel::ApprovalResolution,
+        ) -> Result<(), mahayana_kernel::KernelError> {
+            Ok(())
+        }
     }
 
+    #[cfg(feature = "production")]
+    fn fcm_unread_production_controller() -> FeatureHostController {
+        let profile = format!("fcm-unread-cross-layer-{}", std::process::id());
+        let host_config = isolated_host_config(&profile);
+        let runtime = MahayanaHost::create_with_engine_backend_for_test(
+            host_config,
+            std::sync::Arc::new(FcmUnreadBackend),
+        )
+        .expect("create deterministic production runtime");
+        let mut controller = FeatureHostController::create_test_backend(
+            HostConfig {
+                profile_id: profile,
+                mode: HostMode::Test,
+            },
+            SurfacePlatform::Electron,
+            None,
+        );
+        controller.config.mode = HostMode::Production;
+        controller.runtime = Some(runtime);
+        controller
+    }
+
+    #[cfg(feature = "production")]
+    fn fcm_assistant_unread(controller: &FeatureHostController, request_id: &str) -> u32 {
+        controller
+            .production_list_conversations_from_runtime(request_id.into(), None)
+            .expect("authoritative conversation.list");
+        let mut state = controller.state().expect("feature state");
+        while let Some(event) = state.events.pop_back() {
+            if let HostEvent::ConversationListed { conversations, .. } = event {
+                return conversations
+                    .into_iter()
+                    .find(|conversation| conversation.id == MAHAYANA_AI_CONVERSATION_ID)
+                    .expect("assistant conversation")
+                    .unread_count;
+            }
+        }
+        panic!("conversation.list event missing")
+    }
+
+    #[cfg(feature = "production")]
+    fn wait_for_fcm_assistant_unread(
+        controller: &FeatureHostController,
+        expected: u32,
+        request_id: &str,
+    ) {
+        for attempt in 0..100 {
+            if fcm_assistant_unread(controller, &format!("{request_id}-{attempt}")) == expected {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("assistant unread did not become {expected}")
+    }
+
+    #[cfg(feature = "production")]
     #[test]
-    fn ordinary_html_example_is_not_promoted_without_app_intent() {
-        let text = "示例：\n```html\n<!doctype html><html><body>Hello</body></html>\n```";
-        assert!(generated_mini_app_card_from_text(text, false).is_none());
-        assert!(generated_mini_app_card_from_text(text, true).is_some());
+    fn fcm_010_13_11_production_adapter_keeps_read_boundary_conversation_scoped() {
+        let controller = fcm_unread_production_controller();
+        let assistant = ConversationId(MAHAYANA_AI_CONVERSATION_ID.to_string());
+        let research = ConversationId("codex:agent:research".to_string());
+
+        assert_eq!(fcm_assistant_unread(&controller, "initial-list"), 0);
+
+        controller
+            .runtime()
+            .expect("runtime")
+            .execute(RuntimeCommand::SendMessage {
+                conversation_id: assistant.clone(),
+                text: "visible assistant completion".into(),
+                client_message_id: Some("visible-completion".into()),
+                hidden: false,
+            })
+            .expect("visible production runtime send");
+        wait_for_fcm_assistant_unread(&controller, 1, "after-visible");
+
+        controller
+            .production_open_conversation_from_runtime("open-research".into(), research.0.clone())
+            .expect("explicit unrelated conversation.open");
+        assert_eq!(
+            fcm_assistant_unread(&controller, "after-unrelated-open"),
+            1,
+            "opening a shared-provider codex conversation must not clear assistant unread"
+        );
+
+        controller
+            .runtime()
+            .expect("runtime")
+            .execute(RuntimeCommand::ConversationHistory {
+                conversation_id: assistant.clone(),
+                limit: Some(2_000),
+            })
+            .expect("background history request clamped by Runtime");
+        assert_eq!(
+            fcm_assistant_unread(&controller, "after-background-history"),
+            1,
+            "Runtime clamp=500 background history must not acknowledge unread"
+        );
+
+        let visible_history_before_hidden = match controller
+            .runtime()
+            .expect("runtime")
+            .execute(RuntimeCommand::ConversationHistory {
+                conversation_id: assistant.clone(),
+                limit: Some(500),
+            })
+            .expect("visible history before hidden completion")
+        {
+            RuntimeResponse::History { data } => data.len(),
+            other => panic!("unexpected history response: {other:?}"),
+        };
+        controller
+            .runtime()
+            .expect("runtime")
+            .execute(RuntimeCommand::SendMessage {
+                conversation_id: assistant.clone(),
+                text: "hidden background completion".into(),
+                client_message_id: Some("hidden-completion".into()),
+                hidden: true,
+            })
+            .expect("hidden production runtime send");
+        std::thread::sleep(Duration::from_millis(25));
+        assert_eq!(fcm_assistant_unread(&controller, "after-hidden"), 1);
+        let visible_history_after_hidden = match controller
+            .runtime()
+            .expect("runtime")
+            .execute(RuntimeCommand::ConversationHistory {
+                conversation_id: assistant.clone(),
+                limit: Some(500),
+            })
+            .expect("visible history after hidden completion")
+        {
+            RuntimeResponse::History { data } => data.len(),
+            other => panic!("unexpected history response: {other:?}"),
+        };
+        assert_eq!(visible_history_after_hidden, visible_history_before_hidden);
+
+        controller
+            .production_open_conversation_from_runtime("open-assistant".into(), assistant.0.clone())
+            .expect("explicit assistant conversation.open");
+        assert_eq!(
+            fcm_assistant_unread(&controller, "after-assistant-open"),
+            0,
+            "only explicit assistant open may clear assistant unread"
+        );
     }
 }

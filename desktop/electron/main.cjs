@@ -14,6 +14,7 @@ const { createNativeCapabilityHandlers } = require('./native-capability-handlers
 const { MessagingSignalingClient } = require('./messaging-signaling-client.cjs');
 const { createAppAgentSurfaceServer } = require('./app-agent-surface-server.cjs');
 const { RemoteDeviceAgentSupervisor } = require('./remote-device-agent-supervisor.cjs');
+const { normalizeDesktopUpdateStatus } = require('./update-state.cjs');
 
 const appDataOverride = process.env.FABUSHI_APP_DATA?.trim();
 if (appDataOverride) app.setPath('userData', path.resolve(appDataOverride));
@@ -137,7 +138,12 @@ let automaticDesktopUpdateCheckPromise = null;
 let mainWindow = null;
 let backgroundTray = null;
 let quitting = false;
+let desktopUpdateInstallationInProgress = false;
 const backgroundPersistenceEnabled = process.env.FABUSHI_E2E !== '1';
+
+function setDesktopUpdateInstallInProgress(value) {
+  desktopUpdateInstallationInProgress = value === true;
+}
 
 function appAgentControlPolicyDecision() {
   const configured = String(process.env.FABUSHI_COMPUTER_POLICY_FILE || '').trim();
@@ -473,14 +479,7 @@ async function mutateNativeState(mutator) {
 }
 
 function normalizePersistedDesktopUpdateStatus(status) {
-  const currentVersion = app.getVersion();
-  if (!status || typeof status !== 'object') return { type: 'upToDate', version: currentVersion };
-  const version = typeof status.version === 'string' && status.version ? status.version : currentVersion;
-  if (status.type === 'upToDate') return { ...status, version: currentVersion };
-  if (version === currentVersion && ['available', 'downloading', 'ready', 'staging'].includes(status.type)) {
-    return { type: 'upToDate', version: currentVersion };
-  }
-  return { ...status, version };
+  return normalizeDesktopUpdateStatus(status, app.getVersion());
 }
 
 async function getDesktopUpdateStatus() {
@@ -491,15 +490,17 @@ async function getDesktopUpdateStatus() {
 }
 
 function setDesktopUpdateStatus(status, { broadcast = true } = {}) {
-  // The updater is a live process state machine. Set memory before broadcasting so
-  // a renderer click triggered by this exact event can never read stale disk state.
-  runtimeDesktopUpdateStatus = status;
-  if (broadcast) broadcastNativeEvent('update-status', status);
-  return mutateNativeState((state) => ({ ...state, updateStatus: status }))
+  // Normalize live updater events before memory, renderer broadcast, and persistence.
+  // A same-version update must never become an actionable UI state.
+  const normalizedStatus = normalizePersistedDesktopUpdateStatus(status);
+  runtimeDesktopUpdateStatus = normalizedStatus;
+  if (normalizedStatus.type === 'upToDate') availableDesktopUpdateVersion = null;
+  if (broadcast) broadcastNativeEvent('update-status', normalizedStatus);
+  return mutateNativeState((state) => ({ ...state, updateStatus: normalizedStatus }))
     .catch((error) => {
       console.warn('[updater] unable to persist live update status', error instanceof Error ? error.message : String(error));
     })
-    .then(() => status);
+    .then(() => normalizedStatus);
 }
 
 function persistenceKey(value) {
@@ -808,6 +809,7 @@ function installNativeEdge() {
     windowForEvent,
     broadcastNativeEvent,
     markDeepLinksReady: () => deepLinkRouter.markReady(),
+    setDesktopUpdateInstallInProgress,
   }));
 
   nativeEdgeServer = serveMainEdge(ipcMain, NATIVE_EDGE, handlers, {
@@ -1095,7 +1097,12 @@ function installBackgroundTray() {
 function installAutoUpdaterEvents() {
   if (!autoUpdater?.on) return;
   autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // macOS's Squirrel updater must fetch the staged ZIP after the renderer has
+  // requested installation. If this remains true, downloadUpdate() starts the
+  // native fetch before quitAndInstall() is called and the explicit renderer
+  // shutdown can race that install handshake. Keep the manual flow in control
+  // on macOS; other platforms retain their normal quit-install behavior.
+  autoUpdater.autoInstallOnAppQuit = process.platform !== 'darwin';
   autoUpdater.allowPrerelease = false;
   autoUpdater.on('checking-for-update', () => {
     const status = { type: 'checking', version: app.getVersion() };
@@ -1360,18 +1367,29 @@ app.on('before-quit', (event) => {
   const closingAppAgentSurface = appAgentSurfaceServer;
   appAgentSurfaceServer = null;
   if (closingAppAgentSurface && !appAgentSurfaceShutdownComplete) {
-    event.preventDefault();
-    if (!appAgentSurfaceShutdownPending) {
-      appAgentSurfaceShutdownPending = true;
-      void closingAppAgentSurface.close()
-        .catch((error) => {
-          console.error('[app-agent-surface] shutdown failed', error);
-        })
-        .finally(() => {
-          appAgentSurfaceShutdownPending = false;
-          appAgentSurfaceShutdownComplete = true;
-          app.quit();
-        });
+    if (desktopUpdateInstallationInProgress) {
+      // The updater has already staged a replacement and must be allowed to
+      // finish the quit/install handshake. Cleanup is best-effort here: waiting
+      // for a loopback control request would prevent electron-updater from
+      // replacing the app bundle at all.
+      appAgentSurfaceShutdownComplete = true;
+      void closingAppAgentSurface.close().catch((error) => {
+        console.error('[app-agent-surface] shutdown during update failed', error);
+      });
+    } else {
+      event.preventDefault();
+      if (!appAgentSurfaceShutdownPending) {
+        appAgentSurfaceShutdownPending = true;
+        void closingAppAgentSurface.close()
+          .catch((error) => {
+            console.error('[app-agent-surface] shutdown failed', error);
+          })
+          .finally(() => {
+            appAgentSurfaceShutdownPending = false;
+            appAgentSurfaceShutdownComplete = true;
+            app.quit();
+          });
+      }
     }
   }
   backgroundTray?.destroy();

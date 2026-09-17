@@ -963,6 +963,7 @@ function transcriptCardTitle(card: TranscriptCard): string {
     case 'spreadsheet': return card.name;
     case 'miniApp': return card.name;
   }
+  return '';
 }
 
 function StepIcon({ status }: { status: AgentStepProjection['status'] }) {

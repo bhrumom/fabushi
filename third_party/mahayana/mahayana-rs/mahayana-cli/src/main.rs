@@ -48,8 +48,10 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
+use url::Url;
 
 mod chat_tui;
+mod device_agent;
 mod plugin_archive;
 mod plugin_dev;
 mod plugin_dev_template;
@@ -147,6 +149,11 @@ enum CliCommand {
     Review(EmbeddedAgentArgs),
     /// 管理外部 MCP 服务。
     Mcp(EmbeddedAgentArgs),
+    /// 管理本机与 Fabushi 官方 MCP 的动态设备连接。
+    Device {
+        #[command(subcommand)]
+        command: DeviceCommand,
+    },
     /// 以 stdio 启动大乘 MCP 服务。
     McpServer(EmbeddedAgentArgs),
     /// 启动或管理大乘 App Server。
@@ -217,6 +224,19 @@ enum CliCommand {
         #[command(subcommand)]
         command: PurchasesCommand,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum DeviceCommand {
+    /// 启动轻量后台设备 Agent；未登录时保持空闲，登录后自动上线。
+    Start,
+    /// 查看设备 Agent、本机稳定设备 ID 和官方网关状态。
+    Status,
+    /// 请求后台设备 Agent 退出。
+    Stop,
+    /// 前台运行设备 Agent（安装器/服务管理器使用）。
+    #[command(hide = true)]
+    Serve,
 }
 
 #[derive(Debug, Subcommand)]
@@ -372,6 +392,14 @@ enum MarketplaceCommand {
     },
     /// Download, verify, and safely install an approved plugin.
     Install {
+        plugin_id: String,
+        #[arg(long)]
+        version: Option<String>,
+        #[arg(long, default_value = ".")]
+        repository: PathBuf,
+    },
+    /// Download, verify, and safely update an installed approved plugin.
+    Update {
         plugin_id: String,
         #[arg(long)]
         version: Option<String>,
@@ -542,6 +570,7 @@ fn is_product_command(command: &str) -> bool {
             | "send"
             | "chat"
             | "connector"
+            | "device"
             | "skill"
             | "bot"
             | "listener"
@@ -583,7 +612,7 @@ fn run(codex_executable_path: Option<&Path>, cli: Cli) -> Result<(), String> {
         Some(CliCommand::Login { args }) => login(args),
         Some(CliCommand::Register { args }) => register(args),
         Some(CliCommand::SendCode { email }) => send_verification_code(vec![email]),
-        Some(CliCommand::Logout) => product_command("mahayana.auth.logout", json!({})),
+        Some(CliCommand::Logout) => logout_command(),
         Some(CliCommand::Auth) => product_command("mahayana.auth.status", json!({})),
         Some(CliCommand::Usage) => model_usage_command(),
         Some(CliCommand::Status) => with_runtime(codex_executable_path, |runtime| {
@@ -651,6 +680,7 @@ fn run(codex_executable_path: Option<&Path>, cli: Cli) -> Result<(), String> {
         Some(CliCommand::Review(args)) => run_embedded_agent_command(&["review"], args),
         Some(CliCommand::Mcp(args)) => run_embedded_agent_command(&["mcp"], args),
         Some(CliCommand::McpServer(args)) => run_embedded_agent_command(&["mcp-server"], args),
+        Some(CliCommand::Device { command }) => device_command(command),
         Some(CliCommand::AppServer(args)) => run_embedded_agent_command(&["app-server"], args),
         Some(CliCommand::RemoteControl(args)) => {
             run_embedded_agent_command(&["remote-control"], args)
@@ -1107,71 +1137,136 @@ fn verified_marketplace_archive(
     {
         return Err("市场版本元数据与请求的插件或版本不一致".into());
     }
-    if let Some(release_value) = metadata.get("releaseManifest")
-        && release_value.get("protocol").and_then(Value::as_str)
-            == Some("mahayana.external-release.v1")
-    {
-        let release = serde_json::from_value::<ExternalReleaseManifest>(release_value.clone())
-            .map_err(|error| format!("市场 external release manifest 无效：{error}"))?;
-        release.validate().map_err(|error| error.to_string())?;
-        if release.plugin_id != plugin_id || release.version != version {
-            return Err("市场 external release manifest 身份与请求不一致".into());
-        }
-        let artifact = release
-            .select_artifact(
-                "cli",
-                &["native", "desktop-stdio", "deepseek-js", "web-wasm", "mcp"],
-            )
-            .map_err(|error| error.to_string())?;
-        let archive = ArtifactResolver::new()
-            .map_err(|error| error.to_string())?
-            .download_verified(artifact)
-            .map_err(|error| error.to_string())?;
-        return Ok(VerifiedMarketplaceArchive {
-            version,
-            package_sha256: artifact.sha256.to_ascii_lowercase(),
-            package_size: artifact.size,
-            format: artifact.format.clone(),
-            archive,
-        });
+    let release_value = metadata
+        .get("releaseManifest")
+        .filter(|value| {
+            value.get("protocol").and_then(Value::as_str) == Some("mahayana.external-release.v1")
+        })
+        .ok_or_else(|| "市场版本没有提供可验证的 GitHub external release manifest".to_string())?;
+    let install = metadata
+        .get("install")
+        .or_else(|| release_value.get("install"))
+        .ok_or_else(|| "市场版本没有提供统一 GitHub 安装合同".to_string())?;
+    validate_marketplace_install_contract(install, plugin_id, &version)?;
+    let release = serde_json::from_value::<ExternalReleaseManifest>(release_value.clone())
+        .map_err(|error| format!("市场 external release manifest 无效：{error}"))?;
+    release.validate().map_err(|error| error.to_string())?;
+    if release.plugin_id != plugin_id || release.version != version {
+        return Err("市场 external release manifest 身份与请求不一致".into());
     }
-
-    // Legacy releases keep their historical metadata shape. The legacy
-    // download endpoint is now only a 307 compatibility redirect to the
-    // publisher's external HTTPS artifact; no marketplace bytes are stored.
-    let expected_sha256 = metadata
-        .get("packageSha256")
-        .and_then(Value::as_str)
-        .filter(|digest| digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()))
-        .ok_or_else(|| "市场版本元数据缺少有效 packageSha256".to_string())?
-        .to_ascii_lowercase();
-    let expected_size = metadata
-        .get("packageSize")
-        .and_then(Value::as_u64)
-        .filter(|size| *size > 0 && *size <= 50 * 1024 * 1024)
-        .ok_or_else(|| "市场版本元数据缺少有效 packageSize".to_string())?;
-    let archive = client
-        .download_marketplace_plugin(
-            plugin_id,
-            &version,
-            usize::try_from(expected_size)
-                .map_err(|_| "市场插件包大小超出当前平台限制".to_string())?,
+    let artifact = release
+        .select_artifact(
+            "cli",
+            &["native", "desktop-stdio", "deepseek-js", "web-wasm", "mcp"],
         )
         .map_err(|error| error.to_string())?;
-    if archive.len() as u64 != expected_size {
-        return Err("下载的插件包大小与市场版本元数据不一致".into());
-    }
-    let actual_sha256 = format!("{:x}", Sha256::digest(&archive));
-    if actual_sha256 != expected_sha256 {
-        return Err("云端插件包哈希与市场版本元数据不一致".into());
-    }
+    let archive = ArtifactResolver::new()
+        .map_err(|error| error.to_string())?
+        .download_verified(artifact)
+        .map_err(|error| error.to_string())?;
     Ok(VerifiedMarketplaceArchive {
         version,
-        package_sha256: actual_sha256,
-        package_size: expected_size,
-        format: ArtifactFormat::TarGz,
+        package_sha256: artifact.sha256.to_ascii_lowercase(),
+        package_size: artifact.size,
+        format: artifact.format.clone(),
         archive,
     })
+}
+
+fn validate_marketplace_install_contract(
+    install: &Value,
+    plugin_id: &str,
+    version: &str,
+) -> Result<(), String> {
+    let source = install
+        .get("source")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "市场安装合同缺少 source".to_string())?;
+    let repository = source
+        .get("repository")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "市场安装合同缺少 GitHub repository".to_string())?;
+    let repository_url = Url::parse(repository).map_err(|error| error.to_string())?;
+    let repository_parts = repository_url
+        .path()
+        .trim_matches('/')
+        .split('/')
+        .collect::<Vec<_>>();
+    if repository_url.scheme() != "https"
+        || !repository_url
+            .host_str()
+            .is_some_and(|host| host.eq_ignore_ascii_case("github.com"))
+        || repository_url.username() != ""
+        || repository_url.password().is_some()
+        || repository_url.port().is_some()
+        || repository_url.query().is_some()
+        || repository_url.fragment().is_some()
+        || repository_parts.len() != 2
+        || repository_parts.iter().any(|part| part.is_empty())
+        || source
+            .get("sourceRef")
+            .and_then(Value::as_str)
+            .is_none_or(|value| {
+                value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
+        || source
+            .get("marketplaceHostsPackage")
+            .and_then(Value::as_bool)
+            != Some(false)
+    {
+        return Err("市场安装合同必须固定到公开 GitHub commit，且市场不得托管包字节".into());
+    }
+    if install.get("protocol").and_then(Value::as_str) != Some("fabushi.marketplace.install.v1")
+        || install.get("strategy").and_then(Value::as_str) != Some("github-immutable")
+        || install.get("pluginId").and_then(Value::as_str) != Some(plugin_id)
+        || install.get("version").and_then(Value::as_str) != Some(version)
+    {
+        return Err("市场安装合同身份或策略无效".into());
+    }
+    let artifacts = install
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .filter(|artifacts| !artifacts.is_empty())
+        .ok_or_else(|| "市场安装合同没有 artifacts".to_string())?;
+    for artifact in artifacts {
+        let source = artifact
+            .get("source")
+            .and_then(Value::as_object)
+            .ok_or_else(|| "市场 artifact 缺少 source".to_string())?;
+        let github_artifact = match source.get("type").and_then(Value::as_str) {
+            Some("https") => source
+                .get("url")
+                .and_then(Value::as_str)
+                .and_then(|url| Url::parse(url).ok())
+                .is_some_and(|url| {
+                    url.scheme() == "https"
+                        && url.host_str().is_some_and(|host| {
+                            host.eq_ignore_ascii_case("github.com")
+                                || host.eq_ignore_ascii_case("raw.githubusercontent.com")
+                        })
+                        && url.username().is_empty()
+                        && url.password().is_none()
+                        && url.port().is_none()
+                        && url.query().is_none()
+                        && url.fragment().is_none()
+                }),
+            Some("github-release") => true,
+            _ => false,
+        };
+        if !github_artifact {
+            return Err("市场 artifact 必须来自 GitHub HTTPS 或 GitHub Release".into());
+        }
+    }
+    if install
+        .get("update")
+        .and_then(Value::as_object)
+        .and_then(|update| update.get("allowDowngrade"))
+        .and_then(Value::as_bool)
+        != Some(false)
+    {
+        return Err("市场安装合同必须禁止降级".into());
+    }
+    Ok(())
 }
 
 fn marketplace_command(command: MarketplaceCommand) -> Result<(), String> {
@@ -1247,6 +1342,25 @@ fn marketplace_command(command: MarketplaceCommand) -> Result<(), String> {
                 );
             }
             print_json(&plugin_dev::install_marketplace_bundle(
+                &repository,
+                &plugin_id,
+                &verified.version,
+                &verified.archive,
+            )?)
+        }
+        MarketplaceCommand::Update {
+            plugin_id,
+            version,
+            repository,
+        } => {
+            let verified = verified_marketplace_archive(&client, &plugin_id, version.as_deref())?;
+            if verified.format != ArtifactFormat::TarGz {
+                return Err(
+                    "Codex marketplace repository update currently requires a tar.gz CLI artifact"
+                        .into(),
+                );
+            }
+            print_json(&plugin_dev::update_marketplace_bundle(
                 &repository,
                 &plugin_id,
                 &verified.version,
@@ -1550,6 +1664,27 @@ fn purchases_command(command: PurchasesCommand) -> Result<(), String> {
     print_json(&response)
 }
 
+fn logout_command() -> Result<(), String> {
+    let result = product_command("mahayana.auth.logout", json!({}));
+    let _ = device_agent::request_stop();
+    result
+}
+
+fn device_command(command: DeviceCommand) -> Result<(), String> {
+    match command {
+        DeviceCommand::Start => print_json(&device_agent::ensure_started()?),
+        DeviceCommand::Status => print_json(&device_agent::status()?),
+        DeviceCommand::Stop => print_json(&device_agent::request_stop()?),
+        DeviceCommand::Serve => device_agent::serve(),
+    }
+}
+
+fn ensure_device_agent_after_login() {
+    if let Err(error) = device_agent::ensure_started() {
+        eprintln!("警告：账号已登录，但设备 Agent 启动失败：{error}");
+    }
+}
+
 fn miniapp_command(codex_executable_path: Option<&Path>, args: Vec<String>) -> Result<(), String> {
     match args.first().map(String::as_str) {
         Some("registry") => product_command("mahayana.miniapps.registry", json!({})),
@@ -1597,7 +1732,8 @@ fn test_account_login(args: &[String]) -> Result<(), String> {
     MahayanaProductClient::default()
         .store_test_account_session(&token)
         .map_err(|error| error.to_string())?;
-    println!("测试账号 TestAccount 登录成功。会话已加密保存，AI 测试额度不设日常上限。");
+    ensure_device_agent_after_login();
+    println!("测试账号 TestAccount 登录成功。会话已加密保存；本机将自动注册为同账号可控设备。");
     Ok(())
 }
 
@@ -1608,16 +1744,18 @@ fn password_login(args: &[String]) -> Result<(), String> {
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "用法：mahayana login password <用户名> [--password-stdin]".to_string())?;
     let password = read_password(args.get(1).map(String::as_str))?;
+    let device_id = device_agent::current_device_id()?;
     let response = MahayanaProductClient::default()
         .execute(
             "mahayana.auth.password.login",
-            &json!({"username": username, "password": password}),
+            &json!({"username": username, "password": password, "deviceId": device_id}),
         )
         .map_err(|error| error.to_string())?;
     if response.get("sessionStored").and_then(Value::as_bool) != Some(true) {
         return Err("官方登录没有返回可保存的软件会话".into());
     }
-    println!("登录成功。App 与 CLI 将共用同一大乘账号会话；无需 OpenAI 登录。");
+    ensure_device_agent_after_login();
+    println!("登录成功。App 与 CLI 将共用同一大乘账号会话；本机设备 Agent 已自动启动。");
     Ok(())
 }
 
@@ -1666,8 +1804,12 @@ fn read_password(mode: Option<&str>) -> Result<String, String> {
 
 fn alipay_login() -> Result<(), String> {
     let client = MahayanaProductClient::default();
+    let device_id = device_agent::current_device_id()?;
     let authorization = client
-        .execute("mahayana.auth.alipay.start", &json!({"platform": "cli"}))
+        .execute(
+            "mahayana.auth.alipay.start",
+            &json!({"platform": "cli", "deviceId": device_id}),
+        )
         .map_err(|error| error.to_string())?;
     let url = authorization
         .get("loginUrl")
@@ -1687,7 +1829,8 @@ fn alipay_login() -> Result<(), String> {
             .map_err(|error| error.to_string())?;
         match response.get("status").and_then(Value::as_str) {
             Some("complete") => {
-                println!("登录成功。软件会话已安全保存；Codex 不需要 OpenAI 登录。");
+                ensure_device_agent_after_login();
+                println!("登录成功。软件会话已安全保存；本机设备 Agent 已自动启动。");
                 return Ok(());
             }
             Some("expired") | Some("failed") => {

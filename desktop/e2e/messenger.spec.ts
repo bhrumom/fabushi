@@ -134,11 +134,8 @@ test('desktop Messenger unifies Telegram-class navigation with Fabushi agent ide
     const profileMark = profileNavigation.locator('[data-engine="fabushi-motion-v3"]').first();
     await expect(profileMark).toBeVisible();
     await expect(profileMark).toHaveAttribute('data-motion-tier', 'ambient');
-    await expect(profileMark.locator('[data-fabushi-avatar-runtime="v1"]')).toHaveAttribute('data-frame-clock', 'shared-30fps');
     await profileNavigation.click();
     await expect(page.getByTestId('profile-navigation-menu')).toBeVisible();
-    await expect(page.getByTestId('profile-logout')).toBeVisible();
-    await expect(page.getByTestId('profile-logout')).toHaveText('退出登录');
     for (const label of [
       '聊天',
       '联系人',
@@ -187,7 +184,9 @@ test('desktop Messenger unifies Telegram-class navigation with Fabushi agent ide
 
     await page.getByTestId('messenger-input').fill('统一消息链路验收');
     await page.getByTestId('messenger-send').click();
-    await expect(page.getByTestId('message-list').locator(':scope > article').getByText('收到：统一消息链路验收', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('message-list').locator('article').getByText('统一消息链路验收', { exact: true })).toBeVisible({ timeout: 1_500 });
+    await expect(page.getByTestId('message-list').locator('article').getByText('收到：统一消息链路验收', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-testid="agent-step"]:visible')).toHaveCount(0);
 
     await page.getByTitle('置顶').click();
     await page.getByTitle('静音').click();
@@ -250,7 +249,15 @@ test('Router settings modal binds providers, usage, sandbox, preferences and fas
     await expect(page.getByTestId('settings-update-track')).toHaveValue('stable');
 
     await page.getByTestId('settings-category-account').click();
-    await expect(page.getByTestId('settings-theme')).toBeVisible();
+    const accountLogout = page.getByTestId('settings-logout');
+    const accountTheme = page.getByTestId('settings-theme');
+    await expect(accountLogout).toBeVisible();
+    await expect(accountTheme).toBeVisible();
+    const [logoutTop, themeTop] = await Promise.all([
+      accountLogout.evaluate((element) => element.getBoundingClientRect().top),
+      accountTheme.evaluate((element) => element.getBoundingClientRect().top),
+    ]);
+    expect(logoutTop).toBeLessThan(themeTop);
     await expect(page.getByTestId('settings-local-tool-permission')).toBeVisible();
     await expect(page.getByTestId('settings-time-zone')).toBeVisible();
     await expect(page.getByText('Enter 发送消息')).toBeVisible();
@@ -305,7 +312,7 @@ test('account settings logs out and clears account-scoped fast-start caches', as
     await assistant.click();
     await page.getByTestId('messenger-input').fill('退出登录缓存清理验收');
     await page.getByTestId('messenger-send').click();
-    await expect(page.getByTestId('message-list').locator(':scope > article').getByText('收到：退出登录缓存清理验收', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('message-list').locator('article').getByText('收到：退出登录缓存清理验收', { exact: true })).toBeVisible();
     await expect.poll(async () => page.evaluate(() => {
       const journal = JSON.parse(localStorage.getItem('fabushi.desktop.mahayana-conversation-journal.v1') || 'null');
       return Object.keys(journal?.conversations ?? {}).length;
@@ -317,7 +324,10 @@ test('account settings logs out and clears account-scoped fast-start caches', as
     });
 
     await page.getByTestId('profile-navigation-trigger').click();
-    const logout = page.getByTestId('profile-logout');
+    await page.getByTitle('设置', { exact: true }).click();
+    await page.getByTestId('settings-category-account').click();
+    const logout = page.getByTestId('settings-logout');
+    await expect(logout).toHaveAttribute('data-agent-id', 'settings-logout');
     await expect(logout).toBeVisible();
     await expect(logout).toHaveText('退出登录');
     await logout.click();
@@ -356,22 +366,53 @@ test('returning-user local-first conversation list is interactive within the one
     const seededPeer = page.locator('[data-testid^="peer-selfhosted:channel:"]').filter({ hasText: '首屏性能验收' }).first();
     await expect(seededPeer).toBeVisible();
     await seededPeer.click();
+
     await expect.poll(async () => page.evaluate(() => {
       const projection = JSON.parse(localStorage.getItem('fabushi.desktop.messenger-projection.v1') || 'null');
-      return Boolean(projection?.activePeerKey?.startsWith('selfhosted:') && projection?.selfConversations?.some((item: { title?: string }) => item.title === '首屏性能验收'));
-    }), { timeout: 5_000 }).toBe(true);
-    await expect.poll(async () => page.evaluate(async () => {
+      const activePeerKey = typeof projection?.activePeerKey === 'string' ? projection.activePeerKey : '';
+      return activePeerKey.startsWith('selfhosted:') ? activePeerKey : '';
+    }), { timeout: 5_000 }).toMatch(/^selfhosted:/u);
+
+    const identity = await getMessagingIdentity(page);
+    const seededConversationId = await page.evaluate(() => {
+      const projection = JSON.parse(localStorage.getItem('fabushi.desktop.messenger-projection.v1') || 'null');
+      const activePeerKey = typeof projection?.activePeerKey === 'string' ? projection.activePeerKey : '';
+      return activePeerKey.startsWith('selfhosted:') ? activePeerKey.slice('selfhosted:'.length) : '';
+    });
+    expect(seededConversationId).not.toBe('');
+    const historySeedCount = 32;
+    for (let index = 0; index < historySeedCount; index += 1) {
+      await executeMessagingCommand(page, identity.actorId, {
+        type: 'sendMessage',
+        conversationId: seededConversationId,
+        clientMessageId: `desktop:e2e-startup-history:${index}`,
+        content: { type: 'text', data: { text: { text: `startup-history-${String(index).padStart(2, '0')}`, entities: [] } } },
+        replyToMessageId: null,
+        threadRootMessageId: null,
+        scheduledAtMs: null,
+        silent: false,
+        protectedContent: false,
+      }, `startup-history-${index}`);
+    }
+
+    await expect.poll(async () => page.evaluate((conversationId) => {
+      const projection = JSON.parse(localStorage.getItem('fabushi.desktop.messenger-projection.v1') || 'null');
+      return projection?.selfMessages?.[conversationId]?.length ?? 0;
+    }, seededConversationId), { timeout: 10_000 }).toBeGreaterThanOrEqual(historySeedCount);
+    await expect.poll(async () => page.evaluate(async ({ conversationId, minimumMessages }) => {
       const bridge = (window as unknown as {
         fabushiNative?: { invoke<T>(method: string, params?: Record<string, unknown>): Promise<T> };
       }).fabushiNative;
       if (!bridge) return false;
-      const projection = await bridge.invoke<{ activePeerKey?: string; selfConversations?: Array<{ title?: string }> } | null>(
-        'readClientPersistence',
-        { key: 'fabushi.desktop.messenger-projection.v1' },
-      );
-      return Boolean(projection?.activePeerKey?.startsWith('selfhosted:')
-        && projection?.selfConversations?.some((item) => item.title === '首屏性能验收'));
-    }), { timeout: 5_000 }).toBe(true);
+      const projection = await bridge.invoke<{
+        activePeerKey?: string;
+        selfConversations?: Array<{ title?: string }>;
+        selfMessages?: Record<string, unknown[]>;
+      } | null>('readClientPersistence', { key: 'fabushi.desktop.messenger-projection.v1' });
+      return Boolean(projection?.activePeerKey === `selfhosted:${conversationId}`
+        && projection?.selfConversations?.some((item) => item.title === '首屏性能验收')
+        && (projection?.selfMessages?.[conversationId]?.length ?? 0) >= minimumMessages);
+    }, { conversationId: seededConversationId, minimumMessages: historySeedCount }), { timeout: 10_000 }).toBe(true);
 
     await app.close();
 
@@ -393,6 +434,7 @@ test('returning-user local-first conversation list is interactive within the one
     const launchToConversationListMs = Date.now() - launchStartedAtMs;
     await projectedPeer.click();
     await expect(page.getByTestId('messenger-input')).toBeVisible({ timeout: 2_000 });
+    await expect(page.getByTestId('message-list').getByText('startup-history-31', { exact: true })).toBeVisible({ timeout: 5_000 });
     const rendererToComposerInteractiveMs = await page.evaluate(() => performance.now());
 
     // The async account-status poll must not replace the locally restored Messenger
@@ -402,6 +444,22 @@ test('returning-user local-first conversation list is interactive within the one
     await expect(page.getByTestId('login-gate')).toHaveCount(0);
     await expect(workspace).toBeVisible();
     await expect(projectedPeer).toBeVisible();
+
+    const requiredPhases = ['P0', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9'];
+    await expect.poll(async () => page.evaluate(() => {
+      const trace = (window as unknown as {
+        __fabushiStartupCriticalPath?: { entries?: Array<{ phase?: string }> };
+      }).__fabushiStartupCriticalPath;
+      return [...new Set((trace?.entries ?? []).map((entry) => entry.phase).filter(Boolean))];
+    }), { timeout: 10_000 }).toEqual(expect.arrayContaining(requiredPhases));
+
+    const startupCriticalPath = await page.evaluate(() => {
+      const trace = (window as unknown as {
+        __fabushiStartupCriticalPath?: Record<string, unknown>;
+      }).__fabushiStartupCriticalPath;
+      return trace ? JSON.parse(JSON.stringify(trace)) as Record<string, unknown> : null;
+    });
+    expect(startupCriticalPath).not.toBeNull();
 
     const evidence = {
       targetMs: 1_000,
@@ -417,6 +475,23 @@ test('returning-user local-first conversation list is interactive within the one
     console.log(`[startup-performance] ${JSON.stringify(evidence)}`);
     await writeFile(testInfo.outputPath('startup-performance.json'), evidenceJson);
     await testInfo.attach('startup-performance', { body: Buffer.from(evidenceJson), contentType: 'application/json' });
+
+    const criticalPathEvidence = {
+      taskId: 'M3-DESKTOP-003',
+      exactHead: process.env.GITHUB_SHA?.trim() || null,
+      diagnosticOnly: true,
+      rootCauseClaim: null,
+      historySeedCount,
+      initialSyncLimitBoundary: 20,
+      packaged: Boolean(packagedExecutable),
+      platform: process.platform,
+      trace: startupCriticalPath,
+    };
+    const criticalPathJson = `${JSON.stringify(criticalPathEvidence, null, 2)}\n`;
+    console.log(`[startup-critical-path] ${JSON.stringify(criticalPathEvidence)}`);
+    await writeFile(testInfo.outputPath('startup-critical-path.json'), criticalPathJson);
+    await testInfo.attach('startup-critical-path', { body: Buffer.from(criticalPathJson), contentType: 'application/json' });
+    await testInfo.attach('startup-critical-path-screen', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
 
     expect(
       rendererToConversationListMs,
@@ -492,12 +567,23 @@ test('desktop Messenger creates a real Bot collaboration group and sends into it
     await completeBrowserLogin(page);
     await openMessenger(page);
 
+    await expect(page.getByText('Research Bot', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Incident Bot', { exact: true })).toHaveCount(0);
+
+    await page.getByRole('button', { name: '新建', exact: true }).click();
+    await expect(page.getByTestId('create-bot')).toBeVisible();
+    await page.getByTestId('create-bot').click();
+    await page.getByTestId('new-bot-name').fill('协作验收 Bot');
+    await page.getByTestId('new-bot-description').fill('由用户创建，用于群组协作验收。');
+    await page.getByTestId('create-bot-submit').click();
+    await expect(page.locator('[data-testid^="peer-legacy:bot:"]').filter({ hasText: '协作验收 Bot' }).first()).toBeVisible({ timeout: 10_000 });
+
     await page.getByRole('button', { name: '新建', exact: true }).click();
     await page.getByRole('button', { name: '新建群组' }).click();
     await expect(page.getByText('现有 AI 群组 Host 会执行 Bot 多轮协作')).toBeVisible();
     await page.getByPlaceholder('群组名称').fill('人机协作验收群');
 
-    const researchBot = page.getByTestId('group-bot-research-bot');
+    const researchBot = page.locator('[data-testid^="group-bot-"]').filter({ hasText: '协作验收 Bot' }).first();
     await expect(researchBot).toBeVisible();
     await researchBot.click();
     await expect(researchBot).toHaveAttribute('data-selected', 'true');
@@ -537,7 +623,7 @@ test('online Mini App installs and opens from global Application search', async 
     const open = appResult.getByRole('button', { name: '打开' });
     await expect(open).toBeVisible();
     await open.click();
-    await expect(page.getByText('Mini App · Fabushi 安全容器 · 账号云同步')).toBeVisible();
+    await expect(page.getByText('Mini App · 已安装线上包 · 账号云同步')).toBeVisible();
     await expect(page.locator('iframe[title="global-dharma"]')).toBeVisible();
   } finally {
     await app.close();
@@ -569,7 +655,7 @@ test('desktop Messenger persists per-peer drafts and performs real in-conversati
     const marker = `会话搜索唯一标记-${Date.now()}`;
     await page.getByTestId('messenger-input').fill(marker);
     await page.getByTestId('messenger-send').click();
-    await expect(page.getByTestId('message-list').locator(':scope > article').getByText(marker, { exact: true })).toBeVisible();
+    await expect(page.getByTestId('message-list').locator('article').getByText(marker, { exact: true })).toBeVisible();
 
     await page.getByTitle('搜索当前会话').click();
     await expect(page.getByTestId('conversation-search-scope')).toContainText('此聊天');

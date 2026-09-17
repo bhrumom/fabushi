@@ -5,6 +5,8 @@ struct FabushiApp: App {
     @State private var model: MarketplaceModel
     @State private var appAgentSurface: FabushiAppAgentSurface
     @State private var messagingModel: MessagingModel
+    private let host: MahayanaHost
+    private let remoteDeviceGateway: FabushiRemoteDeviceGateway
 
     init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -17,9 +19,16 @@ struct FabushiApp: App {
             let featureHostTest = false
             #endif
             let host = try MahayanaHost(appDataDirectory: base, featureHostTest: featureHostTest)
+            let appAgentSurface = FabushiAppAgentSurface()
+            self.host = host
             _model = State(initialValue: MarketplaceModel(host: host))
             _messagingModel = State(initialValue: MessagingModel(host: host))
-            _appAgentSurface = State(initialValue: FabushiAppAgentSurface())
+            _appAgentSurface = State(initialValue: appAgentSurface)
+            remoteDeviceGateway = FabushiRemoteDeviceGateway(
+                host: host,
+                surface: appAgentSurface,
+                traceURL: base.appendingPathComponent("device-gateway-trace.jsonl")
+            )
         } catch {
             fatalError("Failed to initialize Mahayana Host: \(error)")
         }
@@ -27,13 +36,17 @@ struct FabushiApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(model: model, messaging: messagingModel, appAgentSurface: appAgentSurface)
+            GrokMobileShell(model: model, messaging: messagingModel, host: host, appAgentSurface: appAgentSurface)
                 .task {
                     await model.runFeatureHostSmokeIfRequested()
                     await model.initializeApp()
+                    await remoteDeviceGateway.setLoggedIn(model.loggedIn)
                     if model.loggedIn {
                         await messagingModel.refresh()
                     }
+                }
+                .onChange(of: model.loggedIn) { _, loggedIn in
+                    Task { await remoteDeviceGateway.setLoggedIn(loggedIn) }
                 }
                 .onOpenURL { url in
                     consumeDeepLink(url)

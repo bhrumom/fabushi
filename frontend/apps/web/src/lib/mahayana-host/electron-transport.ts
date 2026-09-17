@@ -83,11 +83,12 @@ export type MahayanaCommandBridgeDetail =
       context?: MahayanaCommandBridgeContext;
     };
 
-type ConversationJournalMessage = {
+export type ConversationJournalMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
   createdAtMs: number;
+  streaming?: boolean;
 };
 
 type ConversationJournal = {
@@ -169,7 +170,8 @@ function isConversationJournalMessage(value: unknown): value is ConversationJour
     (candidate.role === "user" || candidate.role === "assistant") &&
     typeof candidate.text === "string" &&
     typeof candidate.createdAtMs === "number" &&
-    Number.isFinite(candidate.createdAtMs)
+    Number.isFinite(candidate.createdAtMs) &&
+    (candidate.streaming === undefined || typeof candidate.streaming === "boolean")
   );
 }
 
@@ -209,6 +211,13 @@ function readConversationJournal(): ConversationJournal {
   } catch {
     return emptyConversationJournal();
   }
+}
+
+
+export function readCachedConversationMessages(conversationId: string): ConversationJournalMessage[] {
+  const id = conversationId.trim();
+  if (!id) return [];
+  return (readConversationJournal().conversations[id] ?? []).map((message) => ({ ...message }));
 }
 
 function persistConversationJournal(journal: ConversationJournal): void {
@@ -391,6 +400,12 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
         accepted,
         context,
       });
+      if (
+        normalizedCommand.type === "conversation.open" &&
+        !this.miniAppConversations.has(normalizedCommand.conversationId)
+      ) {
+        this.refreshConversationList("after-open");
+      }
       return accepted;
     } catch (error) {
       dispatchWindowBridgeEvent<MahayanaCommandBridgeDetail>(MAHAYANA_COMMAND_EVENT_NAME, {
@@ -423,6 +438,10 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
 
   pluginUninstall(pluginId: string): Promise<PluginUninstallResult> {
     return mahayanaBridge().invoke<PluginUninstallResult>("feature.plugin.uninstall", { pluginId });
+  }
+
+  pluginRollback(pluginId: string): Promise<InstalledPluginPointer | null> {
+    return mahayanaBridge().invoke<InstalledPluginPointer | null>("feature.plugin.rollback", { pluginId });
   }
 
   pluginActive(pluginId: string): Promise<InstalledPluginPointer | null> {
@@ -560,27 +579,47 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
       const conversationId = this.conversationIdForEvent(event.operationId);
       if (conversationId) {
         const createdAtMs = eventTimestampMs(event.timestamp);
+        const current = this.conversationJournal.conversations[conversationId] ?? [];
+        const streaming = [...current]
+          .reverse()
+          .find((message) => message.role === "assistant" && message.streaming && message.id.startsWith(`${event.operationId ?? ""}:stream`));
+        const baseId = event.operationId
+          ? `${event.operationId}:${event.role}`
+          : `${event.role}:${createdAtMs}`;
+        let id = streaming?.id ?? baseId;
+        if (!streaming) {
+          let suffix = 1;
+          while (current.some((message) => message.id === id)) {
+            id = `${baseId}:${suffix}`;
+            suffix += 1;
+          }
+        }
         this.appendConversationMessage(conversationId, {
-          id: event.operationId
-            ? `${event.operationId}:${event.role}`
-            : `${event.role}:${createdAtMs}:${Math.random().toString(16).slice(2)}`,
+          id,
           role: event.role,
           text: event.text,
           createdAtMs,
+          streaming: false,
         }, true);
+        if (event.role === "assistant") {
+          this.refreshConversationList("assistant-message");
+        }
       }
     } else if (event.type === "chat.delta") {
       const conversationId = this.conversationIdForEvent(event.operationId);
       if (conversationId) {
         const createdAtMs = eventTimestampMs(event.timestamp);
-        const id = `${event.operationId}:assistant`;
         const current = this.conversationJournal.conversations[conversationId] ?? [];
-        const existing = current.find((message) => message.id === id);
+        const existing = [...current]
+          .reverse()
+          .find((message) => message.role === "assistant" && message.streaming && message.id.startsWith(`${event.operationId}:stream`));
+        const id = existing?.id ?? `${event.operationId}:stream`;
         this.appendConversationMessage(conversationId, {
           id,
           role: "assistant",
           text: `${existing?.text ?? ""}${event.delta}`,
           createdAtMs: existing?.createdAtMs ?? createdAtMs,
+          streaming: true,
         }, false);
       }
     }
@@ -594,6 +633,16 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     ) {
       if (this.ignoredOperations.delete(event.operationId)) this.refreshUnscopedSuppression();
     }
+  }
+
+  private refreshConversationList(reason: string): void {
+    if (this.closed) return;
+    const requestId = `conversation-list-${reason}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    void mahayanaBridge().invoke<CommandAccepted>("feature.execute", {
+      command: { type: "conversation.list", requestId },
+    }).catch((error: unknown) => {
+      console.error(`Failed to refresh conversation list after ${reason}`, error);
+    });
   }
 
   private attachRuntimeEvents(): void {

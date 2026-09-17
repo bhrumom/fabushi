@@ -224,8 +224,22 @@ test('switching peers keeps dynamic avatars visible and narrow layouts can open 
     const page = await app.firstWindow();
     await completeBrowserLogin(page);
 
-    const peers = page.locator('[data-testid^="peer-"]');
+    let peers = page.locator('[data-testid^="peer-"]');
     await expect(peers.first()).toBeVisible();
+    if (await peers.count() < 2) {
+      await page.getByRole('button', { name: '新建', exact: true }).click();
+      await expect(page.getByTestId('create-bot')).toBeVisible();
+      await page.getByTestId('create-bot').click();
+      await page.getByTestId('new-bot-name').fill('头像切换验收 Bot');
+      await page.getByTestId('new-bot-description').fill('验证真实用户 Bot 的动态头像与会话切换。');
+      await page.getByTestId('create-bot-submit').click();
+      const createdBot = page.locator('[data-testid^="peer-legacy:bot:"]').filter({ hasText: '头像切换验收 Bot' }).first();
+      await expect(createdBot).toBeVisible({ timeout: 10_000 });
+      // The production Grok parity runtime auto-focuses a newly created Bot on a deferred
+      // timer. Wait for that lifecycle to settle before validating a later manual switch.
+      await expect(createdBot).toHaveClass(/peerActive/, { timeout: 10_000 });
+      peers = page.locator('[data-testid^="peer-"]');
+    }
     expect(await peers.count()).toBeGreaterThanOrEqual(2);
 
     // Playwright locators are live. Capture the first two peer identities before clicking,
@@ -251,6 +265,7 @@ test('switching peers keeps dynamic avatars visible and narrow layouts can open 
     const headerMark = headerIdentity.locator(visibleMark);
 
     await first.click();
+    await expect(first).toHaveClass(/peerActive/);
     await expect(firstMark).toHaveAttribute('data-bot-id', firstBotId);
     await expect(headerMark).toHaveCount(1);
     await expect(headerMark).toHaveAttribute('data-bot-id', firstBotId);

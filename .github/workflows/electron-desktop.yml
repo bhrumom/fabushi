@@ -1,99 +1,314 @@
-name: Electron desktop quality gate
+name: Desktop test release build (no tests)
 
 on:
-  pull_request:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact protected-main ref/SHA to package as a test release
+        required: true
+        default: main
+        type: string
+  push:
     branches: [main]
     paths:
-      - 'chatgpt-vps-control/**'
-      - 'desktop/**'
-      - 'frontend/apps/host/**'
-      - 'frontend/apps/web/src/app/host/**'
-      - 'frontend/apps/web/src/app/remote-computer/**'
-      - 'frontend/apps/web/src/lib/fabushi-runtime/**'
-      - 'frontend/apps/web/src/components/fabushi-app-agent-surface.tsx'
-      - 'frontend/apps/web/src/lib/app-agent-surface/**'
-      - 'frontend/packages/mcp-app-sdk/**'
-      - 'frontend/apps/web/src/lib/mahayana-host/**'
-      - 'frontend/apps/web/src/lib/remote-computer/**'
-      - 'third_party/mahayana/mahayana-rs/mahayana-agent-codex/**'
-      - 'frontend/packages/shared/**'
-      - 'contracts/automation/cross-platform-journeys.json'
-      - '.github/scripts/assert-native-electron-canonical.sh'
-      - '.github/scripts/assert-electron-feature-host-bridge.sh'
-      - '.github/scripts/assert-fabushi-desktop-architecture.py'
-      - '.github/scripts/assert-native-desktop-edge-parity.py'
-      - '.github/workflows/electron-desktop.yml'
-  workflow_dispatch:
-
-concurrency:
-  group: electron-desktop-fast-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+      - app-version.json
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: desktop-test-release-${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.sha }}
+  cancel-in-progress: false
 
 jobs:
-  platform:
-    name: Electron Linux
+  resolve:
+    name: Resolve exact no-test release source
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      source_sha: ${{ steps.meta.outputs.source_sha }}
+      version: ${{ steps.meta.outputs.version }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v5
+      - name: Checkout requested source
+        uses: actions/checkout@v6
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.sha }}
           fetch-depth: 1
           persist-credentials: false
-
-      - name: Enforce canonical application architecture
-        run: bash .github/scripts/assert-native-electron-canonical.sh
-
-      - name: Verify Electron Feature Host bridge contract
-        run: bash .github/scripts/assert-electron-feature-host-bridge.sh
-
-      - name: Run dependency-free architecture and UI contracts
+      - id: meta
+        name: Bind protected-main source and version
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python3 .github/scripts/assert-fabushi-desktop-architecture.py
-          python3 .github/scripts/assert-native-desktop-edge-parity.py
-          python3 .github/scripts/assert-auth-entry-flow.py
-          python3 .github/scripts/assert-bot-mark-motion.py
-          python3 .github/scripts/assert-product-ui-contracts.py
-          python3 .github/scripts/assert-native-capability-semantics.py
-          node --test chatgpt-vps-control/tests/fabushi-embedded-runtime-source.test.js
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          SOURCE_SHA="$source_sha" RELEASE_TARGET=desktop RELEASE_TIER=test bash .github/scripts/require-release-source-gates.sh
+          version="$(jq -er '.version' app-version.json)"
+          package_version="$(node -p "require('./desktop/package.json').version")"
+          test "$version" = "$package_version"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${source_sha:0:12}" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Desktop test release'
+            echo "- Exact source: $source_sha"
+            echo "- Version: $version"
+            echo '- Behavioral tests: none (FCM-023/FCM-024)'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  package:
+    name: Package ${{ matrix.label }} without tests
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            label: macOS
+            target: mac
+          - os: windows-latest
+            label: Windows
+            target: win
+          - os: ubuntu-24.04
+            label: Linux
+            target: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    env:
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      FABUSHI_DELIVERY_VERSION: ${{ needs.resolve.outputs.version }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: |
+            desktop/package-lock.json
+            chatgpt-vps-control/package-lock.json
 
-      - name: Install Electron dependencies
-        working-directory: desktop
-        run: npm ci --prefer-offline --no-audit --no-fund
-
-      - name: Run Electron main-process contract tests
+      - name: Install release dependencies
         shell: bash
-        run: node --test desktop/scripts/prepare-desktop-window-branding.test.mjs desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/remote-device-agent-supervisor.test.cjs desktop/electron/test-auth-session.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs desktop/electron/main-lifecycle.test.cjs desktop/electron/preload-runtime-replay.test.cjs
+        run: |
+          set -euo pipefail
+          npm --prefix desktop ci --prefer-offline --no-audit --no-fund
+          npm --prefix chatgpt-vps-control ci --ignore-scripts --prefer-offline --no-audit --no-fund
 
-      - name: Verify renderer TypeScript
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+
+      - name: Install Linux native build dependencies
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: no-test-release-${{ runner.os }}-rust-1.97.1
+
+      - name: Build and stage Mahayana Host
         working-directory: desktop
-        run: npx tsc --noEmit
+        run: npm run build:host:ci
 
-      - name: Build renderer
+      - name: Build pinned offline ASR engine
+        shell: bash
+        run: node .github/scripts/build-offline-asr-engine.mjs
+
+      - name: Build Electron renderer
         working-directory: desktop
-        run: npx vite build
+        run: npm run build:renderer
 
-      - name: Record fast-gate policy
-        run: echo 'Long Playwright/packaged-app E2E is intentionally excluded from automatic CI. Formal platform release workflows own those journeys.' >> "$GITHUB_STEP_SUMMARY"
-
-  result:
-    name: Electron desktop result
-    if: always()
-    needs: platform
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require Electron fast gate
+      - name: Install Developer ID identity for macOS packaging
+        if: matrix.target == 'mac'
+        shell: bash
         env:
-          RESULT: ${{ needs.platform.result }}
-        run: test "$RESULT" = success
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          CONFIGURED_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          test -n "$MACOS_CERTIFICATE_P12_BASE64"
+          test -n "$MACOS_CERTIFICATE_PASSWORD"
+          cert="$RUNNER_TEMP/fabushi-developer-id.p12"
+          keychain="$RUNNER_TEMP/fabushi-developer-id.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$cert"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          identity="$CONFIGURED_IDENTITY"
+          if [ -z "$identity" ]; then
+            identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application/ {print $2; exit}')"
+          fi
+          case "$identity" in *'Developer ID Application:'*) ;; *) exit 1 ;; esac
+          echo "MACOS_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Sign native macOS payloads before app sealing
+        if: matrix.target == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+          host=desktop/resources/bin/mahayana-app-host
+          test -x "$host"
+          codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.mahayana-app-host --sign "$MACOS_CODESIGN_IDENTITY" "$host"
+          while IFS= read -r binary; do
+            codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.whisper-cli --sign "$MACOS_CODESIGN_IDENTITY" "$binary"
+          done < <(find desktop/resources/asr -type f -name whisper-cli -print)
+
+      - name: Stage bundled Computer Use runtime
+        shell: bash
+        env:
+          CHATGPT_COMPUTER_HOME: ${{ github.workspace }}/desktop/resources/computer-control
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          export CHATGPT_COMPUTER_CODESIGN_IDENTITY="${MACOS_CODESIGN_IDENTITY:-}"
+          export CHATGPT_COMPUTER_TEAM_ID="${APPLE_TEAM_ID:-}"
+          node chatgpt-vps-control/bin/prepare-fabushi-bundle.js
+
+      - name: Package application without running tests
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.target == 'mac' && 'true' || 'false' }}
+          FABUSHI_MACOS_NOTARIZE: ${{ matrix.target == 'mac' && '1' || '0' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: npx electron-builder --${{ matrix.target }} --publish never
+
+      - name: Notarize and staple macOS package
+        if: matrix.target == 'mac'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          MACOS_NOTARIZATION_TIMEOUT_MINUTES: '90'
+          MACOS_NOTARIZATION_POLL_SECONDS: '20'
+        run: |
+          set -euo pipefail
+          dmg="$(find desktop/release -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          app="$(find desktop/release -maxdepth 3 -type d -name '*.app' -print -quit)"
+          test -n "$dmg" && test -n "$app"
+          bash .github/scripts/notarize-macos-dmg.sh "$dmg"
+          bash .github/scripts/verify-electron-macos-package.sh "$app" "$dmg"
+
+      - name: Write exact-source package manifest and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/release
+          printf '{"version":"%s","sha":"%s","platform":"%s","behavioralTests":"none"}\n' \
+            "$FABUSHI_DELIVERY_VERSION" "$SOURCE_SHA" "${{ matrix.target }}" \
+            > "desktop/release/fabushi-delivery-${{ matrix.target }}.json"
+          (cd desktop/release && find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+
+      - name: Upload installable package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-test-release-${{ matrix.target }}
+          path: desktop/release/**
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  publish:
+    name: Publish immutable desktop prerelease
+    needs: [resolve, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download macOS package
+        uses: actions/download-artifact@v8
+        with:
+          name: fabushi-test-release-mac
+          path: packages/mac
+      - name: Download Windows package
+        uses: actions/download-artifact@v8
+        with:
+          name: fabushi-test-release-win
+          path: packages/win
+      - name: Download Linux package
+        uses: actions/download-artifact@v8
+        with:
+          name: fabushi-test-release-linux
+          path: packages/linux
+      - id: stage
+        name: Stage installable release assets only
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+          SHORT_SHA: ${{ needs.resolve.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          while IFS= read -r asset; do cp "$asset" release-assets/; done < <(
+            find packages -type f \( \
+              -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o \
+              -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o \
+              -name 'latest-mac.yml' -o -name 'latest.yml' -o -name 'latest-linux.yml' -o \
+              -name 'fabushi-delivery-*.json' \
+            \) -print | sort
+          )
+          test -n "$(find release-assets -type f -name '*.dmg' -print -quit)"
+          test -n "$(find release-assets -type f -name '*.exe' -print -quit)"
+          test -n "$(find release-assets -type f -name '*.AppImage' -print -quit)"
+          checksum_file="$RUNNER_TEMP/SHA256SUMS.txt"
+          (cd release-assets && find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > "$checksum_file")
+          mv "$checksum_file" release-assets/SHA256SUMS.txt
+          tag="desktop-test-v${VERSION}-${SHORT_SHA}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Create immutable test prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.stage.outputs.tag }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            existing_target="$(gh release view "$TAG" --json targetCommitish --jq '.targetCommitish')"
+            test "$existing_target" = "$SOURCE_SHA"
+            echo "Immutable test release $TAG already exists for exact source $SOURCE_SHA."
+            exit 0
+          fi
+          mapfile -t assets < <(find release-assets -maxdepth 1 -type f -print | sort)
+          gh release create "$TAG" "${assets[@]}" \
+            --target "$SOURCE_SHA" \
+            --title "Fabushi Desktop $VERSION test" \
+            --notes "Exact-source all-desktop test build. Behavioral tests intentionally not run under FCM-023/FCM-024. Stable promotion requires Fabushi official MCP validation on Action-hosted App-owned devices." \
+            --prerelease \
+            --latest=false
+          echo "Published $TAG from $SOURCE_SHA with no behavioral tests." >> "$GITHUB_STEP_SUMMARY"

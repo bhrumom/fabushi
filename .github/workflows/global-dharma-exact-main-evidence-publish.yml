@@ -1,0 +1,12 @@
+name: Retired automatic test - Global Dharma evidence publish
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Disabled by FCM-024. Runtime evidence must come from the Fabushi official MCP controlling the exact candidate on an Action Runner.'

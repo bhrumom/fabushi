@@ -71,6 +71,22 @@ type ContentState = {
   welcomeShownAt: string | null;
   receipts: Array<{ itemId: string; revision: string; readAt: string }>;
 };
+type GlobalDharmaRuntime = {
+  protocol: "fabushi.miniapp.runtime.v1";
+  miniAppId: "global-dharma";
+  revision: number;
+  cursor: string | null;
+  state: {
+    running: boolean;
+    loops: number;
+    sent: number;
+    logs: string[];
+    mode: string | null;
+    pendingContent: string | null;
+  };
+  updatedAtMs?: number;
+  replayed?: boolean;
+};
 
 class McpHttpClient {
   private nextId = 1;
@@ -175,6 +191,7 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
   const pluginInstanceId = OFFICIAL_INSTANCE_IDS[normalizedId] ?? `fabushi-official:${normalizedId}`;
   const contentStateEndpoint = `${backendBase}/api/miniapps/${encodeURIComponent(pluginInstanceId)}/content-state`;
   const messagesEndpoint = `${backendBase}/api/miniapps/${encodeURIComponent(pluginInstanceId)}/messages`;
+  const runtimeEndpoint = `${backendBase}/v1/miniapps/${encodeURIComponent(normalizedId)}/runtime`;
   const client = useMemo(() => new McpHttpClient(endpoint), [endpoint]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const bridgePortRef = useRef<MessagePort | null>(null);
@@ -191,6 +208,16 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
   const [home, setHome] = useState<HomeDocument | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [article, setArticle] = useState<{ item: FeedItem; markdown: string } | null>(null);
+  const [sharedRuntime, setSharedRuntime] = useState<GlobalDharmaRuntime | null>(null);
+  const [runtimeSyncState, setRuntimeSyncState] = useState<"idle" | "connecting" | "live" | "auth-required" | "error">("idle");
+  const runtimeCursorRef = useRef<string | null>(null);
+
+  const applySharedRuntime = useCallback((runtime: GlobalDharmaRuntime) => {
+    if (runtime?.protocol !== "fabushi.miniapp.runtime.v1" || runtime.miniAppId !== "global-dharma") return;
+    runtimeCursorRef.current = runtime.cursor ?? runtimeCursorRef.current;
+    setSharedRuntime(runtime);
+    setRuntimeSyncState("live");
+  }, []);
 
   const appendTimeline = useCallback((item: Omit<TimelineItem, "id">) => {
     const message = { ...item, id: crypto.randomUUID() };
@@ -239,6 +266,67 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
     return () => { active = false; };
   }, [messagesEndpoint, pluginInstanceId]);
 
+  useEffect(() => {
+    if (normalizedId !== "global-dharma") {
+      setRuntimeSyncState("idle");
+      return;
+    }
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    setRuntimeSyncState("connecting");
+    const schedule = (delay: number) => {
+      if (!active) return;
+      timer = setTimeout(() => void sync(), delay);
+    };
+    const sync = async () => {
+      if (!active) return;
+      const cursor = runtimeCursorRef.current;
+      const url = cursor
+        ? `${runtimeEndpoint}/difference?cursor=${encodeURIComponent(cursor)}&limit=200`
+        : runtimeEndpoint;
+      try {
+        const response = await fetch(url, { credentials: "include", headers: { accept: "application/json" } });
+        if (response.status === 401 || response.status === 403) {
+          setRuntimeSyncState("auth-required");
+          schedule(2500);
+          return;
+        }
+        if (!response.ok) throw new Error(`runtime sync failed (${response.status})`);
+        const payload = await response.json();
+        if (payload?.protocol === "fabushi.miniapp.runtime.v1" && payload?.state) {
+          applySharedRuntime(payload as GlobalDharmaRuntime);
+        } else if (payload?.mode === "snapshot" && payload?.runtime) {
+          applySharedRuntime(payload.runtime as GlobalDharmaRuntime);
+          runtimeCursorRef.current = String(payload.cursor ?? payload.runtime.cursor ?? runtimeCursorRef.current ?? "") || null;
+        } else if (payload?.mode === "difference") {
+          const events = Array.isArray(payload.events) ? payload.events : [];
+          const latest = events.at(-1);
+          if (latest?.state) {
+            applySharedRuntime({
+              protocol: "fabushi.miniapp.runtime.v1",
+              miniAppId: "global-dharma",
+              revision: Number(latest.revision ?? 0),
+              cursor: String(latest.cursor ?? payload.cursor ?? "") || null,
+              state: latest.state,
+              updatedAtMs: Number(latest.occurredAtMs ?? Date.now()),
+            });
+          }
+          runtimeCursorRef.current = String(payload.cursor ?? runtimeCursorRef.current ?? "") || null;
+          setRuntimeSyncState("live");
+        }
+        schedule(800);
+      } catch {
+        if (active) setRuntimeSyncState("error");
+        schedule(1500);
+      }
+    };
+    void sync();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [applySharedRuntime, normalizedId, runtimeEndpoint]);
+
   const sendBridgeMessage = useCallback((payload: JsonRpcRequest | Record<string, unknown>) => {
     const port = bridgePortRef.current;
     const nonce = bridgeNonceRef.current;
@@ -261,12 +349,17 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
     setBusy(true);
     setOutput(`正在调用 /${name}…`);
     try {
-      const result = await client.request("tools/call", { name, arguments: args }) as McpToolResult;
+      const callArgs = tool?.annotations?.readOnlyHint === true
+        ? args
+        : { ...args, operationId: typeof args.operationId === "string" ? args.operationId : crypto.randomUUID() };
+      const result = await client.request("tools/call", { name, arguments: callArgs }) as McpToolResult;
+      const runtime = (result.structuredContent as { runtime?: GlobalDharmaRuntime } | undefined)?.runtime;
+      if (runtime) applySharedRuntime(runtime);
       setOutput(JSON.stringify(result.structuredContent ?? result.content ?? result, null, 2));
       sendBridgeMessage({
         jsonrpc: "2.0",
         method: "ui/notifications/tool-result",
-        params: { name, arguments: args, result },
+        params: { name, arguments: callArgs, result },
       });
       return result;
     } catch (error) {
@@ -277,7 +370,7 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
     } finally {
       setBusy(false);
     }
-  }, [appendTimeline, client, sendBridgeMessage, tools]);
+  }, [appendTimeline, applySharedRuntime, client, sendBridgeMessage, tools]);
 
   const refreshTools = useCallback(async () => {
     const listed = await client.request("tools/list");
@@ -628,6 +721,11 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
       <div className="mcp-tools">{tools.map((tool) => <button key={tool.name} className="mcp-chip" disabled={busy} onClick={() => chooseTool(tool)}>/{tool.name}</button>)}</div>
       {(home?.quickReplies?.length ?? 0) > 0 && <div className="mcp-quick-replies">{home!.quickReplies!.map((reply) => <button key={reply.id} className="mcp-quick-reply" disabled={busy} onClick={() => void submitText(reply.aliases?.[0] ?? reply.label)}>{reply.label}</button>)}</div>}
     </section>
+    {normalizedId === "global-dharma" && <section className="ma-card" data-testid="global-dharma-runtime">
+      <h2>共享运行状态</h2>
+      <p className="ma-header-subtitle">账户级同步：{runtimeSyncState} · revision {sharedRuntime?.revision ?? 0} · cursor {sharedRuntime?.cursor ?? "尚未建立"}</p>
+      <pre className="ma-log-box">{JSON.stringify(sharedRuntime?.state ?? { running: false, loops: 0, sent: 0, mode: null }, null, 2)}</pre>
+    </section>}
     <section className="ma-card mcp-command-row">
       <input className="ma-input mcp-command-input" value={command} placeholder="输入 /tool，或输入普通文本" onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void submitCommand(); }} />
       <button className="ma-btn mcp-send" disabled={busy || !command.trim()} onClick={() => void submitCommand()}>发送</button>

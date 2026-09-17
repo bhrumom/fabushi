@@ -5,6 +5,13 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
+import {
+  GLOBAL_DHARMA_TOOL_CONTRACT,
+  globalDharmaTool,
+  globalDharmaToolAnnotations,
+} from './global_dharma_tool_contract.js';
+import { GLOBAL_DHARMA_RUNTIME_PROTOCOL } from './global_dharma_runtime_store.js';
+
 const APP_MIME = 'text/html;profile=mcp-app';
 const VERSION = '1.0.0';
 
@@ -238,11 +245,19 @@ function registerHome(server, appInfo, actionNames) {
 }
 
 function renderHomeUi(appInfo, actionNames) {
+  if (appInfo.id === 'global-dharma') return renderGlobalDharmaHomeUi(appInfo);
   const actions = actionNames
     .filter((name) => name !== 'home')
     .map((name) => `<button data-tool="${escapeHtml(name)}">/${escapeHtml(name)}</button>`)
     .join('');
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src data:"><style>:root{color-scheme:light dark}body{font:15px system-ui;margin:0;padding:20px;background:#101722;color:#edf3ff}h1{font-size:21px;margin:0 0 6px}.sub{color:#9eb0ca;margin:0 0 18px}.tools{display:flex;flex-wrap:wrap;gap:8px}button{border:1px solid #3d526f;border-radius:10px;padding:9px 12px;background:#182538;color:inherit;cursor:pointer}pre{white-space:pre-wrap;background:#0b111a;padding:12px;border-radius:10px;min-height:42px}</style></head><body><h1>${escapeHtml(appInfo.title)}</h1><p class="sub">${escapeHtml(appInfo.description)}</p><div class="tools">${actions}</div><pre id="output">MCP App 已连接</pre><script>(()=>{let id=0;const pending=new Map();const output=document.querySelector('#output');addEventListener('message',event=>{const message=event.data;if(!message||message.jsonrpc!=='2.0')return;const isResponse=message.result!==undefined||message.error!==undefined;if(isResponse&&message.id!==undefined&&pending.has(message.id)){const done=pending.get(message.id);pending.delete(message.id);done(message)}if(message.method==='ui/notifications/tool-result')output.textContent=JSON.stringify(message.params,null,2)});function call(tool,args={}){const requestId=++id;return new Promise(resolve=>{pending.set(requestId,resolve);parent.postMessage({jsonrpc:'2.0',id:requestId,method:'tools/call',params:{name:tool,arguments:args}},'*')})}document.querySelectorAll('[data-tool]').forEach(button=>button.onclick=async()=>{output.textContent='调用 '+button.dataset.tool+'…';const response=await call(button.dataset.tool);output.textContent=JSON.stringify(response.result??response.error,null,2)})})()</script></body></html>`;
+}
+
+
+function renderGlobalDharmaHomeUi(appInfo) {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src data:"><style>
+:root{color-scheme:dark;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(145deg,#071512,#0b151d 58%,#101824);color:#eef8f5}.shell{max-width:920px;margin:auto;padding:26px}.hero{display:flex;align-items:center;gap:14px;margin-bottom:20px}.logo{width:50px;height:50px;border-radius:17px;background:linear-gradient(135deg,#62e4cf,#1ba9a0);display:grid;place-items:center;font-size:24px;box-shadow:0 10px 28px rgba(36,196,176,.22)}h1{font-size:24px;margin:0 0 4px}.muted{color:#9db3af;font-size:13px}.grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(250px,.8fr);gap:16px}.card{background:rgba(17,29,35,.9);border:1px solid rgba(151,221,208,.13);border-radius:18px;padding:18px;box-shadow:0 14px 34px rgba(0,0,0,.18)}.card h2{font-size:16px;margin:0 0 6px}.card p{margin:0 0 14px;color:#a9b9b7;font-size:13px;line-height:1.55}.drop{border:1px dashed #3f716b;border-radius:14px;padding:14px;background:#0c191d;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.filemeta{min-width:0}.filename{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.filesub{font-size:12px;color:#8ea4a1;margin-top:3px}.btn{appearance:none;border:1px solid #375c57;background:#15272a;color:#eef8f5;border-radius:11px;padding:9px 12px;font-weight:650;cursor:pointer}.btn:hover{background:#1c3235}.btn.primary{border-color:#40c8b7;background:#39c5b3;color:#06211d}.btn.primary:hover{background:#55d5c5}.btn.danger{border-color:#74444b;background:#2a1b20;color:#ffdce1}textarea{width:100%;min-height:190px;resize:vertical;border:1px solid #294642;border-radius:13px;background:#091417;color:#edf8f6;padding:13px;font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;outline:none}textarea:focus{border-color:#45c9b8;box-shadow:0 0 0 3px rgba(69,201,184,.1)}.sendrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}.counter{font-size:12px;color:#819995}.quick{display:grid;grid-template-columns:1fr 1fr;gap:9px}.quick .btn{min-height:46px;text-align:left}.status{margin-top:14px;border-radius:13px;padding:12px;background:#0b171a;border:1px solid #203a37}.statusline{display:flex;align-items:center;gap:8px;font-weight:650}.dot{width:9px;height:9px;border-radius:99px;background:#42d4b7;box-shadow:0 0 0 4px rgba(66,212,183,.08)}.output{margin-top:8px;color:#b8c9c6;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}.advanced{margin-top:16px}.advanced summary{cursor:pointer;color:#a9b9b7;font-size:13px}.advanced .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}@media(max-width:720px){.shell{padding:16px}.grid{grid-template-columns:1fr}.sendrow{align-items:flex-start;flex-direction:column}.sendrow .btn.primary{width:100%}}
+</style></head><body><main class="shell"><div class="hero"><div class="logo">☸</div><div><h1>${escapeHtml(appInfo.title)}</h1><div class="muted">AI 与你使用同一套 WebMCP 工具 · 操作过程会同步显示</div></div></div><section class="grid"><div class="card"><h2>发送法布施内容</h2><p>直接输入内容，或选择一个文本文件。文件只会先读取到这里，确认后才会发送。</p><div class="drop"><div class="filemeta"><div class="filename" id="file-name">未选择文件</div><div class="filesub" id="file-sub">支持 TXT、Markdown、CSV、JSON、HTML、XML、LOG，最大 2 MB</div></div><button class="btn" id="pick-file" data-testid="global-dharma-pick-file">选择文件</button><input id="file" data-testid="global-dharma-file-picker" type="file" hidden accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.xml,.log,text/plain,text/markdown,text/csv,application/json"></div><textarea id="content" data-testid="global-dharma-content" maxlength="20000" placeholder="例如：愿以此《金刚经》内容……"></textarea><div class="sendrow"><span class="counter" id="counter">0 / 20000 字</span><button class="btn primary" id="send" data-testid="global-dharma-send">发送到全球法布施</button></div></div><aside class="card"><h2>运行控制</h2><p>不用记命令，直接点击即可。AI 在聊天里也会通过相同 WebMCP 工具执行。</p><div class="quick"><button class="btn" data-tool="status">查看状态</button><button class="btn" data-tool="start">启动服务</button><button class="btn" data-tool="loop">运行一次</button><button class="btn danger" data-tool="stop">停止服务</button></div><div class="status" data-testid="global-dharma-status"><div class="statusline"><span class="dot"></span><span id="status-title">WebMCP 已连接</span></div><div class="output" id="output">可以发送内容或查看运行状态。</div></div><details class="advanced"><summary>高级工具</summary><div class="row"><button class="btn" data-tool="logs">查看日志</button><button class="btn" data-tool="validate_config">检查配置</button><button class="btn" data-tool="deploy_latest">部署最新版</button></div></details></aside></section></main><script>(()=>{let id=0;const pending=new Map();const output=document.querySelector('#output');const title=document.querySelector('#status-title');const content=document.querySelector('#content');const counter=document.querySelector('#counter');const input=document.querySelector('#file');const fileName=document.querySelector('#file-name');const fileSub=document.querySelector('#file-sub');function human(message){if(!message)return'操作完成';if(message.error)return message.error.message||String(message.error);const value=message.result??message;const text=value?.content?.find?.(item=>item&&item.type==='text')?.text;if(text)return text;const structured=value?.structuredContent;if(structured&&typeof structured==='object'){if(structured.completed===true)return'操作已完成';return JSON.stringify(structured,null,2)}return typeof value==='string'?value:'操作完成'}function setState(label,message,error=false){title.textContent=label;output.textContent=message;document.querySelector('.dot').style.background=error?'#ef6f7d':'#42d4b7'}addEventListener('message',event=>{const message=event.data;if(!message||message.jsonrpc!=='2.0')return;const isResponse=message.result!==undefined||message.error!==undefined;if(isResponse&&message.id!==undefined&&pending.has(message.id)){const done=pending.get(message.id);pending.delete(message.id);done(message)}if(message.method==='notifications/progress')setState('正在执行',message.params?.message??'正在执行…');if(message.method==='ui/notifications/tool-result')setState('操作已更新',human(message.params))});function call(tool,args={}){const requestId=++id;setState('正在执行…','正在调用 '+tool+'，请稍候。');return new Promise(resolve=>{pending.set(requestId,resolve);parent.postMessage({jsonrpc:'2.0',id:requestId,method:'tools/call',params:{name:tool,arguments:args}},'*')})}async function run(tool,args={}){try{const response=await call(tool,args);setState(response.error?'操作失败':'操作完成',human(response),Boolean(response.error));return response}catch(error){setState('操作失败',error?.message||String(error),true);return null}}document.querySelectorAll('[data-tool]').forEach(button=>button.onclick=()=>void run(button.dataset.tool,button.dataset.tool==='validate_config'?{config:{}}:{}));content.addEventListener('input',()=>counter.textContent=content.value.length+' / 20000 字');document.querySelector('#pick-file').onclick=()=>input.click();input.addEventListener('change',async()=>{const file=input.files?.[0];if(!file)return;if(file.size>2*1024*1024){fileName.textContent=file.name;fileSub.textContent='文件超过 2 MB，请选择更小的文本文件';setState('文件过大','为避免一次发送过多内容，单个文件最多 2 MB。',true);return}try{const text=await file.text();content.value=text.slice(0,20000);counter.textContent=content.value.length+' / 20000 字';fileName.textContent=file.name;fileSub.textContent=Math.max(1,Math.round(file.size/1024))+' KB · 已读取到输入框';setState('文件已就绪','请检查内容，然后点击“发送到全球法布施”。')}catch(error){setState('读取文件失败',error?.message||String(error),true)}});document.querySelector('#send').onclick=async()=>{const text=content.value.trim();if(!text){setState('还没有内容','请输入内容或先选择文本文件。',true);content.focus();return}const response=await run('send',{content:text});if(response&&!response.error){content.value='';counter.textContent='0 / 20000 字'}}})()</script></body></html>`;
 }
 
 function escapeHtml(value) {
@@ -253,67 +268,170 @@ function escapeHtml(value) {
     .replaceAll('"', '&quot;');
 }
 
-function registerGlobalDharma(server, appInfo, state) {
-  const tools = ['home', 'chat', 'start', 'stop', 'loop', 'status', 'send', 'logs', 'validate_config', 'deploy_latest'];
+function fallbackGlobalRuntime(state, operationId = null) {
+  return {
+    protocol: GLOBAL_DHARMA_RUNTIME_PROTOCOL,
+    miniAppId: 'global-dharma',
+    revision: 0,
+    cursor: null,
+    state: JSON.parse(JSON.stringify(state.globalDharma)),
+    updatedAtMs: 0,
+    replayed: false,
+    ...(operationId ? { operationId } : {}),
+  };
+}
+
+function globalRuntimeSnapshot(state, runtimeStore, scopeId) {
+  return runtimeStore?.snapshot(scopeId) ?? fallbackGlobalRuntime(state);
+}
+
+function attachGlobalRuntime(toolResult, runtime) {
+  return {
+    ...toolResult,
+    structuredContent: {
+      ...(toolResult.structuredContent ?? {}),
+      runtime,
+    },
+  };
+}
+
+function runGlobalMutation(state, runtimeStore, scopeId, toolName, args, mutate) {
+  const operationId = String(args?.operationId ?? args?.operation_id ?? '').trim() || crypto.randomUUID();
+  if (runtimeStore) {
+    return runtimeStore.runMutation(scopeId, { operationId, toolName, args, mutate });
+  }
+  const toolResult = mutate(state.globalDharma);
+  return {
+    ...attachGlobalRuntime(toolResult, fallbackGlobalRuntime(state, operationId)),
+    structuredContent: {
+      ...(toolResult.structuredContent ?? {}),
+      runtime: fallbackGlobalRuntime(state, operationId),
+      operationId,
+    },
+  };
+}
+
+function registerGlobalDharma(server, appInfo, state, {
+  runtimeStore = null,
+  scopeId = 'contract-test',
+  entitlementResolver = null,
+} = {}) {
+  const tools = GLOBAL_DHARMA_TOOL_CONTRACT.map((entry) => entry.name);
   registerHome(server, appInfo, tools);
+  const operationId = z.string().min(1).max(160).optional();
+
   server.registerTool('chat', {
-    description: '处理全球法布施对话与快捷回复。',
+    description: globalDharmaTool('chat').description,
     inputSchema: {
       message: z.string().min(1).max(20_000),
       surface: z.string().optional(),
       locale: z.string().optional(),
       actionId: z.string().nullable().optional(),
+      operationId,
     },
-    annotations: writeLocal,
-  }, async ({ message }) => globalDharmaChat(state.globalDharma, message.trim()));
-  server.registerTool('start', { description: '启动全球法布施服务。', annotations: writeExternal }, async () => {
-    state.globalDharma.running = true;
-    state.globalDharma.logs.push('服务已启动');
-    return result('全球法布施已启动。', { ...state.globalDharma });
+    annotations: globalDharmaToolAnnotations('chat'),
+  }, async (input) => {
+    const message = input.message.trim();
+    let prayerWheelAccess = null;
+    const current = globalRuntimeSnapshot(state, runtimeStore, scopeId);
+    if (message === '开始' && current.state.mode === 'local-prayer-wheel') {
+      prayerWheelAccess = typeof entitlementResolver === 'function'
+        ? await entitlementResolver({ capability: 'local.prayer-wheel.start', miniAppId: 'global-dharma' })
+        : { allowed: false, protected: true, reason: 'entitlement_check_unavailable' };
+    }
+    return runGlobalMutation(state, runtimeStore, scopeId, 'chat', input, (runtimeState) =>
+      globalDharmaChat(runtimeState, message, { prayerWheelAccess }));
   });
-  server.registerTool('stop', { description: '停止全球法布施服务。', annotations: destructive }, async () => {
-    state.globalDharma.running = false;
-    state.globalDharma.logs.push('服务已停止');
-    return result('全球法布施已停止。', { ...state.globalDharma });
-  });
-  server.registerTool('loop', { description: '执行一次法布施调度循环。', annotations: writeExternal }, async (extra) => {
+
+  server.registerTool('start', {
+    description: globalDharmaTool('start').description,
+    inputSchema: { operationId },
+    annotations: globalDharmaToolAnnotations('start'),
+  }, async (input) => runGlobalMutation(state, runtimeStore, scopeId, 'start', input, (runtimeState) => {
+    runtimeState.running = true;
+    runtimeState.logs.push('服务已启动');
+    return result('全球法布施已启动。', { ...runtimeState });
+  }));
+
+  server.registerTool('stop', {
+    description: globalDharmaTool('stop').description,
+    inputSchema: { operationId },
+    annotations: globalDharmaToolAnnotations('stop'),
+  }, async (input) => runGlobalMutation(state, runtimeStore, scopeId, 'stop', input, (runtimeState) => {
+    runtimeState.running = false;
+    runtimeState.logs.push('服务已停止');
+    return result('全球法布施已停止。', { ...runtimeState });
+  }));
+
+  server.registerTool('loop', {
+    description: globalDharmaTool('loop').description,
+    inputSchema: { operationId },
+    annotations: globalDharmaToolAnnotations('loop'),
+  }, async (input, extra) => {
     await progress(extra, 0, 1, '开始调度');
-    state.globalDharma.loops += 1;
-    state.globalDharma.logs.push(`完成第 ${state.globalDharma.loops} 次循环`);
+    const completed = runGlobalMutation(state, runtimeStore, scopeId, 'loop', input, (runtimeState) => {
+      runtimeState.loops += 1;
+      runtimeState.logs.push(`完成第 ${runtimeState.loops} 次循环`);
+      return result('调度循环已完成。', { loops: runtimeState.loops });
+    });
     await progress(extra, 1, 1, '调度完成');
-    return result('调度循环已完成。', { loops: state.globalDharma.loops });
+    return completed;
   });
-  server.registerTool('status', { description: '读取服务状态。', annotations: readOnly }, async () => result('已读取全球法布施状态。', { ...state.globalDharma, logs: undefined }));
+
+  server.registerTool('status', {
+    description: globalDharmaTool('status').description,
+    annotations: globalDharmaToolAnnotations('status'),
+  }, async () => {
+    const runtime = globalRuntimeSnapshot(state, runtimeStore, scopeId);
+    return attachGlobalRuntime(result('已读取全球法布施状态。', { ...runtime.state, logs: undefined }), runtime);
+  });
+
   server.registerTool('send', {
-    description: '发送一条法布施内容。',
-    inputSchema: { content: z.string().min(1).max(20_000) },
-    annotations: writeExternal,
-  }, async ({ content }, extra) => {
+    description: globalDharmaTool('send').description,
+    inputSchema: { content: z.string().min(1).max(20_000), operationId },
+    annotations: globalDharmaToolAnnotations('send'),
+  }, async (input, extra) => {
     await progress(extra, 0, 1, '准备发送');
-    state.globalDharma.sent += 1;
-    state.globalDharma.logs.push(`已发送内容 #${state.globalDharma.sent}（${content.length} 字）`);
+    const completed = runGlobalMutation(state, runtimeStore, scopeId, 'send', input, (runtimeState) => {
+      runtimeState.sent += 1;
+      runtimeState.logs.push(`已发送内容 #${runtimeState.sent}（${input.content.length} 字）`);
+      return result('内容已发送。', { sent: runtimeState.sent });
+    });
     await progress(extra, 1, 1, '发送完成');
-    return result('内容已发送。', { sent: state.globalDharma.sent });
+    return completed;
   });
+
   server.registerTool('logs', {
-    description: '读取最近日志。',
+    description: globalDharmaTool('logs').description,
     inputSchema: { limit: z.number().int().min(1).max(200).default(50) },
-    annotations: readOnly,
-  }, async ({ limit }) => result('已读取日志。', { entries: state.globalDharma.logs.slice(-limit) }));
+    annotations: globalDharmaToolAnnotations('logs'),
+  }, async ({ limit }) => {
+    const runtime = globalRuntimeSnapshot(state, runtimeStore, scopeId);
+    return attachGlobalRuntime(result('已读取日志。', { entries: runtime.state.logs.slice(-limit) }), runtime);
+  });
+
   server.registerTool('validate_config', {
-    description: '验证法布施配置，不执行写入。',
+    description: globalDharmaTool('validate_config').description,
     inputSchema: { config: z.record(z.unknown()) },
-    annotations: readOnly,
-  }, async ({ config }) => result('配置有效。', { valid: true, keys: Object.keys(config) }));
-  server.registerTool('deploy_latest', { description: '部署最新已验证版本。', annotations: writeExternal }, async (extra) => {
+    annotations: globalDharmaToolAnnotations('validate_config'),
+  }, async ({ config }) => {
+    const runtime = globalRuntimeSnapshot(state, runtimeStore, scopeId);
+    return attachGlobalRuntime(result('配置有效。', { valid: true, keys: Object.keys(config) }), runtime);
+  });
+
+  server.registerTool('deploy_latest', {
+    description: globalDharmaTool('deploy_latest').description,
+    inputSchema: { operationId },
+    annotations: globalDharmaToolAnnotations('deploy_latest'),
+  }, async (input, extra) => {
     await progress(extra, 0, 1, '提交部署');
-    const deployment = result('已提交最新版本部署。', { deploymentId: crypto.randomUUID(), status: 'queued' });
+    const completed = runGlobalMutation(state, runtimeStore, scopeId, 'deploy_latest', input, () =>
+      result('已提交最新版本部署。', { deploymentId: crypto.randomUUID(), status: 'queued' }));
     await progress(extra, 1, 1, '部署已入队');
-    return deployment;
+    return completed;
   });
 }
-
-function globalDharmaChat(state, message) {
+function globalDharmaChat(state, message, { prayerWheelAccess = null } = {}) {
   if (message === '1' || message === '进入全球发送') {
     state.mode = 'global-send';
     state.pendingContent = null;
@@ -346,8 +464,17 @@ function globalDharmaChat(state, message) {
     });
   }
   if (message === '开始' && state.mode === 'local-prayer-wheel') {
-    return result('本地转经轮运行请求已准备好，宿主确认后才会执行。', {
-      handled: true, mode: state.mode,
+    if (!prayerWheelAccess?.allowed) {
+      return result('本地转经轮尚未获得服务端授权。请购买或恢复永久权限后重试。', {
+        handled: true,
+        mode: state.mode,
+        entitlementAccess: prayerWheelAccess ?? { allowed: false, protected: true, reason: 'entitlement_check_unavailable' },
+      });
+    }
+    return result('本地转经轮运行请求已准备好，宿主仍需在执行前复核权限并确认。', {
+      handled: true,
+      mode: state.mode,
+      entitlementAccess: prayerWheelAccess,
       hostRequest: { transport: 'mcp-host-bridge', capability: 'local.prayer-wheel.start', params: {} },
     });
   }
@@ -898,12 +1025,16 @@ function registerChatGptAutoConfirm(server, appInfo) {
   ));
 }
 
-export function createOfficialMcpServer(id, scopeId = 'contract-test') {
+export function createOfficialMcpServer(id, scopeId = 'contract-test', options = {}) {
   const appInfo = appById.get(id);
   if (!appInfo) return null;
   const state = stateFor(scopeId);
   const server = new McpServer({ name: `fabushi-${id}`, version: VERSION }, { capabilities: { tools: { listChanged: true }, resources: { listChanged: true } } });
-  if (id === 'global-dharma') registerGlobalDharma(server, appInfo, state);
+  if (id === 'global-dharma') registerGlobalDharma(server, appInfo, state, {
+    runtimeStore: options.globalDharmaRuntimeStore ?? null,
+    scopeId,
+    entitlementResolver: options.entitlementResolver ?? null,
+  });
   else if (id === 'faliu-flashcards') registerFlashcards(server, appInfo, state);
   else if (id === 'platform-publish') registerPlatformPublish(server, appInfo, state);
   else if (id === 'hermes-installer') registerHermes(server, appInfo, state);
@@ -913,7 +1044,7 @@ export function createOfficialMcpServer(id, scopeId = 'contract-test') {
   return server;
 }
 
-export async function handleOfficialMcpRequest(id, req, res, scopeId = 'anonymous') {
+export async function handleOfficialMcpRequest(id, req, res, scopeId = 'anonymous', options = {}) {
   if (!appById.has(id)) {
     res.status(404).json({ error: 'MCP plugin not found' });
     return;
@@ -933,7 +1064,7 @@ export async function handleOfficialMcpRequest(id, req, res, scopeId = 'anonymou
   }
 
   if (!session && req.method === 'POST' && !suppliedSessionId && isInitializeRequest(req.body)) {
-    const server = createOfficialMcpServer(id, scopeId);
+    const server = createOfficialMcpServer(id, scopeId, options);
     let transport;
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),

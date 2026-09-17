@@ -46,6 +46,7 @@ import type {
 } from "./transport";
 import { makeMemoryId, memoryDedupeKey, normalizeMemoryContent } from "../fabushi-runtime/memory-store";
 import { ErrorTrayQueue } from "../fabushi-runtime/error-trays";
+import { getMarketplaceRelease } from "../marketplace";
 
 const now = () => new Date().toISOString();
 const mockComputerSnapshot = () => ({
@@ -513,6 +514,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private readonly listeners = new Set<RuntimeEventListener>();
   private readonly installedPlugins = new Map<string, InstalledPluginPointer>();
   private readonly approvals = new Set<string>();
+  private readonly providedSecrets = new Set<string>();
   private status: HostStatus = "idle";
   private sequence = 0;
   private auth: AuthState = { loggedIn: false, provider: "test" };
@@ -601,17 +603,51 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
 
   async marketplaceRelease(pluginId: string, version: string): Promise<MarketplaceReleaseMetadata> {
     if (this.native) return this.native.marketplaceRelease(pluginId, version);
+    const published = getMarketplaceRelease(pluginId);
+    if (!published) throw new Error(`published marketplace release is missing for ${pluginId}`);
+    const artifact = {
+      id: published.artifactId,
+      runtime: published.runtime,
+      platforms: [...published.platforms],
+      source: { type: "https", url: published.artifactUrl },
+      sha256: published.artifactSha256,
+      size: published.artifactSize,
+      format: published.format,
+    };
     return {
       pluginId,
-      version,
+      version: published.version,
       releaseStatus: "approved",
       releaseManifest: {
         schemaVersion: 1,
         protocol: "mahayana.external-release.v1",
         pluginId,
-        version,
+        version: published.version,
+        source: {
+          repository: published.repository,
+          sourceRef: published.sourceRef,
+        },
         permissions: [],
-        artifacts: [],
+        artifacts: [artifact],
+      },
+      install: {
+        protocol: published.protocol,
+        strategy: "github-immutable",
+        pluginId,
+        version: published.version,
+        source: {
+          repository: published.repository,
+          sourceRef: published.sourceRef,
+          ...(published.manifestUrl ? { manifestUrl: published.manifestUrl } : {}),
+          marketplaceHostsPackage: false,
+        },
+        artifacts: [artifact],
+        update: {
+          check: "marketplace-release",
+          comparison: "version-then-artifact-sha256",
+          allowDowngrade: false,
+          rollback: "previous-active",
+        },
       },
     };
   }
@@ -632,6 +668,11 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   async pluginUninstall(pluginId: string): Promise<PluginUninstallResult> {
     if (this.native) return this.native.pluginUninstall(pluginId);
     return { pluginId, removed: this.installedPlugins.delete(pluginId), permissionsRemoved: true };
+  }
+
+  async pluginRollback(pluginId: string): Promise<InstalledPluginPointer | null> {
+    if (this.native) return this.native.pluginRollback(pluginId);
+    return this.installedPlugins.get(pluginId) ?? null;
   }
 
   async pluginActive(pluginId: string): Promise<InstalledPluginPointer | null> {
@@ -692,14 +733,18 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           messages: isRichResultsGallery ? richResultsMessages() : [],
         });
         if (isRichResultsGallery) {
-          richResultsCards().forEach((card, index) => {
-            this.emit({
-              type: "transcript.card",
-              timestamp: now(),
-              entryId: `rich-results-card-${index + 1}`,
-              card,
+          richResultsCards()
+            .map((card) => card.kind === "secretRequest" && this.providedSecrets.has(card.requestId)
+              ? { ...card, provided: true }
+              : card)
+            .forEach((card, index) => {
+              this.emit({
+                type: "transcript.card",
+                timestamp: now(),
+                entryId: `rich-results-card-${index + 1}`,
+                card,
+              });
             });
-          });
         }
         return { requestId: command.requestId };
       }
@@ -1767,7 +1812,8 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         });
         return { requestId: command.requestId };
       case "secret.provide":
-        if (!command.value) throw new Error("Secret value must not be empty");
+        if (!command.value.trim()) throw new Error("Secret value must not be empty");
+        this.providedSecrets.add(command.secretRequestId);
         this.emit({
           type: "secret.provided",
           timestamp: now(),

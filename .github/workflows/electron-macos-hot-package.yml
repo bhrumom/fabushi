@@ -1,30 +1,8 @@
-name: Fabushi macOS hot package
-
+name: Electron macOS hot package
 on:
   workflow_dispatch:
-    inputs:
-      release_kind:
-        description: Fast test build skips long App E2E; formal requires it
-        required: false
-        type: choice
-        default: test
-        options: [test, formal]
-      release_tag:
-        description: Required only for formal release
-        required: false
-        type: string
-        default: ''
-
-permissions:
-  contents: write
-
 jobs:
-  release:
-    uses: ./.github/workflows/release-desktop-platform.yml
-    with:
-      platform: mac
-      runner: macos-15
-      release_kind: ${{ inputs.release_kind || 'test' }}
-      source_ref: ''
-      release_tag: ${{ inputs.release_tag || '' }}
-    secrets: inherit
+  paused:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Superseded by the single Native Electron macOS test release workflow.'

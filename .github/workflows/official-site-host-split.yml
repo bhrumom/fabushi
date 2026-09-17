@@ -1,0 +1,41 @@
+name: Official site host split
+
+on:
+  pull_request:
+    paths:
+      - frontend/official-site-worker.js
+      - frontend/apps/web/src/app/**
+      - frontend/apps/web/src/components/**
+      - frontend/apps/web/src/lib/site-url.ts
+      - frontend/apps/web/scripts/check-site-host-split.mjs
+      - frontend/apps/web/package.json
+      - frontend/packages/shared/src/brand.ts
+      - .github/workflows/deploy-official-site-cloudflare.yml
+      - .github/workflows/official-site-host-split.yml
+  push:
+    branches:
+      - main
+    paths:
+      - frontend/official-site-worker.js
+      - frontend/apps/web/src/app/**
+      - frontend/apps/web/src/components/**
+      - frontend/apps/web/src/lib/site-url.ts
+      - frontend/apps/web/scripts/check-site-host-split.mjs
+      - frontend/apps/web/package.json
+      - frontend/packages/shared/src/brand.ts
+      - .github/workflows/deploy-official-site-cloudflare.yml
+      - .github/workflows/official-site-host-split.yml
+
+permissions:
+  contents: read
+
+jobs:
+  host-split:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Verify official and Web host routing
+        run: node frontend/apps/web/scripts/check-site-host-split.mjs

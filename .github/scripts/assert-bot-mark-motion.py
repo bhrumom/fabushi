@@ -64,44 +64,40 @@ for marker in required_engine:
 
 required_runtime = [
     'data-fabushi-avatar-runtime="v1"',
-    'data-frame-clock="shared-30fps"',
-    'const SHARED_AVATAR_FRAME_INTERVAL_MS = 1000 / 30;',
-    'const sharedAvatarFrameListeners = new Set<SharedAvatarFrameListener>();',
-    'const AMBIENT_AVATAR_FRAME_INTERVAL_MS = 1000 / 4;',
-    'AMBIENT_AVATAR_STATES',
-    'nextSharedAvatarFrameDelay()',
-    'requestAnimationFrame((now) => {',
-    'cancelAnimationFrame(sharedAvatarAnimationFrame)',
-    'return subscribeSharedAvatarFrame(tick, frameInterval);',
+    'data-motion-model="spring-character-v2"',
+    'requestAnimationFrame(tick)',
+    'cancelAnimationFrame(frame)',
     'prefers-reduced-motion: reduce',
     'personaPath(shape)',
     'linearGradient',
     'radialGradient',
     'MOTION: Partial<Record<BotMarkState, MotionProfile>>',
-    'actionRef',
+    'EYE_POSES: Partial<Record<BotMarkState, EyePose>>',
+    'SpringChannel',
+    'AvatarDynamics',
+    'stepSpring',
+    'createDynamics',
+    'stepDynamics',
+    'seededUnit',
+    'microDelay',
+    'blinkDelay',
+    'eyePoseForState',
+    'overlayKindForState',
+    'data-avatar-overlay',
+    'leftBlink',
+    'rightBlink',
+    'dynamics.faceY.v',
     'pointermove',
     'FabushiAvatarRuntimeHandle',
 ]
 for marker in required_runtime:
     if marker not in runtime:
-        raise SystemExit(f'BotMark motion gate: Fabushi-owned runtime is incomplete: {marker}')
+        raise SystemExit(f'BotMark motion gate: Fabushi-owned spring runtime is incomplete: {marker}')
 
-for retired_loop in ['requestAnimationFrame(tick)', 'cancelAnimationFrame(frame)']:
-    if retired_loop in runtime:
-        raise SystemExit(f'BotMark motion gate: per-avatar frame loop returned: {retired_loop}')
-
-for shared_lifecycle_marker in [
-    'const avatarMotionLifecycleListeners = new Set<() => void>();',
-    'useSyncExternalStore(',
-    'subscribeAvatarMotionLifecycle',
-    'avatarMotionAllowedSnapshot',
-]:
-    if shared_lifecycle_marker not in component:
-        raise SystemExit(f'BotMark motion gate: shared focus/visibility lifecycle missing: {shared_lifecycle_marker}')
-
-# These terms identify the retired vendored/runtime paths. They are prohibited
-# from the production avatar implementation; documentation/evidence may still
-# mention them historically.
+# These terms identify retired or external study/runtime paths. They are
+# prohibited from production avatar implementation. Documentation/evidence may
+# mention them historically, but the production component/adapter/runtime must
+# remain Fabushi-owned clean-room source.
 forbidden_runtime_terms = [
     'openmaus-cursor-avatar',
     'CursorAvatar',
@@ -112,10 +108,15 @@ forbidden_runtime_terms = [
     'index-UbX-y3il.js',
     'checksum-pinned-artifact-runtime',
     'shipped renderer',
+    'geometry-data.js',
+    'GROK_GEO',
+    'GROK_TABLES',
+    'GrokCharacter',
+    'grok-icon-study',
 ]
 for term in forbidden_runtime_terms:
     if term in component or term in engine or term in runtime:
-        raise SystemExit(f'BotMark motion gate: retired upstream runtime dependency returned: {term}')
+        raise SystemExit(f'BotMark motion gate: upstream/study runtime dependency returned: {term}')
 
 retired_path = Path('frontend/apps/web/src/app/host/openmaus-cursor-avatar.tsx')
 if retired_path.exists():
@@ -138,7 +139,6 @@ required_aliases = [
     "event.type === 'botInvocationRequested'",
     "{ alias: `workbench:${botId}`, canonical }",
     "{ alias: `peer:conversation:${conversationId}`, canonical }",
-    "{ alias: 'peer:conversation:mahayana-ai:agent:assistant', canonical: 'bot:mahayana-assistant' }",
     'registerBotIdentityAliases(aliases)',
 ]
 for marker in required_aliases:
@@ -189,4 +189,4 @@ if 'className={styles.sidebarBotMark}' in host:
     if 'followPointer' in sidebar_region:
         raise SystemExit('BotMark motion gate: sidebar list marks must not attach pointer-follow listeners')
 
-print('BotMark motion gate passed: Fabushi-owned procedural SVG runtime, shared 30 FPS frame clock, shared visibility lifecycle, semantic Agent states, canonical identity, reduced-motion, and no upstream avatar/renderer dependency.')
+print('BotMark motion gate passed: Fabushi-owned spring character runtime, state eye choreography, seeded micro-motion/overlays, canonical identity, visibility/reduced-motion controls, and no upstream study/runtime dependency.')

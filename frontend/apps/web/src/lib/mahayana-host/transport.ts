@@ -25,6 +25,7 @@ export type MarketplacePluginSummary = {
   platforms?: string[];
   releaseStatus?: string;
   releaseManifest?: Record<string, unknown>;
+  install?: Record<string, unknown>;
   source?: Record<string, unknown>;
   bot?: Record<string, unknown>;
   commands?: unknown[];
@@ -41,6 +42,7 @@ export type MarketplaceReleaseMetadata = {
   version: string;
   releaseStatus?: string;
   releaseManifest: Record<string, unknown>;
+  install?: Record<string, unknown>;
 };
 
 export type InstalledPluginPointer = {
@@ -76,6 +78,7 @@ export interface MahayanaHostTransport {
   marketplaceRelease(pluginId: string, version: string): Promise<MarketplaceReleaseMetadata>;
   pluginInstall(release: Record<string, unknown>, platform?: string): Promise<InstalledPluginPointer>;
   pluginUninstall(pluginId: string): Promise<PluginUninstallResult>;
+  pluginRollback(pluginId: string): Promise<InstalledPluginPointer | null>;
   pluginActive(pluginId: string): Promise<InstalledPluginPointer | null>;
   pluginListInstalled(): Promise<InstalledPluginList>;
   pluginUiDocument(pluginId: string): Promise<PluginUiDocument>;

@@ -4,52 +4,79 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ombhrum.fabushi.core.MahayanaHost
 import kotlinx.coroutines.flow.MutableSharedFlow
-
-private data class OpenedMiniApp(val plugin: MarketplacePlugin, val htmlOverride: String? = null)
-
-private fun hardenGeneratedMiniAppDocument(html: String): String {
-    val policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; media-src data:; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'\">"
-    val head = Regex("<head>", RegexOption.IGNORE_CASE)
-    if (head.containsMatchIn(html)) return html.replaceFirst(head, "<head>$policy")
-    val root = Regex("<html>", RegexOption.IGNORE_CASE)
-    if (root.containsMatchIn(html)) return html.replaceFirst(root, "<html><head>$policy</head>")
-    return "<!doctype html><html><head>$policy</head><body>$html</body></html>"
-}
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     private val deepLinks = MutableSharedFlow<Uri>(replay = 1, extraBufferCapacity = 31)
     private val updateModel: AndroidUpdateViewModel by viewModels()
     private val appAgentSurface = FabushiAppAgentSurface()
+    private lateinit var remoteDeviceGateway: FabushiRemoteDeviceGateway
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val ciBootstrapActive = FabushiCiBootstrap.prepare(this)
+        remoteDeviceGateway = FabushiRemoteDeviceGateway(
+            context = applicationContext,
+            surface = appAgentSurface,
+            metadata = FabushiCiBootstrap.gatewayMetadata(intent, ciBootstrapActive),
+            configuredDeviceName = FabushiCiBootstrap.configuredDeviceName(intent, ciBootstrapActive),
+        )
         enableEdgeToEdge()
         setContent {
             MaterialTheme {
                 val model: MarketplaceViewModel = viewModel()
                 val messagingModel: MessagingViewModel = viewModel()
+                val botModel: MobileBotViewModel = viewModel()
                 val state by model.state.collectAsState()
                 val messagingState by messagingModel.state.collectAsState()
+                val botState by botModel.state.collectAsState()
                 val updateState by updateModel.state.collectAsState()
-                var openedMiniApp by remember { mutableStateOf<OpenedMiniApp?>(null) }
+                var openedMiniApp by remember { mutableStateOf<MarketplacePlugin?>(null) }
+                var showLegacyShell by remember { mutableStateOf(false) }
+
+                BackHandler(enabled = showLegacyShell) { showLegacyShell = false }
+
                 LaunchedEffect(model) {
                     deepLinks.collect { uri -> model.handleDeepLink(uri) }
                 }
                 LaunchedEffect(state.loggedIn) {
-                    if (state.loggedIn) messagingModel.refresh()
+                    remoteDeviceGateway.setLoggedIn(state.loggedIn)
+                    if (state.loggedIn) {
+                        messagingModel.refresh()
+                        model.refresh()
+                        botModel.refreshBots()
+                    }
+                    if (!state.loggedIn) showLegacyShell = false
+                }
+                LaunchedEffect(showLegacyShell, state.loggedIn) {
+                    if (!showLegacyShell && state.loggedIn) {
+                        model.refresh()
+                        botModel.refreshBots()
+                    }
                 }
                 LaunchedEffect(state.browserLaunchNonce, state.browserLoginUrl) {
                     val loginUrl = state.browserLoginUrl
@@ -60,21 +87,107 @@ class MainActivity : ComponentActivity() {
                             .launchUrl(this@MainActivity, Uri.parse(loginUrl))
                     }
                 }
+
                 val active = openedMiniApp
                 if (active != null) {
-                    MiniAppWebMcpSurface(
-                        plugin = active.plugin,
-                        loadLocalHtml = { pluginId -> active.htmlOverride?.let(::hardenGeneratedMiniAppDocument) ?: model.loadLocalMiniAppHtml(pluginId) },
-                        callRuntimeToolJson = model::callRuntimeToolJson,
-                        onClose = { openedMiniApp = null },
-                    )
+                    val miniAppTransportHost = remember(active.pluginId) { MahayanaHost(applicationContext) }
+                    val miniAppPlatformBridge = remember(active.pluginId, miniAppTransportHost) {
+                        MiniAppPlatformBridge(miniAppTransportHost)
+                    }
+                    DisposableEffect(miniAppTransportHost) {
+                        onDispose { miniAppTransportHost.close() }
+                    }
+                    Box {
+                        MiniAppWebMcpSurface(
+                            plugin = active,
+                            loadLocalHtml = { pluginId ->
+                                model.loadLocalMiniAppHtml(pluginId) ?: globalDharmaHostShell(active)
+                            },
+                            callRuntimeToolJson = { pluginId, name, argumentsJson ->
+                                if (pluginId == MiniAppPlatformBridge.GLOBAL_DHARMA_ID) {
+                                    miniAppPlatformBridge.callOfficialMcpTool(
+                                        pluginId = pluginId,
+                                        name = name,
+                                        arguments = JSONObject(argumentsJson.ifBlank { "{}" }),
+                                    ).toString()
+                                } else {
+                                    model.callRuntimeToolJson(pluginId, name, argumentsJson)
+                                }
+                            },
+                            onClose = { openedMiniApp = null },
+                        )
+                        if (active.pluginId == MiniAppPlatformBridge.GLOBAL_DHARMA_ID) {
+                            GlobalDharmaCommercePanel(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .testTag("global-dharma-commerce-panel"),
+                            )
+                        }
+                    }
+                } else if (state.onboardingStep >= 3 && state.authResolved && state.loggedIn && !showLegacyShell) {
+                    val miniAppBot = botState.activeBot?.takeIf { !it.miniAppId.isNullOrBlank() }
+                    val miniAppPlugin = miniAppBot?.miniAppId?.let { id -> state.plugins.firstOrNull { it.pluginId == id } }
+                    LaunchedEffect(miniAppBot?.id, miniAppPlugin?.pluginId, miniAppBot?.menuButtonText) {
+                        if (miniAppBot != null) {
+                            appAgentSurface.setOverlay(
+                                key = "miniapp-bot-menu",
+                                elements = listOf(
+                                    FabushiAppAgentSurface.Element(
+                                        agentId = "mobile-bot-open-miniapp",
+                                        role = "button",
+                                        name = miniAppBot.menuButtonText ?: "打开应用",
+                                        enabled = miniAppPlugin != null,
+                                    ),
+                                ),
+                                actions = if (miniAppPlugin != null) {
+                                    mapOf(
+                                        "mobile-bot-open-miniapp" to FabushiAppAgentSurface.Action(setOf("invoke")) {
+                                            openedMiniApp = miniAppPlugin
+                                        },
+                                    )
+                                } else {
+                                    emptyMap()
+                                },
+                            )
+                        } else {
+                            appAgentSurface.clearOverlay("miniapp-bot-menu")
+                        }
+                    }
+                    Box {
+                        GrokMobileShellAndroid(
+                            accountName = state.accountName,
+                            messagingState = messagingState,
+                            botState = botState,
+                            appAgentSurface = appAgentSurface,
+                            onOpenLegacy = { showLegacyShell = true },
+                            onRefreshBots = botModel::refreshBots,
+                            onCreateBot = botModel::createBot,
+                            onOpenBot = botModel::openBot,
+                            onCloseBot = botModel::closeBot,
+                            onDraftChange = botModel::setDraft,
+                            onSend = botModel::send,
+                            onStop = botModel::stop,
+                        )
+                        if (miniAppBot != null) {
+                            Button(
+                                onClick = { miniAppPlugin?.let { openedMiniApp = it } },
+                                enabled = miniAppPlugin != null,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 12.dp, end = 12.dp)
+                                    .testTag("mobile-bot-open-miniapp"),
+                            ) {
+                                Text(miniAppBot.menuButtonText ?: "打开应用")
+                            }
+                        }
+                    }
                 } else {
                     FabushiScreen(
                         state = state,
                         onQueryChange = model::setQuery,
                         onSearch = model::refresh,
                         onInstall = model::install,
-                        onOpen = { openedMiniApp = OpenedMiniApp(it) },
+                        onOpen = { openedMiniApp = it },
                         onApprovePermissions = model::approvePermissions,
                         onDenyPermissions = model::denyPermissions,
                         updateState = updateState,
@@ -119,25 +232,10 @@ class MainActivity : ComponentActivity() {
                         onReopenBrowserLogin = model::reopenBrowserLogin,
                         onCancelBrowserLogin = model::cancelBrowserLogin,
                         onLogout = model::logout,
+                        onExitLegacy = { showLegacyShell = false },
                         onChatDraftChange = model::setChatDraft,
                         onSendChat = model::sendChat,
                         onStopChat = model::stopChat,
-                        onOpenGeneratedMiniApp = { entry ->
-                            val id = entry.miniAppId
-                            val html = entry.miniAppHtml
-                            if (!id.isNullOrBlank() && !html.isNullOrBlank()) {
-                                openedMiniApp = OpenedMiniApp(
-                                    plugin = MarketplacePlugin(
-                                        pluginId = id,
-                                        displayName = entry.miniAppName ?: "生成的小程序",
-                                        description = entry.miniAppDescription ?: "Agent generated Mini App",
-                                        latestVersion = null,
-                                        tools = emptyList(),
-                                    ),
-                                    htmlOverride = html,
-                                )
-                            }
-                        },
                     )
                 }
             }
@@ -153,6 +251,11 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         updateModel.setForeground(false)
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        if (::remoteDeviceGateway.isInitialized) remoteDeviceGateway.close()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {

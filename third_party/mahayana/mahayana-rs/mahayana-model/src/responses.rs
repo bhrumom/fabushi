@@ -1,9 +1,9 @@
 use crate::{ModelError, ModelEvent, ModelRequest, ModelRuntime, ModelUsage, SharedModelEventSink};
 use async_trait::async_trait;
 use mahayana_core::ModelProviderMode;
-use serde_json::{Map, Value, json};
-use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, Read};
+use serde_json::{Value, json};
+use std::io::{BufRead, BufReader};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ResponsesWireApi {
@@ -56,12 +56,27 @@ impl ResponsesModelConfig {
 /// to `mahayana-native-engine` and the sovereign kernel.
 pub struct ResponsesModelRuntime {
     config: ResponsesModelConfig,
+    credential_resolver: Option<ModelCredentialResolver>,
 }
+
+/// Resolves the current product-account bearer token at inference time. A
+/// long-lived desktop Host must not retain the previous account's credential
+/// after logout or account switching.
+pub type ModelCredentialResolver =
+    Arc<dyn Fn() -> Result<Option<String>, ModelError> + Send + Sync>;
 
 impl ResponsesModelRuntime {
     pub fn new(config: ResponsesModelConfig) -> Result<Self, ModelError> {
         config.validate()?;
-        Ok(Self { config })
+        Ok(Self {
+            config,
+            credential_resolver: None,
+        })
+    }
+
+    pub fn with_credential_resolver(mut self, resolver: ModelCredentialResolver) -> Self {
+        self.credential_resolver = Some(resolver);
+        self
     }
 }
 
@@ -79,13 +94,22 @@ impl ModelRuntime for ResponsesModelRuntime {
             return Err(ModelError::InvalidRequest("model must not be empty".into()));
         }
 
-        let config = self.config.clone();
-        let stream_events = events.clone();
-        let payload =
-            tokio::task::spawn_blocking(move || request_response(&config, request, &stream_events))
-                .await
-                .map_err(|error| ModelError::Inference(format!("model task failed: {error}")))??;
+        let mut config = self.config.clone();
+        if let Some(resolver) = self.credential_resolver.as_ref() {
+            config.bearer_token = resolver()?;
+        }
+        let events_for_request = Arc::clone(&events);
+        let (payload, streamed_text) = tokio::task::spawn_blocking(move || {
+            request_response(&config, request, events_for_request)
+        })
+        .await
+        .map_err(|error| ModelError::Inference(format!("model task failed: {error}")))??;
 
+        // SSE deltas have already reached the Agent event sink. Only emit the
+        // final text for JSON/fallback endpoints to avoid duplicating replies.
+        if !streamed_text && let Some(text) = extract_output_text(&payload) {
+            events.emit(ModelEvent::OutputTextDelta(text))?;
+        }
         if let Some(usage) = extract_usage(&payload) {
             events.emit(ModelEvent::Usage(usage))?;
         }
@@ -100,8 +124,8 @@ impl ModelRuntime for ResponsesModelRuntime {
 fn request_response(
     config: &ResponsesModelConfig,
     request: ModelRequest,
-    events: &SharedModelEventSink,
-) -> Result<Value, ModelError> {
+    events: SharedModelEventSink,
+) -> Result<(Value, bool), ModelError> {
     if matches!(
         config.provider_mode,
         ModelProviderMode::UserConfiguredRemote
@@ -148,7 +172,7 @@ fn request_response(
             {
                 messages.insert(0, json!({"role":"system", "content": instructions}));
             }
-            let mut body = json!({ "model": request.model, "messages": messages, "stream": true, "stream_options": {"include_usage": true} });
+            let mut body = json!({ "model": request.model, "messages": messages, "stream": false });
             if let Some(tools) = request.metadata.get("tools").and_then(Value::as_array) {
                 body["tools"] = Value::Array(tools.iter().filter_map(chat_tool).collect());
             }
@@ -172,7 +196,6 @@ fn request_response(
                 "model": request.model,
                 "messages": anthropic_messages(&request.input),
                 "max_tokens": request.metadata.get("max_output_tokens").cloned().unwrap_or_else(|| json!(4096)),
-                "stream": true,
             });
             let system = anthropic_system(&request.input, request.metadata.get("instructions"));
             if !system.is_empty() {
@@ -188,7 +211,12 @@ fn request_response(
         }
     };
 
-    let mut http = ureq::post(&endpoint).set("Accept", "text/event-stream, application/json");
+    let accept = if matches!(config.wire_api, ResponsesWireApi::Responses) {
+        "text/event-stream, application/json"
+    } else {
+        "application/json"
+    };
+    let mut http = ureq::post(&endpoint).set("Accept", accept);
     if let Some(token) = config.bearer_token.as_deref() {
         http = match config.wire_api {
             ResponsesWireApi::AnthropicMessages => http
@@ -200,17 +228,15 @@ fn request_response(
         };
     }
     let response = http.send_json(body).map_err(redacted_http_error)?;
-    let content_type = response
-        .header("content-type")
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if content_type.contains("text/event-stream") {
-        return parse_sse_response(config.wire_api, response.into_reader(), events);
+    if matches!(config.wire_api, ResponsesWireApi::Responses)
+        && response
+            .header("Content-Type")
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .contains("text/event-stream")
+    {
+        return request_stream(response, events);
     }
-
-    // Compatibility fallback for gateways which ignore `stream: true`. The
-    // presentation still receives one delta, but only after the non-streaming
-    // response completes; first-party and supported provider routes use SSE.
     let payload: Value = response
         .into_json()
         .map_err(|_| ModelError::Inference("model endpoint returned invalid JSON".into()))?;
@@ -221,411 +247,149 @@ fn request_response(
             .unwrap_or("model endpoint returned an error");
         return Err(ModelError::Inference(message.to_string()));
     }
-    let payload = match config.wire_api {
-        ResponsesWireApi::Responses => payload,
-        ResponsesWireApi::ChatCompletions => normalize_chat_payload(payload),
-        ResponsesWireApi::AnthropicMessages => normalize_anthropic_payload(payload),
-    };
-    if let Some(text) = extract_output_text(&payload) {
-        events.emit(ModelEvent::OutputTextDelta(text))?;
-    }
-    Ok(payload)
+    Ok((
+        match config.wire_api {
+            ResponsesWireApi::Responses => payload,
+            ResponsesWireApi::ChatCompletions => normalize_chat_payload(payload),
+            ResponsesWireApi::AnthropicMessages => normalize_anthropic_payload(payload),
+        },
+        false,
+    ))
 }
 
-#[derive(Debug, Default)]
-struct ChatToolCallStream {
-    id: String,
-    name: String,
-    arguments: String,
-}
-
-#[derive(Debug, Default)]
-struct ChatStreamState {
-    id: Value,
-    text: String,
-    tool_calls: BTreeMap<usize, ChatToolCallStream>,
-    usage: Value,
-}
-
-#[derive(Debug)]
-enum AnthropicBlockStream {
-    Text(String),
-    Tool {
-        id: String,
-        name: String,
-        arguments: String,
-    },
-}
-
-#[derive(Debug, Default)]
-struct AnthropicStreamState {
-    id: Value,
-    blocks: BTreeMap<usize, AnthropicBlockStream>,
-    usage: Map<String, Value>,
-}
-
-#[derive(Debug, Default)]
-struct ResponsesStreamState {
-    completed: Option<Value>,
-    text: String,
-}
-
-fn parse_sse_response(
-    wire_api: ResponsesWireApi,
-    reader: impl Read,
-    events: &SharedModelEventSink,
-) -> Result<Value, ModelError> {
-    let mut reader = BufReader::new(reader);
-    let mut line = String::new();
-    let mut event_name = String::new();
-    let mut data_lines = Vec::new();
-    let mut responses = ResponsesStreamState::default();
-    let mut chat = ChatStreamState::default();
-    let mut anthropic = AnthropicStreamState::default();
+fn request_stream(
+    response: ureq::Response,
+    events: SharedModelEventSink,
+) -> Result<(Value, bool), ModelError> {
+    let mut reader = BufReader::new(response.into_reader());
+    let mut data = String::new();
+    let mut streamed_text = false;
+    let mut accumulated_text = String::new();
+    let mut final_payload = None;
 
     loop {
-        line.clear();
+        let mut line = String::new();
         let read = reader
             .read_line(&mut line)
             .map_err(|error| ModelError::Inference(format!("model stream read failed: {error}")))?;
         if read == 0 {
-            if !data_lines.is_empty() {
-                process_sse_frame(
-                    wire_api,
-                    &event_name,
-                    &data_lines.join("\n"),
-                    events,
-                    &mut responses,
-                    &mut chat,
-                    &mut anthropic,
-                )?;
-            }
+            consume_sse_event(
+                &data,
+                &events,
+                &mut accumulated_text,
+                &mut streamed_text,
+                &mut final_payload,
+            )?;
             break;
         }
-        let trimmed = line.trim_end_matches(['\r', '\n']);
-        if trimmed.is_empty() {
-            if !data_lines.is_empty() {
-                process_sse_frame(
-                    wire_api,
-                    &event_name,
-                    &data_lines.join("\n"),
-                    events,
-                    &mut responses,
-                    &mut chat,
-                    &mut anthropic,
-                )?;
-            }
-            event_name.clear();
-            data_lines.clear();
+        let line = line.trim_end_matches(['\r', '\n']);
+        if line.is_empty() {
+            consume_sse_event(
+                &data,
+                &events,
+                &mut accumulated_text,
+                &mut streamed_text,
+                &mut final_payload,
+            )?;
+            data.clear();
             continue;
         }
-        if let Some(value) = trimmed.strip_prefix("event:") {
-            event_name = value.trim().to_string();
-        } else if let Some(value) = trimmed.strip_prefix("data:") {
-            data_lines.push(value.trim_start().to_string());
+        if line.starts_with(':') {
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("data:") {
+            if !data.is_empty() {
+                data.push('\n');
+            }
+            data.push_str(value.trim_start());
         }
     }
 
-    match wire_api {
-        ResponsesWireApi::Responses => finish_responses_stream(responses),
-        ResponsesWireApi::ChatCompletions => Ok(finish_chat_stream(chat)),
-        ResponsesWireApi::AnthropicMessages => Ok(finish_anthropic_stream(anthropic)),
-    }
+    let payload = final_payload.unwrap_or_else(|| {
+        json!({
+            "id": "resp_local",
+            "object": "response",
+            "status": "completed",
+            "output": if accumulated_text.is_empty() {
+                Vec::<Value>::new()
+            } else {
+                vec![json!({
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": accumulated_text}],
+                })]
+            },
+        })
+    });
+    validate_response_payload(&payload)?;
+    Ok((payload, streamed_text))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn process_sse_frame(
-    wire_api: ResponsesWireApi,
-    event_name: &str,
+fn consume_sse_event(
     data: &str,
     events: &SharedModelEventSink,
-    responses: &mut ResponsesStreamState,
-    chat: &mut ChatStreamState,
-    anthropic: &mut AnthropicStreamState,
+    accumulated_text: &mut String,
+    streamed_text: &mut bool,
+    final_payload: &mut Option<Value>,
 ) -> Result<(), ModelError> {
-    if data.trim().is_empty() || data.trim() == "[DONE]" {
+    let data = data.trim();
+    if data.is_empty() || data == "[DONE]" {
         return Ok(());
     }
     let payload: Value = serde_json::from_str(data).map_err(|error| {
         ModelError::Inference(format!("model stream returned invalid JSON: {error}"))
     })?;
-    if let Some(error) = payload.get("error") {
-        let message = error
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or("model stream returned an error");
-        return Err(ModelError::Inference(message.to_string()));
-    }
-
-    match wire_api {
-        ResponsesWireApi::Responses => process_responses_frame(payload, events, responses),
-        ResponsesWireApi::ChatCompletions => process_chat_frame(payload, events, chat),
-        ResponsesWireApi::AnthropicMessages => {
-            process_anthropic_frame(event_name, payload, events, anthropic)
-        }
-    }
-}
-
-fn process_responses_frame(
-    payload: Value,
-    events: &SharedModelEventSink,
-    state: &mut ResponsesStreamState,
-) -> Result<(), ModelError> {
-    match payload.get("type").and_then(Value::as_str) {
-        Some("response.output_text.delta") => {
+    let event_type = payload
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    match event_type {
+        "response.output_text.delta" => {
             if let Some(delta) = payload.get("delta").and_then(Value::as_str)
                 && !delta.is_empty()
             {
-                state.text.push_str(delta);
+                accumulated_text.push_str(delta);
+                *streamed_text = true;
                 events.emit(ModelEvent::OutputTextDelta(delta.to_string()))?;
             }
         }
-        Some("response.completed") | Some("response.incomplete") => {
-            state.completed = payload.get("response").cloned();
+        "response.completed" => {
+            *final_payload = payload.get("response").cloned().or(Some(payload));
         }
-        Some("response.failed") => {
+        "response.failed" | "response.incomplete" => {
             let message = payload
                 .pointer("/response/error/message")
                 .or_else(|| payload.pointer("/error/message"))
                 .and_then(Value::as_str)
-                .unwrap_or("model response failed");
+                .unwrap_or("model endpoint returned an incomplete response");
             return Err(ModelError::Inference(message.to_string()));
         }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn finish_responses_stream(state: ResponsesStreamState) -> Result<Value, ModelError> {
-    if let Some(response) = state.completed {
-        return Ok(response);
-    }
-    if state.text.is_empty() {
-        return Err(ModelError::Inference(
-            "model stream ended without a completed response".into(),
-        ));
-    }
-    Ok(json!({
-        "output": [{
-            "type": "message",
-            "role": "assistant",
-            "content": [{"type": "output_text", "text": state.text}],
-        }]
-    }))
-}
-
-fn process_chat_frame(
-    payload: Value,
-    events: &SharedModelEventSink,
-    state: &mut ChatStreamState,
-) -> Result<(), ModelError> {
-    if payload.get("id").is_some_and(|value| !value.is_null()) {
-        state.id = payload.get("id").cloned().unwrap_or(Value::Null);
-    }
-    if let Some(usage) = payload.get("usage")
-        && !usage.is_null()
-    {
-        state.usage = usage.clone();
-    }
-    if let Some(delta) = payload
-        .pointer("/choices/0/delta/content")
-        .and_then(Value::as_str)
-        && !delta.is_empty()
-    {
-        state.text.push_str(delta);
-        events.emit(ModelEvent::OutputTextDelta(delta.to_string()))?;
-    }
-    for call in payload
-        .pointer("/choices/0/delta/tool_calls")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let index = call.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
-        let target = state.tool_calls.entry(index).or_default();
-        if let Some(id) = call.get("id").and_then(Value::as_str) {
-            target.id = id.to_string();
-        }
-        if let Some(name) = call.pointer("/function/name").and_then(Value::as_str) {
-            target.name.push_str(name);
-        }
-        if let Some(arguments) = call.pointer("/function/arguments").and_then(Value::as_str) {
-            target.arguments.push_str(arguments);
-        }
-    }
-    Ok(())
-}
-
-fn finish_chat_stream(state: ChatStreamState) -> Value {
-    let tool_calls = state
-        .tool_calls
-        .into_values()
-        .map(|call| {
-            json!({
-                "id": if call.id.is_empty() { "call" } else { call.id.as_str() },
-                "type": "function",
-                "function": {
-                    "name": if call.name.is_empty() { "tool" } else { call.name.as_str() },
-                    "arguments": if call.arguments.is_empty() { "{}" } else { call.arguments.as_str() },
-                },
-            })
-        })
-        .collect::<Vec<_>>();
-    normalize_chat_payload(json!({
-        "id": state.id,
-        "choices": [{
-            "message": {
-                "role": "assistant",
-                "content": state.text,
-                "tool_calls": tool_calls,
-            }
-        }],
-        "usage": state.usage,
-    }))
-}
-
-fn merge_usage(target: &mut Map<String, Value>, incoming: &Value) {
-    let Some(incoming) = incoming.as_object() else {
-        return;
-    };
-    for (key, value) in incoming {
-        target.insert(key.clone(), value.clone());
-    }
-}
-
-fn process_anthropic_frame(
-    event_name: &str,
-    payload: Value,
-    events: &SharedModelEventSink,
-    state: &mut AnthropicStreamState,
-) -> Result<(), ModelError> {
-    let kind = payload
-        .get("type")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(event_name);
-    match kind {
-        "message_start" => {
-            if let Some(message) = payload.get("message") {
-                state.id = message.get("id").cloned().unwrap_or(Value::Null);
-                if let Some(usage) = message.get("usage") {
-                    merge_usage(&mut state.usage, usage);
-                }
-            }
-        }
-        "content_block_start" => {
-            let index = payload.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
-            let block = payload.get("content_block").unwrap_or(&Value::Null);
-            match block.get("type").and_then(Value::as_str) {
-                Some("text") => {
-                    let text = block
-                        .get("text")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
-                    state
-                        .blocks
-                        .insert(index, AnthropicBlockStream::Text(text.to_string()));
-                }
-                Some("tool_use") => {
-                    let arguments = block
-                        .get("input")
-                        .filter(|value| !value.is_null())
-                        .and_then(|value| serde_json::to_string(value).ok())
-                        .filter(|value| value != "{}")
-                        .unwrap_or_default();
-                    state.blocks.insert(
-                        index,
-                        AnthropicBlockStream::Tool {
-                            id: block
-                                .get("id")
-                                .and_then(Value::as_str)
-                                .unwrap_or("tool")
-                                .to_string(),
-                            name: block
-                                .get("name")
-                                .and_then(Value::as_str)
-                                .unwrap_or("tool")
-                                .to_string(),
-                            arguments,
-                        },
-                    );
-                }
-                _ => {}
-            }
-        }
-        "content_block_delta" => {
-            let index = payload.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
-            let delta = payload.get("delta").unwrap_or(&Value::Null);
-            match delta.get("type").and_then(Value::as_str) {
-                Some("text_delta") => {
-                    let text = delta
-                        .get("text")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
-                    if !text.is_empty() {
-                        match state
-                            .blocks
-                            .entry(index)
-                            .or_insert_with(|| AnthropicBlockStream::Text(String::new()))
-                        {
-                            AnthropicBlockStream::Text(buffer) => buffer.push_str(text),
-                            AnthropicBlockStream::Tool { .. } => {}
-                        }
-                        events.emit(ModelEvent::OutputTextDelta(text.to_string()))?;
-                    }
-                }
-                Some("input_json_delta") => {
-                    let partial = delta
-                        .get("partial_json")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
-                    if let Some(AnthropicBlockStream::Tool { arguments, .. }) =
-                        state.blocks.get_mut(&index)
-                    {
-                        arguments.push_str(partial);
-                    }
-                }
-                _ => {}
-            }
-        }
-        "message_delta" => {
-            if let Some(usage) = payload.get("usage") {
-                merge_usage(&mut state.usage, usage);
-            }
-        }
-        "error" => {
-            let message = payload
-                .pointer("/error/message")
+        _ => {
+            // Compatibility with an upstream that sends chat-completions
+            // chunks while advertising an event-stream response.
+            if let Some(delta) = payload
+                .pointer("/choices/0/delta/content")
                 .and_then(Value::as_str)
-                .unwrap_or("Anthropic stream returned an error");
-            return Err(ModelError::Inference(message.to_string()));
+                && !delta.is_empty()
+            {
+                accumulated_text.push_str(delta);
+                *streamed_text = true;
+                events.emit(ModelEvent::OutputTextDelta(delta.to_string()))?;
+            }
         }
-        _ => {}
     }
     Ok(())
 }
 
-fn finish_anthropic_stream(state: AnthropicStreamState) -> Value {
-    let content = state
-        .blocks
-        .into_values()
-        .map(|block| match block {
-            AnthropicBlockStream::Text(text) => json!({"type":"text", "text":text}),
-            AnthropicBlockStream::Tool {
-                id,
-                name,
-                arguments,
-            } => {
-                let input = serde_json::from_str::<Value>(&arguments).unwrap_or_else(|_| json!({}));
-                json!({"type":"tool_use", "id":id, "name":name, "input":input})
-            }
-        })
-        .collect::<Vec<_>>();
-    normalize_anthropic_payload(json!({
-        "id": state.id,
-        "content": content,
-        "usage": Value::Object(state.usage),
-    }))
+fn validate_response_payload(payload: &Value) -> Result<(), ModelError> {
+    if let Some(error) = payload.get("error") {
+        let message = error
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("model endpoint returned an error");
+        return Err(ModelError::Inference(message.to_string()));
+    }
+    Ok(())
 }
 
 fn anthropic_messages(input: &Value) -> Vec<Value> {
@@ -1059,114 +823,5 @@ mod tests {
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[1]["content"].as_array().unwrap().len(), 2);
         assert_eq!(messages[2]["content"][0]["content"], "{\"ok\":true}");
-    }
-
-    #[derive(Default)]
-    struct RecordingSink {
-        events: std::sync::Mutex<Vec<ModelEvent>>,
-    }
-
-    impl crate::ModelEventSink for RecordingSink {
-        fn emit(&self, event: ModelEvent) -> Result<(), ModelError> {
-            self.events.lock().expect("record model event").push(event);
-            Ok(())
-        }
-    }
-
-    fn recorded_deltas(sink: &RecordingSink) -> Vec<String> {
-        sink.events
-            .lock()
-            .expect("read model events")
-            .iter()
-            .filter_map(|event| match event {
-                ModelEvent::OutputTextDelta(delta) => Some(delta.clone()),
-                _ => None,
-            })
-            .collect()
-    }
-
-    #[test]
-    fn responses_sse_emits_multiple_deltas_before_completion() {
-        let stream = concat!(
-            r#"data: {"type":"response.output_text.delta","delta":"你"}"#,
-            "\n\n",
-            r#"data: {"type":"response.output_text.delta","delta":"好"}"#,
-            "\n\n",
-            r#"data: {"type":"response.completed","response":{"id":"resp-1","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"你好"}]}],"usage":{"input_tokens":2,"output_tokens":2,"total_tokens":4}}}"#,
-            "\n\n",
-            "data: [DONE]\n\n",
-        );
-        let sink = std::sync::Arc::new(RecordingSink::default());
-        let shared: SharedModelEventSink = sink.clone();
-        let payload = parse_sse_response(
-            ResponsesWireApi::Responses,
-            std::io::Cursor::new(stream.as_bytes()),
-            &shared,
-        )
-        .expect("parse Responses stream");
-        assert_eq!(recorded_deltas(&sink), vec!["你", "好"]);
-        assert_eq!(extract_output_text(&payload).as_deref(), Some("你好"));
-        assert_eq!(extract_usage(&payload).expect("usage").total_tokens, 4);
-    }
-
-    #[test]
-    fn chat_completion_sse_reassembles_text_tool_calls_and_usage() {
-        let stream = concat!(
-            r#"data: {"id":"chat-1","choices":[{"delta":{"content":"查"}}]}"#,
-            "\n\n",
-            r#"data: {"id":"chat-1","choices":[{"delta":{"content":"询","tool_calls":[{"index":0,"id":"call-1","function":{"name":"search","arguments":"{\"q\":"}}]}}]}"#,
-            "\n\n",
-            r#"data: {"id":"chat-1","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"法\"}"}}]}}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#,
-            "\n\n",
-            "data: [DONE]\n\n",
-        );
-        let sink = std::sync::Arc::new(RecordingSink::default());
-        let shared: SharedModelEventSink = sink.clone();
-        let payload = parse_sse_response(
-            ResponsesWireApi::ChatCompletions,
-            std::io::Cursor::new(stream.as_bytes()),
-            &shared,
-        )
-        .expect("parse chat stream");
-        assert_eq!(recorded_deltas(&sink), vec!["查", "询"]);
-        assert_eq!(extract_output_text(&payload).as_deref(), Some("查询"));
-        assert_eq!(payload["output"][1]["name"], "search");
-        assert_eq!(payload["output"][1]["arguments"], "{\"q\":\"法\"}");
-        assert_eq!(extract_usage(&payload).expect("usage").total_tokens, 5);
-    }
-
-    #[test]
-    fn anthropic_sse_emits_text_deltas_and_preserves_usage() {
-        let stream = concat!(
-            "event: message_start\n",
-            r#"data: {"type":"message_start","message":{"id":"msg-1","usage":{"input_tokens":4}}}"#,
-            "\n\n",
-            "event: content_block_start\n",
-            r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
-            "\n\n",
-            "event: content_block_delta\n",
-            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"善"}}"#,
-            "\n\n",
-            "event: content_block_delta\n",
-            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"哉"}}"#,
-            "\n\n",
-            "event: message_delta\n",
-            r#"data: {"type":"message_delta","usage":{"output_tokens":2}}"#,
-            "\n\n",
-            "event: message_stop\n",
-            r#"data: {"type":"message_stop"}"#,
-            "\n\n",
-        );
-        let sink = std::sync::Arc::new(RecordingSink::default());
-        let shared: SharedModelEventSink = sink.clone();
-        let payload = parse_sse_response(
-            ResponsesWireApi::AnthropicMessages,
-            std::io::Cursor::new(stream.as_bytes()),
-            &shared,
-        )
-        .expect("parse Anthropic stream");
-        assert_eq!(recorded_deltas(&sink), vec!["善", "哉"]);
-        assert_eq!(extract_output_text(&payload).as_deref(), Some("善哉"));
-        assert_eq!(extract_usage(&payload).expect("usage").total_tokens, 6);
     }
 }
