@@ -589,6 +589,13 @@ export type TranscriptCard =
       sheets: SpreadsheetSheet[];
     }
   | {
+      kind: "miniApp";
+      miniAppId: string;
+      name: string;
+      description?: string;
+      html: string;
+    }
+  | {
       kind: "deliverable";
       deliverable: MiniAppDeliverable;
     };
