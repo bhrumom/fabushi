@@ -230,7 +230,8 @@ pub fn ensure_started() -> Result<Value, String> {
     // credentials must never survive as daemon environment variables.
     for (key, _) in env::vars_os() {
         let upper = key.to_string_lossy().to_ascii_uppercase();
-        if upper.contains("PASSWORD")
+        if upper.starts_with("FABUSHI_CI_TEST_")
+            || upper.contains("PASSWORD")
             || upper.contains("TOKEN")
             || upper.contains("SECRET")
             || upper.contains("API_KEY")

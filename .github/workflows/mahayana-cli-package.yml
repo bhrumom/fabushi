@@ -75,6 +75,13 @@ jobs:
           toolchain: 1.98.0
           targets: ${{ matrix.target }}
 
+      - name: Restore Mahayana Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-cli-package-${{ matrix.target }}-rust-1.98.0
+          cache-on-failure: true
+
       - name: Build standalone Mahayana CLI without tests
         shell: bash
         run: |

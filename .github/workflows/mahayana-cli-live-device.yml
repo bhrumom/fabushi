@@ -46,12 +46,21 @@ jobs:
           set -euo pipefail
           echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "MAHAYANA_HOME=$RUNNER_TEMP/mahayana-home" >> "$GITHUB_ENV"
+          echo "FABUSHI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/mahayana-account-session.json" >> "$GITHUB_ENV"
+          echo "FABUSHI_CI_ACCOUNT_SESSION_FILE=$RUNNER_TEMP/mahayana-ci-session.json" >> "$GITHUB_ENV"
           echo "FABUSHI_CI_FINISH_FILE=$RUNNER_TEMP/mahayana-home/device-agent/remote-finished.json" >> "$GITHUB_ENV"
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.98.0
+
+      - name: Restore Mahayana Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-cli-live-rust-1.98.0
+          cache-on-failure: true
 
       - name: Build exact standalone CLI without tests
         shell: bash
@@ -60,14 +69,14 @@ jobs:
           cargo build \
             --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml \
             --locked \
-            --release \
+            --profile ci \
             --features codex-compat \
             --package mahayana-cli
           mkdir -p "$RUNNER_TEMP/bin" "$MAHAYANA_HOME"
-          install -m 0755 third_party/mahayana/mahayana-rs/target/release/mahayana "$RUNNER_TEMP/bin/mahayana"
+          install -m 0755 third_party/mahayana/mahayana-rs/target/ci/mahayana "$RUNNER_TEMP/bin/mahayana"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
-      - name: Login to the dedicated Fabushi test account through Mahayana CLI
+      - name: Login to the dedicated Fabushi test account and bind Mahayana CLI
         env:
           FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
           FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
@@ -76,8 +85,11 @@ jobs:
           set -euo pipefail
           test -n "$FABUSHI_CI_TEST_USERNAME"
           test -n "$FABUSHI_CI_TEST_PASSWORD"
-          printf '%s\n' "$FABUSHI_CI_TEST_PASSWORD" | mahayana login password "$FABUSHI_CI_TEST_USERNAME" --password-stdin
+          node chatgpt-vps-control/scripts/login-ci-test-account.mjs
+          node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
+          rm -f "$FABUSHI_ACCOUNT_SESSION_FILE"
           mahayana auth
+          mahayana device start
           mahayana device status
 
       - name: Wait for CLI-owned official device registration
@@ -126,4 +138,5 @@ jobs:
         run: |
           mahayana logout || true
           mahayana device stop || true
+          rm -f "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
           sleep 2
