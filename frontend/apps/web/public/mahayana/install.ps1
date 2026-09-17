@@ -9,13 +9,26 @@ switch ($arch) {
   default { throw "Unsupported Windows architecture: $arch" }
 }
 $asset = "mahayana-windows-$machine.zip"
+function Invoke-MahayanaDownload {
+  param(
+    [Parameter(Mandatory = $true)][string]$Uri,
+    [Parameter(Mandatory = $true)][string]$OutFile
+  )
+  $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+  if ($curl) {
+    & $curl.Source --fail --location --silent --show-error --retry 5 --retry-delay 1 --connect-timeout 15 --output $OutFile $Uri
+    if ($LASTEXITCODE -ne 0) { throw "Download failed with curl.exe exit code $LASTEXITCODE: $Uri" }
+    return
+  }
+  Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutFile
+}
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("mahayana-cli-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
   $archive = Join-Path $tmp $asset
   $sums = Join-Path $tmp 'SHA256SUMS.txt'
-  Invoke-WebRequest -UseBasicParsing "$base/$asset" -OutFile $archive
-  Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS.txt" -OutFile $sums
+  Invoke-MahayanaDownload -Uri "$base/$asset" -OutFile $archive
+  Invoke-MahayanaDownload -Uri "$base/SHA256SUMS.txt" -OutFile $sums
   $line = Get-Content $sums | Where-Object { $_ -match "\s\*?$([regex]::Escape($asset))$" } | Select-Object -First 1
   if (-not $line) { throw "No checksum found for $asset" }
   $expected = ($line -split '\s+')[0].ToLowerInvariant()
