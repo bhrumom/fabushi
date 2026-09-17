@@ -219,6 +219,18 @@ Admin：
 - settlement release bridge
 - reconciliation
 
+## 12A. Developer-owned catalog provisioning（2026-09-11）
+
+所有 Mini App 商品由第三方开发者通过 server-authorized Developer Commerce API 写入；官方 Mini App 不再有独立 admin/内置商品创建路径。批量 upsert 以 `mini_app_id + sku` 为稳定键，价格变化追加新的 price revision，PaymentIntent 仍只读取 server-authoritative catalog。
+
+控制面接口：
+
+- `POST /v1/developer/commerce/mini-apps/:mini_app_id/products/batch`
+- `POST /v1/developer/commerce/mini-apps/:mini_app_id/google/sync`
+- `GET /v1/developer/commerce/mini-apps/:mini_app_id/products`
+
+Google Play token、Publisher API、定时 reconciliation 和 provider binding 全部由服务端负责；同步失败保持 pending/error，不得伪装成 active。历史官方商品通过只前进 adoption migration 收敛到 developer API 目录，不重建商品，也不改写订单、账本或权益。支付宝 Web/APP 交易继续进入 canonical PaymentIntent/provider webhook；支付宝移动端使用 APP 支付，不是当面付。
+
 ## 13. 实现位置
 
 Canonical financial core：

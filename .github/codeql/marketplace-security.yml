@@ -1,0 +1,17 @@
+name: Marketplace security
+
+queries:
+  - uses: security-extended
+
+paths:
+  - .agents/plugins/plugins
+  - third_party/mahayana/mahayana-rs/providers/official-miniapps
+
+paths-ignore:
+  - '**/*.md'
+  - '**/evidence/**'
+  - '**/tasks/**'
+  - '**/node_modules/**'
+  - '**/target/**'
+  - '**/dist/**'
+  - '**/build/**'

@@ -6,28 +6,17 @@ const controller = readFileSync(
   new URL('../scripts/run-dynamic-actions-controller.mjs', import.meta.url),
   'utf8',
 );
-const workflow = readFileSync(
-  new URL('../../../../../.github/workflows/chatgpt-auto-confirm-runner.yml', import.meta.url),
-  'utf8',
-);
 const inbox = JSON.parse(readFileSync(
   new URL('../tasks/actions-inbox.json', import.meta.url),
   'utf8',
 ));
 
-test('persistent Actions runner polls the main-branch task control file', () => {
-  assert.match(workflow, /run-dynamic-actions-controller\.mjs/);
-  assert.match(workflow, /CHATGPT_AUTO_CONFIRM_TASK_CONTROL_REF: main/);
-  assert.match(workflow, /CHATGPT_AUTO_CONFIRM_TASK_CONTROL_POLL_SECONDS: "30"/);
-  assert.match(
-    workflow,
-    /inputs\.parallel_queue_smoke && format\('chatgpt-auto-confirm-parallel-smoke-\{0\}-\{1\}'/,
-  );
-  assert.doesNotMatch(workflow, /Import dynamic parallel task inbox/);
-  assert.match(workflow, /Verify dynamic parallel task queue/);
+test('standalone controller polls the main-branch task control file', () => {
   assert.match(controller, /spawnSync\('gh'/);
-  assert.match(controller, /repos\/\$\{repository\}\/contents\/\$\{repositoryPath\}/);
-  assert.match(controller, /fetchRepositoryContent\(controlPath\)/);
+  assert.match(controller, /repos\/\$\{sourceRepository\}\/contents\/\$\{repositoryPath\}/);
+  assert.match(controller, /fetchRepositoryContent\(controlPath, repository\)/);
+  assert.match(controller, /CHATGPT_AUTO_CONFIRM_REPOSITORY/);
+  assert.match(controller, /tasks\/actions-inbox\.json/);
   assert.match(controller, /task\._specDigest/);
   assert.match(controller, /entry\.sha/);
   assert.match(controller, /createHash\('sha256'\)/);
@@ -50,6 +39,7 @@ test('goal versions are idempotent and dependencies use desired runtime ids', ()
   assert.ok(inbox.tasks.every(task => Number.isInteger(task.revision)));
   assert.ok(inbox.tasks.every(task => task.specSources === undefined || Array.isArray(task.specSources)));
   assert.ok(inbox.tasks.every(task => task.repository === 'bhrumom/fabushi'));
+  assert.ok(inbox.tasks.every(task => task.specRepository === undefined || typeof task.specRepository === 'string'));
   assert.ok(inbox.tasks.every(task => typeof task.codeDirectory === 'string'));
 });
 
@@ -91,16 +81,18 @@ test('unchanged terminal tasks preserve the child controller recovery budget', (
   );
 });
 
-test('every dispatched work Chat receives one machine report contract', () => {
-  assert.match(controller, /MAHAYANA_TASK_REPORT_CONTRACT_V4/);
-  assert.match(controller, /"status":"incomplete"/);
-  assert.match(controller, /"all_tasks_complete":false/);
+test('Work Chat stays natural while a fresh planner Chat owns the report protocol', () => {
+  assert.match(controller, /const workDispatchBoundary =/);
+  assert.match(controller, /工作 Chat/);
+  assert.match(controller, /自然语言工作结果/);
+  assert.match(controller, /新的规划\/验收 Chat/);
+  assert.match(controller, /只有规划\/验收 Chat 才负责固定回执/);
+  assert.match(controller, /next_task 原文交给下一轮新的工作 Chat/);
+  assert.doesNotMatch(controller, /MAHAYANA_TASK_REPORT_CONTRACT_V5/);
+  assert.doesNotMatch(controller, /MAHAYANA_TASK_REPORT_V1_BEGIN/);
   assert.doesNotMatch(controller, /MAHAYANA_TASK_WAIT_V1/);
-  assert.match(controller, /"task_id":\$\{taskId\}/);
-  assert.match(controller, /\.mahayana-project-email\.json/);
-  assert.match(controller, /第一轮、续作轮和验收轮开始时使用 Gmail 按任务 id/);
-  assert.match(controller, /禁止发送立项、进展或完成邮件/);
-  assert.match(controller, /只有确实需要人工提供信息、权限、凭证或决策时/);
+  assert.doesNotMatch(controller, /Gmail|项目邮件|立项邮件/);
+  assert.match(controller, /小程序会把同一目标发送到新的 Chat/);
 });
 
 test('every round names the model, repository, task path, code path, and code-change gate', () => {
@@ -112,16 +104,21 @@ test('every round names the model, repository, task path, code path, and code-ch
   assert.match(controller, /必须产生可核验的代码变更/);
 });
 
-test('task documents are optional and document bodies stay out of prompts', () => {
+test('missing task projects are created in the repository and document bodies stay out of prompts', () => {
   assert.match(controller, /task\.documentDirectory/);
   assert.match(controller, /\/tree\/\$\{controlRef\}\/\$\{directory\}/);
   assert.match(controller, /只在消息中提供目录路径和文件夹链接/);
-  assert.match(controller, /本任务没有配置任务文档/);
-  assert.match(controller, /documentDirectory[\s\S]*\? directoryEntries\(documentDirectory\)[\s\S]*: \[\]/);
+  assert.match(controller, /仓库中尚未登记任务/);
+  assert.match(controller, /写入目标\/范围、架构、执行任务、验收标准和证据文档/);
+  assert.match(controller, /documentDirectory[\s\S]*\? directoryEntries\(documentDirectory, taskSpecRepository\)[\s\S]*: \[\]/);
   assert.doesNotMatch(controller, /specificationFiles|specificationURLs/);
   assert.doesNotMatch(controller, /documentDirectory_and_codeDirectory_are_required/);
 });
 
-test('no standard task document names are required', () => {
-  assert.doesNotMatch(controller, /README\.md|PRD\.md|TECHNICAL_DESIGN\.md|UI_UX\.md/);
+test('repository-backed release task is registered with project documents', () => {
+  const task = inbox.tasks.find(item => item.id === 'full-platform-release-live-runner-20260831');
+  assert.equal(task.connector, 'GitHub');
+  assert.equal(task.repository, 'bhrumom/fabushi');
+  assert.ok(task.documentDirectory);
+  assert.ok(task.specSources.length >= 4);
 });

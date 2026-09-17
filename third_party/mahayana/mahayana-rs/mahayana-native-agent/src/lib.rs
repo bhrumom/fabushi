@@ -211,6 +211,7 @@ impl KernelEventSink for NativeEventBridge {
                     metadata: Some(metadata),
                 },
             },
+            KernelEvent::ToolStarted { tool, .. } if tool == "send_message" => return Ok(()),
             KernelEvent::ToolStarted {
                 tool, arguments, ..
             } => AgentEvent::Activity {
@@ -223,6 +224,7 @@ impl KernelEventSink for NativeEventBridge {
                     metadata: Some(json!({"tool":tool,"arguments":arguments})),
                 },
             },
+            KernelEvent::ToolCompleted { tool, .. } if tool == "send_message" => return Ok(()),
             KernelEvent::ToolCompleted {
                 tool,
                 output,
@@ -355,6 +357,23 @@ impl AgentBackend for NativeAgentBackend {
             })
             .await
             .map_err(kernel_error)
+    }
+
+    fn reset_session(&self) -> Result<(), AgentError> {
+        NativeEngine::reset_session(&self.engine).map_err(kernel_error)?;
+        self.threads
+            .lock()
+            .map_err(|_| AgentError::Backend("native thread registry poisoned".into()))?
+            .clear();
+        self.mcp_sessions
+            .lock()
+            .map_err(|_| AgentError::Backend("native MCP session registry poisoned".into()))?
+            .clear();
+        self.disabled_tools
+            .lock()
+            .map_err(|_| AgentError::Backend("MCP tool policy registry poisoned".into()))?
+            .clear();
+        Ok(())
     }
 
     async fn list_mcp_servers(&self) -> Result<Vec<Value>, AgentError> {

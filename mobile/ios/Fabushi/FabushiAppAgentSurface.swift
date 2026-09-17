@@ -9,6 +9,8 @@ import Foundation
 @MainActor
 final class FabushiAppAgentSurface {
     static let version = 1
+    static let maximumElementCount = 500
+    static let truncationAgentId = "fabushi.surface.truncated"
     static let toolNames = [
         "fabushi.app.status",
         "fabushi.app.snapshot",
@@ -113,20 +115,39 @@ final class FabushiAppAgentSurface {
         guard !screen.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               screen.count <= 160
         else { throw SurfaceError.invalidScreen }
-        guard elements.count <= 500 else { throw SurfaceError.elementLimit }
+
         var identifiers = Set<String>()
         for element in elements {
             guard Self.validAgentId(element.agentId),
+                  element.agentId != Self.truncationAgentId,
                   element.role.count <= 80,
                   element.name.count <= 240
             else { throw SurfaceError.invalidElement }
             guard identifiers.insert(element.agentId).inserted else { throw SurfaceError.duplicateAgentId }
         }
         guard actions.keys.allSatisfy(identifiers.contains) else { throw SurfaceError.actionTargetMissing }
+
+        let retainedElements: [Element]
+        if elements.count > Self.maximumElementCount {
+            var bounded = Array(elements.prefix(Self.maximumElementCount - 1))
+            bounded.append(.init(
+                agentId: Self.truncationAgentId,
+                role: "status",
+                name: "Additional semantic elements omitted; refine the current view or navigate deeper.",
+                visible: true,
+                enabled: false
+            ))
+            retainedElements = bounded
+        } else {
+            retainedElements = elements
+        }
+        let retainedIds = Set(retainedElements.map(\.agentId))
+        let retainedActions = actions.filter { retainedIds.contains($0.key) }
+
         generation = generation == UInt64.max ? 1 : generation + 1
         self.screen = screen
-        self.elements = elements
-        self.actions = actions
+        self.elements = retainedElements
+        self.actions = retainedActions
         return snapshot()
     }
 

@@ -2,28 +2,33 @@ import { LanguageSwitch } from "./language-switch";
 import { LocalizedText } from "./localized-text";
 import { siteHref } from "../lib/site-url";
 
-const FLUTTER_WEB_URL = "https://flutter.ombhrum.com";
+const WEB_APP_URL = "https://web.ombhrum.com/";
 
 const NAV_ITEMS = [
   {
-    href: "/faliu",
-    zh: "法流",
-    en: "Faloo",
+    href: "/",
+    zh: "首页",
+    en: "Home",
+  },
+  {
+    href: "/apps",
+    zh: "应用",
+    en: "Apps",
+  },
+  {
+    href: "/download",
+    zh: "下载",
+    en: "Download",
   },
   {
     href: "/faq",
-    zh: "下载 FAQ",
-    en: "Download FAQ",
-  },
-  {
-    href: "/contact",
-    zh: "联系支持",
-    en: "Contact Support",
+    zh: "FAQ",
+    en: "FAQ",
   },
   {
     href: "/privacy",
-    zh: "隐私说明",
-    en: "Privacy",
+    zh: "隐私与安全",
+    en: "Privacy & Safety",
   },
 ] as const;
 
@@ -31,11 +36,9 @@ export function SiteHeader() {
   return (
     <nav className="site-nav" aria-label="Main navigation / 主导航">
       <a className="site-wordmark" href={siteHref("/")}>
-        <span>
-          <LocalizedText zh="大乘" en="Dacheng" />
-        </span>
+        <span>Fabushi</span>
         <small>
-          <LocalizedText zh="法布施" en="Dharma Sharing" />
+          <LocalizedText zh="法布施大乘" en="Mahayana" />
         </small>
       </a>
       <div className="site-nav-links-wrap">
@@ -48,8 +51,8 @@ export function SiteHeader() {
         </div>
         <div className="site-nav-actions">
           <LanguageSwitch />
-          <a className="nav-cta" href={FLUTTER_WEB_URL}>
-            <LocalizedText zh="打开大乘" en="Open Dacheng" />
+          <a className="nav-cta" href={WEB_APP_URL}>
+            <LocalizedText zh="打开 Web" en="Open Web" />
           </a>
         </div>
       </div>

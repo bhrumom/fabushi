@@ -129,7 +129,12 @@ jobs:
               }
 
               if (context.eventName === 'workflow_dispatch') {
-                const pull_number = Number(core.getInput('pr_number'));
+                const rawPullNumber = context.payload.inputs?.pr_number;
+                const pull_number = Number(rawPullNumber);
+                if (!Number.isInteger(pull_number) || pull_number <= 0) {
+                  core.setFailed(`Invalid workflow_dispatch pr_number: ${String(rawPullNumber ?? '')}`);
+                  return null;
+                }
                 const { data } = await github.rest.pulls.get({ owner, repo, pull_number });
                 return data;
               }

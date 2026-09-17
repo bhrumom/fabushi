@@ -56,6 +56,125 @@ export interface MarketplaceApp {
   content: readonly MarketplaceContentItem[];
 }
 
+export interface MarketplaceReleaseInfo {
+  protocol: "fabushi.marketplace.install.v1";
+  version: string;
+  releaseStatus: "approved";
+  releaseNotes: string;
+  repository: string;
+  sourceRef: string;
+  releaseUrl: string;
+  manifestUrl?: string;
+  artifactId: string;
+  artifactUrl: string;
+  artifactSha256: string;
+  artifactSize: number;
+  format: "tar-gz";
+  runtime: "local-web";
+  platforms: readonly string[];
+}
+
+export const MARKETPLACE_PACKAGE_COMMIT = "cc23420c56c98f7857b731832281c212203ce60c";
+export const MARKETPLACE_RELEASE_REPOSITORY = "https://github.com/bhrumom/fabushi";
+
+const MARKETPLACE_PACKAGE_RELEASE_TAG = "marketplace-v1.0.1-cc23420c56c9";
+const MARKETPLACE_PACKAGE_RELEASE_URL = `${MARKETPLACE_RELEASE_REPOSITORY}/releases/tag/${MARKETPLACE_PACKAGE_RELEASE_TAG}`;
+const MARKETPLACE_PACKAGE_RELEASE_ASSET_ROOT = `${MARKETPLACE_RELEASE_REPOSITORY}/releases/download/${MARKETPLACE_PACKAGE_RELEASE_TAG}`;
+
+const marketplaceRelease = (
+  id: string,
+  version: string,
+  artifactSha256: string,
+  artifactSize: number,
+  options: {
+    artifactUrl?: string;
+    releaseUrl?: string;
+    sourceRef?: string;
+  } = {},
+): MarketplaceReleaseInfo => ({
+  protocol: "fabushi.marketplace.install.v1",
+  version,
+  releaseStatus: "approved",
+  releaseNotes: "固定到 GitHub commit；安装前校验 artifact SHA-256 和 size。",
+  repository: MARKETPLACE_RELEASE_REPOSITORY,
+  sourceRef: options.sourceRef ?? MARKETPLACE_PACKAGE_COMMIT,
+  releaseUrl: options.releaseUrl ?? `${MARKETPLACE_RELEASE_REPOSITORY}/tree/${options.sourceRef ?? MARKETPLACE_PACKAGE_COMMIT}/marketplace/packages/${id}/${encodeURIComponent(version)}`,
+  artifactId: `${id}-universal-ui`,
+  artifactUrl: options.artifactUrl ?? `https://raw.githubusercontent.com/bhrumom/fabushi/${options.sourceRef ?? MARKETPLACE_PACKAGE_COMMIT}/marketplace/packages/${id}/${encodeURIComponent(version)}/app.tar.gz`,
+  artifactSha256,
+  artifactSize,
+  format: "tar-gz",
+  runtime: "local-web",
+  platforms: ["desktop", "mobile", "web", "cli", "ios", "android", "chrome-extension"],
+});
+
+export const MARKETPLACE_RELEASES: Readonly<Record<string, MarketplaceReleaseInfo>> = {
+  "bot-father": marketplaceRelease(
+    "bot-father",
+    "1.0.0",
+    "8439c9c7ffe03791177bb5b9cbfd425ffb794b741d9e17c9cc2cadc09fbb7880",
+    1805,
+  ),
+  "chatgpt-auto-confirm": marketplaceRelease(
+    "chatgpt-auto-confirm",
+    "1.0.1",
+    "ce5beae5f3b8a29dccb65cb91744f2a82bb19186c3f7031ca75f405ab4effb76",
+    983,
+    {
+      artifactUrl: `${MARKETPLACE_PACKAGE_RELEASE_ASSET_ROOT}/chatgpt-auto-confirm-1.0.1.tar.gz`,
+      releaseUrl: MARKETPLACE_PACKAGE_RELEASE_URL,
+    },
+  ),
+  "faliu-flashcards": marketplaceRelease(
+    "faliu-flashcards",
+    "1.0.1",
+    "fb2a8fa187fde312069c9facb49657c366cfa4176f27a90abff5aa407e260356",
+    1729,
+    {
+      artifactUrl: `${MARKETPLACE_PACKAGE_RELEASE_ASSET_ROOT}/faliu-flashcards-1.0.1.tar.gz`,
+      releaseUrl: MARKETPLACE_PACKAGE_RELEASE_URL,
+    },
+  ),
+  "global-dharma": marketplaceRelease(
+    "global-dharma",
+    "1.0.0",
+    "43de877dc87b5dff306164eb143baad545ef40bea2247f28cbe21616829478be",
+    1827,
+  ),
+  "hermes-installer": marketplaceRelease(
+    "hermes-installer",
+    "1.0.1",
+    "e693cb2378d580cb86d88fb391a04b8c96dcf6614b445c32339bfb7358e0c4cd",
+    1731,
+    {
+      artifactUrl: `${MARKETPLACE_PACKAGE_RELEASE_ASSET_ROOT}/hermes-installer-1.0.1.tar.gz`,
+      releaseUrl: MARKETPLACE_PACKAGE_RELEASE_URL,
+    },
+  ),
+  "mahayana-assistant": marketplaceRelease(
+    "mahayana-assistant",
+    "1.0.0",
+    "e175196bd10827d7e22cec1aa56bcb15540b03ce17c8cb84a7beac8719434d7b",
+    1777,
+  ),
+  "platform-publish": marketplaceRelease(
+    "platform-publish",
+    "1.0.0",
+    "4ded6de4cada43998f5fae2f226c4bea50b3fbc62a609f13c87a2102efb10802",
+    1742,
+  ),
+  "douyin-batch-downloader": marketplaceRelease(
+    "douyin-batch-downloader",
+    "1.0.0",
+    "6784eb6ade91ef75ff61717a232dd154c7a3fb28c093ce330bc7ca4857ace473",
+    3069,
+  ),
+};
+
+export function getMarketplaceRelease(appId: string): MarketplaceReleaseInfo | undefined {
+  return MARKETPLACE_RELEASES[appId];
+}
+
 export const MARKETPLACE_CATEGORY_LABELS: Record<MarketplaceCategory, string> = {
   featured: "精选",
   automation: "自动化",
@@ -210,8 +329,8 @@ export const marketplaceApps: readonly MarketplaceApp[] = [
     ],
     permissions: ["本地学习记录", "读取公开经文内容", "可选同步"],
     pricing: { label: "免费安装", detail: "学习记录默认保存在当前设备。" },
-    updatedAt: "2026-08-24",
-    version: "1.0.0",
+    updatedAt: "2026-09-14",
+    version: "1.0.1",
     content: [
       {
         id: "heart-sutra-deck",
@@ -364,8 +483,8 @@ export const marketplaceApps: readonly MarketplaceApp[] = [
     ],
     permissions: ["读取本地环境", "经确认后安装组件", "经确认后启动服务"],
     pricing: { label: "免费安装", detail: "仅在支持的桌面环境中执行本地操作。" },
-    updatedAt: "2026-08-19",
-    version: "1.0.0",
+    updatedAt: "2026-09-14",
+    version: "1.0.1",
     content: [
       {
         id: "hermes-health-check",
@@ -406,8 +525,8 @@ export const marketplaceApps: readonly MarketplaceApp[] = [
     ],
     permissions: ["读取任务确认状态", "经确认后继续任务", "本地审计记录"],
     pricing: { label: "免费安装", detail: "适合与大乘助手和开发工具配合使用。" },
-    updatedAt: "2026-08-18",
-    version: "1.0.0",
+    updatedAt: "2026-09-14",
+    version: "1.0.1",
     content: [
       {
         id: "approval-scope-guide",

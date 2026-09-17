@@ -108,6 +108,15 @@ struct MarketplacePluginRow {
 }
 
 #[derive(Debug, Deserialize)]
+struct MarketplaceInstalledPluginRow {
+    plugin_id: String,
+    display_name: String,
+    description: String,
+    latest_version: Option<String>,
+    projection_json: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct MarketplacePluginOwnerRow {
     publisher_user_id: String,
 }
@@ -425,6 +434,7 @@ mod listener_relay;
 mod marketplace;
 mod remote_computer;
 mod security;
+mod user_payment_proxy;
 
 use account::*;
 use ai_usage::*;
@@ -435,6 +445,7 @@ use listener_relay::*;
 use marketplace::*;
 use remote_computer::*;
 use security::constant_time_eq;
+use user_payment_proxy::*;
 
 #[event(fetch, respond_with_errors)]
 pub async fn main(request: Request, env: Env, _context: Context) -> Result<Response> {
@@ -469,6 +480,10 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
             Ok(Response::ok(jwks)?.with_headers(json_headers()))
         })
         .post_async("/v1/auth/plugin-token", delegated_plugin_token)
+        .post_async(
+            "/v1/auth/plugin-token/introspect",
+            delegated_plugin_token_introspect,
+        )
         .get_async("/v1/ai/usage", ai_usage_status)
         .post_async("/v1/ai/usage/reservations", ai_usage_reserve)
         .post_async(
@@ -518,6 +533,15 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
             remote_computer_signal_drain,
         )
         .get_async("/v1/marketplace/plugins", marketplace_plugins)
+        .get_async("/v1/marketplace/added", marketplace_added)
+        .post_async(
+            "/v1/marketplace/plugins/:plugin_id/add",
+            marketplace_plugin_add,
+        )
+        .post_async(
+            "/v1/marketplace/plugins/:plugin_id/route",
+            marketplace_plugin_route,
+        )
         .post_async("/v1/marketplace/releases", marketplace_release_publish)
         .post_async(
             "/v1/marketplace/external-releases",
@@ -562,6 +586,10 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
             developer_commerce_proxy,
         )
         .post_async(
+            "/v1/developer/commerce/miniapps/:mini_app_id/products/batch",
+            developer_commerce_proxy,
+        )
+        .post_async(
             "/v1/developer/commerce/miniapps/:mini_app_id/products/:product_id",
             developer_commerce_proxy,
         )
@@ -570,9 +598,16 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
             developer_commerce_proxy,
         )
         .post_async(
+            "/v1/developer/commerce/miniapps/:mini_app_id/google/sync",
+            developer_commerce_proxy,
+        )
+        .post_async(
             "/v1/pay/intents/:payment_id/apple/advanced-commerce",
             developer_commerce_proxy,
         )
+        .post_async("/v1/miniapps/:mini_app_id/pay/intents", user_payment_proxy)
+        .get_async("/v1/pay/intents/:payment_id", user_payment_proxy)
+        .post_async("/v1/pay/intents/:payment_id/checkout", user_payment_proxy)
         .post_async("/v1/plugins/:plugin_id/commerce/quote", commerce_quote)
         .post_async(
             "/v1/plugins/:plugin_id/commerce/purchase",
@@ -860,7 +895,7 @@ fn validate_external_release_manifest(
         for platform in artifact_platforms.iter().filter_map(Value::as_str) {
             if !matches!(
                 platform,
-                "cli" | "desktop" | "mobile" | "web" | "ios" | "android"
+                "cli" | "desktop" | "mobile" | "web" | "ios" | "android" | "chrome-extension"
             ) {
                 return Err(format!("unsupported external artifact platform {platform}"));
             }

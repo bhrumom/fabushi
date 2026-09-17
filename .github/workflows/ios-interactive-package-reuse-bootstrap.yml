@@ -1,0 +1,17 @@
+name: iOS interactive package reuse bootstrap (disabled by FCM-024)
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Record retired bootstrap policy
+        run: |
+          echo 'Disabled by FCM-024.'
+          echo 'This historical bootstrap no longer dispatches any simulator or behavioral journey.'
+          echo 'Formal device validation is started manually and controlled through the Fabushi official MCP.'

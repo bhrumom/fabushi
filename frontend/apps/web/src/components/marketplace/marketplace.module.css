@@ -533,6 +533,14 @@
   line-height: 1.5;
 }
 
+.releaseNotes {
+  display: block;
+  margin: 8px 0 0;
+  color: var(--market-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 .appMeta {
   margin-top: 11px;
   display: flex;
@@ -1178,6 +1186,13 @@
   background: #8c9196;
   cursor: default;
   opacity: 0.78;
+}
+
+.detailHint {
+  color: var(--detail-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: center;
 }
 
 .detailSecondary {

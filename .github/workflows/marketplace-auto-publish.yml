@@ -1,0 +1,444 @@
+name: Marketplace Auto Publish
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Open same-repository plugin PR to stage; workflow_run resolves this automatically'
+        required: true
+        type: number
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  # Source-head CI and generated-head CI use the same PR branch. Serialize by
+  # branch rather than SHA so the generated-head workflow_run cannot race the
+  # publisher instance that dispatched that CI run.
+  group: marketplace-auto-publish-${{ github.event.workflow_run.head_branch || inputs.pr_number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'pull_request') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve reviewed source PR
+        id: resolve
+        uses: actions/github-script@v9
+        env:
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          REVIEWED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const requested = Number(process.env.INPUT_PR_NUMBER || 0);
+            const reviewedSha = process.env.REVIEWED_HEAD_SHA || '';
+
+            let pr;
+            if (requested > 0) {
+              pr = (await github.rest.pulls.get({ owner, repo, pull_number: requested })).data;
+            } else {
+              const pulls = (await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner,
+                repo,
+                commit_sha: reviewedSha,
+              })).data;
+              pr = pulls.find((candidate) =>
+                candidate.state === 'open' &&
+                candidate.base.ref === 'main' &&
+                candidate.head.sha === reviewedSha
+              );
+            }
+
+            if (!pr) {
+              core.info('No open main-targeting PR is associated with this successful CI head; nothing to publish.');
+              core.setOutput('should_stage', 'false');
+              return;
+            }
+            if (pr.state !== 'open' || pr.base.ref !== 'main') {
+              core.setFailed(`PR #${pr.number} is not an open main-targeting PR.`);
+              return;
+            }
+            if (pr.head.repo.full_name !== `${owner}/${repo}`) {
+              core.info(`PR #${pr.number} comes from a fork; privileged staging is intentionally disabled.`);
+              core.setOutput('should_stage', 'false');
+              return;
+            }
+            if (reviewedSha && pr.head.sha !== reviewedSha) {
+              core.info(`PR #${pr.number} moved after reviewed CI (${reviewedSha} -> ${pr.head.sha}); a newer CI run owns staging.`);
+              core.setOutput('should_stage', 'false');
+              return;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const names = files.map((file) => file.filename);
+            const hasPluginChanges = names.some((name) =>
+              name === '.agents/plugins/marketplace.json' ||
+              name.startsWith('.agents/plugins/plugins/')
+            );
+            if (!hasPluginChanges) {
+              core.info(`PR #${pr.number} does not change official plugin source/registry; no marketplace staging is needed.`);
+              core.setOutput('should_stage', 'false');
+              return;
+            }
+
+            // This workflow has a write-capable token because it runs from trusted
+            // default-branch code after CI. Never execute marketplace security or
+            // publisher tooling supplied by the PR itself. Infrastructure changes
+            // must be reviewed/merged separately before they can stage plugins.
+            const trustedToolingChange = names.some((name) =>
+              name.startsWith('scripts/') ||
+              name.startsWith('.github/') ||
+              name.startsWith('.semgrep/') ||
+              name === 'sitecustomize.py' ||
+              name === 'usercustomize.py'
+            );
+            if (trustedToolingChange) {
+              core.info(`PR #${pr.number} changes security/publisher tooling; automatic write-back is intentionally disabled for this PR.`);
+              core.setOutput('should_stage', 'false');
+              core.setOutput('blocked_by_tooling_change', 'true');
+              return;
+            }
+
+            core.setOutput('should_stage', 'true');
+            core.setOutput('pr_number', String(pr.number));
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('head_ref', pr.head.ref);
+
+      - name: Checkout exact reviewed plugin head
+        if: steps.resolve.outputs.should_stage == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.resolve.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind publisher tooling to current canonical main
+        if: steps.resolve.outputs.should_stage == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          trusted_paths=(
+            scripts/marketplace_security.py
+            scripts/audit-official-plugin-marketplace.py
+            scripts/generate-official-plugin-marketplace.py
+            scripts/check-official-plugin-marketplace.py
+            scripts/test-marketplace-security.py
+          )
+          for path in "${trusted_paths[@]}"; do
+            git diff --quiet "origin/main" -- "$path" || {
+              echo "Reviewed PR does not use the current canonical publisher policy: $path" >&2
+              echo 'Rebase/update the PR onto current main; refusing privileged staging.' >&2
+              exit 1
+            }
+          done
+
+      - name: Re-audit reviewed plugin source and stage generated listing
+        if: steps.resolve.outputs.should_stage == 'true'
+        id: generate
+        shell: bash
+        env:
+          REVIEWED_SHA: ${{ steps.resolve.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python3 scripts/test-marketplace-security.py
+          python3 scripts/audit-official-plugin-marketplace.py \
+            --source-sha "$REVIEWED_SHA" \
+            --report evidence/marketplace-audit.json
+          python3 scripts/generate-official-plugin-marketplace.py --write
+          python3 scripts/generate-official-plugin-marketplace.py --check
+          python3 scripts/check-official-plugin-marketplace.py
+          git diff --check
+
+          mapfile -t changed < <(git diff --name-only)
+          allowed_one='frontend/apps/web/public/.well-known/mahayana/marketplace.json'
+          allowed_two='frontend/apps/web/public/.well-known/mahayana/marketplace-approvals.json'
+          for path in "${changed[@]}"; do
+            case "$path" in
+              "$allowed_one"|"$allowed_two") ;;
+              *) echo "Generator changed an unexpected path: $path" >&2; exit 1 ;;
+            esac
+          done
+          if ((${#changed[@]} == 0)); then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+            git diff --stat
+          fi
+
+      - name: Commit generated approval/catalog into the reviewed source PR
+        if: steps.resolve.outputs.should_stage == 'true' && steps.generate.outputs.changed == 'true'
+        id: push
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          HEAD_REF: ${{ steps.resolve.outputs.head_ref }}
+        run: |
+          set -euo pipefail
+          git config user.name 'fabushi-marketplace-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            frontend/apps/web/public/.well-known/mahayana/marketplace.json \
+            frontend/apps/web/public/.well-known/mahayana/marketplace-approvals.json
+          git commit -m "chore(marketplace): stage approved listing for #$PR_NUMBER"
+          git push origin "HEAD:$HEAD_REF"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve final PR head after staging
+        if: steps.resolve.outputs.should_stage == 'true'
+        id: final
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          EXPECTED_HEAD_REF: ${{ steps.resolve.outputs.head_ref }}
+          REVIEWED_SHA: ${{ steps.resolve.outputs.head_sha }}
+          PUSHED_SHA: ${{ steps.push.outputs.sha }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = Number(process.env.PR_NUMBER);
+            const expectedRef = process.env.EXPECTED_HEAD_REF;
+            const reviewedSha = process.env.REVIEWED_SHA;
+            const pushedSha = process.env.PUSHED_SHA || '';
+            const expectedFinalSha = pushedSha || reviewedSha;
+
+            // Git's branch-ref update can become visible before the PR object has
+            // converged to the new head SHA. Treat only the previously reviewed SHA
+            // as a temporary stale read; any third SHA is a real concurrent move.
+            for (let attempt = 1; attempt <= 30; attempt += 1) {
+              const pr = (await github.rest.pulls.get({ owner, repo, pull_number })).data;
+
+              if (pr.state !== 'open' || pr.base.ref !== 'main') {
+                core.setFailed(`PR #${pull_number} moved out of the open main-targeting state during staging.`);
+                return;
+              }
+              if (pr.head.repo.full_name !== `${owner}/${repo}` || pr.head.ref !== expectedRef) {
+                core.setFailed(`PR #${pull_number} head repository/ref changed during staging.`);
+                return;
+              }
+              if (pr.head.sha === expectedFinalSha) {
+                core.info(`PR #${pull_number} final head converged to ${expectedFinalSha} on attempt ${attempt}.`);
+                core.setOutput('sha', expectedFinalSha);
+                core.setOutput('head_ref', pr.head.ref);
+                return;
+              }
+
+              if (!pushedSha || pr.head.sha !== reviewedSha) {
+                core.setFailed(`PR #${pull_number} moved to unexpected head ${pr.head.sha}; expected temporary ${reviewedSha} or final ${expectedFinalSha}.`);
+                return;
+              }
+
+              core.info(`PR #${pull_number} still exposes stale reviewed head ${reviewedSha}; waiting for generated head ${pushedSha} (attempt ${attempt}/30).`);
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+            }
+
+            core.setFailed(`PR #${pull_number} did not converge from reviewed head ${reviewedSha} to generated head ${expectedFinalSha} within 60 seconds.`);
+
+      - name: Ensure protected CI succeeds for final head
+        if: steps.resolve.outputs.should_stage == 'true'
+        id: ci
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          HEAD_REF: ${{ steps.final.outputs.head_ref }}
+          FINAL_SHA: ${{ steps.final.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          successful_run="$(
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow ci.yml \
+              --branch "$HEAD_REF" \
+              --limit 100 \
+              --json databaseId,headSha,status,conclusion \
+              --jq "[.[] | select(.headSha == \"$FINAL_SHA\" and .status == \"completed\" and .conclusion == \"success\")][0].databaseId // empty"
+          )"
+
+          if test -n "$successful_run"; then
+            echo "Reusing successful CI run $successful_run for exact final head $FINAL_SHA"
+            echo "run_id=$successful_run" >> "$GITHUB_OUTPUT"
+            echo 'reused=true' >> "$GITHUB_OUTPUT"
+          else
+            before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
+            run_id=''
+            for _ in $(seq 1 60); do
+              run_id="$(
+                gh run list \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --workflow ci.yml \
+                  --branch "$HEAD_REF" \
+                  --event workflow_dispatch \
+                  --limit 30 \
+                  --json databaseId,headSha,createdAt \
+                  --jq "[.[] | select(.headSha == \"$FINAL_SHA\" and .createdAt >= \"$before\")][0].databaseId // empty"
+              )"
+              test -n "$run_id" && break
+              sleep 2
+            done
+            test -n "$run_id" || { echo 'Unable to resolve final-head CI run' >&2; exit 1; }
+            echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+            echo 'reused=false' >> "$GITHUB_OUTPUT"
+            gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+          fi
+
+          current_sha="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)"
+          test "$current_sha" = "$FINAL_SHA" || {
+            echo "PR #$PR_NUMBER moved while final-head CI was being verified: $FINAL_SHA -> $current_sha" >&2
+            exit 1
+          }
+
+      - name: Add Marketplace automerge authorization label
+        if: steps.resolve.outputs.should_stage == 'true' && steps.ci.outcome == 'success'
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          FINAL_SHA: ${{ steps.final.outputs.sha }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = Number(process.env.PR_NUMBER);
+            const expectedSha = process.env.FINAL_SHA;
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: issue_number })).data;
+            if (pr.state !== 'open' || pr.head.sha !== expectedSha) {
+              core.setFailed(`PR #${issue_number} changed after final-head CI; refusing automerge authorization.`);
+              return;
+            }
+            if (!pr.labels.some((label) => label.name === 'automerge')) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['automerge'] });
+            }
+
+      - name: Invoke the existing protected merge controller
+        if: steps.resolve.outputs.should_stage == 'true' && steps.ci.outcome == 'success'
+        id: automerge
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run automerge.yml --repo "$GITHUB_REPOSITORY" --ref main -f "pr_number=$PR_NUMBER"
+          run_id=''
+          for _ in $(seq 1 30); do
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow automerge.yml --branch main --event workflow_dispatch --limit 20 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$before\")][0].databaseId // empty")"
+            test -n "$run_id" && break
+            sleep 2
+          done
+          test -n "$run_id" || { echo 'Unable to resolve Explicit automerge run' >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+
+      - name: Confirm protected merge handoff
+        if: steps.resolve.outputs.should_stage == 'true' && steps.automerge.outcome == 'success'
+        id: queue
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          FINAL_SHA: ${{ steps.final.outputs.sha }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const number = Number(process.env.PR_NUMBER);
+            const expectedSha = process.env.FINAL_SHA;
+            const state = await github.graphql(
+              `query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    state
+                    merged
+                    headRefOid
+                    mergeQueueEntry { position }
+                  }
+                }
+              }`,
+              { owner, repo, number },
+            );
+            const pr = state.repository.pullRequest;
+            if (!pr) {
+              core.setFailed(`Unable to resolve PR #${number} after protected merge-controller run.`);
+              return;
+            }
+            if (pr.headRefOid !== expectedSha) {
+              core.setFailed(`PR #${number} moved after protected merge authorization (${expectedSha} -> ${pr.headRefOid}).`);
+              return;
+            }
+            if (pr.merged) {
+              core.setOutput('merged', 'true');
+              core.info(`PR #${number} merged before queue handoff verification completed.`);
+              return;
+            }
+            if (!pr.mergeQueueEntry) {
+              core.setFailed(`PR #${number} is neither merged nor present in the protected merge queue after automerge controller success.`);
+              return;
+            }
+            core.setOutput('merged', 'false');
+            core.setOutput('position', String(pr.mergeQueueEntry.position));
+            core.info(`PR #${number} is in the protected merge queue at position ${pr.mergeQueueEntry.position}.`);
+
+      - name: Summarize publication
+        if: always()
+        shell: bash
+        env:
+          SHOULD_STAGE: ${{ steps.resolve.outputs.should_stage }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          GENERATED: ${{ steps.generate.outputs.changed }}
+          BLOCKED_TOOLING: ${{ steps.resolve.outputs.blocked_by_tooling_change }}
+          FINAL_SHA: ${{ steps.final.outputs.sha }}
+          CI_RUN: ${{ steps.ci.outputs.run_id }}
+          CI_REUSED: ${{ steps.ci.outputs.reused }}
+          AUTOMERGE_RUN: ${{ steps.automerge.outputs.run_id }}
+          QUEUE_POSITION: ${{ steps.queue.outputs.position }}
+          MERGED: ${{ steps.queue.outputs.merged }}
+        run: |
+          {
+            echo '## Marketplace Auto Publish'
+            echo "- source PR: ${PR_NUMBER:-n/a}"
+            echo "- eligible plugin PR: ${SHOULD_STAGE:-false}"
+            echo "- generated listing commit required: ${GENERATED:-false}"
+            echo "- privileged staging blocked by security-tooling change: ${BLOCKED_TOOLING:-false}"
+            echo "- final PR head: ${FINAL_SHA:-n/a}"
+            echo "- final-head CI run: ${CI_RUN:-not-run}"
+            echo "- final-head CI reused: ${CI_REUSED:-false}"
+            echo "- protected merge-controller run: ${AUTOMERGE_RUN:-not-run}"
+            echo "- merge queue position: ${QUEUE_POSITION:-n/a}"
+            echo "- already merged when verified: ${MERGED:-false}"
+            if test "${SHOULD_STAGE:-false}" = true; then
+              echo '- generated/current final head was bound to successful CI before automerge authorization and protected merge handoff.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload staging evidence
+        if: always() && steps.resolve.outputs.should_stage == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-auto-publish-${{ steps.resolve.outputs.pr_number || github.run_id }}-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 90

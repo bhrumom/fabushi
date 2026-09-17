@@ -87,7 +87,10 @@ export default function WebMcpMiniAppAdapter({ pluginId }: { pluginId: string })
               throw new Error("用户取消了 WebMCP Tool 调用");
             }
           }
-          return await client.request("tools/call", { name, arguments: args }) as McpToolResult;
+          const callArgs = tool.annotations?.readOnlyHint === true
+            ? args
+            : { ...args, operationId: typeof (args as Record<string, unknown>).operationId === "string" ? (args as Record<string, unknown>).operationId : crypto.randomUUID() };
+          return await client.request("tools/call", { name, arguments: callArgs }) as McpToolResult;
         });
         window.dispatchEvent(new CustomEvent("fabushi:webmcp-ready", {
           detail: { pluginId: normalizedId, tools: tools.map((tool) => tool.name) },

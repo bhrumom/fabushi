@@ -14,6 +14,13 @@ enum MobileChatEntryKind: String, Equatable {
     case thinking
 }
 
+enum MahayanaChatPumpOutcome: Equatable {
+    case terminal
+    case nonTerminal
+
+    var shouldSettleLifecycle: Bool { self == .terminal }
+}
+
 struct MobileChatMessage: Identifiable, Equatable {
     let id: String
     let role: MobileChatRole
@@ -23,6 +30,7 @@ struct MobileChatMessage: Identifiable, Equatable {
     var actionTitle: String?
     var actionDetail: String?
     var actionStatus: String?
+    var streaming = false
     var createdAt = Date()
 }
 
@@ -37,7 +45,25 @@ struct MarketplacePlugin: Identifiable, Equatable, Sendable {
     let displayName: String
     let description: String
     let latestVersion: String?
+    let sourceRef: String?
     let tools: [MiniAppToolContract]
+
+    init(
+        pluginId: String,
+        displayName: String,
+        description: String,
+        latestVersion: String?,
+        sourceRef: String? = nil,
+        tools: [MiniAppToolContract]
+    ) {
+        self.pluginId = pluginId
+        self.displayName = displayName
+        self.description = description
+        self.latestVersion = latestVersion
+        self.sourceRef = sourceRef
+        self.tools = tools
+    }
+
     var id: String { pluginId }
 }
 
@@ -452,14 +478,26 @@ final class MarketplaceModel {
                 id: "thinking:\(operationId)", role: .assistant, text: "", kind: .thinking, operationId: operationId,
                 actionTitle: "正在思考", actionStatus: "running"
             ))
-            await pumpChatEvents(operationId: operationId)
+            let outcome = await pumpChatEvents(operationId: operationId)
+            if outcome.shouldSettleLifecycle {
+                chatBusy = false
+                activeOperationId = nil
+            }
         } catch is CancellationError {
             // View-driven cancellation is a normal lifecycle path.
+            if activeOperationId == nil {
+                chatBusy = false
+                activeOperationId = nil
+            }
+            return
         } catch {
             message = "发送失败：\(error.localizedDescription)"
+            if activeOperationId == nil {
+                chatBusy = false
+                activeOperationId = nil
+            }
+            return
         }
-        chatBusy = false
-        activeOperationId = nil
     }
 
     func stopChat() async {
@@ -467,9 +505,9 @@ final class MarketplaceModel {
         _ = try? await host.request(method: "feature.interrupt", params: ["operationId": operationId])
     }
 
-    private func pumpChatEvents(operationId: String) async {
+    private func pumpChatEvents(operationId: String) async -> MahayanaChatPumpOutcome {
         for _ in 0..<1800 {
-            if Task.isCancelled { return }
+            if Task.isCancelled { return .nonTerminal }
             do {
                 let result = try await host.request(method: "feature.receive")
                 guard let event = result.value as? [String: Any], let type = event["type"] as? String else {
@@ -512,23 +550,26 @@ final class MarketplaceModel {
                     guard event["operationId"] as? String == operationId else { continue }
                     removeThinking(operationId: operationId)
                     settleActions(operationId: operationId, status: type == "operation.completed" ? "completed" : "failed")
-                    return
+                    return .terminal
                 case "operation.failed":
                     guard event["operationId"] as? String == operationId else { continue }
                     removeThinking(operationId: operationId)
                     settleActions(operationId: operationId, status: "failed")
                     message = event["message"] as? String ?? "本次任务失败"
-                    return
+                    return .terminal
                 default:
                     break
                 }
             } catch {
                 message = "消息流中断：\(error.localizedDescription)"
-                return
+                if Task.isCancelled { return .nonTerminal }
+                try? await Task.sleep(nanoseconds: 80_000_000)
+                continue
             }
             try? await Task.sleep(nanoseconds: 80_000_000)
         }
         if chatBusy { message = "任务仍在后台运行，稍后会继续同步事件" }
+        return .nonTerminal
     }
 
     private func removeThinking(operationId: String) {
@@ -568,17 +609,22 @@ final class MarketplaceModel {
             )
             let object = result.value as? [String: Any]
             let rows = object?["plugins"] as? [[String: Any]] ?? []
-            plugins = rows.compactMap { item in
+            plugins = rows.compactMap { (item: [String: Any]) -> MarketplacePlugin? in
                 guard let id = item["pluginId"] as? String, !id.isEmpty else { return nil }
                 let source = item["source"] as? [String: Any]
                 let commands = source?["commands"] as? [[String: Any]]
                     ?? item["commands"] as? [[String: Any]]
                     ?? []
+                let install = item["install"] as? [String: Any]
+                    ?? (item["releaseManifest"] as? [String: Any])?["install"] as? [String: Any]
+                let installSource = install?["source"] as? [String: Any]
+                let sourceRef = (installSource?["sourceRef"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                 return MarketplacePlugin(
                     pluginId: id,
                     displayName: item["displayName"] as? String ?? id,
                     description: item["description"] as? String ?? "无描述",
                     latestVersion: item["latestVersion"] as? String,
+                    sourceRef: sourceRef?.isEmpty == false ? sourceRef : nil,
                     tools: commands.compactMap(Self.toolContract(from:))
                 )
             }
@@ -603,6 +649,15 @@ final class MarketplaceModel {
             guard let release = (metadata.value as? [String: Any])?["releaseManifest"] as? [String: Any] else {
                 throw MahayanaHost.HostError.invalidResponse
             }
+            let install = (metadata.value as? [String: Any])?["install"] as? [String: Any]
+                ?? release["install"] as? [String: Any]
+            guard install?["protocol"] as? String == "fabushi.marketplace.install.v1",
+                  install?["strategy"] as? String == "github-immutable",
+                  let source = install?["source"] as? [String: Any],
+                  let sourceRef = source["sourceRef"] as? String,
+                  !sourceRef.isEmpty,
+                  source["marketplaceHostsPackage"] as? Bool != true
+            else { throw MahayanaHost.HostError.invalidResponse }
             let installed = try await host.request(
                 method: "feature.plugin.install",
                 params: ["release": release, "platform": "ios"]

@@ -40,6 +40,8 @@ const TEST_MARKETPLACE_PLUGINS: &[(&str, &str, &str)] = &[
         "受控自动确认与任务协作",
     ),
 ];
+const TEST_MARKETPLACE_REPOSITORY: &str = "https://github.com/bhrumom/fabushi";
+const TEST_MARKETPLACE_SOURCE_REF: &str = "7b02d8d00e0646e9bf4e90a129cbf203fcff015d";
 
 impl From<AppHostFeatureMode> for HostMode {
     fn from(value: AppHostFeatureMode) -> Self {
@@ -204,6 +206,7 @@ impl AppHost {
             "feature.marketplace.release" => self.marketplace_release(params),
             "feature.plugin.install" => self.install_plugin(params),
             "feature.plugin.uninstall" => self.uninstall_plugin(params),
+            "feature.plugin.rollback" => self.rollback_plugin(params),
             "feature.plugin.active" => self.active_plugin(params),
             "feature.plugin.listInstalled" => self.list_installed_plugins(),
             "feature.plugin.uiDocument" => self.plugin_ui_document(params),
@@ -407,6 +410,37 @@ impl AppHost {
                     "test marketplace plugin {plugin_id} was not found"
                 )));
             }
+            let artifact_id = format!("{plugin_id}-test-ui");
+            let artifact_url = format!(
+                "https://raw.githubusercontent.com/bhrumom/fabushi/{TEST_MARKETPLACE_SOURCE_REF}/marketplace/packages/{plugin_id}/1.0.0/app.tar.gz"
+            );
+            let artifact = json!({
+                "id": artifact_id,
+                "runtime": "local-web",
+                "platforms": ["desktop"],
+                "source": {"type": "https", "url": artifact_url},
+                "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                "size": 1,
+                "format": "tar-gz"
+            });
+            let install = json!({
+                "protocol": "fabushi.marketplace.install.v1",
+                "strategy": "github-immutable",
+                "pluginId": plugin_id,
+                "version": version,
+                "source": {
+                    "repository": TEST_MARKETPLACE_REPOSITORY,
+                    "sourceRef": TEST_MARKETPLACE_SOURCE_REF,
+                    "marketplaceHostsPackage": false
+                },
+                "artifacts": [artifact.clone()],
+                "update": {
+                    "check": "marketplace-release",
+                    "comparison": "version-then-artifact-sha256",
+                    "allowDowngrade": false,
+                    "rollback": "previous-active"
+                }
+            });
             return Ok(json!({
                 "pluginId": plugin_id,
                 "version": version,
@@ -416,9 +450,15 @@ impl AppHost {
                     "protocol": "mahayana.external-release.v1",
                     "pluginId": plugin_id,
                     "version": version,
+                    "source": {
+                        "repository": TEST_MARKETPLACE_REPOSITORY,
+                        "sourceRef": TEST_MARKETPLACE_SOURCE_REF
+                    },
                     "permissions": [],
-                    "artifacts": []
-                }
+                    "artifacts": [artifact],
+                    "install": install.clone()
+                },
+                "install": install
             }));
         }
         self.product
@@ -556,6 +596,15 @@ impl AppHost {
         let pointer = self
             .installer()?
             .active(plugin_id)
+            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        serde_json::to_value(pointer).map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    fn rollback_plugin(&self, params: Value) -> Result<Value, AppHostError> {
+        let plugin_id = string_param(&params, "pluginId")?;
+        let pointer = self
+            .installer()?
+            .rollback(plugin_id)
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
         serde_json::to_value(pointer).map_err(|error| AppHostError::Operation(error.to_string()))
     }
@@ -781,6 +830,20 @@ impl AppHost {
                 "runtime.call arguments must be an object".into(),
             ));
         }
+        if self.feature_mode == AppHostFeatureMode::Test {
+            let installed = self
+                .plugin_root()
+                .join(plugin_id)
+                .join("active.json")
+                .is_file();
+            if installed
+                && TEST_MARKETPLACE_PLUGINS
+                    .iter()
+                    .any(|(candidate, _, _)| *candidate == plugin_id)
+            {
+                return deterministic_test_runtime_call(plugin_id, name, &arguments);
+            }
+        }
         let host = self
             .js
             .lock()
@@ -801,6 +864,50 @@ impl AppHost {
         host.call_tool_json(name, &arguments)
             .map_err(|error| AppHostError::Operation(error.to_string()))
     }
+}
+
+fn deterministic_test_runtime_call(
+    plugin_id: &str,
+    name: &str,
+    arguments: &Value,
+) -> Result<Value, AppHostError> {
+    if plugin_id != "global-dharma" {
+        return Ok(json!({
+            "content": [{"type": "text", "text": format!("{plugin_id} test tool {name} completed") }],
+            "structuredContent": {"testMode": true, "tool": name, "arguments": arguments},
+        }));
+    }
+    let (text, structured) = match name {
+        "status" => (
+            "已读取全球法布施状态。",
+            json!({"running": false, "mode": "home", "testMode": true}),
+        ),
+        "start" => (
+            "本地转经轮已通过宿主权限校验并启动。",
+            json!({"running": true, "mode": "local-prayer-wheel", "testMode": true}),
+        ),
+        "stop" => (
+            "全球法布施本地模式已停止。",
+            json!({"running": false, "mode": "home", "testMode": true}),
+        ),
+        "logs" => (
+            "已读取全球法布施日志。",
+            json!({"entries": ["deterministic GitHub Actions test runtime"], "testMode": true}),
+        ),
+        "send" => (
+            "全球发送测试请求已完成。",
+            json!({"sent": 1, "testMode": true}),
+        ),
+        other => {
+            return Err(AppHostError::Operation(format!(
+                "test runtime tool {other} is not available for global-dharma"
+            )));
+        }
+    };
+    Ok(json!({
+        "content": [{"type": "text", "text": text}],
+        "structuredContent": structured,
+    }))
 }
 
 fn configured_feature_host_mode() -> Result<AppHostFeatureMode, AppHostError> {
@@ -862,6 +969,7 @@ fn create_feature_host(
             "claude-code" => mahayana_model::responses::ResponsesWireApi::AnthropicMessages,
             _ => mahayana_model::responses::ResponsesWireApi::Responses,
         },
+        inherit_installed_plugins: Some(false),
         process_execution: if std::env::var("MAHAYANA_SANDBOX_RUNTIME").as_deref()
             == Ok("local-docker")
         {

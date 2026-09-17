@@ -23,6 +23,14 @@ on:
         description: Apple build number. Leave empty to use UTC YYYY.MM.DD; override when rerunning on the same day.
         required: false
         type: string
+      release_tier:
+        description: test skips long simulated-user source gates; formal requires the full release gate.
+        required: true
+        default: formal
+        type: choice
+        options:
+          - test
+          - formal
   workflow_run:
     workflows:
       - Native mobile quality gate
@@ -155,6 +163,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
           RELEASE_TARGET: ${{ steps.release.outputs.release_target }}
+          RELEASE_TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tier || 'formal' }}
         run: bash .github/scripts/require-release-source-gates.sh
 
   macos-electron:
