@@ -222,3 +222,55 @@ test("device gateway keeps the registered socket alive when async audit rejects"
   assert.equal(ws.readyState, WebSocket.OPEN);
   assert.equal(listRegisteredDevices("account:a")[0].status, "online");
 });
+
+test("device discovery hides every disconnected device and drops ephemeral GitHub runners immediately", async (t) => {
+  resetDeviceGatewayStateForTests();
+  const server = createServer((_req, res) => res.writeHead(404).end());
+  const gateway = attachDeviceGateway(server, {
+    resolveAccount: async (token) => token === "live-account-token" ? { userId: "account:live" } : null,
+    defaultLeaseSeconds: 60,
+  });
+  const port = await listen(server);
+  const descriptor = { name: "vps_status", inputSchema: { type: "object" }, outputSchema: { type: "object" } };
+  const persistent = new WebSocket(`ws://127.0.0.1:${port}/agent`, { headers: { Authorization: "Bearer live-account-token" } });
+  const ephemeral = new WebSocket(`ws://127.0.0.1:${port}/agent`, { headers: { Authorization: "Bearer live-account-token" } });
+  t.after(async () => {
+    persistent.terminate();
+    ephemeral.terminate();
+    await closeServer(server, gateway);
+    resetDeviceGatewayStateForTests();
+  });
+  await Promise.all([opened(persistent), opened(ephemeral)]);
+  persistent.send(JSON.stringify({
+    type: "register",
+    deviceId: "mahayana-cli-persistent",
+    name: "Mahayana CLI",
+    platform: "linux",
+    capabilities: ["vps_status"],
+    tools: [descriptor],
+    metadata: { kind: "mahayana-cli" },
+  }));
+  ephemeral.send(JSON.stringify({
+    type: "register",
+    deviceId: "gha-123-1-cli",
+    name: "GitHub Actions CLI",
+    platform: "linux",
+    capabilities: ["vps_status"],
+    tools: [descriptor],
+    metadata: { kind: "github-actions", runId: "123" },
+  }));
+  await Promise.all([nextJson(persistent), nextJson(ephemeral)]);
+  assert.deepEqual(listRegisteredDevices("account:live").map((device) => device.id).sort(), ["gha-123-1-cli", "mahayana-cli-persistent"]);
+
+  const persistentClosed = new Promise((resolve) => persistent.once("close", resolve));
+  persistent.close();
+  await persistentClosed;
+  assert.deepEqual(listRegisteredDevices("account:live").map((device) => device.id), ["gha-123-1-cli"]);
+  await assert.rejects(() => callRegisteredDevice("account:live", "mahayana-cli-persistent", "vps_status", {}), /offline/);
+
+  const ephemeralClosed = new Promise((resolve) => ephemeral.once("close", resolve));
+  ephemeral.close();
+  await ephemeralClosed;
+  assert.equal(listRegisteredDevices("account:live").length, 0);
+  await assert.rejects(() => callRegisteredDevice("account:live", "gha-123-1-cli", "vps_status", {}), /Unknown device/);
+});
