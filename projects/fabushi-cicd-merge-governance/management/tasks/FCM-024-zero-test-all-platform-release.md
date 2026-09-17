@@ -54,3 +54,12 @@ Follow-up repair branch: `codex/fcm024-chrome-zero-test-package-20260916` restor
 - Fabushi official MCP must provide device/tool/finish evidence before any stable publication.
 
 No local build/test is permitted.
+## 2026-09-17 release execution round
+
+- Fresh protected-main baseline before this round: `f15274ec0f3c5eb2007027f35d7f0cc8eb71b5af`.
+- Requested historical PR set `#2297/#2299/#2316/#2446/#2620` is already merged. The remaining post-merge durability slice from #2620 was carried by #2697; exact head `826aed9430a40be77b067a22f71c9a755058540a` passed required `CI result` in run `35202081151`, and #2697 then merged through the protected SQUASH queue as `f15274ec0f3c5eb2007027f35d7f0cc8eb71b5af`.
+- Open-PR readback after that merge returned an empty set.
+- Canonical version before bump is `1.2.70 / Android 39 / iOS 39`; this round advances the test candidate to `1.2.71 / Android 40 / iOS 40`.
+- Test publication remains zero-behavior-test: `electron-desktop.yml` for macOS/Windows/Linux immutable prerelease and `mobile-test-delivery.yml` for iOS TestFlight plus Android internal, both bound to the same accepted canonical SHA.
+- Formal publication remains fail-closed until interactive Action runners install the exact candidate, the installed App self-registers fresh run-scoped App-owned devices, and the Fabushi official MCP controls those devices with run/device/SHA/video/screenshot/log evidence.
+- MSR-204 remains separately `in-progress` for its explicitly recorded non-durability Hermes acceptance debt. This release round must not rewrite that product record as passed without corresponding implementation/evidence.
