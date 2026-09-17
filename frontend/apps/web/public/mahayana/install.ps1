@@ -64,10 +64,9 @@ try {
   if ($parts -notcontains $installDir) {
     [Environment]::SetEnvironmentVariable('Path', (($parts + $installDir) -join ';'), 'User')
   }
-  Write-Host 'Starting the Mahayana device agent...'
-  & $target device start *> $null
   Write-Host "Mahayana CLI installed: $target"
   Write-Host 'Open a new terminal and run: mahayana login'
+  Write-Host "Successful login starts this machine's Fabushi device agent automatically."
 } finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }

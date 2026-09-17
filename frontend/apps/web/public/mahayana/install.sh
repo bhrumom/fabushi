@@ -52,10 +52,10 @@ tar -xzf "$tmp/$asset" -C "$tmp"
 install_dir="${MAHAYANA_INSTALL_DIR:-$HOME/.local/bin}"
 mkdir -p "$install_dir"
 install -m 0755 "$tmp/mahayana" "$install_dir/mahayana"
-"$install_dir/mahayana" device start >/dev/null 2>&1 || true
 
 echo "Mahayana CLI installed: $install_dir/mahayana"
 case ":${PATH:-}:" in
   *":$install_dir:"*) ;;
   *) echo "Add $install_dir to PATH, then run: mahayana login" ;;
 esac
+echo "Successful login starts this machine's Fabushi device agent automatically."
