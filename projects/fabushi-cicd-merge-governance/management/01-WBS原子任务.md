@@ -76,3 +76,11 @@
 - Candidate: `1.2.72 / Android 41 / iOS 41`
 - Reason: `apple-v1.2.71-40` is immutable and targets old diagnostic SHA `e96c9bb...`; reusing 40 cannot satisfy same-SHA promotion.
 - Acceptance: protected SQUASH merge, exact-head/merge-group gates, then fresh macOS/Windows/Linux prerelease + TestFlight + Android internal from one new canonical SHA before official-MCP acceptance.
+
+### FCM-024-20260917-04 — repair interactive artifact reuse and roll candidate
+
+- Status: `in-progress`
+- Baseline: `main@6245420379e6c11a84d23b2e705debe779532d47`
+- Repair: `interactive-runner-mcp.yml` downloads `fabushi-test-release-linux`, matching `electron-desktop.yml`.
+- Candidate: `1.2.73 / Android 42 / iOS 42`.
+- Acceptance: exact-head and merge-group CI green; full same-SHA zero-test delivery succeeds; repaired runner reuses exact Linux artifact; installed App registers a fresh run-scoped App-owned device; official MCP performs required live checks and calls `ci_session_finish`.
