@@ -291,14 +291,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $expected = '${{ inputs.expected_source_sha }}'
           if ($expected -notmatch '^[0-9a-f]{40}$') { throw 'expected_source_sha must be a full commit SHA' }
-          $home = Join-Path $env:RUNNER_TEMP 'mahayana-home'
+          $mahayanaHome = Join-Path $env:RUNNER_TEMP 'mahayana-home'
           $install = Join-Path $env:RUNNER_TEMP 'mahayana-bin'
           $account = Join-Path $env:RUNNER_TEMP 'mahayana-account-session.json'
           $ci = Join-Path $env:RUNNER_TEMP 'mahayana-ci-session.json'
-          $finish = Join-Path $home 'device-agent\remote-finished.json'
+          $finish = Join-Path $mahayanaHome 'device-agent\remote-finished.json'
           @(
             "EXPECTED_SOURCE_SHA=$expected"
-            "MAHAYANA_HOME=$home"
+            "MAHAYANA_HOME=$mahayanaHome"
             "MAHAYANA_INSTALL_DIR=$install"
             "FABUSHI_ACCOUNT_SESSION_FILE=$account"
             "FABUSHI_CI_ACCOUNT_SESSION_FILE=$ci"
@@ -365,7 +365,18 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          mahayana logout 2>$null
-          mahayana device stop 2>$null
-          Remove-Item -Force $env:FABUSHI_ACCOUNT_SESSION_FILE, $env:FABUSHI_CI_ACCOUNT_SESSION_FILE -ErrorAction SilentlyContinue
+          $ErrorActionPreference = 'Continue'
+          $exe = $null
+          if ($env:MAHAYANA_INSTALL_DIR) {
+            $candidate = Join-Path $env:MAHAYANA_INSTALL_DIR 'mahayana.exe'
+            if (Test-Path $candidate) { $exe = $candidate }
+          }
+          if ($exe) {
+            & $exe logout 2>$null
+            & $exe device stop 2>$null
+          }
+          foreach ($path in @($env:FABUSHI_ACCOUNT_SESSION_FILE, $env:FABUSHI_CI_ACCOUNT_SESSION_FILE)) {
+            if ($path) { Remove-Item -Force $path -ErrorAction SilentlyContinue }
+          }
           Start-Sleep -Seconds 2
+          exit 0
