@@ -17,7 +17,7 @@ function Invoke-MahayanaDownload {
   $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
   if ($curl) {
     & $curl.Source --fail --location --silent --show-error --retry 5 --retry-delay 1 --connect-timeout 15 --output $OutFile $Uri
-    if ($LASTEXITCODE -ne 0) { throw "Download failed with curl.exe exit code $LASTEXITCODE: $Uri" }
+    if ($LASTEXITCODE -ne 0) { throw "Download failed with curl.exe exit code ${LASTEXITCODE}: $Uri" }
     return
   }
   Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutFile
