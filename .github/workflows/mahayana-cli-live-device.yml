@@ -111,9 +111,21 @@ jobs:
             if grep -q 'Mahayana controllable device online:' "$log" 2>/dev/null; then
               break
             fi
+            if (( attempt % 15 == 0 )); then
+              echo "Waiting for Mahayana CLI device registration ($attempt/90)..."
+              mahayana device status || true
+              if test -f "$log"; then
+                tail -n 40 "$log" || true
+              fi
+            fi
             sleep 2
           done
-          grep -q "Mahayana controllable device online: $DEVICE_ID" "$log"
+          if ! grep -q "Mahayana controllable device online: $DEVICE_ID" "$log" 2>/dev/null; then
+            echo 'Mahayana CLI device did not register with the official gateway.' >&2
+            mahayana device status >&2 || true
+            tail -n 120 "$log" >&2 2>/dev/null || true
+            exit 1
+          fi
           {
             echo '## Mahayana CLI live device'
             echo
