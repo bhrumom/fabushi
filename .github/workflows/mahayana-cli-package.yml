@@ -1,0 +1,202 @@
+name: Mahayana CLI package (no tests)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact branch/tag/SHA to package without running product tests
+        required: true
+        default: main
+        type: string
+      promote_latest:
+        description: Update the public mahayana-cli-latest distribution channel (protected main only)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mahayana-cli-package-${{ inputs.source_ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Package ${{ matrix.asset }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            asset: mahayana-linux-x86_64.tar.gz
+            binary: mahayana
+            archive: tar
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset: mahayana-linux-aarch64.tar.gz
+            binary: mahayana
+            archive: tar
+          - runner: macos-15
+            target: x86_64-apple-darwin
+            asset: mahayana-macos-x86_64.tar.gz
+            binary: mahayana
+            archive: tar
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            asset: mahayana-macos-aarch64.tar.gz
+            binary: mahayana
+            archive: tar
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            asset: mahayana-windows-x86_64.zip
+            binary: mahayana.exe
+            archive: zip
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve exact source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          targets: ${{ matrix.target }}
+
+      - name: Build standalone Mahayana CLI without tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build \
+            --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml \
+            --locked \
+            --release \
+            --features codex-compat \
+            --package mahayana-cli \
+            --target '${{ matrix.target }}'
+
+      - name: Package Unix archive
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/stage
+          cp "third_party/mahayana/mahayana-rs/target/${{ matrix.target }}/release/${{ matrix.binary }}" dist/stage/mahayana
+          chmod 0755 dist/stage/mahayana
+          tar -C dist/stage -czf "dist/${{ matrix.asset }}" mahayana
+          printf '%s\n' "$SOURCE_SHA" > dist/source-sha.txt
+
+      - name: Package Windows archive
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/stage | Out-Null
+          Copy-Item "third_party/mahayana/mahayana-rs/target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/stage/mahayana.exe"
+          Compress-Archive -Path "dist/stage/mahayana.exe" -DestinationPath "dist/${{ matrix.asset }}" -Force
+          Set-Content -Path dist/source-sha.txt -Value $env:SOURCE_SHA -NoNewline
+
+      - name: Upload exact package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset }}
+          path: |
+            dist/${{ matrix.asset }}
+            dist/source-sha.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish immutable CLI prerelease
+    needs: build
+    runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      tag: ${{ steps.source.outputs.tag }}
+    steps:
+      - name: Checkout exact source metadata
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve immutable source and tag
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "tag=mahayana-cli-test-${source_sha:0:12}" >> "$GITHUB_OUTPUT"
+
+      - name: Download platform packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: mahayana-*
+          path: packages
+          merge-multiple: true
+
+      - name: Verify package provenance and generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha='${{ steps.source.outputs.source_sha }}'
+          while IFS= read -r proof; do
+            test "$(tr -d '\r\n' < "$proof")" = "$source_sha"
+          done < <(find packages -type f -name source-sha.txt -print)
+          rm -f packages/source-sha.txt
+          test -f packages/mahayana-linux-x86_64.tar.gz
+          test -f packages/mahayana-linux-aarch64.tar.gz
+          test -f packages/mahayana-macos-x86_64.tar.gz
+          test -f packages/mahayana-macos-aarch64.tar.gz
+          test -f packages/mahayana-windows-x86_64.zip
+          (cd packages && sha256sum mahayana-* > SHA256SUMS.txt)
+
+      - name: Create immutable no-test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ steps.source.outputs.tag }}'
+          source_sha='${{ steps.source.outputs.source_sha }}'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            target="$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)"
+            test "$target" = "$source_sha"
+            echo "Immutable Mahayana CLI prerelease already exists: $tag"
+            exit 0
+          fi
+          gh release create "$tag" packages/* \
+            --target "$source_sha" \
+            --title "Mahayana CLI test package ${source_sha:0:12}" \
+            --notes "No automated product tests were run before this test package. Source: $source_sha" \
+            --prerelease
+
+      - name: Update public latest channel from protected main only
+        if: inputs.promote_latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha='${{ steps.source.outputs.source_sha }}'
+          git fetch origin main --depth=1
+          main_sha="$(git rev-parse origin/main)"
+          test "$source_sha" = "$main_sha" || { echo 'Refusing to promote a non-main CLI package.' >&2; exit 1; }
+          gh release delete mahayana-cli-latest --yes --cleanup-tag >/dev/null 2>&1 || true
+          gh release create mahayana-cli-latest packages/* \
+            --target "$source_sha" \
+            --title "Mahayana CLI latest" \
+            --notes "Moving installer channel. Immutable provenance release: ${{ steps.source.outputs.tag }}"
