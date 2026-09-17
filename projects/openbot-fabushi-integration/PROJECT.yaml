@@ -1,0 +1,20 @@
+project_id: FAB-P0012
+project_key: OBF
+legacy_project_ids: []
+name: OpenBot -> Fabushi Capability & UX Gap Closure
+slug: openbot-fabushi-integration
+status: active
+repository: bhrumom/fabushi
+authoritative_branch: main
+authoritative_path: projects/openbot-fabushi-integration
+owner: Fabushi engineering
+reviewers: []
+current_stage: M1-gap-closure
+created_at: 2026-09-13
+updated_at: 2026-09-13
+risk_tier: tier-1
+security_classification: internal
+related_projects:
+  - FAB-P0005
+  - FAB-P0009
+  - FAB-P0003

@@ -1,58 +1,101 @@
-name: Mobile test delivery
+name: All-platform mobile test delivery (no tests)
 
 on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: Exact main ref or SHA to publish as a test build.
+        description: Exact protected-main SHA/ref to publish to mobile test channels
         required: true
         default: main
         type: string
+  push:
+    branches: [main]
+    paths:
+      - app-version.json
 
 permissions:
-  actions: write
   contents: read
+  actions: write
 
 concurrency:
-  group: mobile-test-delivery
+  group: mobile-test-delivery-${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.sha }}
   cancel-in-progress: false
 
 jobs:
   dispatch:
+    name: Dispatch iOS TestFlight and Android internal builds without tests
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Dispatch fast iOS TestFlight and Android internal-track builds
+      - name: Checkout requested exact source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - id: source
+        name: Bind exact protected-main candidate
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_REF: ${{ inputs.source_ref }}
-        shell: bash
         run: |
           set -euo pipefail
-          source_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_REF" --jq '.sha')"
-          main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          compare_status="$(gh api "repos/$GITHUB_REPOSITORY/compare/$source_sha...$main_sha" --jq '.status')"
-          if [ "$source_sha" != "$main_sha" ] && [ "$compare_status" != ahead ]; then
-            echo "Test release source must be on main history. source=$source_sha main=$main_sha status=$compare_status" >&2
-            exit 1
-          fi
-          version="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$GITHUB_REPOSITORY/contents/app-version.json?ref=$source_sha" | jq -r '.version')"
-          short_sha="${source_sha:0:12}"
-
-          gh workflow run apple-store-delivery.yml --repo "$GITHUB_REPOSITORY" --ref main \
-            -f source_ref="$source_sha" -f target=ios -f release_tier=test
-
-          gh workflow run google-play-delivery.yml --repo "$GITHUB_REPOSITORY" --ref main \
-            -f ref="$source_sha" -f track=internal -f release_status=completed \
-            -f changes_not_sent_for_review=false -f release_tier=test \
-            -f github_release_tag="android-test-v${version}-${short_sha}"
-
+          source_sha="$(git rev-parse HEAD)"
+          SOURCE_SHA="$source_sha" RELEASE_TARGET=all RELEASE_TIER=test bash .github/scripts/require-release-source-gates.sh
+          version="$(jq -er '.version' app-version.json)"
+          android_code="$(jq -er '.androidVersionCode' app-version.json)"
+          ios_build="$(jq -er '.iosBuildNumber' app-version.json)"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "android_code=$android_code" >> "$GITHUB_OUTPUT"
+          echo "ios_build=$ios_build" >> "$GITHUB_OUTPUT"
           {
-            echo '## Mobile test delivery'
-            echo
+            echo '## Mobile no-test delivery'
             echo "- Source: $source_sha"
             echo "- Version: $version"
-            echo '- iOS: App Store Connect upload for TestFlight; no App Review submission'
-            echo '- Android: Google Play internal track, completed rollout'
-            echo '- Gate policy: main ancestry + normal CI only; long simulator/emulator simulated-user gates are not required'
+            echo "- Android code: $android_code"
+            echo "- iOS build: $ios_build"
+            echo '- Behavioral tests before test publication: none'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Dispatch iOS TestFlight test build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+          IOS_BUILD: ${{ steps.source.outputs.ios_build }}
+        run: |
+          set -euo pipefail
+          gh workflow run apple-store-delivery.yml \
+            --ref main \
+            -f source_ref="$SOURCE_SHA" \
+            -f target=ios \
+            -f app_version="$VERSION" \
+            -f build_number="$IOS_BUILD" \
+            -f release_tier=test
+      - name: Dispatch Android internal test build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+          ANDROID_CODE: ${{ steps.source.outputs.android_code }}
+        run: |
+          set -euo pipefail
+          gh workflow run google-play-delivery.yml \
+            --ref main \
+            -f ref="$SOURCE_SHA" \
+            -f track=internal \
+            -f release_status=completed \
+            -f version_code="$ANDROID_CODE" \
+            -f changes_not_sent_for_review=true \
+            -f github_release_tag="android-test-v${VERSION}-${SOURCE_SHA:0:12}" \
+            -f release_tier=test
+      - name: Record test-release semantics
+        shell: bash
+        run: |
+          {
+            echo '- iOS/Android child workflows were dispatched only to build/sign/package/upload test-channel artifacts.'
+            echo '- No E2E, simulator journey, emulator journey, smoke, unit, integration or regression test is authorized by this workflow.'
+            echo '- Formal release remains a separate MCP-driven gate.'
           } >> "$GITHUB_STEP_SUMMARY"

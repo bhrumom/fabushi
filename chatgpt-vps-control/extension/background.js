@@ -1,3 +1,6 @@
+// Legacy Bridge source is kept unchanged for the migration window. New
+// installs use chrome-platform/extension/browser-control.js and the renamed
+// com.fabushi.browser_control host.
 const NATIVE_HOST = "com.fabushi.chatgpt_computer_control";
 const STORAGE = {
   instanceId: "profileInstanceId",

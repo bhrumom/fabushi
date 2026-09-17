@@ -94,6 +94,53 @@ test("device gateway rejects an unrecognized Fabushi account bearer", async (t) 
   assert.equal(status, 401);
 });
 
+test("browser agent requires the published extension origin and first-frame Fabushi authentication", async (t) => {
+  resetDeviceGatewayStateForTests();
+  const extensionId = "abcdefghijklmnopabcdefghijklmnop";
+  const server = createServer((_req, res) => res.writeHead(404).end());
+  const gateway = attachDeviceGateway(server, {
+    resolveAccount: async (token) => token === "browser-account-token" ? { userId: "account:browser", label: "Browser User" } : null,
+    browserExtensionId: extensionId,
+    defaultLeaseSeconds: 60,
+  });
+  const port = await listen(server);
+  const browser = new WebSocket(`ws://127.0.0.1:${port}/browser-agent`, { origin: `chrome-extension://${extensionId}` });
+  t.after(async () => {
+    browser.terminate();
+    await closeServer(server, gateway);
+    resetDeviceGatewayStateForTests();
+  });
+  await opened(browser);
+  browser.send(JSON.stringify({ type: "authenticate", accessToken: "browser-account-token" }));
+  assert.deepEqual(await nextJson(browser), { type: "authenticated", accountLabel: "Browser User" });
+  browser.send(JSON.stringify({
+    type: "register",
+    deviceId: "chrome-profile-1",
+    name: "Chrome",
+    platform: "chrome-extension",
+    capabilities: ["list_tabs"],
+    tools: [{ name: "list_tabs", inputSchema: { type: "object" }, outputSchema: { type: "object" } }],
+  }));
+  assert.equal((await nextJson(browser)).type, "registered");
+  assert.equal(listRegisteredDevices("account:browser")[0].id, "chrome-profile-1");
+  assert.equal(listRegisteredDevices("account:other").length, 0);
+
+  browser.once("message", (raw) => {
+    const call = JSON.parse(raw.toString("utf8"));
+    if (call.type === "call") browser.send(JSON.stringify({ type: "result", requestId: call.requestId, ok: true, result: { structuredContent: { tabs: [] } } }));
+  });
+  const routed = await callRegisteredDevice("account:browser", "chrome-profile-1", "list_tabs", {});
+  assert.deepEqual(routed.result.structuredContent, { tabs: [] });
+  await assert.rejects(() => callRegisteredDevice("account:other", "chrome-profile-1", "list_tabs", {}), /Unknown device/);
+
+  const wrongOrigin = new WebSocket(`ws://127.0.0.1:${port}/browser-agent`, { origin: "chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba" });
+  const status = await new Promise((resolve) => {
+    wrongOrigin.once("unexpected-response", (_request, response) => resolve(response.statusCode));
+    wrongOrigin.once("error", () => {});
+  });
+  assert.equal(status, 403);
+});
+
 test("device reconnect rejects calls that were bound to the previous socket generation", async (t) => {
   resetDeviceGatewayStateForTests();
   const server = createServer((_req, res) => res.writeHead(404).end());
@@ -174,4 +221,56 @@ test("device gateway keeps the registered socket alive when async audit rejects"
   await new Promise((resolve) => setTimeout(resolve, 25));
   assert.equal(ws.readyState, WebSocket.OPEN);
   assert.equal(listRegisteredDevices("account:a")[0].status, "online");
+});
+
+test("device discovery hides every disconnected device and drops ephemeral GitHub runners immediately", async (t) => {
+  resetDeviceGatewayStateForTests();
+  const server = createServer((_req, res) => res.writeHead(404).end());
+  const gateway = attachDeviceGateway(server, {
+    resolveAccount: async (token) => token === "live-account-token" ? { userId: "account:live" } : null,
+    defaultLeaseSeconds: 60,
+  });
+  const port = await listen(server);
+  const descriptor = { name: "vps_status", inputSchema: { type: "object" }, outputSchema: { type: "object" } };
+  const persistent = new WebSocket(`ws://127.0.0.1:${port}/agent`, { headers: { Authorization: "Bearer live-account-token" } });
+  const ephemeral = new WebSocket(`ws://127.0.0.1:${port}/agent`, { headers: { Authorization: "Bearer live-account-token" } });
+  t.after(async () => {
+    persistent.terminate();
+    ephemeral.terminate();
+    await closeServer(server, gateway);
+    resetDeviceGatewayStateForTests();
+  });
+  await Promise.all([opened(persistent), opened(ephemeral)]);
+  persistent.send(JSON.stringify({
+    type: "register",
+    deviceId: "mahayana-cli-persistent",
+    name: "Mahayana CLI",
+    platform: "linux",
+    capabilities: ["vps_status"],
+    tools: [descriptor],
+    metadata: { kind: "mahayana-cli" },
+  }));
+  ephemeral.send(JSON.stringify({
+    type: "register",
+    deviceId: "gha-123-1-cli",
+    name: "GitHub Actions CLI",
+    platform: "linux",
+    capabilities: ["vps_status"],
+    tools: [descriptor],
+    metadata: { kind: "github-actions", runId: "123" },
+  }));
+  await Promise.all([nextJson(persistent), nextJson(ephemeral)]);
+  assert.deepEqual(listRegisteredDevices("account:live").map((device) => device.id).sort(), ["gha-123-1-cli", "mahayana-cli-persistent"]);
+
+  const persistentClosed = new Promise((resolve) => persistent.once("close", resolve));
+  persistent.close();
+  await persistentClosed;
+  assert.deepEqual(listRegisteredDevices("account:live").map((device) => device.id), ["gha-123-1-cli"]);
+  await assert.rejects(() => callRegisteredDevice("account:live", "mahayana-cli-persistent", "vps_status", {}), /offline/);
+
+  const ephemeralClosed = new Promise((resolve) => ephemeral.once("close", resolve));
+  ephemeral.close();
+  await ephemeralClosed;
+  assert.equal(listRegisteredDevices("account:live").length, 0);
+  await assert.rejects(() => callRegisteredDevice("account:live", "gha-123-1-cli", "vps_status", {}), /Unknown device/);
 });

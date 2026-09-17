@@ -83,7 +83,7 @@ export type MahayanaCommandBridgeDetail =
       context?: MahayanaCommandBridgeContext;
     };
 
-type ConversationJournalMessage = {
+export type ConversationJournalMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
@@ -211,6 +211,13 @@ function readConversationJournal(): ConversationJournal {
   } catch {
     return emptyConversationJournal();
   }
+}
+
+
+export function readCachedConversationMessages(conversationId: string): ConversationJournalMessage[] {
+  const id = conversationId.trim();
+  if (!id) return [];
+  return (readConversationJournal().conversations[id] ?? []).map((message) => ({ ...message }));
 }
 
 function persistConversationJournal(journal: ConversationJournal): void {
@@ -393,6 +400,12 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
         accepted,
         context,
       });
+      if (
+        normalizedCommand.type === "conversation.open" &&
+        !this.miniAppConversations.has(normalizedCommand.conversationId)
+      ) {
+        this.refreshConversationList("after-open");
+      }
       return accepted;
     } catch (error) {
       dispatchWindowBridgeEvent<MahayanaCommandBridgeDetail>(MAHAYANA_COMMAND_EVENT_NAME, {
@@ -425,6 +438,10 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
 
   pluginUninstall(pluginId: string): Promise<PluginUninstallResult> {
     return mahayanaBridge().invoke<PluginUninstallResult>("feature.plugin.uninstall", { pluginId });
+  }
+
+  pluginRollback(pluginId: string): Promise<InstalledPluginPointer | null> {
+    return mahayanaBridge().invoke<InstalledPluginPointer | null>("feature.plugin.rollback", { pluginId });
   }
 
   pluginActive(pluginId: string): Promise<InstalledPluginPointer | null> {
@@ -584,6 +601,9 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
           createdAtMs,
           streaming: false,
         }, true);
+        if (event.role === "assistant") {
+          this.refreshConversationList("assistant-message");
+        }
       }
     } else if (event.type === "chat.delta") {
       const conversationId = this.conversationIdForEvent(event.operationId);
@@ -613,6 +633,16 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     ) {
       if (this.ignoredOperations.delete(event.operationId)) this.refreshUnscopedSuppression();
     }
+  }
+
+  private refreshConversationList(reason: string): void {
+    if (this.closed) return;
+    const requestId = `conversation-list-${reason}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    void mahayanaBridge().invoke<CommandAccepted>("feature.execute", {
+      command: { type: "conversation.list", requestId },
+    }).catch((error: unknown) => {
+      console.error(`Failed to refresh conversation list after ${reason}`, error);
+    });
   }
 
   private attachRuntimeEvents(): void {

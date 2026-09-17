@@ -3,64 +3,85 @@ set -euo pipefail
 
 : "${SOURCE_SHA:?SOURCE_SHA is required}"
 : "${RELEASE_TARGET:?RELEASE_TARGET is required}"
-: "${GH_TOKEN:?GH_TOKEN is required}"
-: "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 RELEASE_TIER="${RELEASE_TIER:-formal}"
+REPO="${GITHUB_REPOSITORY:-bhrumom/fabushi}"
 
 case "$RELEASE_TIER" in
   test|formal) ;;
-  *) echo "Unsupported RELEASE_TIER '$RELEASE_TIER'." >&2; exit 2 ;;
+  *) echo "Unsupported RELEASE_TIER=$RELEASE_TIER" >&2; exit 2 ;;
 esac
-
-case "$RELEASE_TARGET" in
-  macos)
-    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Electron desktop result' 'Electron macOS'); fi
-    ;;
-  ios)
-    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Native iOS'); fi
-    ;;
-  android)
-    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Native mobile result'); fi
-    ;;
-  both)
-    if [ "$RELEASE_TIER" = test ]; then required_checks=('CI result'); else required_checks=('CI result' 'Electron desktop result' 'Electron macOS' 'Electron Windows' 'Native mobile result' 'Native iOS'); fi
-    ;;
-  *)
-    echo "Unsupported RELEASE_TARGET '$RELEASE_TARGET'." >&2
-    exit 2
-    ;;
+case "$SOURCE_SHA" in
+  ''|*[!0-9a-f]*) echo "SOURCE_SHA must be a lowercase hexadecimal commit SHA" >&2; exit 2 ;;
 esac
+[ "${#SOURCE_SHA}" -eq 40 ] || { echo "SOURCE_SHA must be 40 characters" >&2; exit 2; }
 
-compare_json="$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$SOURCE_SHA")"
-status="$(printf '%s' "$compare_json" | jq -r '.status // "unknown"')"
-ahead_by="$(printf '%s' "$compare_json" | jq -r '.ahead_by // -1')"
-if [ "$status" != identical ] && [ "$status" != behind ]; then
-  echo "Release source $SOURCE_SHA is not on protected main history (compare status: $status, ahead_by: $ahead_by)." >&2
-  exit 1
+main_sha="$(gh api "repos/$REPO/commits/main" --jq '.sha')"
+test -n "$main_sha"
+if [ "$SOURCE_SHA" != "$main_sha" ]; then
+  compare_status="$(gh api "repos/$REPO/compare/$SOURCE_SHA...$main_sha" --jq '.status')"
+  case "$compare_status" in
+    ahead|identical) ;;
+    *) echo "Release source $SOURCE_SHA is not protected-main ancestry of current main $main_sha (status=$compare_status)." >&2; exit 1 ;;
+  esac
 fi
-if [ "$ahead_by" != 0 ]; then
-  echo "Release source $SOURCE_SHA contains commits not present on main (ahead_by=$ahead_by)." >&2
-  exit 1
-fi
-
-checks_json="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/check-runs?per_page=100")"
-for required in "${required_checks[@]}"; do
-  conclusion="$(printf '%s' "$checks_json" | jq -r --arg required "$required" '[.[].check_runs[] | select(.name == $required and .status == "completed")] | sort_by(.completed_at) | last | .conclusion // "missing"')"
-  if [ "$conclusion" != success ]; then
-    echo "Required release gate '$required' is '$conclusion' for $SOURCE_SHA." >&2
-    exit 1
-  fi
-  echo "Release gate '$required' is green for $SOURCE_SHA."
-done
 
 {
-  echo '## Canonical release source gate'
-  echo
-  echo "- Source: \`$SOURCE_SHA\`"
-  echo "- Target: \`$RELEASE_TARGET\`"
-  echo "- Tier: \`$RELEASE_TIER\`"
-  echo '- Protected main ancestry: verified'
-  for required in "${required_checks[@]}"; do
-    echo "- $required: success"
-  done
+  echo '## Release source gate'
+  echo "- source: \`$SOURCE_SHA\`"
+  echo "- current main: \`$main_sha\`"
+  echo "- target: \`$RELEASE_TARGET\`"
+  echo "- tier: \`$RELEASE_TIER\`"
 } >> "$GITHUB_STEP_SUMMARY"
+
+if [ "$RELEASE_TIER" = test ]; then
+  {
+    echo '- behavioral tests required: `none`'
+    echo '- automatic E2E required: `none`'
+    echo '- policy: FCM-023/024 test publication intentionally performs no product tests.'
+  } >> "$GITHUB_STEP_SUMMARY"
+  exit 0
+fi
+
+: "${FABUSHI_FORMAL_MCP_RUN_IDS:?Formal release requires comma-separated FABUSHI_FORMAL_MCP_RUN_IDS from manually dispatched exact-candidate App-owned MCP runner validations}"
+
+expected=()
+case "$RELEASE_TARGET" in
+  macos) expected+=(.github/workflows/macos-mcp-runner.yml) ;;
+  windows) expected+=(.github/workflows/windows-mcp-runner.yml) ;;
+  linux) expected+=(.github/workflows/interactive-runner-mcp.yml) ;;
+  android) expected+=(.github/workflows/android-mcp-runner.yml) ;;
+  ios) expected+=(.github/workflows/ios-mcp-runner.yml) ;;
+  desktop) expected+=(.github/workflows/macos-mcp-runner.yml .github/workflows/windows-mcp-runner.yml .github/workflows/interactive-runner-mcp.yml) ;;
+  both|all) expected+=(.github/workflows/macos-mcp-runner.yml .github/workflows/windows-mcp-runner.yml .github/workflows/interactive-runner-mcp.yml .github/workflows/android-mcp-runner.yml .github/workflows/ios-mcp-runner.yml) ;;
+  *) echo "Unsupported RELEASE_TARGET=$RELEASE_TARGET" >&2; exit 2 ;;
+esac
+
+declare -A passed=()
+IFS=',' read -r -a run_ids <<< "$FABUSHI_FORMAL_MCP_RUN_IDS"
+for raw in "${run_ids[@]}"; do
+  run_id="${raw//[[:space:]]/}"
+  test -n "$run_id" || continue
+  run="$(gh api "repos/$REPO/actions/runs/$run_id")"
+  event="$(jq -r '.event // empty' <<<"$run")"
+  head_sha="$(jq -r '.head_sha // empty' <<<"$run")"
+  conclusion="$(jq -r '.conclusion // empty' <<<"$run")"
+  path="$(jq -r '.path // empty' <<<"$run")"
+  test "$event" = workflow_dispatch || { echo "Formal MCP run $run_id was not manually dispatched (event=$event)." >&2; exit 1; }
+  test "$head_sha" = "$SOURCE_SHA" || { echo "Formal MCP run $run_id head $head_sha != source $SOURCE_SHA." >&2; exit 1; }
+  test "$conclusion" = success || { echo "Formal MCP run $run_id conclusion=$conclusion." >&2; exit 1; }
+  case "$path" in
+    .github/workflows/macos-mcp-runner.yml|.github/workflows/windows-mcp-runner.yml|.github/workflows/interactive-runner-mcp.yml|.github/workflows/android-mcp-runner.yml|.github/workflows/ios-mcp-runner.yml) ;;
+    *) echo "Formal run $run_id came from non-authoritative workflow $path." >&2; exit 1 ;;
+  esac
+  passed["$path"]="$run_id"
+  echo "- MCP validation run: \`$run_id\` path=\`$path\` exact-source/manual/success" >> "$GITHUB_STEP_SUMMARY"
+done
+
+for path in "${expected[@]}"; do
+  if [ -z "${passed[$path]:-}" ]; then
+    echo "Formal release requires successful exact-source official-MCP completion from $path" >&2
+    exit 1
+  fi
+done
+
+echo '- formal behavioral gate: passed only through manually dispatched App-owned runner sessions finished by the external Fabushi official MCP.' >> "$GITHUB_STEP_SUMMARY"

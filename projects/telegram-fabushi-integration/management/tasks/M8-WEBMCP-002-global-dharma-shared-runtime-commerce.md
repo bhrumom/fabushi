@@ -79,3 +79,12 @@ Close the Web/server authority boundary for the official `global-dharma` Mini Ap
 - Merge queue run `34049934041` / job `101531586697` accepted `c82b29cd6404c2f19b93d8479b2e2cae45469249`. Later Android #2451/#2452 advanced canonical main to `380b6ed5a96a5b6d1295267e07d9c8dc45fa84ab` without overlapping Web/service logic.
 - Desktop consumer PR #2448 has green real-Rust-Host pre-package evidence at `1655ea8070e07ad7dd8ab8e9347fbcb43f6ddf8f`: run `34051925481`, artifact `9994834346`, 12 screenshots, trace and Global Dharma user-journey video. It covers search/install -> Bot natural language -> shared revision -> CNY1080 test purchase -> restore -> entitled local prayer wheel -> restart -> logout cleanup.
 - This does not yet substitute for post-merge installable Electron package evidence. Android 1.2.52 interactive `34051316405` is a real failed timeout with artifact `9994884584`; mobile terminal proof remains blocked.
+
+## 2026-09-08 — desktop current-main packaged closure
+
+- The historical desktop blocker above is resolved. #2448 protected-merged as `d7c8b45c3a7409d14d11bbf49107ff320b05ad84`; later #2476/#2481 lock exact `小程序` discovery/install evidence, and #2486 (`f4364d9b79449d2c55deeeca18204ff93ef1ed3e`) repairs current production WebMCP natural-language routing and the graphical Global Dharma UI.
+- Current accepted source readback is `main@77f72b13304b75a45530de03fb807f52c3624be1`.
+- Exact current-main Electron run `34115411357` is SUCCESS across Linux `101720936725`, macOS `101720937161`, Windows `101720937232`, aggregate `101724595866`.
+- Current-main macOS diagnostics artifact `10016406321` (`sha256:1c60a3d9725d08ec65044c94fd1c31d128663bba9b0b52819f24d99f8d49ea97`) contains literal `小程序` entry screenshots/video, the 12 full Global Dharma parity checkpoints, `global-dharma-user-journey.webm`, restart/logout WebM, traces and Playwright report.
+- The accepted packaged desktop evidence proves the requested Bot/Web UI convergence and CNY1080 test entitlement chain against the current code that includes #2486. Therefore the desktop delivery part of acceptance F is closed.
+- This task remains `IN_PROGRESS` only for the broader non-desktop obligations: native-mobile terminal acceptance and real production PSP/KYC/provider activation/deployment. Those must remain fail-closed and must not be inferred from CI test-provider evidence.

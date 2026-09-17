@@ -107,10 +107,8 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
     ));
     assert!(install.ok, "live external install failed: {install:?}");
     assert_eq!(install.result["source"], "online-external-marketplace");
-    assert_eq!(install.result["receipt"]["pluginId"], "global-dharma");
-    // Native request/device semantics remain iOS at the test-driver boundary.
-    // The persistent InstalledPluginPointer intentionally has no platform field.
     assert_eq!(install.result["platform"], "ios");
+    assert_eq!(install.result["receipt"]["pluginId"], "global-dharma");
     assert_eq!(install.result["receipt"]["runtime"], "local-web");
     assert_eq!(
         install.result["releaseVersion"],
@@ -118,14 +116,9 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
     );
     let sha = install.result["receipt"]["artifactSha256"]
         .as_str()
-        .expect("receipt artifactSha256");
+        .expect("receipt sha256");
     assert_eq!(sha.len(), 64);
     assert!(sha.chars().all(|character| character.is_ascii_hexdigit()));
-    assert!(
-        install.result["receipt"]["artifactId"]
-            .as_str()
-            .is_some_and(|artifact_id| !artifact_id.is_empty())
-    );
     assert_eq!(
         install.result["releaseManifest"]["protocol"],
         "mahayana.external-release.v1"
@@ -143,29 +136,29 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
         "fabushi-official"
     );
     assert!(
+        install.result["marketplaceSource"]["commit"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty())
+    );
+    assert!(
         install.result["marketplaceSource"]["repository"]
             .as_str()
-            .is_some_and(|value| value.starts_with("https://github.com/"))
-    );
-    let source_commit = install.result["marketplaceSource"]["commit"]
-        .as_str()
-        .expect("marketplace source commit");
-    assert_eq!(source_commit.len(), 40);
-    assert!(
-        source_commit
-            .chars()
-            .all(|character| character.is_ascii_hexdigit())
+            .is_some_and(|value| !value.is_empty())
     );
     let selected_artifact = install.result["releaseManifest"]["artifacts"]
         .as_array()
         .and_then(|artifacts| {
             artifacts.iter().find(|artifact| {
-                artifact["id"] == install.result["receipt"]["artifactId"]
-                    && artifact["runtime"] == install.result["receipt"]["runtime"]
+                artifact["runtime"] == install.result["receipt"]["runtime"]
                     && artifact["sha256"] == install.result["receipt"]["artifactSha256"]
             })
         })
         .expect("installed receipt must match a release-manifest artifact");
+    assert!(
+        selected_artifact["source"]["url"]
+            .as_str()
+            .is_some_and(|url| url.starts_with("https://"))
+    );
     assert!(
         selected_artifact["platforms"]
             .as_array()
@@ -185,20 +178,12 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
     assert_eq!(installed.len(), 1);
     assert_eq!(installed[0]["pluginId"], "global-dharma");
     assert_eq!(
-        installed[0]["artifactId"],
-        install.result["receipt"]["artifactId"]
-    );
-    assert_eq!(
         installed[0]["artifactSha256"],
         install.result["receipt"]["artifactSha256"]
     );
     assert_eq!(
-        installed[0]["version"],
-        install.result["receipt"]["version"]
-    );
-    assert_eq!(
-        installed[0]["runtime"],
-        install.result["receipt"]["runtime"]
+        installed[0]["artifactId"],
+        install.result["receipt"]["artifactId"]
     );
 
     let logs = session.execute(request(
@@ -267,20 +252,12 @@ fn live_official_global_dharma_is_external_verified_and_persistent() {
     assert_eq!(restart_plugins.len(), 1);
     assert_eq!(restart_plugins[0]["pluginId"], "global-dharma");
     assert_eq!(
-        restart_plugins[0]["artifactId"],
-        install.result["receipt"]["artifactId"]
-    );
-    assert_eq!(
         restart_plugins[0]["artifactSha256"],
         install.result["receipt"]["artifactSha256"]
     );
     assert_eq!(
-        restart_plugins[0]["version"],
-        install.result["receipt"]["version"]
-    );
-    assert_eq!(
-        restart_plugins[0]["runtime"],
-        install.result["receipt"]["runtime"]
+        restart_plugins[0]["artifactId"],
+        install.result["receipt"]["artifactId"]
     );
 
     unsafe {

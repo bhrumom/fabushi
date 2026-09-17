@@ -5,7 +5,7 @@
   "homepage": "https://fabushi.ombhrum.com/miniapps/",
   "publicCatalog": "https://fabushi.ombhrum.com/.well-known/mahayana/marketplace.json",
   "interface": {
-    "displayName": "\u5927\u4e58\u5b98\u65b9\u63d2\u4ef6"
+    "displayName": "大乘官方插件"
   },
   "plugins": [
     {
@@ -62,7 +62,7 @@
     },
     {
       "name": "bot-father",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "source": {
         "source": "local",
         "path": "./plugins/bot-father"

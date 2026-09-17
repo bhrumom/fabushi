@@ -171,11 +171,34 @@ test "$(cat "$control_status")" = registered
 
 # Self-drive the same-account App-owned Android device over the production MCP
 # boundary. The ChatGPT/fabushi-test plugin remains an optional observer, never
-# a test precondition.
+# a test precondition. Retry only the known transient dynamic-registration 5xx
+# boundary; protocol/4xx errors and any failure after registration fail closed.
 export EXPECTED_DEVICE_ID="$DEVICE_ID"
 echo ci-self-driving > "$control_status"
-node chatgpt-vps-control/scripts/android-global-dharma-public-mcp-e2e.mjs \
-  2>&1 | tee "$EVIDENCE_DIR/ci-public-mcp-driver.log"
+: > "$EVIDENCE_DIR/ci-public-mcp-driver.log"
+driver_attempt=1
+driver_max_attempts=4
+while true; do
+  driver_attempt_log="$EVIDENCE_DIR/ci-public-mcp-driver-attempt-${driver_attempt}.log"
+  set +e
+  node chatgpt-vps-control/scripts/android-global-dharma-public-mcp-e2e.mjs \
+    2>&1 | tee "$driver_attempt_log"
+  driver_status=${PIPESTATUS[0]}
+  set -e
+  cat "$driver_attempt_log" >> "$EVIDENCE_DIR/ci-public-mcp-driver.log"
+  if [ "$driver_status" -eq 0 ]; then
+    break
+  fi
+  if [ "$driver_attempt" -ge "$driver_max_attempts" ] || ! grep -Eq 'dynamic client registration failed: HTTP 5[0-9][0-9]' "$driver_attempt_log"; then
+    exit "$driver_status"
+  fi
+  retry_delay=$((driver_attempt * 5))
+  printf 'Transient MCP dynamic registration 5xx on attempt %d/%d; retrying in %ds.\n' \
+    "$driver_attempt" "$driver_max_attempts" "$retry_delay" \
+    | tee -a "$EVIDENCE_DIR/ci-public-mcp-driver.log"
+  sleep "$retry_delay"
+  driver_attempt=$((driver_attempt + 1))
+done
 echo ci-driver-completed > "$control_status"
 
 required=(fabushi.app.status fabushi.app.snapshot fabushi.app.find fabushi.app.action fabushi.app.wait fabushi.app.assert)

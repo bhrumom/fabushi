@@ -30,6 +30,7 @@ struct MobileChatMessage: Identifiable, Equatable {
     var actionTitle: String?
     var actionDetail: String?
     var actionStatus: String?
+    var streaming = false
     var createdAt = Date()
 }
 
@@ -44,7 +45,25 @@ struct MarketplacePlugin: Identifiable, Equatable, Sendable {
     let displayName: String
     let description: String
     let latestVersion: String?
+    let sourceRef: String?
     let tools: [MiniAppToolContract]
+
+    init(
+        pluginId: String,
+        displayName: String,
+        description: String,
+        latestVersion: String?,
+        sourceRef: String? = nil,
+        tools: [MiniAppToolContract]
+    ) {
+        self.pluginId = pluginId
+        self.displayName = displayName
+        self.description = description
+        self.latestVersion = latestVersion
+        self.sourceRef = sourceRef
+        self.tools = tools
+    }
+
     var id: String { pluginId }
 }
 
@@ -592,17 +611,22 @@ final class MarketplaceModel {
             )
             let object = result.value as? [String: Any]
             let rows = object?["plugins"] as? [[String: Any]] ?? []
-            plugins = rows.compactMap { item in
+            plugins = rows.compactMap { (item: [String: Any]) -> MarketplacePlugin? in
                 guard let id = item["pluginId"] as? String, !id.isEmpty else { return nil }
                 let source = item["source"] as? [String: Any]
                 let commands = source?["commands"] as? [[String: Any]]
                     ?? item["commands"] as? [[String: Any]]
                     ?? []
+                let install = item["install"] as? [String: Any]
+                    ?? (item["releaseManifest"] as? [String: Any])?["install"] as? [String: Any]
+                let installSource = install?["source"] as? [String: Any]
+                let sourceRef = (installSource?["sourceRef"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                 return MarketplacePlugin(
                     pluginId: id,
                     displayName: item["displayName"] as? String ?? id,
                     description: item["description"] as? String ?? "无描述",
                     latestVersion: item["latestVersion"] as? String,
+                    sourceRef: sourceRef?.isEmpty == false ? sourceRef : nil,
                     tools: commands.compactMap(Self.toolContract(from:))
                 )
             }
@@ -627,6 +651,15 @@ final class MarketplaceModel {
             guard let release = (metadata.value as? [String: Any])?["releaseManifest"] as? [String: Any] else {
                 throw MahayanaHost.HostError.invalidResponse
             }
+            let install = (metadata.value as? [String: Any])?["install"] as? [String: Any]
+                ?? release["install"] as? [String: Any]
+            guard install?["protocol"] as? String == "fabushi.marketplace.install.v1",
+                  install?["strategy"] as? String == "github-immutable",
+                  let source = install?["source"] as? [String: Any],
+                  let sourceRef = source["sourceRef"] as? String,
+                  !sourceRef.isEmpty,
+                  source["marketplaceHostsPackage"] as? Bool != true
+            else { throw MahayanaHost.HostError.invalidResponse }
             let installed = try await host.request(
                 method: "feature.plugin.install",
                 params: ["release": release, "platform": "ios"]

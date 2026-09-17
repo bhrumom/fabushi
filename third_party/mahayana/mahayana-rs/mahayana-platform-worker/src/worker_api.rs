@@ -582,11 +582,19 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
             developer_commerce_proxy,
         )
         .post_async(
+            "/v1/developer/commerce/miniapps/:mini_app_id/products/batch",
+            developer_commerce_proxy,
+        )
+        .post_async(
             "/v1/developer/commerce/miniapps/:mini_app_id/products/:product_id",
             developer_commerce_proxy,
         )
         .post_async(
             "/v1/developer/commerce/miniapps/:mini_app_id/products/:product_id/google/sync",
+            developer_commerce_proxy,
+        )
+        .post_async(
+            "/v1/developer/commerce/miniapps/:mini_app_id/google/sync",
             developer_commerce_proxy,
         )
         .post_async(
@@ -883,7 +891,7 @@ fn validate_external_release_manifest(
         for platform in artifact_platforms.iter().filter_map(Value::as_str) {
             if !matches!(
                 platform,
-                "cli" | "desktop" | "mobile" | "web" | "ios" | "android"
+                "cli" | "desktop" | "mobile" | "web" | "ios" | "android" | "chrome-extension"
             ) {
                 return Err(format!("unsupported external artifact platform {platform}"));
             }

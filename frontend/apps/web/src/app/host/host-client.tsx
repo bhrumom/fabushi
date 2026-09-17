@@ -80,6 +80,7 @@ import type {
 import {
   invokeNativeDesktop,
   markNativeDeepLinksReady,
+  nativeDesktopBridge,
   nativeOnboardingSeen,
   rememberNativeOnboarding,
   subscribeNativeDesktopEvents,
@@ -108,6 +109,14 @@ import {
   type BotMarkState,
 } from "./bot-mark";
 import { marketplaceApps as marketplaceCatalog } from "../../lib/marketplace";
+import {
+  installMarketplaceApp,
+  marketplaceAppInstallAction,
+  marketplaceInstallActionLabel,
+  readMarketplaceInstallRecords,
+  subscribeMarketplaceInstallState,
+  type MarketplaceInstallRecord,
+} from "../../lib/marketplace-install-state";
 import { GroupAvatarStack, GroupChatPanel, GroupEditor } from "./group-chat-panel";
 import { AgentWorkflowPanel } from "./agent-workflow-panel";
 
@@ -427,9 +436,22 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
   const [hostStatus, setHostStatus] = useState("initializing");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<HostTranscriptEntry[]>([]);
-  const [installedMiniApps, setInstalledMiniApps] = useState<Set<string>>(
-    () => new Set(screenshotHasMiniApp ? [defaultMiniAppId] : []),
+  const [installedMiniAppRecords, setInstalledMiniAppRecords] = useState<Record<string, MarketplaceInstallRecord>>(
+    () => readMarketplaceInstallRecords(),
   );
+  const [installedMiniApps, setInstalledMiniApps] = useState<Set<string>>(
+    () => new Set([
+      ...Object.keys(readMarketplaceInstallRecords()),
+      ...(screenshotHasMiniApp ? [defaultMiniAppId] : []),
+    ]),
+  );
+  useEffect(() => subscribeMarketplaceInstallState((records) => {
+    setInstalledMiniAppRecords(records);
+    setInstalledMiniApps(new Set([
+      ...Object.keys(records),
+      ...(screenshotHasMiniApp ? [defaultMiniAppId] : []),
+    ]));
+  }), [screenshotHasMiniApp]);
   const [openedMiniApp, setOpenedMiniApp] = useState<string | null>(
     screenshotHasMiniApp ? defaultMiniAppId : null,
   );
@@ -1694,13 +1716,13 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
           }));
           break;
         case "marketplace.installed":
+          {
+            const record = installMarketplaceApp(event.miniAppId, "github-metadata");
+            if (record) setInstalledMiniAppRecords(readMarketplaceInstallRecords());
+          }
           setInstalledMiniApps((current) => {
             const next = new Set(current);
             next.add(event.miniAppId);
-            window.localStorage.setItem(
-              "fabushi.installed-miniapps",
-              JSON.stringify([...next]),
-            );
             return next;
           });
           setBusyMiniApp(null);
@@ -1884,23 +1906,26 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
             requestId: "update-status-initial",
           }),
         ]);
-        const stored = JSON.parse(
-          window.localStorage.getItem("fabushi.installed-miniapps") ?? "[]",
-        ) as unknown;
-        if (Array.isArray(stored)) {
-          for (const miniAppId of stored.filter(
-            (value): value is string => typeof value === "string",
-          )) {
-            try {
-              await transport.execute({
-                type: "marketplace.install",
-                requestId: `restore-${miniAppId}`,
-                miniAppId,
-              });
-            } catch {
-              // A removed or unavailable plugin should not prevent the Host
-              // from starting; its stale local entry is replaced by events.
+        const stored = readMarketplaceInstallRecords();
+        setInstalledMiniAppRecords(stored);
+        setInstalledMiniApps(new Set([
+          ...Object.keys(stored),
+          ...(screenshotHasMiniApp ? [defaultMiniAppId] : []),
+        ]));
+        // Rehydrate the native Host from the same immutable release metadata
+        // recorded by the Marketplace. Browser-only WASM keeps the metadata
+        // record but cannot execute a package without a native Host.
+        for (const record of Object.values(stored)) {
+          if (!record.version || record.version === "0.0.0") continue;
+          try {
+            const release = await transport.marketplaceRelease(record.id, record.version);
+            const releaseManifest = release.releaseManifest;
+            if (Array.isArray(releaseManifest?.artifacts) && releaseManifest.artifacts.length > 0) {
+              await transport.pluginInstall(releaseManifest, "desktop");
             }
+          } catch {
+            // A removed or unavailable release should not prevent the Host
+            // from starting; the Marketplace state remains visible for repair.
           }
         }
       })
@@ -2323,14 +2348,58 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
   ]);
 
   const installMiniApp = (miniAppId: string) => {
+    const app = marketplaceApps.find((candidate) => candidate.id === miniAppId);
+    if (!app) return;
+    const installed = installedMiniAppRecords[miniAppId];
+    const action = installed
+      ? marketplaceAppInstallAction(miniAppId, installed)
+      : installedMiniApps.has(miniAppId)
+        ? "current"
+        : marketplaceAppInstallAction(miniAppId);
+    if (action === "blocked") {
+      setError(`${app.title} 的本地版本高于市场版本，已阻止静默降级。`);
+      return;
+    }
+    if (action === "unavailable") {
+      setError(`${app.title} 尚未发布可验证的 GitHub 版本。`);
+      return;
+    }
+    if (action === "current") return;
     setBusyMiniApp(miniAppId);
-    void run(() =>
-      execute({
-        type: "marketplace.install",
-        requestId: nextRequestId("install"),
-        miniAppId,
-      }),
-    );
+    void run(async () => {
+      const release = await transport.marketplaceRelease(miniAppId, app.version);
+      const releaseManifest = release.releaseManifest;
+      const installContract = release.install
+        ?? (releaseManifest?.install as Record<string, unknown> | undefined);
+      const installSource = installContract?.source as Record<string, unknown> | undefined;
+      if (releaseManifest?.protocol !== "mahayana.external-release.v1"
+        || installContract?.protocol !== "fabushi.marketplace.install.v1"
+        || installContract.strategy !== "github-immutable"
+        || installSource?.marketplaceHostsPackage === true
+        || typeof installSource?.repository !== "string"
+        || typeof installSource?.sourceRef !== "string"
+        || !installSource.sourceRef.trim()) {
+        throw new Error("市场版本没有提供可验证的 GitHub 安装合同。");
+      }
+      await transport.pluginInstall(releaseManifest, "desktop");
+      const nativeBridge = nativeDesktopBridge();
+      if (nativeBridge) {
+        try {
+          await nativeBridge.invoke("addMiniAppToAccount", { pluginId: miniAppId });
+        } catch (cause) {
+          await transport.pluginUninstall(miniAppId).catch(() => undefined);
+          throw cause;
+        }
+      }
+      const record = installMarketplaceApp(miniAppId, "github-sha256");
+      if (!record) throw new Error("市场没有可记录的 GitHub 版本。");
+      setInstalledMiniAppRecords(readMarketplaceInstallRecords());
+      setInstalledMiniApps((current) => new Set(current).add(miniAppId));
+      setFeatureStates((current) => ({
+        ...current,
+        "marketplace.install": "passed",
+      }));
+    }).finally(() => setBusyMiniApp(null));
   };
 
   const openMiniApp = (miniAppId: string) => {
@@ -4212,6 +4281,12 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
               <div className={styles.marketList}>
               {visibleMarketplaceApps.map((app) => {
                 const installed = installedMiniApps.has(app.id);
+                const installRecord = installedMiniAppRecords[app.id];
+                const action = installRecord
+                  ? marketplaceAppInstallAction(app.id, installRecord)
+                  : installed
+                    ? "current"
+                    : marketplaceAppInstallAction(app.id);
                 const busy = busyMiniApp === app.id;
                 return (
                   <article key={app.id} className={styles.marketRow}>
@@ -4232,10 +4307,10 @@ export default function HostClient({ onAuthStateChange }: HostClientProps) {
                     <button
                       data-testid={app.id === defaultMiniAppId ? "install-miniapp" : `install-${app.id}`}
                       type="button"
-                      disabled={installed || busy}
+                      disabled={busy || action === "current" || action === "blocked" || action === "unavailable"}
                       onClick={() => installMiniApp(app.id)}
                     >
-                      {busy ? "安装中…" : installed ? "已安装" : "安装"}
+                      {busy ? "处理中…" : marketplaceInstallActionLabel(action)}
                     </button>
                     <button
                       data-testid={app.id === defaultMiniAppId ? "open-miniapp" : `open-${app.id}`}

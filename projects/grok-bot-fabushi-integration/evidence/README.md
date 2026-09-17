@@ -11,3 +11,4 @@
 - `GBF-105/`: provenance ledger plus the 148-entry historical Grok Bot 0.20 vendor snapshot, marked reference-only/`PROVENANCE_BLOCKED`.
 - `M1-validation.json`: deterministic lightweight audit assertions.
 - `GBF-106/`: pinned `bhrum/grok-bot-0.18-reconstructed` commit/tree, 2,111-row path/domain/provenance manifest, and no-copy validation summary.
+- `GBF-806/`: ChatGPT.dmg Bot 单会话体验 clean-room 融合索引；CI、三端 E2E、视觉和 Release 构件待补。

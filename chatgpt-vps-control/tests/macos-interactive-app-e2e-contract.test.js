@@ -7,6 +7,8 @@ const loginPath = new URL('../scripts/login-ci-test-account.mjs', import.meta.ur
 const exportPath = new URL('../scripts/export-ci-app-account-session.mjs', import.meta.url);
 const renewPath = new URL('../scripts/renew-ci-app-account-session.mjs', import.meta.url);
 const sessionStorePath = new URL('../lib/fabushi-account-session.js', import.meta.url);
+const recorderPath = new URL('../scripts/fcm-010-13-macos-session-recorder.sh', import.meta.url);
+const recorderVideoPath = new URL('../scripts/fcm-010-13-macos-session-video.swift', import.meta.url);
 
 async function workflow() {
   return readFile(workflowPath, 'utf8');
@@ -46,6 +48,21 @@ test('macOS interactive E2E keeps the installed app as the only device-registrat
   assert.doesNotMatch(source, /node\s+[^\n]*fabushi-device-agent\.js/u);
   assert.doesNotMatch(source, /uses:\s*[^\n]*interactive-runner/iu);
   assert.doesNotMatch(source, /run:\s*[^\n]*(?:KRIS|interactive-runner)/iu);
+});
+
+test('Action-owned semantic smoke runs after App registration and before the external full journey', async () => {
+  const source = await workflow();
+  const launch = source.indexOf('Launch installed Fabushi app and wait for App-owned registration');
+  const smoke = source.indexOf('Run Action-owned packaged App Agent semantic smoke');
+  const hold = source.indexOf('Hold for @fabushi test complete macOS journey');
+  assert.ok(launch >= 0 && smoke > launch && hold > smoke);
+  assert.match(source, /run-app-agent-ci-smoke\.mjs/u);
+  assert.match(source, /action-owned-app-agent-smoke\.json/u);
+  assert.match(source, /fabushi\.app-agent-ci-smoke\.v1/u);
+  assert.match(source, /ACTION_SMOKE_OUTCOME/u);
+  assert.match(source, /test "\$ACTION_SMOKE_OUTCOME" = success/u);
+  assert.match(source, /index\("action"\)/u);
+  assert.match(source, /index\("assert"\)/u);
 });
 
 test('macOS release resolver waits for and accepts only the exact workflow source SHA', async () => {
@@ -98,13 +115,16 @@ test('macOS hold renews the private ordinary session while keeping the App proje
   assert.doesNotMatch(renewSource, /FABUSHI_CI_TEST_PASSWORD/u);
 });
 
-test('truthful pass requires READY note, ci_session_finish, and the exact settings logout action', async () => {
+test('truthful pass requires READY note, ci_session_finish, exact settings logout, and non-zero real remote App actions', async () => {
   const source = await workflow();
   assert.match(source, /finish_requested=true/u);
   assert.match(source, /ready_note.*finish_requested.*logout_complete/su);
   assert.match(source, /ci_session_note ci_session_finish; do/u);
   assert.match(source, /finish-requested\.json/u);
   assert.match(source, /agentId == "settings-logout"/u);
+  assert.match(source, /remote_action_count/u);
+  assert.match(source, /test "\$remote_action_count" -gt 0/u);
+  assert.match(source, /remoteActionCount/u);
 });
 
 test('whole-session recording is ordered before exact-main release resolution and installation', async () => {
@@ -113,6 +133,38 @@ test('whole-session recording is ordered before exact-main release resolution an
   const resolve = source.indexOf('Wait for exact-main published macOS test release');
   const install = source.indexOf('Install exact published macOS test app');
   assert.ok(record >= 0 && resolve > record && install > resolve);
+});
+
+test('whole-session recorder detects the GitHub-hosted paravirtual display, rejects PID-only success, and requires decoded playable MOV evidence', async () => {
+  const [source, recorderSource, videoSource] = await Promise.all([
+    workflow(),
+    readFile(recorderPath, 'utf8'),
+    readFile(recorderVideoPath, 'utf8'),
+  ]);
+  assert.match(source, /fcm-010-13-macos-session-recorder\.sh start/u);
+  assert.match(source, /fcm-010-13-macos-session-recorder\.sh assert-live/u);
+  assert.match(source, /fcm-010-13-macos-session-recorder\.sh stop/u);
+  assert.match(source, /fcm-010-13-macos-session-recorder\.sh verify/u);
+  assert.doesNotMatch(source, /screencapture -v -V 3300/u);
+  assert.match(source, /recorder-stop-exit\.txt/u);
+  assert.match(source, /recorderPlayable/u);
+  assert.match(recorderSource, /AppleM2ScalerParavirtDriver/u);
+  assert.match(recorderSource, /native_probe/u);
+  assert.match(recorderSource, /fallback_probe/u);
+  assert.match(recorderSource, /frame-avassetwriter/u);
+  assert.match(recorderSource, /first_sample=decoded/u);
+  assert.match(recorderSource, /fallbackRecorderPlayable/u);
+  assert.match(recorderSource, /recorder-preflight\.json/u);
+  assert.match(recorderSource, /macos-session\.mov/u);
+  assert.match(videoSource, /AVAssetWriter/u);
+  assert.match(videoSource, /AVAssetReader/u);
+  assert.match(videoSource, /copyNextSampleBuffer/u);
+  assert.match(videoSource, /duration_seconds=/u);
+});
+
+test('packaged secondary evidence includes the exact assistant semantic projection journey regression', async () => {
+  const source = await workflow();
+  assert.match(source, /e2e\/app-agent-surface\.spec\.ts e2e\/fcm-010-13-assistant-projection\.spec\.ts/u);
 });
 
 test('evidence upload allowlist excludes private account sessions and includes required classes', async () => {
@@ -128,7 +180,8 @@ test('evidence upload allowlist excludes private account sessions and includes r
   assert.doesNotMatch(upload, /FABUSHI_ACCOUNT_SESSION_FILE/u);
   assert.doesNotMatch(upload, /FABUSHI_CI_ACCOUNT_SESSION_FILE/u);
 
-  assert.match(source, /macos-session\.mov/u);
+  assert.match(source, /recorder-final\.json/u);
+  assert.match(source, /action-owned-app-agent-smoke\.json/u);
   const collection = stepBlock(
     source,
     'Collect macOS App, device-call, Playwright, and release evidence',
@@ -138,5 +191,6 @@ test('evidence upload allowlist excludes private account sessions and includes r
   assert.match(collection, /device-calls\.jsonl/u);
   assert.match(collection, /fabushi-system\.log/u);
   assert.match(collection, /releaseTag/u);
+  assert.match(collection, /actionSmokeStatus/u);
   assert.match(collection, /report\.json/u);
 });

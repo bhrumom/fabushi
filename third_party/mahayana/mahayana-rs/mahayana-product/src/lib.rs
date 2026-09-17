@@ -50,6 +50,9 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
 const DEFAULT_API_BASE_URL: &str = "https://api.ombhrum.com";
+const DEFAULT_PLATFORM_CONTROL_PLANE_API_BASE_URL: &str =
+    "https://mahayana-platform.bhrumom.workers.dev";
+const LEGACY_API_BACKEND_ONLY_RESPONSE: &str = "This Cloudflare Worker is an API backend only.";
 const MAHAYANA_ACCOUNT_SESSION_SECRET: &str = "MAHAYANA_ACCOUNT_SESSION";
 const MAHAYANA_TEST_ACCOUNT_TOKEN_ENV: &str = "MAHAYANA_TEST_ACCOUNT_TOKEN";
 const MAHAYANA_TEST_ACCOUNT_MARKER: &str = "test-account-login.sha256";
@@ -699,10 +702,25 @@ impl MahayanaProductClient {
         let session = self.required_session()?;
         let access_token = self.active_session_token(session)?;
         let current = self.required_session()?;
-        let session_id = optional_string(&current, "sessionId")
-            .ok_or_else(|| ProductError::Session("account session is missing sessionId".into()))?;
         let device_id = optional_string(&current, "deviceId")
+            .map(str::to_string)
+            .or_else(|| {
+                env::var("DEVICE_ID")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| {
+                        !value.is_empty()
+                            && value.len() <= 128
+                            && value.chars().all(|character| {
+                                character.is_ascii_alphanumeric()
+                                    || matches!(character, '.' | '_' | ':' | '-')
+                            })
+                    })
+            })
             .ok_or_else(|| ProductError::Session("account session is missing deviceId".into()))?;
+        let session_id = optional_string(&current, "sessionId")
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("local-device:{device_id}"));
         let user = current.get("user").cloned().unwrap_or(Value::Null);
         let user_id = current
             .get("userId")
@@ -767,7 +785,14 @@ impl MahayanaProductClient {
         platform: Option<&str>,
     ) -> Result<Value, ProductError> {
         let query = query.map(str::trim).filter(|query| !query.is_empty());
-        let platform = platform.map(safe_marketplace_platform).transpose()?;
+        // The public API uses `mobile` as the canonical platform value. Keep
+        // accepting the native-facing aliases here, but normalize them before
+        // sending the request so clients can work with older deployed Workers
+        // during a rolling deployment.
+        let platform = platform
+            .map(safe_marketplace_platform)
+            .transpose()?
+            .map(canonical_marketplace_platform);
         let mut parameters = Vec::new();
         if let Some(query) = query {
             parameters.push(("q", query));
@@ -991,7 +1016,7 @@ impl MahayanaProductClient {
             .map(|platform| {
                 if matches!(
                     platform.as_str(),
-                    "cli" | "desktop" | "mobile" | "web" | "ios" | "android"
+                    "cli" | "desktop" | "mobile" | "web" | "ios" | "android" | "chrome-extension"
                 ) {
                     Ok(platform.clone())
                 } else {
@@ -2234,45 +2259,70 @@ impl MahayanaProductClient {
             return Err(ProductError::InvalidParameter("method"));
         }
         let path = safe_platform_path(required_string(request, "path")?)?;
-        let mut url = url::Url::parse(&format!("{}{}", self.api_base_url, path))
-            .map_err(|error| ProductError::Configuration(error.to_string()))?;
-        if let Some(query) = request.get("query").and_then(Value::as_object) {
-            let mut pairs = url.query_pairs_mut();
-            for (name, value) in query {
-                let value = value
-                    .as_str()
-                    .ok_or(ProductError::InvalidParameter("query"))?;
-                pairs.append_pair(name, value);
-            }
-        }
         let method = reqwest::Method::from_bytes(method.as_bytes())
             .map_err(|_| ProductError::InvalidParameter("method"))?;
-        let client = http_client()?;
-        let mut builder = client
-            .request(method, url)
-            .header("Accept", "application/json");
-        if request
+        let authenticated = request
             .get("authenticated")
             .and_then(Value::as_bool)
-            .unwrap_or(true)
-        {
-            builder = builder.bearer_auth(self.authorization_token(&Value::Null)?);
+            .unwrap_or(true);
+        let token = authenticated
+            .then(|| self.authorization_token(&Value::Null))
+            .transpose()?;
+        let body = request.get("body").filter(|body| !body.is_null());
+        let query = request.get("query").and_then(Value::as_object);
+        let client = http_client()?;
+
+        let send = |base_url: &str| -> Result<(u16, Option<String>, String), ProductError> {
+            let mut url = url::Url::parse(&format!("{}{}", base_url.trim_end_matches('/'), path))
+                .map_err(|error| ProductError::Configuration(error.to_string()))?;
+            if let Some(query) = query {
+                let mut pairs = url.query_pairs_mut();
+                for (name, value) in query {
+                    let value = value
+                        .as_str()
+                        .ok_or(ProductError::InvalidParameter("query"))?;
+                    pairs.append_pair(name, value);
+                }
+            }
+            let mut builder = client
+                .request(method.clone(), url)
+                .header("Accept", "application/json");
+            if let Some(token) = token.as_deref() {
+                builder = builder.bearer_auth(token);
+            }
+            if let Some(body) = body {
+                builder = builder.json(body);
+            }
+            let response = builder
+                .send()
+                .map_err(|error| ProductError::Transport(error.to_string()))?;
+            let status_code = response.status().as_u16();
+            let content_type = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
+            let raw_body_text = response
+                .text()
+                .map_err(|error| ProductError::Transport(error.to_string()))?;
+            Ok((status_code, content_type, raw_body_text))
+        };
+
+        let (mut status_code, mut content_type, mut raw_body_text) = send(&self.api_base_url)?;
+        if let Some(fallback_base) = platform_control_plane_fallback_base(
+            &self.api_base_url,
+            path,
+            status_code,
+            &raw_body_text,
+        ) {
+            // The legacy public Worker never handled this /v1 request, so a
+            // retry cannot duplicate a completed mutation. Reuse the same
+            // Rust-owned bearer token and send the request to the canonical
+            // control-plane Worker instead of surfacing the legacy HTML/text
+            // fallback to the desktop renderer.
+            (status_code, content_type, raw_body_text) = send(fallback_base)?;
         }
-        if let Some(body) = request.get("body").filter(|body| !body.is_null()) {
-            builder = builder.json(body);
-        }
-        let response = builder
-            .send()
-            .map_err(|error| ProductError::Transport(error.to_string()))?;
-        let status_code = response.status().as_u16();
-        let content_type = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        let raw_body_text = response
-            .text()
-            .map_err(|error| ProductError::Transport(error.to_string()))?;
+
         let decoded = serde_json::from_str::<Value>(&raw_body_text)
             .unwrap_or_else(|_| Value::String(raw_body_text.clone()));
         let data = redact_secrets(&decoded);
@@ -2750,7 +2800,15 @@ fn safe_marketplace_platform(value: &str) -> Result<&str, ProductError> {
         "web" => Ok("web"),
         "ios" => Ok("ios"),
         "android" => Ok("android"),
+        "chrome-extension" => Ok("chrome-extension"),
         _ => Err(ProductError::InvalidParameter("platform")),
+    }
+}
+
+fn canonical_marketplace_platform(value: &str) -> &str {
+    match value {
+        "ios" | "android" => "mobile",
+        value => value,
     }
 }
 
@@ -3144,6 +3202,19 @@ fn safe_path_identifier<'a>(value: &'a str, name: &'static str) -> Result<&'a st
         .ok_or(ProductError::InvalidParameter(name))
 }
 
+fn platform_control_plane_fallback_base(
+    api_base_url: &str,
+    path: &str,
+    status_code: u16,
+    raw_body_text: &str,
+) -> Option<&'static str> {
+    let production_public_origin = api_base_url.trim_end_matches('/') == DEFAULT_API_BASE_URL;
+    let legacy_unhandled_response = !(200..300).contains(&status_code)
+        && raw_body_text.trim() == LEGACY_API_BACKEND_ONLY_RESPONSE;
+    (production_public_origin && path.starts_with("/v1/") && legacy_unhandled_response)
+        .then_some(DEFAULT_PLATFORM_CONTROL_PLANE_API_BASE_URL)
+}
+
 fn safe_platform_path(value: &str) -> Result<&str, ProductError> {
     let value = non_empty(value, "path")?;
     let allowed_prefix = value.starts_with("/api/") || value.starts_with("/v1/");
@@ -3363,6 +3434,46 @@ mod tests {
     }
 
     #[test]
+    fn platform_v1_legacy_worker_response_retries_only_the_canonical_control_plane() {
+        assert_eq!(
+            platform_control_plane_fallback_base(
+                DEFAULT_API_BASE_URL,
+                "/v1/marketplace/plugins/global-dharma/route",
+                404,
+                LEGACY_API_BACKEND_ONLY_RESPONSE,
+            ),
+            Some(DEFAULT_PLATFORM_CONTROL_PLANE_API_BASE_URL)
+        );
+        assert_eq!(
+            platform_control_plane_fallback_base(
+                DEFAULT_API_BASE_URL,
+                "/api/auth/user-info",
+                404,
+                LEGACY_API_BACKEND_ONLY_RESPONSE,
+            ),
+            None
+        );
+        assert_eq!(
+            platform_control_plane_fallback_base(
+                "http://127.0.0.1:12345",
+                "/v1/marketplace/added",
+                404,
+                LEGACY_API_BACKEND_ONLY_RESPONSE,
+            ),
+            None
+        );
+        assert_eq!(
+            platform_control_plane_fallback_base(
+                DEFAULT_API_BASE_URL,
+                "/v1/marketplace/added",
+                404,
+                "different error",
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn marketplace_browse_is_public_and_omits_authorization() {
         use std::io::{Read, Write};
         use std::net::TcpListener;
@@ -3492,6 +3603,10 @@ mod tests {
         assert_eq!(safe_marketplace_platform("desktop"), Ok("desktop"));
         assert_eq!(safe_marketplace_platform("ios"), Ok("ios"));
         assert_eq!(safe_marketplace_platform("android"), Ok("android"));
+        assert_eq!(
+            safe_marketplace_platform("chrome-extension"),
+            Ok("chrome-extension")
+        );
         assert_eq!(
             safe_marketplace_platforms(&[
                 "desktop".into(),
