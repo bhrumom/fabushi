@@ -30,8 +30,6 @@ jobs:
     env:
       DEVICE_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-interactive
       DEVICE_NAME: Mahayana CLI GitHub Actions ${{ github.run_id }}
-      MAHAYANA_HOME: ${{ runner.temp }}/mahayana-home
-      FABUSHI_CI_FINISH_FILE: ${{ runner.temp }}/mahayana-home/device-agent/remote-finished.json
       FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
       MAHAYANA_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
     steps:
@@ -42,11 +40,13 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Resolve exact source
+      - name: Resolve exact source and private runtime paths
         shell: bash
         run: |
           set -euo pipefail
           echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "MAHAYANA_HOME=$RUNNER_TEMP/mahayana-home" >> "$GITHUB_ENV"
+          echo "FABUSHI_CI_FINISH_FILE=$RUNNER_TEMP/mahayana-home/device-agent/remote-finished.json" >> "$GITHUB_ENV"
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@stable
