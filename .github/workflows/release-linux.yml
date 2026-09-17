@@ -1,0 +1,35 @@
+name: Release Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_kind:
+        description: Fast test build skips long App E2E; formal build requires it
+        required: true
+        type: choice
+        default: test
+        options: [test, formal]
+      source_ref:
+        description: Branch/tag/SHA to package; blank uses the dispatched ref
+        required: false
+        type: string
+        default: ''
+      release_tag:
+        description: Required only for formal release
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/release-desktop-platform.yml
+    with:
+      platform: linux
+      runner: ubuntu-latest
+      release_kind: ${{ inputs.release_kind }}
+      source_ref: ${{ inputs.source_ref }}
+      release_tag: ${{ inputs.release_tag }}
+    secrets: inherit

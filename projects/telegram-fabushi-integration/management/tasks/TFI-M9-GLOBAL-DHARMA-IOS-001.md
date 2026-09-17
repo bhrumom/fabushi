@@ -3,11 +3,20 @@
 - Project: `FAB-P0001 / TFI`
 - Cross-project boundary: `FAB-P0008 / AAC`
 - Parent: `M9-GLOBAL-DHARMA-003`
-- Baseline canonical main: `c82b29cd6404c2f19b93d8479b2e2cae45469249` (re-aligned after #2445; previous alignment `8595a50196309c8ebb91c3f8077125d7dc9e3ffa`, original implementation baseline `8f7e83902a616ecdb62fdaded65ea79227e745f3`)
+- Baseline canonical main: `55a7e167b728ebc6aa43e1523cc2de520f622e9b` (2026-09-17 governed resync after #2297/#2299/#2316 landed; previous governed head `79cb7e507b5a2076a9f60869d3425897ca0063f5`)
 - Branch: `feat/tfi-ios-global-dharma-commerce-20260906`
 - State: `IMPLEMENTING / PR_ACTIVE`
 - Owner: iOS / Mini App Host / payments
 - Open-source decision: `../../source/2026-09-06-ios-global-dharma-storekit-webmcp-open-source-first.md`
+
+
+## 2026-09-17 governed resynchronization
+
+- Canonical main re-read immediately before sync: `55a7e167b728ebc6aa43e1523cc2de520f622e9b`.
+- Previous PR head: `79cb7e507b5a2076a9f60869d3425897ca0063f5`.
+- One semantic conflict remained in `MiniAppWebMcpSurface.swift`; resolution preserves Global Dharma entitlement refresh and the newer generated-Mini-App `localHtmlOverride` hardening path.
+- No local build or behavioral test was run. The resulting pushed head must obtain fresh GitHub Actions evidence; historical runs remain non-authoritative for queue entry.
+- The exact resulting head is read back from GitHub PR metadata after push rather than embedded in this same commit, avoiding a self-referential SHA claim.
 
 ## Goal
 
