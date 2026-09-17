@@ -202,7 +202,7 @@ jobs:
             --notes "No automated product tests were run before this test package. Source: $source_sha" \
             --prerelease
 
-      - name: Update public latest channel from protected main only
+      - name: Publish immutable protected-main installer channel
         if: inputs.promote_latest
         env:
           GH_TOKEN: ${{ github.token }}
@@ -213,8 +213,15 @@ jobs:
           git fetch origin main --depth=1
           main_sha="$(git rev-parse origin/main)"
           test "$source_sha" = "$main_sha" || { echo 'Refusing to promote a non-main CLI package.' >&2; exit 1; }
-          gh release delete mahayana-cli-latest --yes --cleanup-tag >/dev/null 2>&1 || true
-          gh release create mahayana-cli-latest packages/* \
+          channel_tag="mahayana-cli-main-${source_sha:0:12}"
+          if gh release view "$channel_tag" >/dev/null 2>&1; then
+            target="$(gh release view "$channel_tag" --json targetCommitish --jq .targetCommitish)"
+            test "$target" = "$source_sha"
+            echo "Immutable Mahayana CLI main channel already exists: $channel_tag"
+            exit 0
+          fi
+          gh release create "$channel_tag" packages/* \
             --target "$source_sha" \
-            --title "Mahayana CLI latest" \
-            --notes "Moving installer channel. Immutable provenance release: ${{ steps.source.outputs.tag }}"
+            --title "Mahayana CLI protected main ${source_sha:0:12}" \
+            --notes "Immutable installer channel for protected main. Provenance prerelease: ${{ steps.source.outputs.tag }}" \
+            --latest=false
