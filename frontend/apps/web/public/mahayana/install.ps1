@@ -16,7 +16,7 @@ function Invoke-MahayanaDownload {
   )
   $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
   if ($curl) {
-    & $curl.Source --fail --location --silent --show-error --retry 5 --retry-delay 1 --connect-timeout 15 --output $OutFile $Uri
+    & $curl.Source --fail --location --silent --show-error --retry 5 --retry-delay 1 --connect-timeout 15 --max-time 300 --output $OutFile $Uri
     if ($LASTEXITCODE -ne 0) { throw "Download failed with curl.exe exit code ${LASTEXITCODE}: $Uri" }
     return
   }
@@ -27,25 +27,36 @@ New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
   $archive = Join-Path $tmp $asset
   $sums = Join-Path $tmp 'SHA256SUMS.txt'
+  Write-Host "Downloading $asset..."
   Invoke-MahayanaDownload -Uri "$base/$asset" -OutFile $archive
   Invoke-MahayanaDownload -Uri "$base/SHA256SUMS.txt" -OutFile $sums
+  Write-Host 'Verifying SHA-256...'
   $line = Get-Content $sums | Where-Object { $_ -match "\s\*?$([regex]::Escape($asset))$" } | Select-Object -First 1
   if (-not $line) { throw "No checksum found for $asset" }
   $expected = ($line -split '\s+')[0].ToLowerInvariant()
   $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
   if ($actual -ne $expected) { throw "Checksum verification failed for $asset" }
-  Expand-Archive -Path $archive -DestinationPath $tmp -Force
+  Write-Host 'Extracting Mahayana CLI...'
+  $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+  if ($tar) {
+    & $tar.Source -xf $archive -C $tmp
+    if ($LASTEXITCODE -ne 0) { throw "Archive extraction failed with tar.exe exit code ${LASTEXITCODE}" }
+  } else {
+    Expand-Archive -Path $archive -DestinationPath $tmp -Force
+  }
   $source = Join-Path $tmp 'mahayana.exe'
   if (-not (Test-Path $source)) { throw 'Release archive does not contain mahayana.exe' }
   $installDir = if ($env:MAHAYANA_INSTALL_DIR) { $env:MAHAYANA_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Fabushi\Mahayana\bin' }
   New-Item -ItemType Directory -Path $installDir -Force | Out-Null
   $target = Join-Path $installDir 'mahayana.exe'
+  Write-Host "Installing Mahayana CLI to $target..."
   Copy-Item $source $target -Force
   $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
   $parts = @($userPath -split ';' | Where-Object { $_ })
   if ($parts -notcontains $installDir) {
     [Environment]::SetEnvironmentVariable('Path', (($parts + $installDir) -join ';'), 'User')
   }
+  Write-Host 'Starting the Mahayana device agent...'
   & $target device start *> $null
   Write-Host "Mahayana CLI installed: $target"
   Write-Host 'Open a new terminal and run: mahayana login'
