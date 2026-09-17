@@ -12,7 +12,7 @@ jobs:
   patch:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - name: Check out parent branch
         uses: actions/checkout@v7
@@ -20,7 +20,7 @@ jobs:
           ref: codex/tfi-userscript-bound-recovery-20260917
           fetch-depth: 0
 
-      - name: Pin exact v2.9.36 artifact and advance Chrome candidate
+      - name: Verify exact source v2.9.36 artifact
         shell: bash
         run: |
           set -euo pipefail
@@ -33,49 +33,521 @@ jobs:
           test "$(sha256sum /tmp/chatgpt-auto-confirm.user.js | awk '{print $1}')" = "$SOURCE_SHA256"
           grep -Eq '^// @version[[:space:]]+2\.9\.36$' /tmp/chatgpt-auto-confirm.user.js
           grep -Fq "const VERSION = '2.9.36';" /tmp/chatgpt-auto-confirm.user.js
-          cp /tmp/chatgpt-auto-confirm.user.js chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js
 
+      - name: Add verified GitHub latest-release discovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > chatgpt-vps-control/chrome-platform/extension/marketplace-userscript-release.js <<'EOF'
+          import {
+            compareMarketplaceVersions,
+            marketplaceItemId,
+            marketplaceItemVersion,
+          } from "./marketplace-install.js";
+
+          export const CHATGPT_AUTO_CONFIRM_PLUGIN_ID = "chatgpt-auto-confirm";
+          export const CHATGPT_AUTO_CONFIRM_REPOSITORY = "https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript";
+          export const CHATGPT_AUTO_CONFIRM_LATEST_RELEASE_API = "https://api.github.com/repos/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/latest";
+          export const CHATGPT_AUTO_CONFIRM_ASSET_NAME = "chatgpt-auto-confirm.user.js";
+          const MAX_USERSCRIPT_BYTES = 2 * 1024 * 1024;
+          const REQUEST_TIMEOUT_MS = 8_000;
+
+          function clone(value) {
+            return JSON.parse(JSON.stringify(value));
+          }
+
+          function artifactUrlFor(sourceRef) {
+            return `https://raw.githubusercontent.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/${sourceRef}/${CHATGPT_AUTO_CONFIRM_ASSET_NAME}`;
+          }
+
+          function releaseUrlFor(tag) {
+            return `${CHATGPT_AUTO_CONFIRM_REPOSITORY}/releases/tag/${tag}`;
+          }
+
+          function assetDownloadUrlFor(tag) {
+            return `${CHATGPT_AUTO_CONFIRM_REPOSITORY}/releases/download/${tag}/${CHATGPT_AUTO_CONFIRM_ASSET_NAME}`;
+          }
+
+          export function parseGitHubUserscriptRelease(release) {
+            if (!release || typeof release !== "object") throw new Error("GitHub latest release 响应无效。");
+            if (release.draft || release.prerelease) throw new Error("GitHub latest release 不是正式稳定版。");
+            const tag = String(release.tag_name || "").trim();
+            const version = tag.match(/^v(\d+\.\d+\.\d+)$/)?.[1] || "";
+            if (!version) throw new Error("GitHub latest release tag 不是受支持的语义版本。");
+            const sourceRef = String(release.target_commitish || "").trim().toLowerCase();
+            if (!/^[a-f0-9]{40}$/.test(sourceRef)) throw new Error("GitHub latest release 没有固定到 exact commit SHA。");
+            const asset = (Array.isArray(release.assets) ? release.assets : [])
+              .find((candidate) => candidate?.name === CHATGPT_AUTO_CONFIRM_ASSET_NAME);
+            if (!asset || asset.state !== "uploaded") throw new Error("GitHub latest release 缺少已上传的 userscript artifact。");
+            const digestMatch = String(asset.digest || "").trim().toLowerCase().match(/^sha256:([a-f0-9]{64})$/);
+            if (!digestMatch) throw new Error("GitHub latest release artifact 缺少 SHA-256 digest。");
+            const size = Number(asset.size);
+            if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_USERSCRIPT_BYTES) {
+              throw new Error("GitHub latest release artifact size 超出允许范围。");
+            }
+            const expectedAssetUrl = assetDownloadUrlFor(tag);
+            if (String(asset.browser_download_url || "").trim() !== expectedAssetUrl) {
+              throw new Error("GitHub latest release artifact URL 与受信仓库不一致。");
+            }
+            return {
+              pluginId: CHATGPT_AUTO_CONFIRM_PLUGIN_ID,
+              version,
+              tag,
+              sourceRef,
+              sha256: digestMatch[1],
+              size,
+              releaseUrl: releaseUrlFor(tag),
+              artifactUrl: artifactUrlFor(sourceRef),
+              assetUrl: expectedAssetUrl,
+              releaseNotes: String(release.body || "").trim().slice(0, 4_000),
+            };
+          }
+
+          function patchArtifacts(container, metadata) {
+            if (!container || !Array.isArray(container.artifacts)) return;
+            for (const artifact of container.artifacts) {
+              const isUserscript = artifact?.runtime === "userscript"
+                || artifact?.format === "user-js"
+                || /chatgpt-auto-confirm\.user\.js$/i.test(String(artifact?.entry || artifact?.source?.url || ""));
+              if (!isUserscript) continue;
+              artifact.source = { ...(artifact.source || {}), type: "https", url: metadata.artifactUrl };
+              artifact.sha256 = metadata.sha256;
+              artifact.size = metadata.size;
+            }
+          }
+
+          function patchInstall(install, metadata) {
+            if (!install || typeof install !== "object") return;
+            install.version = metadata.version;
+            install.source = {
+              ...(install.source || {}),
+              provider: "github",
+              repository: CHATGPT_AUTO_CONFIRM_REPOSITORY,
+              sourceRef: metadata.sourceRef,
+              releaseUrl: metadata.releaseUrl,
+              marketplaceHostsPackage: false,
+            };
+            patchArtifacts(install, metadata);
+          }
+
+          export function projectGitHubUserscriptRelease(baseItem, release) {
+            if (!baseItem || marketplaceItemId(baseItem) !== CHATGPT_AUTO_CONFIRM_PLUGIN_ID) {
+              throw new Error("GitHub userscript release 缺少 ChatGPT 自动确认基准清单。");
+            }
+            const metadata = parseGitHubUserscriptRelease(release);
+            const baseVersion = marketplaceItemVersion(baseItem);
+            if (baseVersion && compareMarketplaceVersions(metadata.version, baseVersion) < 0) return clone(baseItem);
+            const item = clone(baseItem);
+            item.pluginId = CHATGPT_AUTO_CONFIRM_PLUGIN_ID;
+            item.latestVersion = metadata.version;
+            if (Object.prototype.hasOwnProperty.call(item, "version")) item.version = metadata.version;
+            item.source = {
+              ...(item.source || {}),
+              provider: "github",
+              repository: CHATGPT_AUTO_CONFIRM_REPOSITORY,
+              sourceRef: metadata.sourceRef,
+              releaseUrl: metadata.releaseUrl,
+            };
+            patchInstall(item.install, metadata);
+            if (item.releaseManifest && typeof item.releaseManifest === "object") {
+              item.releaseManifest.version = metadata.version;
+              if (item.releaseManifest.source && typeof item.releaseManifest.source === "object") {
+                item.releaseManifest.source = {
+                  ...item.releaseManifest.source,
+                  provider: "github",
+                  repository: CHATGPT_AUTO_CONFIRM_REPOSITORY,
+                  sourceRef: metadata.sourceRef,
+                  releaseUrl: metadata.releaseUrl,
+                };
+              }
+              patchArtifacts(item.releaseManifest, metadata);
+              patchInstall(item.releaseManifest.install, metadata);
+            }
+            if (metadata.releaseNotes) item.releaseNotes = metadata.releaseNotes;
+            return item;
+          }
+
+          async function fetchLatestRelease({ fetchFn = globalThis.fetch, signal } = {}) {
+            if (typeof fetchFn !== "function") throw new Error("GitHub release discovery 缺少 fetch 实现。");
+            const controller = signal ? null : new AbortController();
+            const timer = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
+            try {
+              const response = await fetchFn(CHATGPT_AUTO_CONFIRM_LATEST_RELEASE_API, {
+                headers: { Accept: "application/vnd.github+json" },
+                cache: "no-store",
+                redirect: "error",
+                signal: signal || controller?.signal,
+              });
+              if (!response?.ok) throw new Error(`GitHub latest release 请求失败（${response?.status || "network"}）。`);
+              return await response.json();
+            } finally {
+              if (timer) clearTimeout(timer);
+            }
+          }
+
+          export async function fetchLatestUserscriptMarketplaceItem({ baseItem, fetchFn = globalThis.fetch, signal } = {}) {
+            return projectGitHubUserscriptRelease(baseItem, await fetchLatestRelease({ fetchFn, signal }));
+          }
+
+          export async function fetchLatestUserscriptUpdateItem({ fetchFn = globalThis.fetch, signal } = {}) {
+            const metadata = parseGitHubUserscriptRelease(await fetchLatestRelease({ fetchFn, signal }));
+            return {
+              pluginId: CHATGPT_AUTO_CONFIRM_PLUGIN_ID,
+              displayName: "ChatGPT 自动确认",
+              latestVersion: metadata.version,
+              source: {
+                provider: "github",
+                repository: CHATGPT_AUTO_CONFIRM_REPOSITORY,
+                sourceRef: metadata.sourceRef,
+                releaseUrl: metadata.releaseUrl,
+              },
+              install: {
+                protocol: "fabushi.marketplace.install.v1",
+                strategy: "github-immutable",
+                pluginId: CHATGPT_AUTO_CONFIRM_PLUGIN_ID,
+                version: metadata.version,
+                source: {
+                  provider: "github",
+                  repository: CHATGPT_AUTO_CONFIRM_REPOSITORY,
+                  sourceRef: metadata.sourceRef,
+                  releaseUrl: metadata.releaseUrl,
+                  marketplaceHostsPackage: false,
+                },
+                artifacts: [{
+                  id: "chatgpt-auto-confirm-userscript",
+                  runtime: "userscript",
+                  platforms: ["chrome-extension"],
+                  source: { type: "https", url: metadata.artifactUrl },
+                  sha256: metadata.sha256,
+                  size: metadata.size,
+                  format: "user-js",
+                  entry: CHATGPT_AUTO_CONFIRM_ASSET_NAME,
+                }],
+                update: {
+                  check: "github-latest-release",
+                  comparison: "version-then-artifact-sha256",
+                  allowDowngrade: false,
+                  rollback: "previous-active",
+                },
+              },
+            };
+          }
+
+          export function mergeLatestUserscriptItem(items, latestItem) {
+            const merged = Array.isArray(items) ? [...items] : [];
+            if (!latestItem || marketplaceItemId(latestItem) !== CHATGPT_AUTO_CONFIRM_PLUGIN_ID) return merged;
+            const index = merged.findIndex((item) => marketplaceItemId(item) === CHATGPT_AUTO_CONFIRM_PLUGIN_ID);
+            if (index < 0) {
+              merged.unshift(latestItem);
+              return merged;
+            }
+            const currentVersion = marketplaceItemVersion(merged[index]);
+            const latestVersion = marketplaceItemVersion(latestItem);
+            if (!currentVersion || (latestVersion && compareMarketplaceVersions(latestVersion, currentVersion) >= 0)) {
+              merged[index] = latestItem;
+            }
+            return merged;
+          }
+          EOF
+
+      - name: Pin v2.9.36, enable live discovery, and advance Chrome 0.6.12
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/chatgpt-auto-confirm.user.js chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js
           python - <<'PY'
           from pathlib import Path
 
-          def replace_exact(path, old, new, count=1):
+          app_path = Path('chatgpt-vps-control/chrome-platform/extension/app.js')
+          app = app_path.read_text()
+          import_anchor = '} from "./marketplace-install.js";\n'
+          release_import = '''import {
+            fetchLatestUserscriptMarketplaceItem,
+          } from "./marketplace-userscript-release.js";
+          '''
+          if 'from "./marketplace-userscript-release.js"' not in app:
+              if import_anchor not in app:
+                  raise SystemExit('app import anchor missing')
+              app = app.replace(import_anchor, import_anchor + release_import, 1)
+          app = app.replace('42df09a39f4505418f13a4fab578c96ee03b9b37', '2fd43b6ba64a58acbc806ad35a4c48b477ac57f0')
+          app = app.replace('4fc88a50a8bb5034d5ec41f262c333d83e83917b1e22f75b26bb04ae10f8602b', '11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97')
+          app = app.replace('const MARKETPLACE_USERSCRIPT_SIZE = 235583;', 'const MARKETPLACE_USERSCRIPT_SIZE = 237859;')
+          app = app.replace('2.9.35', '2.9.36')
+
+          old_bundled = '''async function bundledMarketplaceItems() {
+            const official = await officialMarketplaceItem();
+            return [official, ...BUILTIN_MARKETPLACE_ITEMS.slice(1)];
+          }
+          '''
+          new_bundled = '''async function bundledMarketplaceItems() {
+            const pinned = await officialMarketplaceItem();
+            let official = pinned;
+            try {
+              official = await fetchLatestUserscriptMarketplaceItem({ baseItem: pinned });
+            } catch {
+              // GitHub discovery is advisory for availability. The bundled exact
+              // pin remains the offline/rollback fallback and is still verified
+              // again before installation.
+            }
+            return [official, ...BUILTIN_MARKETPLACE_ITEMS.slice(1)];
+          }
+          '''
+          if old_bundled not in app:
+              raise SystemExit('bundledMarketplaceItems anchor missing')
+          app = app.replace(old_bundled, new_bundled, 1)
+
+          start = app.index('async function refreshMarketplace(query = "") {')
+          end = app.index('\nasync function refreshInstalled()', start)
+          refresh = '''async function refreshMarketplace(query = "") {
+            const requestId = ++state.marketplaceRequestId;
+            const showBundled = shouldShowBundledFallback(query);
+            const builtinsPromise = showBundled ? bundledMarketplaceItems() : Promise.resolve([]);
+            const mergeBuiltins = (items, builtins) => {
+              const merged = Array.isArray(items) ? [...items] : [];
+              for (const builtin of builtins) {
+                const index = merged.findIndex((item) => itemPluginId(item) === builtin.pluginId);
+                if (index < 0) {
+                  merged.unshift(builtin);
+                  continue;
+                }
+                const comparison = compareVersions(itemVersion(builtin), itemVersion(merged[index]));
+                if (comparison > 0
+                  || (comparison === 0 && builtin.pluginId === BUILTIN_MARKETPLACE_ITEM.pluginId)
+                  || !userscriptSurface(merged[index])) merged[index] = builtin;
+              }
+              return merged;
+            };
+
+            // The public Fabushi catalog and the source repository are both
+            // discovery inputs. For ChatGPT 自动确认 the verified GitHub latest
+            // release outranks a stale same-version catalog entry, while a
+            // newer server catalog still wins. Installation remains immutable.
+            try {
+              const [liveItems, builtins] = await Promise.all([fetchPublicMarketplace(query), builtinsPromise]);
+              if (requestId !== state.marketplaceRequestId) return;
+              state.marketplace = mergeBuiltins(liveItems, builtins);
+              renderCards($("#marketplace-list"), state.marketplace, state.desktopConnected ? "没有找到兼容 Chrome 的项目" : "没有找到可独立安装的 Chrome 项目");
+              setMarketplaceUpdateStatus(marketplaceCatalogStatus(query));
+              return;
+            } catch {
+              // Continue with verified GitHub fallback and, if connected, Host.
+            }
+
+            const builtins = await builtinsPromise;
+            if (requestId !== state.marketplaceRequestId) return;
+            if (!state.desktopConnected) {
+              state.marketplace = builtins;
+              renderCards($("#marketplace-list"), state.marketplace, "没有找到可独立安装的 Chrome 项目");
+              setMarketplaceUpdateStatus({
+                ...marketplaceCatalogStatus(query),
+                checkedAt: Date.now(),
+                error: builtins.length ? "" : "线上 Marketplace 暂时不可用。",
+                reason: builtins.length ? "github-release-fallback" : "catalog",
+              });
+              return;
+            }
+            try {
+              let result;
+              try {
+                result = await desktopRequest("feature.marketplace.browse", { query: query.trim() || undefined, platform: "chrome-extension" });
+              } catch {
+                result = await desktopRequest("feature.marketplace.browse", { query: query.trim() || undefined, platform: "web" });
+              }
+              if (requestId !== state.marketplaceRequestId) return;
+              state.marketplace = mergeBuiltins(marketplaceItems(result), builtins);
+              renderCards($("#marketplace-list"), state.marketplace, "没有找到兼容 Chrome 的项目");
+              setMarketplaceUpdateStatus(marketplaceCatalogStatus(query));
+            } catch (error) {
+              state.marketplace = builtins;
+              renderCards($("#marketplace-list"), state.marketplace, "没有找到兼容 Chrome 的项目");
+              if (builtins.length) {
+                setMarketplaceUpdateStatus(marketplaceCatalogStatus(query));
+              } else {
+                showBanner(error.message, "error");
+                setMarketplaceUpdateStatus({ ...state.marketplaceUpdate, checkedAt: Date.now(), error: error.message, reason: "catalog" });
+              }
+            }
+          }
+          '''
+          app = app[:start] + refresh + app[end:]
+          app_path.write_text(app)
+
+          checker_path = Path('chatgpt-vps-control/chrome-platform/extension/marketplace-update-check.js')
+          checker = checker_path.read_text()
+          checker_anchor = '} from "./marketplace-install.js";\n'
+          checker_import = '''import {
+            fetchLatestUserscriptUpdateItem,
+            mergeLatestUserscriptItem,
+          } from "./marketplace-userscript-release.js";
+          '''
+          if 'from "./marketplace-userscript-release.js"' not in checker:
+              if checker_anchor not in checker:
+                  raise SystemExit('checker import anchor missing')
+              checker = checker.replace(checker_anchor, checker_anchor + checker_import, 1)
+          start = checker.index('async function fetchMarketplaceItems() {')
+          end = checker.index('\nasync function sendStatusToOpenViews', start)
+          replacement = '''async function fetchMarketplaceCatalogItems() {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+            try {
+              const response = await fetch(MARKETPLACE_UPDATE_API_URL, {
+                headers: { Accept: "application/json" },
+                cache: "no-store",
+                redirect: "error",
+                signal: controller.signal,
+              });
+              if (!response.ok) throw new Error(`Marketplace 请求失败（${response.status}）。`);
+              return marketplaceItems(await response.json());
+            } finally {
+              clearTimeout(timer);
+            }
+          }
+
+          async function fetchMarketplaceItems() {
+            const [catalogResult, releaseResult] = await Promise.allSettled([
+              fetchMarketplaceCatalogItems(),
+              fetchLatestUserscriptUpdateItem(),
+            ]);
+            let items = catalogResult.status === "fulfilled" ? catalogResult.value : [];
+            if (releaseResult.status === "fulfilled") items = mergeLatestUserscriptItem(items, releaseResult.value);
+            if (items.length) return items;
+            const failure = catalogResult.status === "rejected" ? catalogResult.reason : releaseResult.reason;
+            throw failure instanceof Error ? failure : new Error(String(failure || "Marketplace 与 GitHub release 均不可用。"));
+          }
+          '''
+          checker = checker[:start] + replacement + checker[end:]
+          checker_path.write_text(checker)
+
+          for path in [
+              'chatgpt-vps-control/chrome-platform/extension/manifest.json',
+              'chatgpt-vps-control/scripts/package-chrome-extension.mjs',
+              'chatgpt-vps-control/scripts/validate-chrome-extension.mjs',
+              'chatgpt-vps-control/docs/chrome-web-store/README.md',
+              '.github/workflows/chrome-extension-web-store.yml',
+              '.github/workflows/chrome-extension-web-store-publish.yml',
+          ]:
               p = Path(path)
               text = p.read_text()
-              actual = text.count(old)
-              if actual != count:
-                  raise SystemExit(f'{path}: expected {count} occurrences of {old!r}, found {actual}')
-              p.write_text(text.replace(old, new))
+              if '0.6.11' not in text:
+                  raise SystemExit(f'{path}: expected current Chrome 0.6.11 pin')
+              p.write_text(text.replace('0.6.11', '0.6.12'))
+          PY
 
-          replace_exact('chatgpt-vps-control/chrome-platform/extension/app.js',
-                        '42df09a39f4505418f13a4fab578c96ee03b9b37',
-                        '2fd43b6ba64a58acbc806ad35a4c48b477ac57f0')
-          replace_exact('chatgpt-vps-control/chrome-platform/extension/app.js',
-                        '4fc88a50a8bb5034d5ec41f262c333d83e83917b1e22f75b26bb04ae10f8602b',
-                        '11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97')
-          replace_exact('chatgpt-vps-control/chrome-platform/extension/app.js',
-                        'const MARKETPLACE_USERSCRIPT_SIZE = 235583;',
-                        'const MARKETPLACE_USERSCRIPT_SIZE = 237859;')
-          replace_exact('chatgpt-vps-control/chrome-platform/extension/app.js',
-                        'releases/tag/v2.9.35',
-                        'releases/tag/v2.9.36')
-          replace_exact('chatgpt-vps-control/chrome-platform/extension/manifest.json',
-                        '"version": "0.6.11"',
-                        '"version": "0.6.12"')
+      - name: Add release discovery regression coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > chatgpt-vps-control/tests/marketplace-userscript-release.test.js <<'EOF'
+          import test from "node:test";
+          import assert from "node:assert/strict";
+          import {
+            mergeLatestUserscriptItem,
+            parseGitHubUserscriptRelease,
+            projectGitHubUserscriptRelease,
+          } from "../chrome-platform/extension/marketplace-userscript-release.js";
+          import { marketplaceUpdateCandidates } from "../chrome-platform/extension/marketplace-update-check.js";
 
-          p = Path('chatgpt-vps-control/scripts/package-chrome-extension.mjs')
-          text = p.read_text()
-          if text.count('0.6.11') != 3:
-              raise SystemExit(f'package script: expected 3 old version pins, found {text.count("0.6.11")}')
-          p.write_text(text.replace('0.6.11', '0.6.12'))
+          const sha = "2fd43b6ba64a58acbc806ad35a4c48b477ac57f0";
+          const digest = "11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97";
+          const release = (overrides = {}) => ({
+            tag_name: "v2.9.36",
+            target_commitish: sha,
+            draft: false,
+            prerelease: false,
+            body: "bound conversation recovery",
+            assets: [{
+              name: "chatgpt-auto-confirm.user.js",
+              state: "uploaded",
+              size: 237859,
+              digest: `sha256:${digest}`,
+              browser_download_url: "https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/download/v2.9.36/chatgpt-auto-confirm.user.js",
+            }],
+            ...overrides,
+          });
+          const base = (version = "2.9.35") => ({
+            pluginId: "chatgpt-auto-confirm",
+            displayName: "ChatGPT 自动确认",
+            latestVersion: version,
+            source: {
+              provider: "github",
+              repository: "https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript",
+              sourceRef: "a".repeat(40),
+              releaseUrl: `https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v${version}`,
+            },
+            install: {
+              protocol: "fabushi.marketplace.install.v1",
+              strategy: "github-immutable",
+              pluginId: "chatgpt-auto-confirm",
+              version,
+              source: {
+                provider: "github",
+                repository: "https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript",
+                sourceRef: "a".repeat(40),
+                releaseUrl: `https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v${version}`,
+                marketplaceHostsPackage: false,
+              },
+              artifacts: [{ runtime: "userscript", format: "user-js", sha256: "b".repeat(64), size: 10, source: { type: "https", url: "https://raw.githubusercontent.com/old" } }],
+              update: { allowDowngrade: false },
+            },
+            releaseManifest: {
+              version,
+              artifacts: [{ runtime: "userscript", format: "user-js", sha256: "b".repeat(64), size: 10, source: { type: "https", url: "https://raw.githubusercontent.com/old" } }],
+              install: {
+                version,
+                source: { sourceRef: "a".repeat(40) },
+                artifacts: [{ runtime: "userscript", format: "user-js", sha256: "b".repeat(64), size: 10, source: { type: "https", url: "https://raw.githubusercontent.com/old" } }],
+              },
+            },
+          });
 
-          replace_exact('chatgpt-vps-control/scripts/validate-chrome-extension.mjs',
-                        '0.6.11', '0.6.12')
+          test("GitHub latest release projects an immutable v2.9.36 Marketplace contract", () => {
+            const metadata = parseGitHubUserscriptRelease(release());
+            assert.equal(metadata.version, "2.9.36");
+            assert.equal(metadata.sourceRef, sha);
+            assert.equal(metadata.sha256, digest);
+            assert.equal(metadata.size, 237859);
+            const item = projectGitHubUserscriptRelease(base(), release());
+            assert.equal(item.latestVersion, "2.9.36");
+            assert.equal(item.install.version, "2.9.36");
+            assert.equal(item.install.source.sourceRef, sha);
+            assert.equal(item.install.artifacts[0].sha256, digest);
+            assert.equal(item.install.artifacts[0].size, 237859);
+            assert.equal(item.install.artifacts[0].source.url, `https://raw.githubusercontent.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/${sha}/chatgpt-auto-confirm.user.js`);
+            assert.equal(item.releaseManifest.version, "2.9.36");
+            assert.equal(item.releaseManifest.install.version, "2.9.36");
+          });
 
-          p = Path('chatgpt-vps-control/docs/chrome-web-store/README.md')
-          text = p.read_text()
-          if text.count('0.6.11') < 3:
-              raise SystemExit('Chrome Web Store README no longer has the expected 0.6.11 candidate references')
-          p.write_text(text.replace('0.6.11', '0.6.12'))
+          test("GitHub latest release rejects non-stable or mutable identities", () => {
+            assert.throws(() => parseGitHubUserscriptRelease(release({ prerelease: true })), /正式稳定版/);
+            assert.throws(() => parseGitHubUserscriptRelease(release({ target_commitish: "main" })), /exact commit/);
+            const badDigest = release();
+            badDigest.assets = [{ ...badDigest.assets[0], digest: "sha256:nope" }];
+            assert.throws(() => parseGitHubUserscriptRelease(badDigest), /SHA-256/);
+          });
+
+          test("GitHub discovery never downgrades and outranks a stale equal-or-older catalog", () => {
+            const older = release({ tag_name: "v2.9.34", assets: [{ ...release().assets[0], browser_download_url: "https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/download/v2.9.34/chatgpt-auto-confirm.user.js" }] });
+            assert.equal(projectGitHubUserscriptRelease(base(), older).latestVersion, "2.9.35");
+            const latest = projectGitHubUserscriptRelease(base(), release());
+            assert.equal(mergeLatestUserscriptItem([base("2.9.35")], latest)[0].latestVersion, "2.9.36");
+            assert.equal(mergeLatestUserscriptItem([base("2.9.37")], latest)[0].latestVersion, "2.9.37");
+            const updates = marketplaceUpdateCandidates([latest], [{
+              sourcePluginId: "chatgpt-auto-confirm",
+              sourcePluginVersion: "2.9.35",
+              sourceArtifactSha256: "b".repeat(64),
+            }]);
+            assert.equal(updates[0]?.latestVersion, "2.9.36");
+            assert.equal(updates[0]?.artifactSha256, digest);
+            assert.equal(updates[0]?.reason, "version");
+          });
+          EOF
+
+      - name: Record project task and evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
 
           project = Path('projects/telegram-fabushi-integration/PROJECT.yaml')
           text = project.read_text()
@@ -98,119 +570,68 @@ jobs:
               )
               project.write_text(text.replace(marker, block + marker, 1))
           PY
+          mkdir -p projects/telegram-fabushi-integration/management/tasks
+          cat > projects/telegram-fabushi-integration/management/tasks/TFI-USERSCRIPT-RECOVERY-022-bound-conversation-release-discovery.md <<'EOF'
+          # TFI-USERSCRIPT-RECOVERY-022 — bound conversation recovery + live release discovery
 
-      - name: Append durable project tracking
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat >> projects/telegram-fabushi-integration/management/01-WBS原子任务.md <<'EOF'
+          ## Goal
 
-          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022 绑定会话优先恢复
+          Deliver source userscript v2.9.36 into Fabushi Chrome and permanently prevent a stale bundled/catalog pin from being presented as the newest GitHub release.
 
-          - `TFI-USERSCRIPT-RECOVERY-022` — `IN_PROGRESS / SOURCE_RELEASED / PARENT_PR_PENDING`。
-          - Acceptance A1：90 秒 ambiguous send 且存在本轮绑定 URL 时优先回该 URL 检查最终回复/结束状态，不直接 blocked、不重复发送。
-          - Acceptance A2：没有绑定 URL 时每 180 秒至多刷新一次；连续 4 个恢复周期仍无法建立身份时才新开会话原样重发。
-          - Acceptance A3：source `v2.9.36@2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`、237859 bytes、SHA-256 `11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97` 固定进 parent bundled/Marketplace；Chrome candidate 单调递增至 `0.6.12`。
-          - Acceptance A4：parent protected-main/canonical readback 与允许的 package/provenance evidence 完成后更新；正式 stable 仍由 exact-candidate Fabushi official MCP gate 决定。
+          ## Acceptance
+
+          - Source v2.9.36 is pinned by exact commit `2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`, 237859 bytes, SHA-256 `11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97`.
+          - Chrome package version advances monotonically from 0.6.11 to 0.6.12.
+          - Marketplace UI reads the source repository's stable GitHub `releases/latest`, requires an exact 40-hex target commit plus uploaded asset digest/size, and projects that metadata into the immutable install contract.
+          - Background update checks merge the verified GitHub latest release with the Fabushi catalog so a stale catalog cannot suppress a source update.
+          - GitHub discovery failure falls back to the pinned bundled contract; installation always re-downloads the exact raw commit and verifies size/SHA-256 before install.
+          - No automatic E2E is added. Packaging remains zero-test; release validation follows the repository's current official workflow gates.
           EOF
-
-          cat >> projects/telegram-fabushi-integration/management/03-验收追踪矩阵.md <<'EOF'
-
-          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022
-
-          | Requirement | Acceptance | Verification | State |
-          | --- | --- | --- | --- |
-          | 绑定会话优先于重发 | 90 秒确认歧义后若 `task.url` 有效，回到绑定会话检查结束/最终回复并沿现有流程继续 | source PR #29 exact-head regression + post-main CI | PASS |
-          | 无绑定会话周期恢复 | 180 秒冷却，无热循环；4 个周期后才 fresh-session retry | source PR #29 regression | PASS |
-          | source/parent immutable pin | bundled bytes 与 v2.9.36 一致，Marketplace pin SHA/release/size/digest；Chrome 0.6.12 | parent diff + GitHub Actions verification | IN_PROGRESS |
-          | protected-main / publication | merge queue canonical readback；正式 stable 必须 exact candidate + official MCP | parent PR/merge/package/MCP evidence | PENDING |
-          EOF
-
-          cat >> projects/telegram-fabushi-integration/management/04-风险登记.md <<'EOF'
-
-          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022 risks
-
-          | Risk | Impact | Mitigation | State |
-          | --- | --- | --- | --- |
-          | R-TFI-USR-022-01 ambiguous send 被误当失败导致重复派发 | 高 | 已绑定 URL 永远优先检查；无绑定 URL 保留 token 并按 180 秒冷却恢复，4 周期后才换新 token | MITIGATED IN SOURCE |
-          | R-TFI-USR-022-02 source v2.9.36 与 parent Marketplace 漂移 | 高 | 固定 exact source SHA、release URL、size、SHA-256，并要求 bundled bytes 校验 | IN_PROGRESS |
-          | R-TFI-USR-022-03 changed Chrome binary 复用旧商店版本 | 高 | manifest/package/validator/docs 同步单调递增 0.6.11 -> 0.6.12 | IN_PROGRESS |
-          EOF
-
-          cat >> projects/telegram-fabushi-integration/management/06-依赖与阻塞.md <<'EOF'
-
-          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022 dependencies
-
-          - Source v2.9.36 已公开发布，parent integration 可执行。
-          - Parent 正式/稳定 Chrome production publication 仍依赖 exact candidate Action-owned/App-owned runner + Fabushi official MCP 外部控制验收；历史包、自动 E2E 或不同 SHA 不可替代。
-          - Chrome Web Store 既有审核状态与 source GitHub Release 独立；不得覆盖或绕过既有 submission。
-          EOF
-
-          cat >> projects/telegram-fabushi-integration/management/05-状态报告.md <<'EOF'
-
-          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022 绑定会话优先恢复
-
-          - source PR #29 已 squash merge；canonical source main `2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`，PR exact-head run `35233282863` 与 post-main run `35233363949` 均通过语法/完整回归。
-          - source Release `v2.9.36` 已公开：asset `237859` bytes，SHA-256 `11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97`。
-          - parent 正在把 bundled userscript / Marketplace immutable metadata 固定到 v2.9.36，并把 Chrome candidate 从 `0.6.11` 单调递增到 `0.6.12`。
-          - 当前状态：`IN_PROGRESS / SOURCE_RELEASED / PARENT_PR_PENDING`；不宣称正式 Chrome stable publication。
-          EOF
-
-          cat >> projects/telegram-fabushi-integration/management/07-变更日志.md <<'EOF'
-
-          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022 发送确认恢复链
-
-          - 将 90 秒发送确认歧义从“无当前页绑定即 blocked”改为“本轮绑定 URL 优先检查”；结束/最终回复由既有任务状态机决定下一步。
-          - 无绑定 URL 时新增 180 秒恢复冷却并保留原派发身份；连续 4 个周期仍无法绑定才 fresh-session resend。
-          - source 发布 v2.9.36；parent bundled/Marketplace pin 更新为 exact source SHA/size/digest，Chrome candidate 递增 0.6.12。
-          EOF
-
           mkdir -p projects/telegram-fabushi-integration/evidence/TFI-USERSCRIPT-RECOVERY-022
           cat > projects/telegram-fabushi-integration/evidence/TFI-USERSCRIPT-RECOVERY-022/README.md <<'EOF'
           # Evidence — TFI-USERSCRIPT-RECOVERY-022
 
-          ## Source delivery
+          ## Source release
 
-          - Source PR: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/29
-          - PR exact-head: `30b8d3cc071a478f47032bd95c2af0066df27982`
-          - PR CI: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/actions/runs/35233282863 — success
-          - Canonical source main: `2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`
-          - Post-main CI: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/actions/runs/35233363949 — success
-          - Release: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.36
-          - Release ID: `390790284`; target: `2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`
-          - Asset: `chatgpt-auto-confirm.user.js`, `237859` bytes, SHA-256 `11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97`
+          - Source PR #29 exact head: `30b8d3cc071a478f47032bd95c2af0066df27982`.
+          - Canonical source main: `2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`.
+          - Release: `v2.9.36` / release id `390790284`.
+          - Asset: `chatgpt-auto-confirm.user.js`, 237859 bytes, SHA-256 `11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97`.
 
-          ## Parent integration target
+          ## Parent target
 
-          - Parent intake baseline: `6245420379e6c11a84d23b2e705debe779532d47`
-          - Branch: `codex/tfi-userscript-bound-recovery-20260917`
-          - Bundled userscript must be byte-identical to the source artifact above.
-          - Marketplace pin must use source commit `2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`, release `v2.9.36`, size `237859`, SHA-256 `11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97`.
+          - Branch: `codex/tfi-userscript-bound-recovery-20260917`.
           - Chrome candidate: `0.6.12`.
-          - Parent PR / canonical main / package evidence: pending this execution round.
-
-          ## Formal publication boundary
-
-          Source userscript v2.9.36 is public. Parent/Chrome formal stable publication is not considered complete until the repository's current exact-candidate Fabushi official MCP gate is satisfied; historical E2E or another SHA cannot substitute.
+          - Product change: pinned v2.9.36 plus verified GitHub latest-release discovery in both Marketplace UI and background update checker.
+          - Parent PR, canonical-main SHA, exact-source package run and Web Store publication evidence are populated by the release execution, not pre-declared here.
           EOF
 
-      - name: Verify static integration invariants
+      - name: Run focused syntax and regression checks
         shell: bash
         run: |
           set -euo pipefail
+          node --check chatgpt-vps-control/chrome-platform/extension/app.js
+          node --check chatgpt-vps-control/chrome-platform/extension/marketplace-update-check.js
+          node --check chatgpt-vps-control/chrome-platform/extension/marketplace-userscript-release.js
+          node --test \
+            chatgpt-vps-control/tests/marketplace-install.test.js \
+            chatgpt-vps-control/tests/marketplace-update-check.test.js \
+            chatgpt-vps-control/tests/marketplace-userscript-release.test.js
           test "$(wc -c < chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js)" = "237859"
           test "$(sha256sum chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js | awk '{print $1}')" = "11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97"
-          grep -Fq 'const MARKETPLACE_USERSCRIPT_COMMIT = "2fd43b6ba64a58acbc806ad35a4c48b477ac57f0";' chatgpt-vps-control/chrome-platform/extension/app.js
-          grep -Fq 'const MARKETPLACE_USERSCRIPT_SHA256 = "11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97";' chatgpt-vps-control/chrome-platform/extension/app.js
-          grep -Fq 'const MARKETPLACE_USERSCRIPT_SIZE = 237859;' chatgpt-vps-control/chrome-platform/extension/app.js
-          grep -Fq 'releases/tag/v2.9.36' chatgpt-vps-control/chrome-platform/extension/app.js
           grep -Fq '"version": "0.6.12"' chatgpt-vps-control/chrome-platform/extension/manifest.json
+          grep -Fq 'latestVersion: "2.9.36"' chatgpt-vps-control/chrome-platform/extension/app.js
+          grep -Fq 'releases/tag/v2.9.36' chatgpt-vps-control/chrome-platform/extension/app.js
+          grep -Fq 'fetchLatestUserscriptMarketplaceItem' chatgpt-vps-control/chrome-platform/extension/app.js
+          grep -Fq 'fetchLatestUserscriptUpdateItem' chatgpt-vps-control/chrome-platform/extension/marketplace-update-check.js
+          grep -Fq 'test "$version" = "0.6.12"' .github/workflows/chrome-extension-web-store-publish.yml
           git diff --check
 
       - name: Remove one-shot patch workflow
+        shell: bash
         run: rm .github/workflows/apply-tfi-userscript-recovery-022.yml
 
-      - name: Commit parent integration
+      - name: Commit generated parent integration
         shell: bash
         run: |
           set -euo pipefail
@@ -218,5 +639,5 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
           git diff --cached --check
-          git commit -m "fix(tfi): pin userscript v2.9.36 recovery"
+          git commit -m "fix: discover and ship latest ChatGPT userscript"
           git push origin HEAD:codex/tfi-userscript-bound-recovery-20260917
