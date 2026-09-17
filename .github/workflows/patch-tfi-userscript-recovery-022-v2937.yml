@@ -1,0 +1,88 @@
+name: Patch TFI userscript recovery 022 for v2.9.37
+
+on:
+  push:
+    branches:
+      - codex/tfi-userscript-bound-recovery-20260917
+    paths:
+      - .github/workflows/patch-tfi-userscript-recovery-022-v2937.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: codex/tfi-userscript-bound-recovery-20260917
+          fetch-depth: 0
+
+      - name: Patch source pin, continuous recovery requirement, and hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          wf = Path('.github/workflows/apply-tfi-userscript-recovery-022.yml')
+          s = wf.read_text()
+          replacements = [
+              ('2fd43b6ba64a58acbc806ad35a4c48b477ac57f0', 'c6cf4e3fce76c0e62ad2be4d409044d5b2486d0f'),
+              ('11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97', 'e08be4c7650e051ae206e883344053cafaca0139c2fb2f32d401361951640ed6'),
+              ('237859', '239416'),
+              ('2.9.36', '2.9.37'),
+          ]
+          for old, new in replacements:
+              if old not in s:
+                  raise SystemExit(f'missing workflow source pin: {old}')
+              s = s.replace(old, new)
+          acorn = 'npm install --no-save acorn@8'
+          if acorn not in s:
+              raise SystemExit('acorn install anchor missing')
+          if "trap 'rm -rf node_modules' EXIT" not in s:
+              s = s.replace(acorn, acorn + "\n          trap 'rm -rf node_modules' EXIT", 1)
+          wf.write_text(s)
+
+          source = Path('projects/telegram-fabushi-integration/source/2026-09-17-userscript-bound-conversation-recovery.md')
+          text = source.read_text()
+          addition = '''\n## 持续运行补充要求（2026-09-18）\n\n- 自动运行开启时不得把任何可恢复任务持久留在 `blocked` / “需要处理”。\n- 若当前轮已有真实绑定会话 URL，仍然先回到该会话检查是否已经结束、是否已有最终回复，并按既有状态机继续；只有确认没有可继续使用的当前轮会话路径时才 fresh resend。\n- 真正进入原本会显示“需要处理”的可恢复异常时，自动清理旧派发身份，切到新的 ChatGPT 会话原样重发，不要求人工点击“恢复任务”。\n- 第一次 fresh retry 立即执行；同一类错误持续发生时自动退避，15 秒起步并封顶 180 秒，避免热循环，但任务始终保持自动可运行。\n- 升级后若本地持久化数据里已有历史 `blocked` 任务，也必须自动迁移回可运行队列。\n- 用户主动暂停、取消和已完成任务不被这一自动恢复规则覆盖。\n'''
+          if '## 持续运行补充要求（2026-09-18）' not in text:
+              text += addition
+          source.write_text(text)
+
+          task = Path('projects/telegram-fabushi-integration/management/tasks/TFI-USERSCRIPT-RECOVERY-022-bound-conversation-recovery.md')
+          text = task.read_text()
+          text = text.replace('source v2.9.36 Release', 'source v2.9.37 Release')
+          text = text.replace('source version 为 `2.9.36`', 'source version 为 `2.9.37`')
+          text = text.replace('copy the exact v2.9.36 source artifact', 'copy the exact v2.9.37 source artifact')
+          old_objective = '修复 ChatGPT 自动确认在发送结果超过 90 秒仍无法确认时的恢复断点：存在本轮绑定会话 URL 时先回到该会话检查最终回复/结束状态并继续既有任务流程；没有绑定 URL 时才每 3 分钟刷新恢复，持续失败后才新开会话原样重发。发布新的 userscript 版本并同步 parent bundled/Marketplace 固定信息。'
+          new_objective = '修复 ChatGPT 自动确认在发送结果超过 90 秒仍无法确认时的恢复断点，并消除自动运行中的终态“需要处理”：存在本轮绑定会话 URL 时先回到该会话检查最终回复/结束状态并继续既有任务流程；没有可继续使用的当前轮会话路径时自动新开 ChatGPT 会话原样重发。任何原本会进入 blocked 的可恢复错误都必须回到自动队列，重复失败按 15–180 秒退避持续运行，而不是等待人工恢复。发布新的 userscript 版本并同步 parent bundled/Marketplace 固定信息。'
+          if old_objective in text:
+              text = text.replace(old_objective, new_objective, 1)
+          old_accept = '8. parent 通过 protected PR/merge queue 合并并 canonical-main 回读；正式稳定发布若涉及 Fabushi/Chrome production candidate，仍需 exact candidate Action runner + Fabushi official MCP 验收，未满足时明确保持 blocked 而不得伪报完成。'
+          new_accept = '8. parent 通过 protected PR/merge queue 合并并 canonical-main 回读；正式稳定发布若涉及 Fabushi/Chrome production candidate，仍需 exact candidate Action runner + Fabushi official MCP 验收。发布门禁未满足时只能把“发布动作”标记为未完成，不能让 userscript 运行任务停在 blocked/“需要处理”。\n9. `autoResume` 开启时，运行时 blocked 过渡和升级前持久化 blocked 任务都必须自动转成 fresh queued retry；清理旧 URL/token/attempted 派发身份并保留目标/阶段/附件元数据；第一次立即重试，重复失败以 15–180 秒退避。\n10. review repair 达到当前会话恢复上限、导航找不到有效会话、附件确认等可恢复错误均不得成为人工“需要处理”终态；用户主动暂停/取消/done 仍保持原语义。'
+          if old_accept in text:
+              text = text.replace(old_accept, new_accept, 1)
+          evidence_start = text.index('## Current verified source evidence')
+          status_start = text.index('## Status and next action', evidence_start)
+          evidence = '''## Current verified source evidence\n\n- Source PR: `bhrumom/fabushi-chatgpt-auto-confirm-userscript#30`.\n- Exact-head PR CI: run `35257833050`, head `8d06cc10e75945d69b1f845f12160b82f0dac367`, syntax + full regression passed (`132/132`).\n- Source squash merge/canonical main: `c6cf4e3fce76c0e62ad2be4d409044d5b2486d0f`.\n- Post-main CI: run `35257887788`, success.\n- Source Release: `v2.9.37`, release ID `391015217`, target `c6cf4e3fce76c0e62ad2be4d409044d5b2486d0f`.\n- Release asset: `chatgpt-auto-confirm.user.js`, `239416` bytes, SHA-256 `e08be4c7650e051ae206e883344053cafaca0139c2fb2f32d401361951640ed6`.\n\n'''
+          text = text[:evidence_start] + evidence + text[status_start:]
+          text = text.replace('Updated: `2026-09-17T22:27:00+08:00`', 'Updated: `2026-09-18T02:14:00+08:00`')
+          task.write_text(text)
+          PY
+          git diff --check
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/apply-tfi-userscript-recovery-022.yml \
+            projects/telegram-fabushi-integration/source/2026-09-17-userscript-bound-conversation-recovery.md \
+            projects/telegram-fabushi-integration/management/tasks/TFI-USERSCRIPT-RECOVERY-022-bound-conversation-recovery.md
+          git commit -m 'fix: make TFI userscript recovery continuous on v2.9.37'
+          git push origin HEAD:codex/tfi-userscript-bound-recovery-20260917
