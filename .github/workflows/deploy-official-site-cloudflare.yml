@@ -251,4 +251,7 @@ jobs:
 
           verify_final_url "https://ombhrum.com/" "https://ombhrum.com/" "official site"
           verify_final_url "https://web.ombhrum.com/" "https://web.ombhrum.com/" "Web application"
-          verify_final_url "https://fabushi.ombhrum.com/" "https://ombhrum.com/" "legacy official host"
+          # `fabushi.ombhrum.com` is a Cloudflare custom domain for the same
+          # Worker, not an HTTP redirect to the apex domain. Verify the host in
+          # place so a healthy 200 response is not retried for five minutes.
+          verify_final_url "https://fabushi.ombhrum.com/" "https://fabushi.ombhrum.com/" "legacy official host"
