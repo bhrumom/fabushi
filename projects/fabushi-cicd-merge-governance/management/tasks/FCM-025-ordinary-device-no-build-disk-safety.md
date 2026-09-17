@@ -5,7 +5,7 @@
 - Task ID: `FCM-025`
 - Started: `2026-09-17`
 - Updated: `2026-09-17`
-- Status: `in-progress`
+- Status: `passed`
 
 ## Objective
 
@@ -30,4 +30,8 @@ Prevent persistent/ordinary devices from being used as build machines so reposit
 ## Implementation
 
 - Branch: `project/fcm-025-ordinary-device-disk-safety-20260917`
-- PR/merge evidence: pending.
+- Implementation PR: #2695
+- Implementation head: `81766dbdfff81fdf1054735f073649e2b9e88ef6`
+- Merge-group CI: run `35198069214` — `success`
+- Protected merge commit / canonical main after implementation: `8f06463b5eb7389252d459d28709ab889651aaa6`
+- Canonical readback confirmed the complete ordinary-device no-build section in root `AGENTS.md`.
