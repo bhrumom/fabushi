@@ -144,3 +144,7 @@ No local build result is represented as verification. GitHub Actions exact-head 
 - An initial full-history repair trigger then exposed an invalid YAML `if:` expression before jobs were created; the expression was quoted and retriggered on the same canonical branch.
 - The corrected full-history repair succeeded and produced `d49b116facd52be6bc14cd9792e9598a3ab2df9b`, containing the rustfmt changes/lock refresh and deleting the one-shot repair workflow.
 - This project-record synchronization is intentionally the next branch commit so the normal PR workflows execute against the repaired tree. Acceptance state remains `in-progress` until those exact-head checks are read and the remaining architectural/product blockers are closed.
+
+### 2026-09-17 release-discovered structured assistant-turn gap
+
+Desktop no-test release run `35218893260` showed that `messaging-shell-v2.tsx` can project structured `assistant-turn` messages into Agent Bot conversations while `BotTranscriptMessage` only admitted message/action/thinking. The current repair models that structured turn and renders it through `MahayanaAssistantTurnView`. This is a compile/projection blocker repair only; MSR-204 remains `in-progress` for the broader Hermes acceptance debt already recorded above.
