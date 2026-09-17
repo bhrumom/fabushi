@@ -28,8 +28,10 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Resolve exact immutable tags
+      - name: Resolve exact reusable protected-main package
         id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -37,8 +39,19 @@ jobs:
           [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'source_sha must be a full lowercase commit SHA' >&2; exit 1; }
           git fetch origin main --depth=1
           main_sha="$(git rev-parse origin/main)"
-          test "$source_sha" = "$main_sha" || { echo "Refusing promotion: source $source_sha is not current protected main $main_sha" >&2; exit 1; }
+          compare_status="$(gh api "repos/$GITHUB_REPOSITORY/compare/$source_sha...$main_sha" --jq .status)"
+          case "$compare_status" in
+            ahead|identical) ;;
+            *) echo "Refusing promotion: $source_sha is not on the protected-main lineage of $main_sha (status=$compare_status)" >&2; exit 1 ;;
+          esac
+          git fetch origin "$source_sha" --depth=1
+          if ! git diff --quiet "$source_sha" "$main_sha" -- third_party/mahayana; then
+            echo 'Refusing artifact reuse: Mahayana CLI payload changed after the packaged source.' >&2
+            git diff --name-only "$source_sha" "$main_sha" -- third_party/mahayana >&2
+            exit 1
+          fi
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
           echo "test_tag=mahayana-cli-test-${source_sha:0:12}" >> "$GITHUB_OUTPUT"
           echo "channel_tag=mahayana-cli-main-${source_sha:0:12}" >> "$GITHUB_OUTPUT"
 
@@ -80,5 +93,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$source_sha" \
             --title "Mahayana CLI protected main ${source_sha:0:12}" \
-            --notes "Immutable one-line-installer channel promoted from ${{ steps.meta.outputs.test_tag }}. No product tests were run by this promotion." \
+            --notes "Immutable one-line-installer channel promoted from ${{ steps.meta.outputs.test_tag }}. Current protected main at promotion: ${{ steps.meta.outputs.main_sha }}. The Mahayana payload tree is byte-identical between package source and current main. No product tests were run by this promotion." \
             --latest=false
