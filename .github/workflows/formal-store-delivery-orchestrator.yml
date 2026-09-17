@@ -1,69 +1,15 @@
-name: Formal store delivery orchestrator
+name: Legacy formal store orchestrator (disabled)
 
 on:
-  workflow_run:
-    workflows:
-      - Native mobile quality gate
-    types: [completed]
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  actions: write
   contents: read
 
-concurrency:
-  group: formal-store-delivery
-  cancel-in-progress: false
-
 jobs:
-  dispatch:
-    if: >-
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      contains(github.event.workflow_run.head_commit.message, '[full-platform-release]')
+  disabled:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-      - name: Dispatch exact-main Apple and Google Play delivery
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          set -euo pipefail
-          main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          if [ "$main_sha" != "$SOURCE_SHA" ]; then
-            echo "Refusing stale formal release: main=$main_sha upstream=$SOURCE_SHA" >&2
-            exit 1
-          fi
-
-          version="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$GITHUB_REPOSITORY/contents/app-version.json?ref=$SOURCE_SHA" | jq -r '.version')"
-          test -n "$version" && test "$version" != null
-          short_sha="${SOURCE_SHA:0:12}"
-          google_release_tag="google-play-v${version}-${short_sha}"
-
-          gh workflow run apple-store-delivery.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f source_ref="$SOURCE_SHA" \
-            -f target=both
-
-          gh workflow run google-play-delivery.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f ref="$SOURCE_SHA" \
-            -f track=production \
-            -f release_status=completed \
-            -f changes_not_sent_for_review=true \
-            -f github_release_tag="$google_release_tag"
-
-          {
-            echo '## Formal store delivery dispatch'
-            echo
-            echo "- Source: $SOURCE_SHA"
-            echo "- Version: $version"
-            echo '- Apple: macOS + iOS via existing Apple Store delivery workflow'
-            echo '- Google Play: production/completed with manual review handoff preserved by existing delivery policy'
-            echo "- Google Play evidence release: $google_release_tag"
-          } >> "$GITHUB_STEP_SUMMARY"
+      - run: |
+          echo 'Combined Apple + Google automatic store fan-out is disabled by FCM-023.'
+          echo 'Use the platform-specific formal release workflow after its E2E gate is calibrated and enabled.'

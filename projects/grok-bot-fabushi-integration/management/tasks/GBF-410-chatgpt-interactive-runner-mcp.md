@@ -74,3 +74,9 @@
 ## Next action
 
 Finish full local source validation, deploy the remote MCP endpoint, merge through protected main, trigger the interactive workflow, connect ChatGPT with the same GitHub-linked Fabushi account, complete the live Runner journey, fix all failures and backfill exact evidence.
+
+## 2026-09-03 production connector recovery
+
+The previously observed ChatGPT connector 400 was traced to an operational storage failure on the public MCP host rather than an OAuth protocol implementation defect: root storage was full, so DCR state writes failed and `POST /oauth/register` returned 502 while read-only health/metadata remained reachable. Bounded journal/cache/temporary/build-cache cleanup restored about 2.2 GiB free space; DCR now returns 201, `fabushi test` account lookup succeeds, and device listing succeeds (currently empty until the same-account Mac client is online). Evidence: `evidence/GBF-410/2026-09-03-public-mcp-disk-recovery.md`.
+
+GBF-410 remains `IN_PROGRESS` until the signed Mac test client appears through the connector and a real same-account device interaction is completed.
