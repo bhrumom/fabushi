@@ -239,7 +239,7 @@ jobs:
         if: inputs.artifact_run_id != ''
         uses: actions/download-artifact@v8
         with:
-          name: fabushi-electron-linux
+          name: fabushi-test-release-linux
           path: desktop/release
           repository: ${{ github.repository }}
           run-id: ${{ inputs.artifact_run_id }}
