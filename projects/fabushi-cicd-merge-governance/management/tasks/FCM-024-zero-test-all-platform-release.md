@@ -78,3 +78,11 @@ No local build/test is permitted.
 - Mobile parent run `35218893282` reached both stores. iOS TestFlight child run `35218919317` succeeded. Android internal child run `35218921320`, job `105193996429`, failed at `:app:compileReleaseKotlin` because `FabushiScreen.kt` referenced `MobileChatEntryKind.MINI_APP`, `miniAppName`, and `miniAppDescription` that were absent from `MarketplaceViewModel.kt`.
 - Repair branch `fix/fcm024-1.2.71-renderer-contracts-20260917` starts from canonical `63a273cf47c0c600b63912487885cfff795ccae7` and repairs only those compile-time projection contracts.
 - No local build or behavioral test is accepted. Final exact-head CI, protected SQUASH queue merge, and a fresh all-platform no-test delivery against the resulting canonical SHA remain required.
+
+### 2026-09-17 candidate rollover to `1.2.72 / 41 / 41`
+
+- Canonical `b5752493ddac59e685f7cf03d4e241c83bb161f9` fixed the release-discovered compile blockers and was used for a fresh 1.2.71 delivery attempt.
+- Desktop run `35220617480` proved Linux package success and advanced Windows/macOS beyond renderer compilation, but was canceled after the candidate became invalid for unified promotion.
+- Mobile parent `35220620701` dispatched exact-SHA children. iOS run `35220648026` built/uploaded the native iOS package successfully in job `105199722816`, but final job `105202173813` failed because immutable GitHub Release `apple-v1.2.71-40` already existed and points to old diagnostic SHA `e96c9bb1752036d3796d61d762d745bcdb9ef111`.
+- Continuing with build number 40 would create mixed-SHA evidence, so the candidate is rolled forward rather than mutating the immutable release. In-progress Desktop/Android 1.2.71 runs were cancel-requested.
+- New candidate version is `1.2.72`, Android versionCode `41`, iOS build `41`, still requiring one post-merge canonical SHA for all five test-delivery surfaces and all later MCP acceptance.

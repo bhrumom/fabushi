@@ -68,3 +68,11 @@
 - Baseline: `main@63a273cf47c0c600b63912487885cfff795ccae7`
 - Scope: restore Desktop Mini App transcript union, Desktop structured `assistant-turn` bot projection, and Android Mini App chat model fields exposed by diagnostic release runs.
 - Acceptance: exact-head `CI result` green; protected SQUASH queue only; fresh macOS/Windows/Linux prerelease + iOS TestFlight + Android internal all bound to one post-merge canonical SHA; no behavioral tests during test delivery.
+
+### FCM-024-20260917-03 — roll candidate after immutable Apple identity collision
+
+- Status: `in-progress`
+- Baseline: `main@b5752493ddac59e685f7cf03d4e241c83bb161f9`
+- Candidate: `1.2.72 / Android 41 / iOS 41`
+- Reason: `apple-v1.2.71-40` is immutable and targets old diagnostic SHA `e96c9bb...`; reusing 40 cannot satisfy same-SHA promotion.
+- Acceptance: protected SQUASH merge, exact-head/merge-group gates, then fresh macOS/Windows/Linux prerelease + TestFlight + Android internal from one new canonical SHA before official-MCP acceptance.
