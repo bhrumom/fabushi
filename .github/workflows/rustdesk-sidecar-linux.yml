@@ -5,17 +5,6 @@ env:
   VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
 
 on:
-  pull_request:
-    paths:
-      - 'integrations/rustdesk-sidecar/**'
-      - 'desktop/electron/**'
-      - 'desktop/package.json'
-      - 'frontend/apps/web/src/lib/remote-computer/**'
-      - 'desktop/src/messaging-shell-v2.tsx'
-      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/remote_computer.rs'
-      - 'chatgpt-vps-control/tests/rustdesk-session-permission-enforcement.test.js'
-      - '.github/scripts/rustdesk-*.py'
-      - '.github/workflows/rustdesk-sidecar-linux.yml'
   workflow_dispatch:
 
 permissions:
