@@ -1,0 +1,222 @@
+name: Apply TFI userscript recovery 022
+
+on:
+  push:
+    branches:
+      - codex/tfi-userscript-bound-recovery-20260917
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out parent branch
+        uses: actions/checkout@v7
+        with:
+          ref: codex/tfi-userscript-bound-recovery-20260917
+          fetch-depth: 0
+
+      - name: Pin exact v2.9.36 artifact and advance Chrome candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_SHA=2fd43b6ba64a58acbc806ad35a4c48b477ac57f0
+          SOURCE_SHA256=11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97
+          SOURCE_SIZE=237859
+          SOURCE_URL="https://raw.githubusercontent.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/${SOURCE_SHA}/chatgpt-auto-confirm.user.js"
+          curl -fsSL "$SOURCE_URL" -o /tmp/chatgpt-auto-confirm.user.js
+          test "$(wc -c < /tmp/chatgpt-auto-confirm.user.js)" = "$SOURCE_SIZE"
+          test "$(sha256sum /tmp/chatgpt-auto-confirm.user.js | awk '{print $1}')" = "$SOURCE_SHA256"
+          grep -Eq '^// @version[[:space:]]+2\.9\.36$' /tmp/chatgpt-auto-confirm.user.js
+          grep -Fq "const VERSION = '2.9.36';" /tmp/chatgpt-auto-confirm.user.js
+          cp /tmp/chatgpt-auto-confirm.user.js chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js
+
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text()
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} occurrences of {old!r}, found {actual}')
+              p.write_text(text.replace(old, new))
+
+          replace_exact('chatgpt-vps-control/chrome-platform/extension/app.js',
+                        '42df09a39f4505418f13a4fab578c96ee03b9b37',
+                        '2fd43b6ba64a58acbc806ad35a4c48b477ac57f0')
+          replace_exact('chatgpt-vps-control/chrome-platform/extension/app.js',
+                        '4fc88a50a8bb5034d5ec41f262c333d83e83917b1e22f75b26bb04ae10f8602b',
+                        '11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97')
+          replace_exact('chatgpt-vps-control/chrome-platform/extension/app.js',
+                        'const MARKETPLACE_USERSCRIPT_SIZE = 235583;',
+                        'const MARKETPLACE_USERSCRIPT_SIZE = 237859;')
+          replace_exact('chatgpt-vps-control/chrome-platform/extension/app.js',
+                        'releases/tag/v2.9.35',
+                        'releases/tag/v2.9.36')
+          replace_exact('chatgpt-vps-control/chrome-platform/extension/manifest.json',
+                        '"version": "0.6.11"',
+                        '"version": "0.6.12"')
+
+          p = Path('chatgpt-vps-control/scripts/package-chrome-extension.mjs')
+          text = p.read_text()
+          if text.count('0.6.11') != 3:
+              raise SystemExit(f'package script: expected 3 old version pins, found {text.count("0.6.11")}')
+          p.write_text(text.replace('0.6.11', '0.6.12'))
+
+          replace_exact('chatgpt-vps-control/scripts/validate-chrome-extension.mjs',
+                        '0.6.11', '0.6.12')
+
+          p = Path('chatgpt-vps-control/docs/chrome-web-store/README.md')
+          text = p.read_text()
+          if text.count('0.6.11') < 3:
+              raise SystemExit('Chrome Web Store README no longer has the expected 0.6.11 candidate references')
+          p.write_text(text.replace('0.6.11', '0.6.12'))
+
+          project = Path('projects/telegram-fabushi-integration/PROJECT.yaml')
+          text = project.read_text()
+          if '  - task: TFI-USERSCRIPT-RECOVERY-022\n' not in text:
+              marker = 'completed_stage_evidence:\n'
+              if marker not in text:
+                  raise SystemExit('PROJECT.yaml completed_stage_evidence marker missing')
+              block = (
+                  '  - task: TFI-USERSCRIPT-RECOVERY-022\n'
+                  '    branch: codex/tfi-userscript-bound-recovery-20260917\n'
+                  '    source_pr: 29\n'
+                  '    source_main_sha: 2fd43b6ba64a58acbc806ad35a4c48b477ac57f0\n'
+                  '    source_version: 2.9.36\n'
+                  '    source_release: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.36\n'
+                  '    source_sha256: 11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97\n'
+                  '    source_size: 237859\n'
+                  '    chrome_version: 0.6.12\n'
+                  '    state: IN_PROGRESS\n'
+                  '    state_detail: SOURCE_RELEASED / PARENT_PR_PENDING\n'
+              )
+              project.write_text(text.replace(marker, block + marker, 1))
+          PY
+
+      - name: Append durable project tracking
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> projects/telegram-fabushi-integration/management/01-WBS原子任务.md <<'EOF'
+
+          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022 绑定会话优先恢复
+
+          - `TFI-USERSCRIPT-RECOVERY-022` — `IN_PROGRESS / SOURCE_RELEASED / PARENT_PR_PENDING`。
+          - Acceptance A1：90 秒 ambiguous send 且存在本轮绑定 URL 时优先回该 URL 检查最终回复/结束状态，不直接 blocked、不重复发送。
+          - Acceptance A2：没有绑定 URL 时每 180 秒至多刷新一次；连续 4 个恢复周期仍无法建立身份时才新开会话原样重发。
+          - Acceptance A3：source `v2.9.36@2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`、237859 bytes、SHA-256 `11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97` 固定进 parent bundled/Marketplace；Chrome candidate 单调递增至 `0.6.12`。
+          - Acceptance A4：parent protected-main/canonical readback 与允许的 package/provenance evidence 完成后更新；正式 stable 仍由 exact-candidate Fabushi official MCP gate 决定。
+          EOF
+
+          cat >> projects/telegram-fabushi-integration/management/03-验收追踪矩阵.md <<'EOF'
+
+          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022
+
+          | Requirement | Acceptance | Verification | State |
+          | --- | --- | --- | --- |
+          | 绑定会话优先于重发 | 90 秒确认歧义后若 `task.url` 有效，回到绑定会话检查结束/最终回复并沿现有流程继续 | source PR #29 exact-head regression + post-main CI | PASS |
+          | 无绑定会话周期恢复 | 180 秒冷却，无热循环；4 个周期后才 fresh-session retry | source PR #29 regression | PASS |
+          | source/parent immutable pin | bundled bytes 与 v2.9.36 一致，Marketplace pin SHA/release/size/digest；Chrome 0.6.12 | parent diff + GitHub Actions verification | IN_PROGRESS |
+          | protected-main / publication | merge queue canonical readback；正式 stable 必须 exact candidate + official MCP | parent PR/merge/package/MCP evidence | PENDING |
+          EOF
+
+          cat >> projects/telegram-fabushi-integration/management/04-风险登记.md <<'EOF'
+
+          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022 risks
+
+          | Risk | Impact | Mitigation | State |
+          | --- | --- | --- | --- |
+          | R-TFI-USR-022-01 ambiguous send 被误当失败导致重复派发 | 高 | 已绑定 URL 永远优先检查；无绑定 URL 保留 token 并按 180 秒冷却恢复，4 周期后才换新 token | MITIGATED IN SOURCE |
+          | R-TFI-USR-022-02 source v2.9.36 与 parent Marketplace 漂移 | 高 | 固定 exact source SHA、release URL、size、SHA-256，并要求 bundled bytes 校验 | IN_PROGRESS |
+          | R-TFI-USR-022-03 changed Chrome binary 复用旧商店版本 | 高 | manifest/package/validator/docs 同步单调递增 0.6.11 -> 0.6.12 | IN_PROGRESS |
+          EOF
+
+          cat >> projects/telegram-fabushi-integration/management/06-依赖与阻塞.md <<'EOF'
+
+          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022 dependencies
+
+          - Source v2.9.36 已公开发布，parent integration 可执行。
+          - Parent 正式/稳定 Chrome production publication 仍依赖 exact candidate Action-owned/App-owned runner + Fabushi official MCP 外部控制验收；历史包、自动 E2E 或不同 SHA 不可替代。
+          - Chrome Web Store 既有审核状态与 source GitHub Release 独立；不得覆盖或绕过既有 submission。
+          EOF
+
+          cat >> projects/telegram-fabushi-integration/management/05-状态报告.md <<'EOF'
+
+          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022 绑定会话优先恢复
+
+          - source PR #29 已 squash merge；canonical source main `2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`，PR exact-head run `35233282863` 与 post-main run `35233363949` 均通过语法/完整回归。
+          - source Release `v2.9.36` 已公开：asset `237859` bytes，SHA-256 `11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97`。
+          - parent 正在把 bundled userscript / Marketplace immutable metadata 固定到 v2.9.36，并把 Chrome candidate 从 `0.6.11` 单调递增到 `0.6.12`。
+          - 当前状态：`IN_PROGRESS / SOURCE_RELEASED / PARENT_PR_PENDING`；不宣称正式 Chrome stable publication。
+          EOF
+
+          cat >> projects/telegram-fabushi-integration/management/07-变更日志.md <<'EOF'
+
+          ## 2026-09-17 — TFI-USERSCRIPT-RECOVERY-022 发送确认恢复链
+
+          - 将 90 秒发送确认歧义从“无当前页绑定即 blocked”改为“本轮绑定 URL 优先检查”；结束/最终回复由既有任务状态机决定下一步。
+          - 无绑定 URL 时新增 180 秒恢复冷却并保留原派发身份；连续 4 个周期仍无法绑定才 fresh-session resend。
+          - source 发布 v2.9.36；parent bundled/Marketplace pin 更新为 exact source SHA/size/digest，Chrome candidate 递增 0.6.12。
+          EOF
+
+          mkdir -p projects/telegram-fabushi-integration/evidence/TFI-USERSCRIPT-RECOVERY-022
+          cat > projects/telegram-fabushi-integration/evidence/TFI-USERSCRIPT-RECOVERY-022/README.md <<'EOF'
+          # Evidence — TFI-USERSCRIPT-RECOVERY-022
+
+          ## Source delivery
+
+          - Source PR: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/29
+          - PR exact-head: `30b8d3cc071a478f47032bd95c2af0066df27982`
+          - PR CI: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/actions/runs/35233282863 — success
+          - Canonical source main: `2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`
+          - Post-main CI: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/actions/runs/35233363949 — success
+          - Release: https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.36
+          - Release ID: `390790284`; target: `2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`
+          - Asset: `chatgpt-auto-confirm.user.js`, `237859` bytes, SHA-256 `11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97`
+
+          ## Parent integration target
+
+          - Parent intake baseline: `6245420379e6c11a84d23b2e705debe779532d47`
+          - Branch: `codex/tfi-userscript-bound-recovery-20260917`
+          - Bundled userscript must be byte-identical to the source artifact above.
+          - Marketplace pin must use source commit `2fd43b6ba64a58acbc806ad35a4c48b477ac57f0`, release `v2.9.36`, size `237859`, SHA-256 `11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97`.
+          - Chrome candidate: `0.6.12`.
+          - Parent PR / canonical main / package evidence: pending this execution round.
+
+          ## Formal publication boundary
+
+          Source userscript v2.9.36 is public. Parent/Chrome formal stable publication is not considered complete until the repository's current exact-candidate Fabushi official MCP gate is satisfied; historical E2E or another SHA cannot substitute.
+          EOF
+
+      - name: Verify static integration invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(wc -c < chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js)" = "237859"
+          test "$(sha256sum chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js | awk '{print $1}')" = "11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97"
+          grep -Fq 'const MARKETPLACE_USERSCRIPT_COMMIT = "2fd43b6ba64a58acbc806ad35a4c48b477ac57f0";' chatgpt-vps-control/chrome-platform/extension/app.js
+          grep -Fq 'const MARKETPLACE_USERSCRIPT_SHA256 = "11784d8eafe788b7d72a99bd191865ba472ccf219561d91302cfadb65a5dae97";' chatgpt-vps-control/chrome-platform/extension/app.js
+          grep -Fq 'const MARKETPLACE_USERSCRIPT_SIZE = 237859;' chatgpt-vps-control/chrome-platform/extension/app.js
+          grep -Fq 'releases/tag/v2.9.36' chatgpt-vps-control/chrome-platform/extension/app.js
+          grep -Fq '"version": "0.6.12"' chatgpt-vps-control/chrome-platform/extension/manifest.json
+          git diff --check
+
+      - name: Remove one-shot patch workflow
+        run: rm .github/workflows/apply-tfi-userscript-recovery-022.yml
+
+      - name: Commit parent integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(tfi): pin userscript v2.9.36 recovery"
+          git push origin HEAD:codex/tfi-userscript-bound-recovery-20260917
