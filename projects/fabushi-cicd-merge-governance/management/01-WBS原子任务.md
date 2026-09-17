@@ -61,3 +61,10 @@
 - Scope: version `1.2.71 / Android 40 / iOS 40`, retire the discovered automatic RustDesk test trigger, protected queue merge, same-SHA desktop/mobile test delivery, then official-MCP interactive acceptance.
 - Acceptance: exact-head required checks green; protected SQUASH queue only; immutable desktop prerelease + TestFlight + Android internal for one canonical SHA; fresh run-scoped App-owned MCP devices; stable publish only after MCP-driven required journeys pass.
 - Evidence: PR `#2698`; final head/merge/release/device evidence pending.
+
+### FCM-024-20260917-02 — repair no-test delivery compile blockers
+
+- Status: `in-progress`
+- Baseline: `main@63a273cf47c0c600b63912487885cfff795ccae7`
+- Scope: restore Desktop Mini App transcript union, Desktop structured `assistant-turn` bot projection, and Android Mini App chat model fields exposed by diagnostic release runs.
+- Acceptance: exact-head `CI result` green; protected SQUASH queue only; fresh macOS/Windows/Linux prerelease + iOS TestFlight + Android internal all bound to one post-merge canonical SHA; no behavioral tests during test delivery.
