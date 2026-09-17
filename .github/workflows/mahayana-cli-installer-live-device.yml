@@ -153,3 +153,51 @@ jobs:
           mahayana device stop || true
           rm -f "$FABUSHI_ACCOUNT_SESSION_FILE" "$FABUSHI_CI_ACCOUNT_SESSION_FILE"
           sleep 2
+
+  installer-smoke-macos:
+    name: One-line installer smoke (macOS)
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verify latest channel and run public shell installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ inputs.expected_source_sha }}'
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          target="$(gh release view mahayana-cli-latest --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          test "$target" = "$expected"
+          install_dir="$RUNNER_TEMP/mahayana-bin"
+          home_dir="$RUNNER_TEMP/mahayana-home"
+          mkdir -p "$install_dir" "$home_dir"
+          curl -fsSL --retry 5 --retry-all-errors https://ombhrum.com/mahayana/install.sh \
+            | MAHAYANA_INSTALL_DIR="$install_dir" MAHAYANA_HOME="$home_dir" sh
+          "$install_dir/mahayana" --version
+          "$install_dir/mahayana" device status
+          "$install_dir/mahayana" device stop
+
+  installer-smoke-windows:
+    name: One-line installer smoke (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verify latest channel and run public PowerShell installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '${{ inputs.expected_source_sha }}'
+          if ($expected -notmatch '^[0-9a-f]{40}$') { throw 'expected_source_sha must be a full commit SHA' }
+          $target = gh release view mahayana-cli-latest --repo $env:GITHUB_REPOSITORY --json targetCommitish --jq .targetCommitish
+          if ($target.Trim() -ne $expected) { throw "mahayana-cli-latest points to $target, expected $expected" }
+          $env:MAHAYANA_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'mahayana-bin'
+          $env:MAHAYANA_HOME = Join-Path $env:RUNNER_TEMP 'mahayana-home'
+          New-Item -ItemType Directory -Force -Path $env:MAHAYANA_INSTALL_DIR, $env:MAHAYANA_HOME | Out-Null
+          irm https://ombhrum.com/mahayana/install.ps1 | iex
+          $exe = Join-Path $env:MAHAYANA_INSTALL_DIR 'mahayana.exe'
+          & $exe --version
+          & $exe device status
+          & $exe device stop
