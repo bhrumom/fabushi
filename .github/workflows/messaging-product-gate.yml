@@ -1,8 +1,0 @@
-name: Messaging Product Gate
-on:
-  workflow_dispatch:
-jobs:
-  paused:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo 'Automatic messaging gate paused for 2026-09-05 Mac test release.'

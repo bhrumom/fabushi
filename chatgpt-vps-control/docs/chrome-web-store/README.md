@@ -1,8 +1,8 @@
 # Fabushi Chrome Web Store release
 
-Production candidate: **0.6.9**
+Production candidate: **0.6.11**
 
-Fabushi 0.6.9 is the official Chrome extension for the Fabushi product shell,
+Fabushi 0.6.11 is the official Chrome extension for the Fabushi product shell,
 the existing-Chrome Computer Control bridge, and the 0.4.1 userscript runner
 (including the bundled ChatGPT auto-confirm workbench and Task Queue companion).
 The old `ChatGPT Computer Control Bridge` extension is a migration source only
@@ -16,9 +16,9 @@ Chrome device; no desktop app is required for browser control.
 
 `npm run chrome:package` stages an explicit file allow-list and writes:
 
-- `dist/chrome-extension/fabushi-chrome-0.6.9.zip`;
+- `dist/chrome-extension/fabushi-chrome-0.6.11.zip`;
 - `dist/chrome-extension/SHA256SUMS.txt`;
-- `dist/chrome-extension/fabushi-chrome-0.6.9.content-manifest.json` with source
+- `dist/chrome-extension/fabushi-chrome-0.6.11.content-manifest.json` with source
   SHA, per-file SHA-256/size, archive SHA-256, and generation timestamp.
 
 The Web Store listing must retain one stable Fabushi extension ID. Every Chrome Web Store update must increment the version; a changed binary may never be uploaded under the same version.

@@ -135,3 +135,19 @@ source PR [#17](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscri
 - source PR [#24](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/24) 已合并为 source main `5f7d1f26a9883e6806ec855f5f2177ad737aa07e`，发布 `v2.9.31`；资产 225544 bytes，SHA-256 `1e025a9b64bcba225059a0768fb08b5bcf818f902f8c7c4e5980505958e6fe2a`。
 - parent 分支同步精确 source、补齐 content bridge 的旧版本 envelope 兼容、增加导航 lease cancel，并把 Chrome 版本递增至 `0.6.9`；Platform Worker projection 同步 v2.9.31/hash/size。
 - 当前状态：`IN_PROGRESS / SOURCE_RELEASED / PARENT_CI_PENDING`；尚未把 parent 包或当前 Chrome 安装描述为已更新，待 protected main、exact-main packaged journey、生产目录回读和 Release。
+
+## 2026-09-15 — TFI-USERSCRIPT-RECOVERY-019 最终回复与停滞会话自愈
+
+用户最新要求是：当 ChatGPT assistant 回复已经出现复制与点赞/点踩按钮时才确认最终结果；同一绑定会话 3 分钟没有变化时刷新页面，以重新发现授权卡片或绘画/工具结果；截图中的验收 JSON 解析错误不能把任务永久卡在“需要处理”。附件仅作故障证据，未作为额外指令执行。
+
+- source PR [#25](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/25) 已合并到 source main `50569be0ab88909408ed8880a24c185906d760eb`，发布 [v2.9.32](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.32)；资产 234862 bytes，SHA-256 `30ec1f70e0c14a8ebbd530b2cf0186a2d63690bf85e45b8ec8d0e1a81090e9e7`。
+- source 已收敛最终回复按钮判定、180 秒有界刷新和 review JSON 严格优先/有限恢复；完整 source Actions 回归通过。
+- parent PR [#2652](https://github.com/bhrumom/fabushi/pull/2652) 已把 bundled userscript、Marketplace projection 固定到上述 source SHA，并将 Chrome 版本递增到 `0.6.10`；parent CI、protected main、exact-main packaged evidence、生产 catalog 回读和 parent Release 仍待完成。
+
+## 2026-09-16 — TFI-USERSCRIPT-RECOVERY-021 真实回复操作栏修复
+
+电脑插件对用户当前 Chrome 页面进行了只读核验：页面顶部的 `分享` 是全局按钮，assistant 回复下方实际暴露为 `复制回复`、`评价回复`、`切换模型`、`更多操作`。因此 source `v2.9.35` 同时支持回复级 `复制+分享` 与真实页面的 `复制+评价回复/Rate response`，而不会把顶部分享误判为任意回复完成。
+
+- source PR [#28](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/pull/28) 已合并到 source main `42df09a39f4505418f13a4fab578c96ee03b9b37`；[Release v2.9.35](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.35) 资产 `235583` bytes，SHA-256 `4fc88a50a8bb5034d5ec41f262c333d83e83917b1e22f75b26bb04ae10f8602b`，source CI [35102539237](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/actions/runs/35102539237) 通过。
+- parent PR [#2680](https://github.com/bhrumom/fabushi/pull/2680) 已从最新 canonical main 创建，包含 byte-identical bundled userscript、Worker immutable projection，并将 Chrome 版本推进至 `0.6.11`；仍需 PR/主线、exact-main packaged journey/evidence、Release 和生产目录回读。
+- `TFI-USERSCRIPT-RECOVERY-020` 的无限 180 秒停滞刷新语义随本次 parent 交付一并保留；旧冲突候选 PR 不作为正式发布依据。

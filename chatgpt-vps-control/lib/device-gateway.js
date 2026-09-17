@@ -129,6 +129,10 @@ function markDisconnected(socket) {
   if (!socket.registryKey) return;
   const device = devices.get(socket.registryKey);
   if (!device || device.socket !== socket) return;
+  if (device.metadata?.kind === "github-actions") {
+    devices.delete(socket.registryKey);
+    return;
+  }
   device.status = "offline";
   device.socket = null;
   device.lastSeen = Date.now();
@@ -398,10 +402,17 @@ export function listRegisteredDevices(accountId) {
   const now = Date.now();
   return [...devices.values()]
     .filter((device) => device.accountId === normalizedAccountId)
-    .map((device) => {
-      if (!device.central && (device.expiresAt <= now || now - device.lastSeen > STALE_AFTER_MS)) device.status = "offline";
-      return publicDevice(device);
+    .filter((device) => {
+      if (device.central) return true;
+      const live = device.expiresAt > now
+        && now - device.lastSeen <= STALE_AFTER_MS
+        && device.status === "online"
+        && device.socket
+        && device.socket.readyState === 1;
+      if (!live) device.status = "offline";
+      return live;
     })
+    .map(publicDevice)
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 

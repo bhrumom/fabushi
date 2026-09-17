@@ -11,3 +11,5 @@ Study `xai-org/grok-build` and `openai/codex`; fuse and optimize their best capa
 - `third_party/mahayana/mahayana-rs/SOURCES.lock`
 
 This file preserves intake. Normalized requirements live in `docs/`.
+
+- 2026-09-17: added `source/2026-09-17-mahayana-cli-device-autoreg.md` for one-line CLI install, same-account automatic device registration, and ephemeral runner lifecycle.

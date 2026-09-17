@@ -1,6 +1,6 @@
 {
   "name": "@fabushi/desktop",
-  "version": "1.2.65",
+  "version": "1.2.70",
   "description": "Fabushi Electron desktop client",
   "homepage": "https://fabushi.ombhrum.com/",
   "author": "bhrumom",
@@ -18,6 +18,7 @@
     "package": "npm run build:host && npm run build:renderer && electron-builder",
     "test:credential-gateway": "node --test electron/credential-gateway.test.cjs",
     "test:e2e": "playwright test",
+    "test:openbot-parity": "node scripts/assert-openbot-parity.mjs",
     "start": "electron ."
   },
   "dependencies": {

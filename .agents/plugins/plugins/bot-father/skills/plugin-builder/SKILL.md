@@ -30,7 +30,28 @@ Before finishing, run `mahayana plugin validate`, `mahayana plugin test`, and
 repository tests. The CLI test command must execute the plugin's declared test
 suite; an external `npm test` alone is not a substitute. Exercise the local
 runtime over stdio, and verify MCP App message handling does not mistake an
-outbound JSON-RPC request for its response. Run `mahayana plugin publish` only
-after those checks pass. Only report publication after the market service
-returns a release receipt and a subsequent market query can find the exact
-plugin/version.
+outbound JSON-RPC request for its response.
+
+For an official in-repository plugin, do not hand-edit
+`frontend/apps/web/public/.well-known/mahayana/marketplace.json` or the
+Marketplace approval ledger. Commit the plugin source plus the internal
+`.agents/plugins/marketplace.json` registration in a same-repository governed
+PR. The required `CI result` automatically runs `Marketplace Security Review`
+(deterministic Fabushi policy, CodeQL, Semgrep CE, Trivy, OSV and Syft/Grype).
+After that exact PR head passes CI, the trusted default-branch
+`Marketplace Auto Publish` workflow re-audits it, generates the public catalog
+and immutable approval ledger, commits those generated files back into the
+same source PR, reruns `CI result` on the generated head, then explicitly hands
+the PR to the repository's existing protected automerge/merge-queue
+controller. This write-back is disabled for fork PRs and for PRs that also
+change security/publisher tooling. A failed audit, a changed digest under an
+already-approved version, a failed generated-head CI, or a failed merge-group
+keeps the new plugin/version unlisted. Do not manually stage the generated
+catalog or add merge authorization to bypass this publication controller.
+
+Use `mahayana plugin publish` only after local plugin validation/test/pack has
+passed and when the market service path being used is explicitly supported by
+the current repository policy. Only report public publication after canonical
+`main`/the public market query returns the exact plugin/version and its audit
+digest; a source PR, successful pack, staged catalog commit, or queued merge is
+not a publication receipt.

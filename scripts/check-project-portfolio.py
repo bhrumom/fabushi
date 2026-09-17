@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ REGISTRY_PATH = PROJECTS_ROOT / "PORTFOLIO.json"
 ID_RE = re.compile(r"^FAB-P([0-9]{4})$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 KEY_RE = re.compile(r"^[A-Z][A-Z0-9]{1,11}$")
+PENDING_CANONICAL_MAIN = "PENDING_CANONICAL_MAIN"
 
 
 class ValidationError(RuntimeError):
@@ -39,12 +41,7 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def top_level_yaml_scalars(path: Path) -> dict[str, str]:
-    """Read simple top-level scalar fields from PROJECT.yaml.
-
-    Fabushi PROJECT.yaml files contain nested YAML, but portfolio validation only needs
-    top-level identity scalars. Keeping this parser intentionally narrow avoids adding a
-    PyYAML dependency to a repository-governance gate.
-    """
+    """Read simple top-level scalar fields from PROJECT.yaml."""
 
     result: dict[str, str] = {}
     try:
@@ -64,6 +61,31 @@ def top_level_yaml_scalars(path: Path) -> dict[str, str]:
             value = value[1:-1]
         result[key] = value
     return result
+
+
+def canonical_first_project_commit(slug: str, baseline_ref: str | None) -> str:
+    if not baseline_ref:
+        fail(
+            f"cannot finalize first_canonical_main_commit for {slug} without --baseline-ref; "
+            "the canonical history must be explicit"
+        )
+    path = f"projects/{slug}/PROJECT.yaml"
+    result = subprocess.run(
+        ["git", "log", "--diff-filter=A", "--format=%H", "--reverse", baseline_ref, "--", path],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        fail(f"failed to inspect canonical history for {slug} at {baseline_ref}: {result.stderr.strip()}")
+    commits = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if not commits:
+        fail(f"canonical baseline {baseline_ref} does not contain an introducing commit for {path}")
+    first = commits[0]
+    if not SHA_RE.fullmatch(first):
+        fail(f"invalid canonical history SHA for {slug}: {first!r}")
+    return first
 
 
 def validate_registry(registry: dict[str, Any]) -> list[dict[str, Any]]:
@@ -109,8 +131,13 @@ def validate_registry(registry: dict[str, Any]) -> list[dict[str, Any]]:
             fail(f"invalid lowercase project slug for {project_id}: {slug!r}")
         if not isinstance(path, str) or path != f"projects/{slug}":
             fail(f"authoritative_path mismatch for {project_id}: {path!r}")
-        if not isinstance(first_commit, str) or not SHA_RE.fullmatch(first_commit):
-            fail(f"first_canonical_main_commit must be a 40-char lowercase SHA for {project_id}")
+        if not isinstance(first_commit, str) or (
+            first_commit != PENDING_CANONICAL_MAIN and not SHA_RE.fullmatch(first_commit)
+        ):
+            fail(
+                f"first_canonical_main_commit must be a 40-char lowercase SHA or "
+                f"{PENDING_CANONICAL_MAIN!r} for {project_id}"
+            )
 
         for value, seen, label in (
             (project_id, seen_ids, "project_id"),
@@ -167,7 +194,9 @@ def validate_project_folders(projects: list[dict[str, Any]]) -> None:
                 fail(f"{metadata_path}: {key}={actual!r}, expected {value!r}")
 
 
-def validate_immutability(current: dict[str, Any], baseline_path: Path | None) -> None:
+def validate_immutability(
+    current: dict[str, Any], baseline_path: Path | None, baseline_ref: str | None
+) -> None:
     if baseline_path is None or not baseline_path.exists() or baseline_path.stat().st_size == 0:
         return
 
@@ -191,8 +220,25 @@ def validate_immutability(current: dict[str, Any], baseline_path: Path | None) -
             fail(f"registered Project ID {project_id} was removed; IDs are permanent")
         if new.get("project_key") != old.get("project_key"):
             fail(f"project_key mutation is forbidden for {project_id}: {old.get('project_key')} -> {new.get('project_key')}")
-        if new.get("first_canonical_main_commit") != old.get("first_canonical_main_commit"):
+
+        old_first = old.get("first_canonical_main_commit")
+        new_first = new.get("first_canonical_main_commit")
+        if old_first == PENDING_CANONICAL_MAIN:
+            if new_first == PENDING_CANONICAL_MAIN:
+                pass
+            elif isinstance(new_first, str) and SHA_RE.fullmatch(new_first):
+                slug = str(old.get("slug") or "")
+                expected_first = canonical_first_project_commit(slug, baseline_ref)
+                if new_first != expected_first:
+                    fail(
+                        f"first_canonical_main_commit finalization mismatch for {project_id}: "
+                        f"expected earliest canonical-main commit {expected_first}, got {new_first}"
+                    )
+            else:
+                fail(f"invalid first_canonical_main_commit finalization for {project_id}: {new_first!r}")
+        elif new_first != old_first:
             fail(f"first_canonical_main_commit mutation is forbidden for {project_id}")
+
         old_legacy = set(old.get("legacy_project_ids", []))
         new_legacy = set(new.get("legacy_project_ids", []))
         if not old_legacy.issubset(new_legacy):
@@ -200,32 +246,44 @@ def validate_immutability(current: dict[str, Any], baseline_path: Path | None) -
 
     baseline_next = baseline.get("next_sequence")
     if isinstance(baseline_next, int):
-        new_ids = [
-            item.get("project_id")
+        new_projects = [
+            item
             for item in current_projects
             if isinstance(item, dict) and item.get("project_id") not in baseline_ids
         ]
         new_sequences = sorted(
             int(match.group(1))
-            for value in new_ids
-            if isinstance(value, str) and (match := ID_RE.fullmatch(value))
+            for item in new_projects
+            if isinstance((value := item.get("project_id")), str) and (match := ID_RE.fullmatch(value))
         )
         if new_sequences:
             expected = list(range(baseline_next, baseline_next + len(new_sequences)))
             if new_sequences != expected:
                 fail(f"new projects must allocate from baseline next_sequence {baseline_next}: expected {expected}, got {new_sequences}")
+            for item in new_projects:
+                if item.get("first_canonical_main_commit") != PENDING_CANONICAL_MAIN:
+                    fail(
+                        f"new project {item.get('project_id')} must use "
+                        f"first_canonical_main_commit={PENDING_CANONICAL_MAIN!r} until its protected "
+                        "canonical-main merge exists"
+                    )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--baseline", type=Path, default=None, help="Optional base-branch PORTFOLIO.json")
+    parser.add_argument(
+        "--baseline-ref",
+        default=None,
+        help="Canonical Git ref corresponding to --baseline, required to finalize a pending canonical-main commit",
+    )
     args = parser.parse_args()
 
     try:
         registry = load_json(REGISTRY_PATH)
         projects = validate_registry(registry)
         validate_project_folders(projects)
-        validate_immutability(registry, args.baseline)
+        validate_immutability(registry, args.baseline, args.baseline_ref)
     except ValidationError as exc:
         print(f"project portfolio validation failed: {exc}", file=sys.stderr)
         return 1
