@@ -1,6 +1,14 @@
 $ErrorActionPreference = 'Stop'
 $repo = if ($env:MAHAYANA_CLI_REPOSITORY) { $env:MAHAYANA_CLI_REPOSITORY } else { 'bhrumom/fabushi' }
-$channel = if ($env:MAHAYANA_CLI_CHANNEL) { $env:MAHAYANA_CLI_CHANNEL } else { 'mahayana-cli-latest' }
+if ($env:MAHAYANA_CLI_CHANNEL) {
+  $channel = $env:MAHAYANA_CLI_CHANNEL
+} else {
+  $headers = @{ Accept = 'application/vnd.github+json'; 'User-Agent' = 'mahayana-cli-installer' }
+  $releases = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$repo/releases?per_page=100"
+  $promoted = @($releases | Where-Object { $_.tag_name -match '^mahayana-cli-main-[0-9a-f]{12}$' } | Select-Object -First 1)
+  if ($promoted.Count -eq 0) { throw 'No promoted Mahayana CLI protected-main release was found.' }
+  $channel = $promoted[0].tag_name
+}
 $base = "https://github.com/$repo/releases/download/$channel"
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
 switch ($arch) {

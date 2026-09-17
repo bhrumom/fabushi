@@ -2,7 +2,18 @@
 set -eu
 
 repo="${MAHAYANA_CLI_REPOSITORY:-bhrumom/fabushi}"
-channel="${MAHAYANA_CLI_CHANNEL:-mahayana-cli-latest}"
+channel="${MAHAYANA_CLI_CHANNEL:-}"
+if [ -z "$channel" ]; then
+  releases="$(curl -fsSL --retry 3 --connect-timeout 15 \
+    -H 'Accept: application/vnd.github+json' \
+    -H 'User-Agent: mahayana-cli-installer' \
+    "https://api.github.com/repos/${repo}/releases?per_page=100")"
+  channel="$(printf '%s' "$releases" \
+    | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"mahayana-cli-main-[0-9a-f]{12}"' \
+    | sed -E 's/.*"(mahayana-cli-main-[0-9a-f]{12})"/\1/' \
+    | head -n 1)"
+  [ -n "$channel" ] || { echo "No promoted Mahayana CLI protected-main release was found." >&2; exit 1; }
+fi
 base="https://github.com/${repo}/releases/download/${channel}"
 os="$(uname -s)"
 arch="$(uname -m)"

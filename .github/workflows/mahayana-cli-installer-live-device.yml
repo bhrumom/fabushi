@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       expected_source_sha:
-        description: Exact canonical source SHA expected behind mahayana-cli-latest
+        description: Exact canonical source SHA expected behind the newest immutable mahayana-cli-main-* channel
         required: true
         type: string
       hold_minutes:
@@ -54,18 +54,21 @@ jobs:
             echo "FABUSHI_CI_FINISH_FILE=$RUNNER_TEMP/mahayana-home/device-agent/remote-finished.json"
           } >> "$GITHUB_ENV"
 
-      - name: Verify public latest channel points to the exact source
+      - name: Verify public protected-main channel points to the exact source
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          target="$(gh release view mahayana-cli-latest --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          channel="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.tag_name | startswith("mahayana-cli-main-"))][0].tag_name')"
+          test -n "$channel" || { echo 'No promoted Mahayana CLI main channel exists.' >&2; exit 1; }
+          target="$(gh release view "$channel" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
           test "$target" = "$EXPECTED_SOURCE_SHA" || {
-            echo "mahayana-cli-latest points to $target, expected $EXPECTED_SOURCE_SHA" >&2
+            echo "$channel points to $target, expected $EXPECTED_SOURCE_SHA" >&2
             exit 1
           }
-          mapfile -t assets < <(gh release view mahayana-cli-latest --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)
+          echo "MAHAYANA_VALIDATED_CHANNEL=$channel" >> "$GITHUB_ENV"
+          mapfile -t assets < <(gh release view "$channel" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)
           printf '%s\n' "${assets[@]}"
           printf '%s\n' "${assets[@]}" | grep -qx 'SHA256SUMS.txt'
           printf '%s\n' "${assets[@]}" | grep -qx 'mahayana-linux-x86_64.tar.gz'
@@ -123,9 +126,9 @@ jobs:
           fi
           {
             echo '## Released Mahayana CLI installer device'
-            echo "- Latest-channel source: \`$EXPECTED_SOURCE_SHA\`"
+            echo "- Protected-main channel source: \`$EXPECTED_SOURCE_SHA\`"
             echo "- Device ID: \`$DEVICE_ID\`"
-            echo '- Installation path: public `https://ombhrum.com/mahayana/install.sh` -> `mahayana-cli-latest` release asset.'
+            echo "- Installation path: public \`https://ombhrum.com/mahayana/install.sh\` -> immutable \`$MAHAYANA_VALIDATED_CHANNEL\` release asset."
             echo '- Validate through the official Fabushi MCP, then call `ci_session_finish`.'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -197,7 +200,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          target="$(gh release view mahayana-cli-latest --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          channel="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.tag_name | startswith("mahayana-cli-main-"))][0].tag_name')"
+          test -n "$channel"
+          target="$(gh release view "$channel" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
           test "$target" = "$EXPECTED_SOURCE_SHA"
           mkdir -p "$MAHAYANA_HOME" "$MAHAYANA_INSTALL_DIR"
           curl -fsSL --retry 5 --retry-all-errors https://ombhrum.com/mahayana/install.sh \
@@ -309,8 +314,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $target = gh release view mahayana-cli-latest --repo $env:GITHUB_REPOSITORY --json targetCommitish --jq .targetCommitish
-          if ($target.Trim() -ne $env:EXPECTED_SOURCE_SHA) { throw "latest target $target != $env:EXPECTED_SOURCE_SHA" }
+          $channel = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.tag_name | startswith("mahayana-cli-main-"))][0].tag_name'
+          if (-not $channel) { throw 'No promoted Mahayana CLI main channel exists.' }
+          $target = gh release view $channel.Trim() --repo $env:GITHUB_REPOSITORY --json targetCommitish --jq .targetCommitish
+          if ($target.Trim() -ne $env:EXPECTED_SOURCE_SHA) { throw "$channel targets $target, expected $env:EXPECTED_SOURCE_SHA" }
           New-Item -ItemType Directory -Force -Path $env:MAHAYANA_HOME, $env:MAHAYANA_INSTALL_DIR | Out-Null
           $env:GITHUB_SHA = $env:EXPECTED_SOURCE_SHA
           irm https://ombhrum.com/mahayana/install.ps1 | iex
