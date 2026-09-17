@@ -86,3 +86,10 @@ No local build/test is permitted.
 - Mobile parent `35220620701` dispatched exact-SHA children. iOS run `35220648026` built/uploaded the native iOS package successfully in job `105199722816`, but final job `105202173813` failed because immutable GitHub Release `apple-v1.2.71-40` already existed and points to old diagnostic SHA `e96c9bb1752036d3796d61d762d745bcdb9ef111`.
 - Continuing with build number 40 would create mixed-SHA evidence, so the candidate is rolled forward rather than mutating the immutable release. In-progress Desktop/Android 1.2.71 runs were cancel-requested.
 - New candidate version is `1.2.72`, Android versionCode `41`, iOS build `41`, still requiring one post-merge canonical SHA for all five test-delivery surfaces and all later MCP acceptance.
+
+### 2026-09-17 interactive runner artifact-reuse repair and candidate rollover
+
+- Candidate `1.2.72 / 41 / 41` at `6245420379e6c11a84d23b2e705debe779532d47` completed same-SHA no-test delivery: Desktop run `35221753255` succeeded for macOS/Windows/Linux and published `desktop-test-v1.2.72-6245420379e6`; iOS run `35221782663` succeeded and published `apple-v1.2.72-41`; Android run `35221785230` succeeded and published/uploaded `android-test-v1.2.72-6245420379e6`.
+- Formal interactive run `35223176136` failed before application launch because `interactive-runner-mcp.yml` requested artifact `fabushi-electron-linux` while the authoritative Desktop workflow publishes `fabushi-test-release-linux`. No App-owned device registered and no behavioral pass is claimed.
+- The repair changes only that artifact-reuse name. Because iOS build 41 and Android versionCode 41 have already been delivered and the repair must reach protected main before acceptance, the next exact candidate rolls monotonically to `1.2.73 / Android 42 / iOS 42`.
+- After protected merge, all five test-delivery surfaces must be regenerated from one canonical SHA before the repaired interactive runner may be accepted.
