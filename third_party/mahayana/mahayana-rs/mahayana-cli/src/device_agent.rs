@@ -356,6 +356,10 @@ fn tool_schema_version(tools: &[Value]) -> String {
 }
 
 async fn connect_session(client: &MahayanaProductClient, session: Value) -> Result<(), String> {
+    // The workspace intentionally contains dependencies that enable both Rustls
+    // crypto backends. Select one explicitly before tokio-tungstenite builds a
+    // TLS client so standalone CLI/device-agent startup is deterministic.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let access_token = session_string(&session, "accessToken")?;
     let device_id = session_string(&session, "deviceId")?;
     let session_id = session_string(&session, "sessionId")?;

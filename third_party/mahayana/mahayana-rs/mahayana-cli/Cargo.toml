@@ -43,6 +43,7 @@ mahayana-plugin-runtime.workspace = true
 mahayana-test-driver-protocol = { path = "../mahayana-test-driver-protocol", optional = true }
 ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
 rpassword.workspace = true
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json.workspace = true
 semver.workspace = true
 sha2.workspace = true
