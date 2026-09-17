@@ -102,6 +102,7 @@ jobs:
           node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
           rm -f "$FABUSHI_ACCOUNT_SESSION_FILE"
           mahayana auth
+          mahayana device start
           mahayana device status
 
       - name: Wait for released CLI registration
@@ -224,6 +225,7 @@ jobs:
           node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
           rm -f "$FABUSHI_ACCOUNT_SESSION_FILE"
           mahayana auth
+          mahayana device start
           mahayana device status
 
       - name: Wait for installed macOS CLI registration
@@ -328,6 +330,7 @@ jobs:
           node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
           Remove-Item -Force $env:FABUSHI_ACCOUNT_SESSION_FILE -ErrorAction SilentlyContinue
           mahayana auth
+          mahayana device start
           mahayana device status
 
       - name: Wait for installed Windows CLI registration
