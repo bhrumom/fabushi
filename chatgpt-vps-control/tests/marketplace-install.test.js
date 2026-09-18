@@ -105,3 +105,31 @@ test("userscript marketplace artifacts participate in digest-aware updates", () 
     "reinstall",
   );
 });
+
+test("a stale userscript catalog does not block a newer metadata update", () => {
+  const item = {
+    pluginId: "github-userscript",
+    latestVersion: "2.9.35",
+    surfaces: [{ id: "userscript", kind: "userscript", entry: "script.user.js" }],
+    install: {
+      protocol: "fabushi.marketplace.install.v1",
+      strategy: "github-immutable",
+      pluginId: "github-userscript",
+      version: "2.9.35",
+      source: {
+        repository: "https://github.com/example/userscript",
+        sourceRef: "a".repeat(40),
+        marketplaceHostsPackage: false,
+      },
+      artifacts: [{
+        runtime: "userscript",
+        format: "user-js",
+        sha256: "c".repeat(64),
+        size: 10,
+        source: { type: "https", url: `https://raw.githubusercontent.com/example/userscript/${"a".repeat(40)}/script.user.js` },
+      }],
+      update: { allowDowngrade: false },
+    },
+  };
+  assert.equal(marketplaceInstallAction(item, null, { version: "2.9.37", sourceArtifactSha256: "new" }), "current");
+});
