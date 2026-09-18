@@ -1,0 +1,137 @@
+schema_version: 1
+source_repository: bhrumom/fabushi
+source_main_sha: cbe65975f3c4c077fa64af4171ebe3d2900185ad
+visibility_default: public
+existing_repositories:
+  - repository: bhrumom/fabushi-chatgpt-auto-confirm-userscript
+    role: browser-userscript
+    action: reuse
+targets:
+  - key: core
+    repository: bhrumom/fabushi-platform-core
+    role: shared-runtime-and-contracts
+    source_roots:
+      - third_party/mahayana/mahayana-rs
+      - third_party/mahayana/codex-rs
+      - native/mahayana-messaging
+      - native/telegram-core
+      - native/telegram-media
+      - native/telegram-network
+      - native/telegram-protocol
+      - native/telegram-runtime
+      - native/telegram-storage
+      - native/telegram-wasm
+      - native/global-dharma
+      - contracts
+    status: planned
+  - key: cli
+    repository: bhrumom/fabushi-cli
+    role: command-line-client-and-release
+    source_roots:
+      - third_party/mahayana/mahayana-rs/mahayana-cli
+      - third_party/mahayana/mahayana-rs/mahayana-tui-compat
+      - third_party/mahayana/mahayana-rs/mahayana-harness
+      - third_party/mahayana/mahayana-rs/mahayana-harness-adapters
+      - third_party/mahayana/mahayana-rs/mahayana-harness-agent
+      - third_party/mahayana/mahayana-rs/mahayana-harness-protocol
+      - third_party/mahayana/mahayana-rs/mahayana-harness-services
+      - third_party/mahayana/mahayana-rs/mahayana-test-driver-protocol
+    dependency_note: Core crates are consumed as versioned dependencies; CLI-specific crates remain in this repository.
+    status: planned
+  - key: web
+    repository: bhrumom/fabushi-web
+    role: web-and-official-site
+    source_roots:
+      - frontend/apps/web
+      - frontend/packages
+      - frontend/official-site-worker.js
+      - public
+      - _headers
+      - _redirects
+    status: planned
+  - key: desktop
+    repository: bhrumom/fabushi-desktop
+    role: electron-desktop
+    source_roots:
+      - desktop
+    boundary_note: Shared UI/runtime modules currently imported from frontend must be moved into versioned core packages before cutover.
+    status: planned
+  - key: android
+    repository: bhrumom/fabushi-android
+    role: native-android
+    source_roots:
+      - mobile/android
+    status: planned
+  - key: ios
+    repository: bhrumom/fabushi-ios
+    role: native-ios
+    source_roots:
+      - mobile/ios
+      - mobile/native/include
+    status: planned
+  - key: wechat
+    repository: bhrumom/fabushi-wechat
+    role: wechat-mini-program
+    source_roots:
+      - frontend/apps/mp-wechat
+    dependency_roots:
+      - frontend/packages/shared
+      - frontend/packages/api-client
+    status: planned
+  - key: browser
+    repository: bhrumom/fabushi-chrome-extension
+    role: chrome-extension-and-browser-control
+    source_roots:
+      - chatgpt-vps-control/extension
+      - chatgpt-vps-control/chrome-platform
+      - chatgpt-vps-control/lib/browser-extension-bridge.js
+      - chatgpt-vps-control/lib/browser-extension-install.js
+      - chatgpt-vps-control/lib/browser-extension-paths.js
+      - chatgpt-vps-control/tests/browser-extension.test.js
+      - chatgpt-vps-control/tests/chrome-platform.test.js
+    dependency_note: The existing userscript repository remains a separate target and is not copied back into this repository.
+    status: planned
+  - key: backend
+    repository: bhrumom/fabushi-backend
+    role: service-and-worker-backend
+    source_roots:
+      - ai-backend
+      - backend-proxy
+      - fabushi/web
+    status: planned
+  - key: forum
+    repository: bhrumom/fabushi-forum
+    role: forum-web-platform
+    source_roots:
+      - forum
+    status: planned
+  - key: commerce
+    repository: bhrumom/fabushi-commerce
+    role: commerce-platform
+    source_roots:
+      - commerce
+    status: planned
+  - key: marketplace
+    repository: bhrumom/fabushi-marketplace
+    role: official-marketplace-catalog-and-packages
+    source_roots:
+      - marketplace
+    status: planned
+  - key: governance
+    repository: bhrumom/fabushi-governance
+    role: portfolio-and-migration-control-plane
+    source_roots:
+      - projects
+      - docs
+      - PRD
+      - .agent
+      - AGENTS.md
+      - .github
+    status: planned
+legacy_or_unassigned:
+  - path: fabushi
+    decision: audit-and-archive
+    reason: Current canonical main has no Flutter pubspec/app manifest at this root; retain only documented assets/history until ownership is confirmed.
+  - path: plugins
+    decision: reuse-existing-repositories
+    reason: Entries are symlinks to separately published plugin repositories.
