@@ -71,3 +71,7 @@ If v1 fails, remediation is limited to the existing `FabushiAvatarRuntime`: spri
 ## Completion rule
 
 GBF-509 and the original user objective may return to complete only after the frozen v1 thresholds pass on the PR exact head, protected merge completes, the same capture passes again on the then-current exact canonical `main`, runtime lineage is re-read, and GBF-509 evidence/acceptance/status are updated with run IDs, exact SHAs and artifact digests.
+
+## Pre-capture coverage correction
+
+Before any reference-vs-Fabushi capture was executed, coverage review found that the initial v1 timeline described hop together with bounce but did not carry an independent deterministic micro-hop scenario. Commit `1c70ca34b3e72f8d5a362003d9067c684676d83e` added `curious-hop` using identity `gbf509-curious-3` and reference event time 1902 ms. This happened before the first observed parity result; no threshold value above changed and no runtime tuning preceded the correction. From the first capture onward, both the thresholds and v1 scenario set are immutable for this round.
