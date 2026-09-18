@@ -37,10 +37,10 @@ const approvedFiles = [
   "marketplace/chatgpt-task-queue.user.js",
 ];
 
-if (manifest.version !== "0.6.11") throw new Error(`Chrome extension packaging is pinned to 0.6.11; received ${manifest.version}.`);
-if (!manifest.permissions?.includes("userScripts")) throw new Error("Fabushi 0.6.11 must expose the integrated userscript runtime.");
+if (manifest.version !== "0.6.12") throw new Error(`Chrome extension packaging is pinned to 0.6.12; received ${manifest.version}.`);
+if (!manifest.permissions?.includes("userScripts")) throw new Error("Fabushi 0.6.12 must expose the integrated userscript runtime.");
 if (JSON.stringify(manifest.host_permissions || []) !== JSON.stringify(["<all_urls>"])) {
-  throw new Error("Fabushi 0.6.11 must preserve the 0.4.1 all-URL content-script permission used by the existing userscript runner.");
+  throw new Error("Fabushi 0.6.12 must preserve the 0.4.1 all-URL content-script permission used by the existing userscript runner.");
 }
 
 await rm(stage, { recursive: true, force: true });
