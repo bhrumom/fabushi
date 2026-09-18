@@ -12,7 +12,6 @@ on:
       - 'desktop/electron/main.cjs'
       - 'frontend/apps/web/src/app/host/fabushi-avatar-runtime.tsx'
       - 'frontend/apps/web/src/app/host/fabushi-bot-mark-engine.tsx'
-      - 'projects/grok-bot-fabushi-integration/**'
   push:
     branches: [main]
     paths:
@@ -24,7 +23,6 @@ on:
       - 'desktop/electron/main.cjs'
       - 'frontend/apps/web/src/app/host/fabushi-avatar-runtime.tsx'
       - 'frontend/apps/web/src/app/host/fabushi-bot-mark-engine.tsx'
-      - 'projects/grok-bot-fabushi-integration/**'
 
 permissions:
   contents: read
@@ -112,6 +110,10 @@ jobs:
       - name: Build pinned offline ASR engine
         shell: bash
         run: node .github/scripts/build-offline-asr-engine.mjs
+
+      - name: Verify avatar provenance/runtime gate
+        shell: bash
+        run: python3 .github/scripts/assert-bot-mark-motion.py
 
       - name: Build Electron renderer
         working-directory: desktop
