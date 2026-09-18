@@ -5,7 +5,7 @@
   "project_id_regex": "^FAB-P[0-9]{4}$",
   "allocation_policy": "monotonic-no-reuse",
   "ordering_basis": "first-formal-project-folder-commit-on-canonical-main",
-  "next_sequence": 13,
+  "next_sequence": 14,
   "projects": [
     {
       "project_id": "FAB-P0001",
@@ -136,6 +136,17 @@
       "authoritative_path": "projects/openbot-fabushi-integration",
       "status": "active",
       "registered_at": "2026-09-13",
+      "first_canonical_main_commit": "PENDING_CANONICAL_MAIN",
+      "legacy_project_ids": []
+    },
+    {
+      "project_id": "FAB-P0013",
+      "project_key": "PRS",
+      "slug": "fabushi-platform-repository-separation",
+      "name": "Fabushi Platform Repository Separation",
+      "authoritative_path": "projects/fabushi-platform-repository-separation",
+      "status": "active",
+      "registered_at": "2026-09-18",
       "first_canonical_main_commit": "PENDING_CANONICAL_MAIN",
       "legacy_project_ids": []
     }

@@ -15,11 +15,13 @@ Identity policy: [`PROJECT_ID_POLICY.md`](./PROJECT_ID_POLICY.md)
 | `FAB-P0008` | `AAC` | Fabushi Account Access Control | `projects/fabushi-account-access-control/` | `52b7c10889e585660b7d2a22a40781c22f31b7a1` |
 | `FAB-P0009` | `RDF` | RustDesk -> Fabushi 核心能力融合 | `projects/rustdesk-fabushi-fusion/` | `9c7d16bf8bf57828adbb0bdb3d32ec0ba26abe6e` |
 | `FAB-P0010` | `RHS` | Fabushi Repository History Slimming | `projects/fabushi-repository-history-slimming/` | `9556afe338bc05f268b9bcdf43a09a76ce332327` |
-| `FAB-P0011` | `CWA` | Fabushi Chrome Web App / Computer Control Bridge Fusion | `projects/fabushi-chrome-web-app/` | `pending — this task branch` |
+| `FAB-P0011` | `CWA` | Fabushi Chrome Web App / Computer Control Bridge Fusion | `projects/fabushi-chrome-web-app/` | `656d05e8d66bfed241f5b9d871a062abfbf2f952` |
+| `FAB-P0012` | `OBF` | OpenBot -> Fabushi Capability & UX Gap Closure | `projects/openbot-fabushi-integration/` | `PENDING_CANONICAL_MAIN` |
+| `FAB-P0013` | `PRS` | Fabushi Platform Repository Separation | `projects/fabushi-platform-repository-separation/` | `PENDING_CANONICAL_MAIN` |
 
 ## Next Project ID
 
-The registry high-water mark is authoritative. The next allocatable ID is `FAB-P0012`.
+The registry high-water mark is authoritative. The next allocatable ID is `FAB-P0014`.
 Always re-read `PORTFOLIO.json` on canonical `main` immediately before allocating it.
 
 ## Identifier semantics
