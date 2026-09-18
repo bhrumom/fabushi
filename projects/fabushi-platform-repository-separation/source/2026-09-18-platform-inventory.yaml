@@ -23,7 +23,9 @@ targets:
       - native/telegram-wasm
       - native/global-dharma
       - contracts
-    status: planned
+    url: https://github.com/bhrumom/fabushi-platform-core
+    bootstrap_commit: 2e43ea7e114c63ca5ad3739b68922baf58a4aef8
+    status: bootstrap-created
   - key: cli
     repository: bhrumom/fabushi-cli
     role: command-line-client-and-release
@@ -37,7 +39,9 @@ targets:
       - third_party/mahayana/mahayana-rs/mahayana-harness-services
       - third_party/mahayana/mahayana-rs/mahayana-test-driver-protocol
     dependency_note: Core crates are consumed as versioned dependencies; CLI-specific crates remain in this repository.
-    status: planned
+    url: https://github.com/bhrumom/fabushi-cli
+    bootstrap_commit: c24536f7b6d0543675883662fe298879eff14e93
+    status: bootstrap-created
   - key: web
     repository: bhrumom/fabushi-web
     role: web-and-official-site
@@ -48,27 +52,35 @@ targets:
       - public
       - _headers
       - _redirects
-    status: planned
+    url: https://github.com/bhrumom/fabushi-web
+    bootstrap_commit: bbd87c7e9f31b84999fae65f001a35ef25b24d39
+    status: bootstrap-created
   - key: desktop
     repository: bhrumom/fabushi-desktop
     role: electron-desktop
     source_roots:
       - desktop
     boundary_note: Shared UI/runtime modules currently imported from frontend must be moved into versioned core packages before cutover.
-    status: planned
+    url: https://github.com/bhrumom/fabushi-desktop
+    bootstrap_commit: d8655f23835d3da582b6b53e3e2fd9d99ac607b3
+    status: bootstrap-created
   - key: android
     repository: bhrumom/fabushi-android
     role: native-android
     source_roots:
       - mobile/android
-    status: planned
+    url: https://github.com/bhrumom/fabushi-android
+    bootstrap_commit: 85697924ee693e6306674fb64db0912c3de5a997
+    status: bootstrap-created
   - key: ios
     repository: bhrumom/fabushi-ios
     role: native-ios
     source_roots:
       - mobile/ios
       - mobile/native/include
-    status: planned
+    url: https://github.com/bhrumom/fabushi-ios
+    bootstrap_commit: c6f69afb3baa6c9266bcbfe3af4b9801bc16d950
+    status: bootstrap-created
   - key: wechat
     repository: bhrumom/fabushi-wechat
     role: wechat-mini-program
@@ -77,7 +89,9 @@ targets:
     dependency_roots:
       - frontend/packages/shared
       - frontend/packages/api-client
-    status: planned
+    url: https://github.com/bhrumom/fabushi-wechat
+    bootstrap_commit: 8535a9d58db7140949ef3564add8dbd4f1293816
+    status: bootstrap-created
   - key: browser
     repository: bhrumom/fabushi-chrome-extension
     role: chrome-extension-and-browser-control
@@ -90,7 +104,9 @@ targets:
       - chatgpt-vps-control/tests/browser-extension.test.js
       - chatgpt-vps-control/tests/chrome-platform.test.js
     dependency_note: The existing userscript repository remains a separate target and is not copied back into this repository.
-    status: planned
+    url: https://github.com/bhrumom/fabushi-chrome-extension
+    bootstrap_commit: 68bac0ca78475def2917dee99928692cacd938b7
+    status: bootstrap-created
   - key: backend
     repository: bhrumom/fabushi-backend
     role: service-and-worker-backend
@@ -98,25 +114,33 @@ targets:
       - ai-backend
       - backend-proxy
       - fabushi/web
-    status: planned
+    url: https://github.com/bhrumom/fabushi-backend
+    bootstrap_commit: 77a31b141a2be777c21a6f54c59b41897d1c7260
+    status: bootstrap-created
   - key: forum
     repository: bhrumom/fabushi-forum
     role: forum-web-platform
     source_roots:
       - forum
-    status: planned
+    url: https://github.com/bhrumom/fabushi-forum
+    bootstrap_commit: 6957e0991368cb7b6d4071a4283f3e5ae9dbafa9
+    status: bootstrap-created
   - key: commerce
     repository: bhrumom/fabushi-commerce
     role: commerce-platform
     source_roots:
       - commerce
-    status: planned
+    url: https://github.com/bhrumom/fabushi-commerce
+    bootstrap_commit: 2a51fb325770027b1b0886f4a67044b4f0ffd72c
+    status: bootstrap-created
   - key: marketplace
     repository: bhrumom/fabushi-marketplace
     role: official-marketplace-catalog-and-packages
     source_roots:
       - marketplace
-    status: planned
+    url: https://github.com/bhrumom/fabushi-marketplace
+    bootstrap_commit: e36916cdd5d97098d65e3a568ba4e0b738802ffc
+    status: bootstrap-created
   - key: governance
     repository: bhrumom/fabushi-governance
     role: portfolio-and-migration-control-plane
@@ -127,7 +151,9 @@ targets:
       - .agent
       - AGENTS.md
       - .github
-    status: planned
+    url: https://github.com/bhrumom/fabushi-governance
+    bootstrap_commit: 40a7991c568ad1a7a580d27afbc10167ca65fdc3
+    status: bootstrap-created
 legacy_or_unassigned:
   - path: fabushi
     decision: audit-and-archive
