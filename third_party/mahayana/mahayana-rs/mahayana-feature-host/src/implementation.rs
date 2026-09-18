@@ -476,7 +476,24 @@ impl FeatureHostController {
             active_account_id: Mutex::new(None),
             state: Mutex::new(state),
         };
-        controller.ensure_account_boundary(&controller.auth_status()?)?;
+        let auth_status = controller.auth_status()?;
+        controller.ensure_account_boundary(&auth_status)?;
+        if auth_payload(&auth_status)
+            .get("loggedIn")
+            .and_then(Value::as_bool)
+            == Some(true)
+        {
+            // Host readiness must include the real Mahayana conversation
+            // session. In particular, compatibility backends may start a
+            // provider process/thread from open_session(); deferring that work
+            // until chat.send makes the user's first message pay the cold-start
+            // cost and falsely presents an idle composer as ready.
+            controller
+                .runtime()?
+                .warmup_conversation(ConversationId(
+                    MAHAYANA_AI_CONVERSATION_ID.to_string(),
+                ))?;
+        }
         controller.state()?.events.push_back(HostEvent::HostReady {
             timestamp: timestamp(),
             info: controller.info.clone(),
