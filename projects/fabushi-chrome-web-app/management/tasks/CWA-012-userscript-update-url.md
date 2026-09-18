@@ -2,10 +2,10 @@
 
 - Portfolio Project: `FAB-P0011`
 - Project Key / Task ID: `CWA / CWA-012`
-- Status: `IN_PROGRESS / WEB_STORE_REVIEW_PENDING`
-- Started/updated: `2026-09-18`; completed: null
-- Source: `source/2026-09-18-userscript-update-url.md`
-- Branch: `codex/cwa-userscript-update-url-20260918`
+- Status: `IN_PROGRESS / CHROME_VERSION_DISPLAY_FIX_PENDING`
+- Started/updated: `2026-09-18` / `2026-09-19`; completed: null
+- Source: `source/2026-09-18-userscript-update-url.md`; follow-up `source/2026-09-19-userscript-marketplace-version-display.md`
+- Branch: `codex/cwa-version-display-20260919`
 - Host PR / commit / canonical-main SHA: PR #2713 merged at `e26dda430230f36ead799f81115aa7dc9fa9bf7b`; follow-ups #2714 at `97fdb6894bb6a6228271cff933137b97d38bb73c` and #2715 at `42b8bacf6f41718da342f3c3c71114045a18ea68`
 - Source repository PR / main / Release: userscript PR #32; `main@d07fd543096662f7a02d45bfb09cd6aa7c28e6ed`; Release `v2.9.38` (ID `391438760`)
 
@@ -43,6 +43,9 @@ raw GitHub 更新地址的迁移、自动安装与当前匹配标签页重新激
    不得把已更新脚本标记为降级/异常。
 6. 完成受保护 PR、canonical-main 回读、Chrome 打包/模拟用户 E2E 和发布交付门禁；
    在这些门禁完成前任务保持 `IN_PROGRESS`。
+7. 当目录仍显示旧基线而脚本已通过自身更新 URL 安装新版本时，Marketplace 卡片主版本
+   显示脚本元数据版本；未安装时才显示目录基线，不能再出现 `2.9.37` 与 `2.9.39`
+   并列造成的误导。
 
 ## Verification
 
@@ -61,6 +64,11 @@ raw GitHub 更新地址的迁移、自动安装与当前匹配标签页重新激
 - [Greasemonkey Metadata Block](https://sourceforge.net/p/greasemonkey/wiki/Metadata_Block/):
   documents metadata-only update checks and fallback behavior when `@downloadURL` is omitted.
   Used as the protocol/compatibility reference; no code copied and no runtime dependency added.
+- [Violentmonkey](https://github.com/violentmonkey/violentmonkey), MIT, inspected at
+  `1fed91eabe35c9724e2c7858f2b24ad6844de7d`: its installed-script view renders the script's
+  parsed `meta.version`, while `src/background/utils/update.js` resolves `@updateURL` and
+  `@downloadURL` for update checks. This confirms the separation needed here; no code copied
+  and no dependency added.
 - Reuse decision: retain Fabushi's existing `normalizeUserScript`, `userScripts` runner and
   bounded GitHub/raw-host security boundary; replace only the fixed-catalog version decision
   for userscripts with metadata URL discovery and preserve the package updater contract for
@@ -72,17 +80,19 @@ Implemented in the task worktree and independent Chrome distribution repository:
 parsing, metadata-authoritative versions, record provenance fields, direct update URL discovery
 with backward-compatible derivation from the old pinned raw artifact, remote source size/identity
 checks, automatic installation and active-tab reactivation, stale-catalog UI handling,
-catalog-independent userscript checks, and ten focused pure tests passing. The published package
-is Chrome extension `0.6.13` with bundled userscript `2.9.38`.
+catalog-independent userscript checks, and the card-version readout based on installed script
+metadata. The follow-up package is Chrome extension `0.6.14` with bundled userscript `2.9.39`;
+it is not yet released from the independent repository.
 
 ## Evidence, blockers and next action
 
-- Local: `node --check` for changed extension modules and focused Marketplace tests `10/10`
-  passed; no application build/package/E2E was run locally.
-- Source repository CI/Release: userscript PR #32 merged; main CI run `35342032659` passed;
-  Release `v2.9.38` targets `d07fd543096662f7a02d45bfb09cd6aa7c28e6ed`; live Contents API
-  readback is `@version 2.9.38`, with stable `@updateURL`/`@downloadURL`, 239820 bytes and
-  SHA-256 `6a5c0428c4dde083231d17f47440345fcc085d07843af56eb980a6a7f3b8d7b7`.
+- Local: changed extension modules pass `node --check`; the root host's focused Chrome tests
+  pass `7/7`, and the independent repository's pure card-version regression passes `1/1` with
+  `git diff --check`. No application build/package/E2E was run locally.
+- Source repository CI/Release: userscript PR #32 merged; Release `v2.9.38` was previously
+  verified. The current live source release is `v2.9.39`, targeting
+  `cb30da99bce3a02295863cfb9d74c592947e0a42`, with stable `@updateURL`/`@downloadURL` and
+  asset size `237771` bytes.
 - Independent Chrome distribution: `bhrumom/fabushi-chrome-extension` PR #1 merged at
   `5a83c837f8fff27cc57c0f2fc9e0db5d13ce9665`; release workflow `35346479236` passed and
   published `v0.6.13` with `fabushi-chrome-0.6.13.zip`.
@@ -93,4 +103,8 @@ is Chrome extension `0.6.13` with bundled userscript `2.9.38`.
 - Canonical-main package evidence: `Chrome Extension Package (zero-test)` run `35349390987` passed for source SHA `42b8bacf6f41718da342f3c3c71114045a18ea68` and produced the exact `0.6.13` package/provenance bundle; post-package trigger `35349418461` passed.
 - Required interactive packaged journey / screenshot-video-trace-report evidence remains pending for this task; no local build or E2E was run.
 - Web Store publish workflow `35349440443` failed closed with HTTP 400 `NOT_UPDATEABLE`: the existing item is currently in review. This is an external review blocker, not a package/version failure.
-- Next action: wait for the existing Web Store review to finish, then retry the exact-main submission and run the task-specific live update readback.
+- Independent Chrome distribution follow-up branch: `codex/chrome-version-display-20260919`;
+  PR/release evidence pending. Root host follow-up branch: `codex/cwa-version-display-20260919`;
+  protected PR, exact-main package/readback, and local Chrome `0.6.14` reload are pending.
+- Existing Web Store review remains an external blocker for the broader task; this UI fix must
+  not be reported complete until the applicable protected merge and delivery evidence are closed.
