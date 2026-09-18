@@ -1,0 +1,243 @@
+name: Platform repository export
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Target repository boundary to export
+        required: true
+        type: choice
+        options:
+          - core
+          - cli
+          - web
+          - desktop
+          - android
+          - ios
+          - wechat
+          - browser
+          - backend
+          - forum
+          - commerce
+          - marketplace
+          - governance
+        default: cli
+      source_sha:
+        description: Canonical source commit; blank uses the workflow commit
+        required: false
+        type: string
+      dry_run:
+        description: Filter and audit only; do not push to the target repository
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-repository-export-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  export:
+    name: Export ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TARGET: ${{ inputs.target }}
+      SOURCE_SHA_INPUT: ${{ inputs.source_sha }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      # Existing repository credential; never print or persist its value in evidence.
+      MIGRATION_TOKEN: ${{ secrets.OFFICIAL_SITE_RELEASE_PAT }}
+
+    steps:
+      - name: Checkout workflow source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install git-filter-repo
+        run: python3 -m pip install --disable-pip-version-check --no-cache-dir git-filter-repo
+
+      - name: Resolve target boundary
+        id: boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="${SOURCE_SHA_INPUT:-$GITHUB_SHA}"
+          case "$TARGET" in
+            core)
+              target_repo="bhrumom/fabushi-platform-core"
+              roots="third_party/mahayana/mahayana-rs;third_party/mahayana/codex-rs;native/mahayana-messaging;native/telegram-core;native/telegram-media;native/telegram-network;native/telegram-protocol;native/telegram-runtime;native/telegram-storage;native/telegram-wasm;native/global-dharma;contracts"
+              ;;
+            cli)
+              target_repo="bhrumom/fabushi-cli"
+              roots="third_party/mahayana/mahayana-rs/mahayana-cli;third_party/mahayana/mahayana-rs/mahayana-tui-compat;third_party/mahayana/mahayana-rs/mahayana-harness;third_party/mahayana/mahayana-rs/mahayana-harness-adapters;third_party/mahayana/mahayana-rs/mahayana-harness-agent;third_party/mahayana/mahayana-rs/mahayana-harness-protocol;third_party/mahayana/mahayana-rs/mahayana-harness-services;third_party/mahayana/mahayana-rs/mahayana-test-driver-protocol"
+              ;;
+            web)
+              target_repo="bhrumom/fabushi-web"
+              roots="frontend/apps/web;frontend/packages;frontend/official-site-worker.js;public;_headers;_redirects"
+              ;;
+            desktop)
+              target_repo="bhrumom/fabushi-desktop"
+              roots="desktop"
+              ;;
+            android)
+              target_repo="bhrumom/fabushi-android"
+              roots="mobile/android"
+              ;;
+            ios)
+              target_repo="bhrumom/fabushi-ios"
+              roots="mobile/ios;mobile/native/include"
+              ;;
+            wechat)
+              target_repo="bhrumom/fabushi-wechat"
+              roots="frontend/apps/mp-wechat;frontend/packages/shared;frontend/packages/api-client"
+              ;;
+            browser)
+              target_repo="bhrumom/fabushi-chrome-extension"
+              roots="chatgpt-vps-control/extension;chatgpt-vps-control/chrome-platform;chatgpt-vps-control/lib/browser-extension-bridge.js;chatgpt-vps-control/lib/browser-extension-install.js;chatgpt-vps-control/lib/browser-extension-paths.js;chatgpt-vps-control/tests/browser-extension.test.js;chatgpt-vps-control/tests/chrome-platform.test.js"
+              ;;
+            backend)
+              target_repo="bhrumom/fabushi-backend"
+              roots="ai-backend;backend-proxy;fabushi/web"
+              ;;
+            forum)
+              target_repo="bhrumom/fabushi-forum"
+              roots="forum"
+              ;;
+            commerce)
+              target_repo="bhrumom/fabushi-commerce"
+              roots="commerce"
+              ;;
+            marketplace)
+              target_repo="bhrumom/fabushi-marketplace"
+              roots="marketplace"
+              ;;
+            governance)
+              target_repo="bhrumom/fabushi-governance"
+              roots="projects;docs;PRD;.agent;AGENTS.md;.github"
+              ;;
+            *)
+              echo "::error::Unknown target: $TARGET"
+              exit 2
+              ;;
+          esac
+          if ! git cat-file -e "$source_sha^{commit}" 2>/dev/null; then
+            echo "::error::The source SHA must be reachable from the checked-out repository: $source_sha"
+            exit 1
+          fi
+          {
+            echo "target_repo=$target_repo"
+            echo "source_sha=$source_sha"
+            echo "roots=$roots"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Prepare fresh source mirror
+        id: prepare
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.boundary.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/platform-export-evidence"
+          mirror="$RUNNER_TEMP/source-mirror.git"
+          git clone --mirror "https://github.com/${GITHUB_REPOSITORY}.git" "$mirror"
+          git -C "$mirror" update-ref refs/heads/main "$SOURCE_SHA"
+          while IFS= read -r ref; do
+            [[ "$ref" == "refs/heads/main" ]] || git -C "$mirror" update-ref -d "$ref"
+          done < <(git -C "$mirror" for-each-ref --format='%(refname)' refs/heads refs/tags)
+          git -C "$mirror" cat-file -e "$SOURCE_SHA^{commit}"
+          git -C "$mirror" show-ref > "$RUNNER_TEMP/platform-export-evidence/source-refs-before.txt"
+          git -C "$mirror" fsck --full --no-progress > "$RUNNER_TEMP/platform-export-evidence/source-fsck.txt"
+          echo "mirror=$mirror" >> "$GITHUB_OUTPUT"
+
+      - name: Filter target history
+        id: filter
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.boundary.outputs.source_sha }}
+          ROOTS: ${{ steps.boundary.outputs.roots }}
+        run: |
+          set -euo pipefail
+          mirror="${{ steps.prepare.outputs.mirror }}"
+          filtered="$RUNNER_TEMP/filtered-$TARGET"
+          git clone --no-local --branch main "$mirror" "$filtered"
+          mapfile -t root_paths < <(tr ';' '\n' <<< "$ROOTS")
+          filter_args=()
+          for path in "${root_paths[@]}"; do
+            filter_args+=(--path "$path")
+          done
+          git -C "$filtered" filter-repo --force "${filter_args[@]}"
+
+          # Shared Core may include CLI crates in the Rust workspace; remove them
+          # in a second explicit pass so the CLI has a single owner.
+          if [[ "$TARGET" == "core" ]]; then
+            git -C "$filtered" filter-repo --force --path third_party/mahayana/mahayana-rs/mahayana-cli --path third_party/mahayana/mahayana-rs/mahayana-tui-compat --path third_party/mahayana/mahayana-rs/mahayana-harness --path third_party/mahayana/mahayana-rs/mahayana-harness-adapters --path third_party/mahayana/mahayana-rs/mahayana-harness-agent --path third_party/mahayana/mahayana-rs/mahayana-harness-protocol --path third_party/mahayana/mahayana-rs/mahayana-harness-services --path third_party/mahayana/mahayana-rs/mahayana-test-driver-protocol --invert-paths
+          fi
+
+          git -C "$filtered" config user.name "fabushi-migration[bot]"
+          git -C "$filtered" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cat > "$filtered/MIGRATION_SOURCE.md" <<EOF
+          # Migration source
+
+          - Source repository: `$GITHUB_REPOSITORY`
+          - Source commit: `$SOURCE_SHA`
+          - Target boundary: `$TARGET`
+          - Source roots: `$ROOTS`
+          - Project: `FAB-P0013` / `PRS`
+
+          This file is generated by the platform repository export workflow. It does not contain credentials.
+          EOF
+          git -C "$filtered" add MIGRATION_SOURCE.md
+          git -C "$filtered" commit -m "chore: materialize $TARGET platform boundary"
+          target_sha="$(git -C "$filtered" rev-parse HEAD)"
+          git -C "$filtered" ls-tree -r --name-only HEAD > "$RUNNER_TEMP/platform-export-evidence/target-paths.txt"
+          git -C "$filtered" show-ref > "$RUNNER_TEMP/platform-export-evidence/target-refs.txt"
+          git -C "$filtered" fsck --full --no-progress > "$RUNNER_TEMP/platform-export-evidence/target-fsck.txt"
+          {
+            echo "target=$TARGET"
+            echo "target_repo=${{ steps.boundary.outputs.target_repo }}"
+            echo "source_sha=$SOURCE_SHA"
+            echo "target_sha=$target_sha"
+            echo "roots=$ROOTS"
+            echo "dry_run=$DRY_RUN"
+          } > "$RUNNER_TEMP/platform-export-evidence/export-summary.txt"
+          echo "filtered=$filtered" >> "$GITHUB_OUTPUT"
+          echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Push filtered history to target repository
+        if: ${{ inputs.dry_run == false }}
+        shell: bash
+        env:
+          TARGET_REPO: ${{ steps.boundary.outputs.target_repo }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MIGRATION_TOKEN:-}" ]]; then
+            echo "::error::The existing repository migration credential is unavailable."
+            exit 1
+          fi
+          filtered="${{ steps.filter.outputs.filtered }}"
+          askpass="$RUNNER_TEMP/platform-git-askpass"
+          cat > "$askpass" <<'ASKPASS'
+          #!/usr/bin/env bash
+          case "${1:-}" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *) printf '%s\n' "$MIGRATION_TOKEN" ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_TERMINAL_PROMPT=0
+          git -C "$filtered" remote add target "https://github.com/$TARGET_REPO.git"
+          git -C "$filtered" push --force target HEAD:refs/heads/main
+
+      - name: Upload export evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-export-${{ inputs.target }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/platform-export-evidence
+          if-no-files-found: error
+          retention-days: 90
