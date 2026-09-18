@@ -11,7 +11,7 @@ owner: repository-maintainers
 reviewers:
   - repository-maintainers
   - platform-maintainers
-current_stage: M1-bootstrap-repositories
+current_stage: M3-export-in-progress
 risk_tier: tier-1
 security_classification: internal
 created_at: 2026-09-18

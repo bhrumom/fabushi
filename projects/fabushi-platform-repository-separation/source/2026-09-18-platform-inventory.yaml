@@ -1,6 +1,7 @@
 schema_version: 1
 source_repository: bhrumom/fabushi
-source_main_sha: cbe65975f3c4c077fa64af4171ebe3d2900185ad
+source_main_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+registration_baseline_sha: cbe65975f3c4c077fa64af4171ebe3d2900185ad
 visibility_default: public
 existing_repositories:
   - repository: bhrumom/fabushi-chatgpt-auto-confirm-userscript
@@ -25,7 +26,12 @@ targets:
       - contracts
     url: https://github.com/bhrumom/fabushi-platform-core
     bootstrap_commit: 2e43ea7e114c63ca5ad3739b68922baf58a4aef8
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: 30d7df96a18957be040889af3c0f85861bee8da7
+    export_run: 35306250392
+    export_artifact: platform-export-core-35306250392
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: cli
     repository: bhrumom/fabushi-cli
     role: command-line-client-and-release
@@ -41,7 +47,12 @@ targets:
     dependency_note: Core crates are consumed as versioned dependencies; CLI-specific crates remain in this repository.
     url: https://github.com/bhrumom/fabushi-cli
     bootstrap_commit: c24536f7b6d0543675883662fe298879eff14e93
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: f92827f04ea60133f35878f08a92bd55827954f6
+    export_run: 35306247989
+    export_artifact: platform-export-cli-35306247989
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: web
     repository: bhrumom/fabushi-web
     role: web-and-official-site
@@ -54,7 +65,12 @@ targets:
       - _redirects
     url: https://github.com/bhrumom/fabushi-web
     bootstrap_commit: bbd87c7e9f31b84999fae65f001a35ef25b24d39
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: 08bf889c4f6a492868a9ee6d39a1604e4ca35de2
+    export_run: 35307009976
+    export_artifact: platform-export-web-35307009976
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: desktop
     repository: bhrumom/fabushi-desktop
     role: electron-desktop
@@ -63,7 +79,12 @@ targets:
     boundary_note: Shared UI/runtime modules currently imported from frontend must be moved into versioned core packages before cutover.
     url: https://github.com/bhrumom/fabushi-desktop
     bootstrap_commit: d8655f23835d3da582b6b53e3e2fd9d99ac607b3
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: 12d4aadb4a93a1413ece44aba987162e90b31229
+    export_run: 35307011937
+    export_artifact: platform-export-desktop-35307011937
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: android
     repository: bhrumom/fabushi-android
     role: native-android
@@ -71,7 +92,12 @@ targets:
       - mobile/android
     url: https://github.com/bhrumom/fabushi-android
     bootstrap_commit: 85697924ee693e6306674fb64db0912c3de5a997
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: efa3e7a327865c9ae3b02545bc6b43aeaa75dd9e
+    export_run: 35307015684
+    export_artifact: platform-export-android-35307015684
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: ios
     repository: bhrumom/fabushi-ios
     role: native-ios
@@ -80,7 +106,12 @@ targets:
       - mobile/native/include
     url: https://github.com/bhrumom/fabushi-ios
     bootstrap_commit: c6f69afb3baa6c9266bcbfe3af4b9801bc16d950
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: ea0e6c017ac381c3691aa4da84b7ba159077f5a4
+    export_run: 35307019753
+    export_artifact: platform-export-ios-35307019753
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: wechat
     repository: bhrumom/fabushi-wechat
     role: wechat-mini-program
@@ -91,7 +122,12 @@ targets:
       - frontend/packages/api-client
     url: https://github.com/bhrumom/fabushi-wechat
     bootstrap_commit: 8535a9d58db7140949ef3564add8dbd4f1293816
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: 9dff22b194a7cb1ed73cae810294f2662a51a750
+    export_run: 35307022288
+    export_artifact: platform-export-wechat-35307022288
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: browser
     repository: bhrumom/fabushi-chrome-extension
     role: chrome-extension-and-browser-control
@@ -106,7 +142,12 @@ targets:
     dependency_note: The existing userscript repository remains a separate target and is not copied back into this repository.
     url: https://github.com/bhrumom/fabushi-chrome-extension
     bootstrap_commit: 68bac0ca78475def2917dee99928692cacd938b7
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: fd339aba378f36e71550d3b98fa44a9df4a2a1f0
+    export_run: 35307025530
+    export_artifact: platform-export-browser-35307025530
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: backend
     repository: bhrumom/fabushi-backend
     role: service-and-worker-backend
@@ -116,7 +157,12 @@ targets:
       - fabushi/web
     url: https://github.com/bhrumom/fabushi-backend
     bootstrap_commit: 77a31b141a2be777c21a6f54c59b41897d1c7260
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: 91b6acce334c1819b5debfe6503c2b9cf67f48a2
+    export_run: 35307027606
+    export_artifact: platform-export-backend-35307027606
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: forum
     repository: bhrumom/fabushi-forum
     role: forum-web-platform
@@ -124,7 +170,12 @@ targets:
       - forum
     url: https://github.com/bhrumom/fabushi-forum
     bootstrap_commit: 6957e0991368cb7b6d4071a4283f3e5ae9dbafa9
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: d356508436e4294783e4f6c4c99b754f2fc06a80
+    export_run: 35307030753
+    export_artifact: platform-export-forum-35307030753
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: commerce
     repository: bhrumom/fabushi-commerce
     role: commerce-platform
@@ -132,7 +183,12 @@ targets:
       - commerce
     url: https://github.com/bhrumom/fabushi-commerce
     bootstrap_commit: 2a51fb325770027b1b0886f4a67044b4f0ffd72c
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: 6fbab6772770dabc4182fd9f0e453d7415b73ab3
+    export_run: 35307032973
+    export_artifact: platform-export-commerce-35307032973
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: marketplace
     repository: bhrumom/fabushi-marketplace
     role: official-marketplace-catalog-and-packages
@@ -140,7 +196,12 @@ targets:
       - marketplace
     url: https://github.com/bhrumom/fabushi-marketplace
     bootstrap_commit: e36916cdd5d97098d65e3a568ba4e0b738802ffc
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: 636dc11d86062cc544083ced167977353d0c5260
+    export_run: 35307035002
+    export_artifact: platform-export-marketplace-35307035002
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
   - key: governance
     repository: bhrumom/fabushi-governance
     role: portfolio-and-migration-control-plane
@@ -153,7 +214,12 @@ targets:
       - .github
     url: https://github.com/bhrumom/fabushi-governance
     bootstrap_commit: 40a7991c568ad1a7a580d27afbc10167ca65fdc3
-    status: bootstrap-created
+    export_source_sha: 7851b689d2fe3fc3893cd9f4363899cc4a03e83b
+    export_target_sha: a4ff25b9e4ae8e0375f2972a68a0c98cd04bea01
+    export_run: 35307037007
+    export_artifact: platform-export-governance-35307037007
+    rollback_ref: refs/backup/prs-bootstrap-20260918
+    status: source-exported-pending-independent-ci
 legacy_or_unassigned:
   - path: fabushi
     decision: audit-and-archive
