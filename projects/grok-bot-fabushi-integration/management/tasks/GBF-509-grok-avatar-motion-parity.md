@@ -23,7 +23,7 @@ Upgrade the existing Fabushi-owned avatar runtime from simple sinusoidal bob/bli
 
 ## Direct reference parity re-open — 2026-09-18
 
-The prior packaged/release closeout did not contain synchronized direct reference-vs-Fabushi numerical motion evidence. The original objective therefore remains open. The v1 thresholds and deterministic timelines were frozen in commits `a154fe90542fb92a30de6726412c5b09bc7743e8` and `e2ec6ca0e325296ed8fa4afb28b98a0e000fd320` before any capture or tuning in this round.
+The prior packaged/release closeout did not contain synchronized direct reference-vs-Fabushi numerical motion evidence. The original objective therefore remains open. The v1 thresholds were frozen in `a154fe90542fb92a30de6726412c5b09bc7743e8`; the initial timeline was frozen in `e2ec6ca0e325296ed8fa4afb28b98a0e000fd320`. Before the first capture existed, coverage review found hop was not independent from bounce, so `1c70ca34b3e72f8d5a362003d9067c684676d83e` added a deterministic `curious-hop` timeline. No v1 threshold changed, and no capture/tuning preceded that correction.
 
 Additional required acceptance:
 
