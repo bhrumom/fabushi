@@ -3,6 +3,8 @@
 // @namespace    https://fabushi.ombhrum.com/userscripts/chatgpt-auto-confirm
 // @version      2.9.37
 // @description  独立单标签任务工作台：目标编排、单次任务、附件粘贴预览、授权识别、实时消息、内存感知与可中断调度。
+// @updateURL    https://raw.githubusercontent.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/main/chatgpt-auto-confirm.user.js
+// @downloadURL  https://raw.githubusercontent.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/main/chatgpt-auto-confirm.user.js
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
 // @grant        none
