@@ -11,7 +11,7 @@ owner: repository-maintainers
 reviewers:
   - repository-maintainers
   - platform-maintainers
-current_stage: M0-registration-and-boundary-freeze
+current_stage: M1-bootstrap-repositories
 risk_tier: tier-1
 security_classification: internal
 created_at: 2026-09-18

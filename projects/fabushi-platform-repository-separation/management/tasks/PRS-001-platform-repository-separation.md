@@ -4,7 +4,7 @@
 - Project Key: `PRS`
 - Task ID: `PRS-001`
 - Source requirement: `source/2026-09-18-platform-repository-separation.md`
-- Status: `in-progress`
+- Status: `passed`
 - Started: `2026-09-18`
 - Updated: `2026-09-18`
 - Branch: `codex/platform-repository-split-bootstrap`
@@ -60,6 +60,11 @@ fresh mirror 使用 git-filter-repo，并保存 source/target ref/path/checksum 
 - Local bootstrap commit: `baf8d02f6`。
 - PR: [#2705](https://github.com/bhrumom/fabushi/pull/2705)。
 - Remote PR head: `595bd0d0d0954a97e307ea9bcade5ab692da19a4`。
+- Merge commit on canonical `main`: `010841fe9a3a6d7c2491fb3c6e641b0977cba912`。
+- Canonical-main readback: `FAB-P0013` registry entry, `PROJECT.yaml`, source matrix, and governance
+  checks were read back after merge.
+- Post-main product delivery: `N/A` — this task only registered governance metadata and did not change
+  application/runtime/build/release behavior.
 - Target repository creation, extraction, CI, E2E and Release evidence are not yet complete.
 
 ## Blockers / risks / next action
@@ -67,5 +72,5 @@ fresh mirror 使用 git-filter-repo，并保存 source/target ref/path/checksum 
 - Main risk is shared Desktop/Web/Rust dependency coupling; next action is import-graph and package
   boundary work after registration.
 - Legacy `fabushi/` ownership is not yet resolved; retain it in source repo.
-- Next action: complete portfolio validation/review and merge PR #2705; create target repos only after
-  the registry registration is accepted on canonical `main`.
+- Next action: continue with PRS-003; configure target-repo governance and keep product migration
+  `in-progress` until each repository has source, CI, packaged/E2E and Release evidence.
