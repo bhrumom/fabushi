@@ -56,8 +56,10 @@ fresh mirror 使用 git-filter-repo，并保存 source/target ref/path/checksum 
 
 ## Evidence / branch / PR
 
-- Planned branch: `codex/platform-repository-split-bootstrap`。
-- PR: pending until bootstrap commit is created.
+- Branch: `codex/platform-repository-split-bootstrap`。
+- Local bootstrap commit: `baf8d02f6`。
+- PR: [#2705](https://github.com/bhrumom/fabushi/pull/2705)。
+- Remote PR head: `595bd0d0d0954a97e307ea9bcade5ab692da19a4`。
 - Target repository creation, extraction, CI, E2E and Release evidence are not yet complete.
 
 ## Blockers / risks / next action
@@ -65,5 +67,5 @@ fresh mirror 使用 git-filter-repo，并保存 source/target ref/path/checksum 
 - Main risk is shared Desktop/Web/Rust dependency coupling; next action is import-graph and package
   boundary work after registration.
 - Legacy `fabushi/` ownership is not yet resolved; retain it in source repo.
-- Next action: commit this bootstrap record, open the governance PR, then create target repos only
-  after the registry registration is accepted.
+- Next action: complete portfolio validation/review and merge PR #2705; create target repos only after
+  the registry registration is accepted on canonical `main`.
