@@ -1,0 +1,37 @@
+name: Publish Chrome 0.6.12 after package
+
+on:
+  workflow_run:
+    workflows:
+      - Chrome Extension Package (zero-test)
+    types:
+      - completed
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact packaged source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Dispatch exact-source Web Store publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          test "$(jq -r '.version' chatgpt-vps-control/chrome-platform/extension/manifest.json)" = '0.6.12' || exit 0
+          grep -Fq '// @version      2.9.37' chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js
+          gh workflow run chrome-extension-web-store-publish.yml             --ref main             -f source_sha="$SOURCE_SHA"             -f dry_run=false             -f wait_for_published=false
+          echo "Dispatched Chrome Web Store publication for $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
