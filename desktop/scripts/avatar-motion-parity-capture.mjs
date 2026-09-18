@@ -277,7 +277,7 @@ for (let scenarioIndex = 0; scenarioIndex < config.scenarios.length; scenarioInd
   await new Promise((resolve) => setTimeout(resolve, 80));
   const reference = [], fabushi = [], frames = [];
   const events = [...scenario.events].sort((a, b) => a.atMs - b.atMs);
-  let eventIndex = 0, winkDone = false, nodStopped = false;
+  let eventIndex = 0, winkDone = false, hopDone = false, nodStopped = false;
   const count = Math.floor(scenario.durationMs / sampleIntervalMs) + 1;
   const start = Date.now();
   const action = ['spin', 'bounce', 'burst'].includes(scenario.id);
@@ -296,6 +296,12 @@ for (let scenarioIndex = 0; scenarioIndex < config.scenarios.length; scenarioInd
       }, Number(scenario.referenceOverrides?.winkEye ?? 0));
       winkDone = true;
     }
+    const hopAt = Number(scenario.referenceOverrides?.hopAtMs ?? -1);
+    if (!hopDone && hopAt >= 0 && t >= hopAt) {
+      await refPage.evaluate(() => window.__refChar.bounceOnce());
+      hopDone = true;
+    }
+
     const nodAt = Number(scenario.referenceOverrides?.nodAtMs ?? -1);
     if (!nodStopped && nodAt >= 0 && t >= nodAt + 520) {
       await refPage.evaluate(() => { window.__refChar.ctx.nodUntil = Infinity; }); nodStopped = true;
