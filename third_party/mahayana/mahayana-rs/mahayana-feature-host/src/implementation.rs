@@ -476,24 +476,7 @@ impl FeatureHostController {
             active_account_id: Mutex::new(None),
             state: Mutex::new(state),
         };
-        let auth_status = controller.auth_status()?;
-        controller.ensure_account_boundary(&auth_status)?;
-        if auth_payload(&auth_status)
-            .get("loggedIn")
-            .and_then(Value::as_bool)
-            == Some(true)
-        {
-            // Host readiness must include the real Mahayana conversation
-            // session. In particular, compatibility backends may start a
-            // provider process/thread from open_session(); deferring that work
-            // until chat.send makes the user's first message pay the cold-start
-            // cost and falsely presents an idle composer as ready.
-            controller
-                .runtime()?
-                .warmup_conversation(ConversationId(
-                    MAHAYANA_AI_CONVERSATION_ID.to_string(),
-                ))?;
-        }
+        controller.ensure_account_boundary(&controller.auth_status()?)?;
         controller.state()?.events.push_back(HostEvent::HostReady {
             timestamp: timestamp(),
             info: controller.info.clone(),
@@ -5725,13 +5708,25 @@ impl FeatureHostController {
                 .lock()
                 .map_err(|_| FeatureHostError::StatePoisoned)? = next_account_id.clone();
         }
-        let mut state = self.state()?;
-        state.session_active = logged_in;
-        state.auth_user = if logged_in {
-            auth.get("user").cloned()
-        } else {
-            None
-        };
+        {
+            let mut state = self.state()?;
+            state.session_active = logged_in;
+            state.auth_user = if logged_in {
+                auth.get("user").cloned()
+            } else {
+                None
+            };
+        }
+        if logged_in {
+            // A signed-in Host is not ready for chat until the real Mahayana
+            // provider session exists. This runs on restored sessions and on
+            // fresh password/browser/OAuth login, so the first chat.send only
+            // submits work; it never becomes the trigger that starts the
+            // provider process/thread.
+            self.runtime()?.warmup_conversation(ConversationId(
+                MAHAYANA_AI_CONVERSATION_ID.to_string(),
+            ))?;
+        }
         Ok(())
     }
 
