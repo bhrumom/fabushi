@@ -1069,7 +1069,10 @@ function createWindow() {
   if (process.env.VITE_DEV_SERVER_URL) {
     void win.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    void win.loadURL('app://bundle/index.html');
+    const rendererUrl = process.env.FABUSHI_AVATAR_MOTION_PARITY === '1'
+      ? 'app://bundle/index.html?avatar-motion-parity=1'
+      : 'app://bundle/index.html';
+    void win.loadURL(rendererUrl);
   }
   return win;
 }
