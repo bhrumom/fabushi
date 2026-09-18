@@ -234,6 +234,19 @@ impl MahayanaRuntime {
         }
     }
 
+    /// Prepare the provider/session behind a conversation before the first
+    /// user-visible message. This is intentionally side-effect free with
+    /// respect to transcript content and is safe to call more than once.
+    pub fn warmup_conversation(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<(), RuntimeError> {
+        let provider = self.providers.for_conversation(&conversation_id)?;
+        self.async_runtime
+            .block_on(provider.warmup(&conversation_id))
+            .map_err(RuntimeError::from)
+    }
+
     /// Reset local conversation/Agent state when the authenticated product
     /// account changes. This also drains queued events so a previous account's
     /// reply cannot appear after the new account is ready.
