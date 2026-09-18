@@ -70,7 +70,8 @@ raw GitHub 更新地址的迁移、自动安装与当前匹配标签页重新激
 Implemented in the task worktree: metadata URL parsing, metadata-authoritative versions,
 record provenance fields, direct update URL discovery with backward-compatible derivation from
 the old pinned raw artifact, remote source size/identity checks, automatic installation and
-active-tab reactivation, stale-catalog UI handling, and ten focused pure tests passing.
+active-tab reactivation, stale-catalog UI handling, catalog-independent userscript checks, and
+ten focused pure tests passing.
 
 ## Evidence, blockers and next action
 

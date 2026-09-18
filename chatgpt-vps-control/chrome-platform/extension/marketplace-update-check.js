@@ -359,11 +359,19 @@ export async function checkMarketplaceUpdates({ reason = "alarm" } = {}) {
   checkPromise = (async () => {
     const previous = await readStoredStatus();
     try {
-      const [items, records] = await Promise.all([fetchMarketplaceItems(), readInstalledRecords()]);
+      // A userscript already has its own update URL. Keep that path usable
+      // even when the Marketplace projection is temporarily unavailable;
+      // only catalog-driven package updates depend on this request.
+      const [catalog, records] = await Promise.all([
+        fetchMarketplaceItems().then((items) => ({ items, error: null }))
+          .catch((error) => ({ items: [], error })),
+        readInstalledRecords(),
+      ]);
+      const items = catalog.items;
       const packageUpdates = marketplaceUpdateCandidates(items, records);
       const applied = [];
       const pendingUserscriptUpdates = [];
-      const errors = [];
+      const errors = catalog.error ? [catalog.error?.message || String(catalog.error)] : [];
       const itemByPlugin = new Map(items.map((item) => [marketplaceItemId(item), item]));
       for (const record of records) {
         const item = itemByPlugin.get(installedPluginId(record));
