@@ -36,3 +36,14 @@
 - 不删除源仓库或其历史，直到所有目标仓库的迁移/发布/回滚门通过。
 - 不在本轮借机重写业务功能、升级依赖或变更账号/组织权限。
 - 不把任何 token、cookie、签名材料、`.env` 或测试账户状态复制到目标仓库。
+
+## 2026-09-18 执行读回
+
+- 注册时的历史基线为 `cbe65975f3c4c077fa64af4171ebe3d2900185ad`；本轮正式导出的固定源提交为
+  `7851b689d2fe3fc3893cd9f4363899cc4a03e83b`。
+- 13 个目标仓库均已完成 GitHub-hosted fresh-mirror 导出并写入各自 `main`；CLI 使用独立的
+  `bhrumom/fabushi-cli`，Core 使用 `bhrumom/fabushi-platform-core`。
+- 每个目标仓库均保留 `refs/backup/prs-bootstrap-20260918` 回滚引用；正式运行、目标 SHA、路径数量和
+  artifact 记录在 `evidence/PRS-005-platform-export-20260918.md`。
+- 独立 CI、CODEOWNERS、branch protection、打包/E2E/Release 和生产入口切换仍是后续门；本记录不将
+  源码导出误记为产品交付完成。

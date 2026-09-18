@@ -12,3 +12,7 @@ workflow run/job、平台、时间、artifact 名称和校验值。
 - `PRS-005/`：源/目标 refs、路径 manifest、tree/object checksum。
 - `PRS-006/`：独立 CI、打包、E2E、CLI checksum 和 Release 证据。
 - `PRS-007/`：入口切换、部署、商店/updater 和回滚演练。
+
+当前 M3 导出汇总：`PRS-005-platform-export-20260918.md`。该索引绑定 13 个目标仓库的正式
+workflow run、源/目标 SHA、路径数量、artifact 和 bootstrap 回滚引用；独立 CI、发布和生产切换
+仍由后续任务维护。

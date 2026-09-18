@@ -7,7 +7,7 @@
 - Status: `in-progress`
 - Started: `2026-09-18`
 - Updated: `2026-09-18`
-- Source baseline: `cbe65975f3c4c077fa64af4171ebe3d2900185ad`
+- Source baseline for formal export: `7851b689d2fe3fc3893cd9f4363899cc4a03e83b`
 
 ## Objective
 
@@ -38,11 +38,24 @@
 
 ## Verification / evidence
 
-- 当前仅做轻量 YAML/文本审阅和 `git diff --check`；不在本机执行历史重写。
-- workflow 合入后记录 run/job、artifact、源/目标 SHA 和路径清单至 `evidence/PRS-005/`。
+- 本机仅做轻量 YAML/文本审阅；没有在本机执行历史重写、构建、打包或应用测试。
+- workflow 合入 canonical `main`：PR [#2709](https://github.com/bhrumom/fabushi/pull/2709)，合入提交
+  `8971a64ebad99dcee4c7dfc43e5e11a843a93e0e`；README 保留修复合入 PR
+  [#2710](https://github.com/bhrumom/fabushi/pull/2710)，元数据模板修复合入 PR
+  [#2711](https://github.com/bhrumom/fabushi/pull/2711)，当前 workflow 所在 canonical SHA 为
+  `7851b689d2fe3fc3893cd9f4363899cc4a03e83b`。
+- CLI/Core 的正式 push 运行分别为 [35306247989](https://github.com/bhrumom/fabushi/actions/runs/35306247989)
+  和 [35306250392](https://github.com/bhrumom/fabushi/actions/runs/35306250392)；其余 11 个正式 push
+  运行及完整目标 SHA/path manifest 见
+  [`evidence/PRS-005-platform-export-20260918.md`](../../evidence/PRS-005-platform-export-20260918.md)。
+- 所有 13 个目标仓库的 `main` 已完成读回；每个目标的 `MIGRATION_SOURCE.md` 都记录同一源 SHA、目标边界、
+  精确 source roots 和 `FAB-P0013 / PRS`。每个目标均保留 `refs/backup/prs-bootstrap-20260918`。
+- dry-run 与正式 push 均在 GitHub-hosted runner 完成；目标 fsck 报告为空。未复制 secret、cookie、签名材料、
+  `.env` 或测试账户状态。
 
 ## Branch / PR / next action
 
-- Branch/PR: pending workflow bootstrap PR。
-- Next action: merge workflow, run CLI/Core dry-run, review evidence, then execute explicit push only after
-  path audit passes.
+- Branch/PR: workflow 与记录修复已合入 canonical `main`（PR #2709/#2710/#2711）。
+- Next action: 为每个独立仓库配置 branch protection、CODEOWNERS、CI、版本和 Release；完成 Core/CLI/平台
+  依赖边界收敛后，运行各仓库自己的构建、E2E、打包和发布验收。PRS-005 在这些独立交付门完成前保持
+  `in-progress`。
