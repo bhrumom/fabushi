@@ -89,12 +89,14 @@ const refContext = await browser.newContext({
   recordVideo: { dir: path.join(evidenceRoot, 'video/reference-raw'), size: config.capture.viewport },
 });
 await refContext.tracing.start({ screenshots: true, snapshots: true, sources: true });
+const refVideoStartedAt = Date.now();
 const refPage = await refContext.newPage();
 refPage.on('console', (m) => logs.push({ side: 'reference', kind: 'console', at: Date.now(), text: m.text() }));
 refPage.on('pageerror', (e) => logs.push({ side: 'reference', kind: 'pageerror', at: Date.now(), text: e.stack || e.message }));
 await refPage.goto(referenceUrl);
 await refPage.waitForFunction(() => window.__gbf509Ready === true);
 
+const fabVideoStartedAt = Date.now();
 const app = await electron.launch({
   executablePath,
   env: launchEnv,
@@ -321,6 +323,8 @@ for (let scenarioIndex = 0; scenarioIndex < config.scenarios.length; scenarioInd
   capture[scenario.id] = {
     reference,
     fabushi,
+    wallStartedAt: start,
+    wallDurationMs: Date.now() - start,
     frameIntervalMs: frameEvery * sampleIntervalMs,
     referenceEnergy: action ? await motionEnergy(frames.map((f) => f.reference)) : [],
     fabushiEnergy: action ? await motionEnergy(frames.map((f) => f.fabushi)) : [],
@@ -329,7 +333,12 @@ for (let scenarioIndex = 0; scenarioIndex < config.scenarios.length; scenarioInd
   await writeFile(path.join(evidenceRoot, scenario.id + '-fabushi-metrics.json'), JSON.stringify(fabushi, null, 2) + '\n');
 }
 
-await writeFile(path.join(evidenceRoot, 'raw-motion-capture.json'), JSON.stringify({ sourceSha, referenceSha, capture }, null, 2) + '\n');
+await writeFile(path.join(evidenceRoot, 'raw-motion-capture.json'), JSON.stringify({
+  sourceSha,
+  referenceSha,
+  videoTiming: { refVideoStartedAt, fabVideoStartedAt },
+  capture,
+}, null, 2) + '\n');
 await writeFile(path.join(evidenceRoot, 'runtime-logs.json'), JSON.stringify(logs, null, 2) + '\n');
 await refContext.tracing.stop({ path: path.join(evidenceRoot, 'trace/reference-trace.zip') });
 await fabPage.context().tracing.stop({ path: path.join(evidenceRoot, 'trace/fabushi-trace.zip') });
