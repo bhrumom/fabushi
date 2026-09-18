@@ -43,7 +43,7 @@ jobs:
           manifest_path="$(find dist/chrome-extension -maxdepth 1 -type f -name 'fabushi-chrome-*.content-manifest.json' -print -quit)"
           test -n "$manifest_path"
           test "$(jq -r '.sourceSha' "$manifest_path")" = "$GITHUB_SHA"
-          test "$(jq -r '.version' "$manifest_path")" = "0.6.12"
+          test "$(jq -r '.version' "$manifest_path")" = "0.6.13"
           (cd dist/chrome-extension && sha256sum -c SHA256SUMS.txt)
           {
             echo '### Zero-test Chrome package'

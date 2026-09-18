@@ -1,4 +1,4 @@
-name: Publish Chrome 0.6.12 after package
+name: Publish Chrome 0.6.13 after package
 
 on:
   workflow_run:
@@ -31,7 +31,7 @@ jobs:
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          test "$(jq -r '.version' chatgpt-vps-control/chrome-platform/extension/manifest.json)" = '0.6.12' || exit 0
-          grep -Fq '// @version      2.9.37' chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js
+          test "$(jq -r '.version' chatgpt-vps-control/chrome-platform/extension/manifest.json)" = '0.6.13' || exit 0
+          grep -Fq '// @version      2.9.38' chatgpt-vps-control/chrome-platform/extension/userscript/chatgpt-auto-confirm.user.js
           gh workflow run chrome-extension-web-store-publish.yml             --ref main             -f source_sha="$SOURCE_SHA"             -f dry_run=false             -f wait_for_published=false
           echo "Dispatched Chrome Web Store publication for $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
