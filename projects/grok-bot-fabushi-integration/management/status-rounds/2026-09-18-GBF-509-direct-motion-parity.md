@@ -7,7 +7,8 @@
 - Acceptance branch: `codex/gbf-509-reference-motion-parity-20260918`
 - Fixed reference: `bhrum/grok-icon-study@647e9bd7c60290c42a738fad586589b3f36a4680`
 - Frozen thresholds source commit: `a154fe90542fb92a30de6726412c5b09bc7743e8`
-- Frozen timeline/config commit: `e2ec6ca0e325296ed8fa4afb28b98a0e000fd320`
+- Initial frozen timeline/config commit: `e2ec6ca0e325296ed8fa4afb28b98a0e000fd320`
+- Pre-capture coverage correction: `1c70ca34b3e72f8d5a362003d9067c684676d83e` (adds independent deterministic hop; thresholds unchanged; no capture had run)
 
 ## Finding
 
