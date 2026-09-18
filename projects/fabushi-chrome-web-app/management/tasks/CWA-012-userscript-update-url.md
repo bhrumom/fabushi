@@ -2,12 +2,12 @@
 
 - Portfolio Project: `FAB-P0011`
 - Project Key / Task ID: `CWA / CWA-012`
-- Status: `IN_PROGRESS / CHROME_VERSION_DISPLAY_FIX_PENDING`
+- Status: `IN_PROGRESS / WEB_STORE_REVIEW_AND_PACKAGED_E2E_PENDING`
 - Started/updated: `2026-09-18` / `2026-09-19`; completed: null
 - Source: `source/2026-09-18-userscript-update-url.md`; follow-up `source/2026-09-19-userscript-marketplace-version-display.md`
 - Branch: `codex/cwa-version-display-20260919`
-- Host PR / commit / canonical-main SHA: PR #2713 merged at `e26dda430230f36ead799f81115aa7dc9fa9bf7b`; follow-ups #2714 at `97fdb6894bb6a6228271cff933137b97d38bb73c` and #2715 at `42b8bacf6f41718da342f3c3c71114045a18ea68`
-- Source repository PR / main / Release: userscript PR #32; `main@d07fd543096662f7a02d45bfb09cd6aa7c28e6ed`; Release `v2.9.38` (ID `391438760`)
+- Host PR / commit / canonical-main SHA: implementation PR #2713 and follow-ups #2714/#2715 merged previously; version-display PR #2719 merged through Merge Queue at `aa1549894834ba4ba6d855d8ddee7252f58dddc7`
+- Source repository PR / main / Release: userscript PR #32; current Release `v2.9.39` targets `cb30da99bce3a02295863cfb9d74c592947e0a42`; Chrome distribution PR #2 merged at `dc24b66640a719b7742c84d30bb7c84483fd55e9`, Release `v0.6.14` (ID `391653936`)
 
 ## Objective
 
@@ -81,8 +81,8 @@ parsing, metadata-authoritative versions, record provenance fields, direct updat
 with backward-compatible derivation from the old pinned raw artifact, remote source size/identity
 checks, automatic installation and active-tab reactivation, stale-catalog UI handling,
 catalog-independent userscript checks, and the card-version readout based on installed script
-metadata. The follow-up package is Chrome extension `0.6.14` with bundled userscript `2.9.39`;
-it is not yet released from the independent repository.
+metadata. The independent package `v0.6.14` with bundled userscript `2.9.39` is published;
+the same source is merged to canonical Fabushi `main`.
 
 ## Evidence, blockers and next action
 
@@ -103,8 +103,7 @@ it is not yet released from the independent repository.
 - Canonical-main package evidence: `Chrome Extension Package (zero-test)` run `35349390987` passed for source SHA `42b8bacf6f41718da342f3c3c71114045a18ea68` and produced the exact `0.6.13` package/provenance bundle; post-package trigger `35349418461` passed.
 - Required interactive packaged journey / screenshot-video-trace-report evidence remains pending for this task; no local build or E2E was run.
 - Web Store publish workflow `35349440443` failed closed with HTTP 400 `NOT_UPDATEABLE`: the existing item is currently in review. This is an external review blocker, not a package/version failure.
-- Independent Chrome distribution follow-up branch: `codex/chrome-version-display-20260919`;
-  PR/release evidence pending. Root host follow-up branch: `codex/cwa-version-display-20260919`;
-  protected PR, exact-main package/readback, and local Chrome `0.6.14` reload are pending.
-- Existing Web Store review remains an external blocker for the broader task; this UI fix must
-  not be reported complete until the applicable protected merge and delivery evidence are closed.
+- Canonical-main delivery readback is recorded below; the required interactive packaged journey
+  visual/debug bundle remains open, and the Web Store review remains an external blocker. This
+  task therefore stays `IN_PROGRESS` even though the independent Release and local Chrome fix
+  are verified.
