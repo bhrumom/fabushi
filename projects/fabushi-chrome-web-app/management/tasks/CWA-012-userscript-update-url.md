@@ -2,11 +2,12 @@
 
 - Portfolio Project: `FAB-P0011`
 - Project Key / Task ID: `CWA / CWA-012`
-- Status: `IN_PROGRESS / PACKAGED_DELIVERY_PENDING`
+- Status: `IN_PROGRESS / HOST_PACKAGE_PENDING`
 - Started/updated: `2026-09-18`; completed: null
 - Source: `source/2026-09-18-userscript-update-url.md`
 - Branch: `codex/cwa-userscript-update-url-20260918`
-- PR / commit / canonical-main SHA: pending
+- Host PR / commit / canonical-main SHA: pending
+- Source repository PR / main / Release: userscript PR #32; `main@d07fd543096662f7a02d45bfb09cd6aa7c28e6ed`; Release `v2.9.38` (ID `391438760`)
 
 ## Objective
 
@@ -77,8 +78,13 @@ ten focused pure tests passing.
 
 - Local: `node --check` for changed extension modules and focused Marketplace tests `10/10`
   passed; no application build/package/E2E was run locally.
-- CI/package/post-main/Release evidence: pending.
-- Blocker: this task needs a fresh PR from canonical `main`, protected checks, packaged Chrome
-  verification and the required post-main delivery loop before it can be reported complete.
-- Next action: review the patch, open the governed PR, run required GitHub Actions checks, then
-  validate the installed Chrome profile against the accepted package.
+- Source repository CI/Release: userscript PR #32 merged; main CI run `35342032659` passed;
+  Release `v2.9.38` targets `d07fd543096662f7a02d45bfb09cd6aa7c28e6ed`; live Contents API
+  readback is `@version 2.9.38`, with stable `@updateURL`/`@downloadURL`, 239820 bytes and
+  SHA-256 `6a5c0428c4dde083231d17f47440345fcc085d07843af56eb980a6a7f3b8d7b7`.
+- Host CI/package/post-main/Release evidence: pending.
+- Blocker: the source release is complete, but the host updater still needs its own protected
+  PR, packaged Chrome verification and required post-main delivery loop before this task can be
+  reported complete.
+- Next action: open the governed host PR, run required GitHub Actions checks, then validate the
+  installed Chrome profile against the accepted package.
