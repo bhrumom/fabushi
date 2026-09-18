@@ -32,4 +32,10 @@ The independent distribution release and local profile update are verified. The 
 `bhrumom/fabushi` host PR, exact-main packaged journey, and required screenshot/video/trace/report
 bundle remain open; this index must be extended with those links before CWA-012 is marked passed.
 
-## Canonical Fabushi main delivery\n\n- Implementation PR [#2713](https://github.com/bhrumom/fabushi/pull/2713), packager fix [#2714](https://github.com/bhrumom/fabushi/pull/2714), and workflow gate fix [#2715](https://github.com/bhrumom/fabushi/pull/2715) merged through the queue; canonical SHA: `42b8bacf6f41718da342f3c3c71114045a18ea68`.\n- Exact-source package: [35349390987](https://github.com/bhrumom/fabushi/actions/runs/35349390987), passed for `0.6.13`; post-package trigger: [35349418461](https://github.com/bhrumom/fabushi/actions/runs/35349418461), passed.\n- Web Store publish attempt: [35349440443](https://github.com/bhrumom/fabushi/actions/runs/35349440443), failed closed with HTTP 400 `NOT_UPDATEABLE` because the existing item is in review.\n\nThe local profile update is verified; the remaining blocker is external Web Store review plus the required interactive packaged evidence gate.
+## Canonical Fabushi main delivery
+
+- Implementation PR [#2713](https://github.com/bhrumom/fabushi/pull/2713), packager fix [#2714](https://github.com/bhrumom/fabushi/pull/2714), and workflow gate fix [#2715](https://github.com/bhrumom/fabushi/pull/2715) merged through the queue; canonical SHA: `42b8bacf6f41718da342f3c3c71114045a18ea68`.
+- Exact-source package: [35349390987](https://github.com/bhrumom/fabushi/actions/runs/35349390987), passed for `0.6.13`; post-package trigger: [35349418461](https://github.com/bhrumom/fabushi/actions/runs/35349418461), passed.
+- Web Store publish attempt: [35349440443](https://github.com/bhrumom/fabushi/actions/runs/35349440443), failed closed with HTTP 400 `NOT_UPDATEABLE` because the existing item is in review.
+
+The local profile update is verified; the remaining blocker is external Web Store review plus the required interactive packaged evidence gate.
