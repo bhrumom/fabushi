@@ -17,7 +17,7 @@ Identity policy: [`PROJECT_ID_POLICY.md`](./PROJECT_ID_POLICY.md)
 | `FAB-P0010` | `RHS` | Fabushi Repository History Slimming | `projects/fabushi-repository-history-slimming/` | `9556afe338bc05f268b9bcdf43a09a76ce332327` |
 | `FAB-P0011` | `CWA` | Fabushi Chrome Web App / Computer Control Bridge Fusion | `projects/fabushi-chrome-web-app/` | `656d05e8d66bfed241f5b9d871a062abfbf2f952` |
 | `FAB-P0012` | `OBF` | OpenBot -> Fabushi Capability & UX Gap Closure | `projects/openbot-fabushi-integration/` | `PENDING_CANONICAL_MAIN` |
-| `FAB-P0013` | `PRS` | Fabushi Platform Repository Separation | `projects/fabushi-platform-repository-separation/` | `PENDING_CANONICAL_MAIN` |
+| `FAB-P0013` | `PRS` | Fabushi Platform Repository Separation | `projects/fabushi-platform-repository-separation/` | `010841fe9a3a6d7c2491fb3c6e641b0977cba912` |
 
 ## Next Project ID
 
