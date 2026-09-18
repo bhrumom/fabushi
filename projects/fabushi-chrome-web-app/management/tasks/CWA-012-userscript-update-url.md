@@ -2,11 +2,11 @@
 
 - Portfolio Project: `FAB-P0011`
 - Project Key / Task ID: `CWA / CWA-012`
-- Status: `IN_PROGRESS / HOST_PACKAGE_PENDING`
+- Status: `IN_PROGRESS / CANONICAL_HOST_PR_PENDING`
 - Started/updated: `2026-09-18`; completed: null
 - Source: `source/2026-09-18-userscript-update-url.md`
 - Branch: `codex/cwa-userscript-update-url-20260918`
-- Host PR / commit / canonical-main SHA: pending
+- Host PR / commit / canonical-main SHA: pending; independent Chrome distribution PR #1 merged at `5a83c837f8fff27cc57c0f2fc9e0db5d13ce9665`
 - Source repository PR / main / Release: userscript PR #32; `main@d07fd543096662f7a02d45bfb09cd6aa7c28e6ed`; Release `v2.9.38` (ID `391438760`)
 
 ## Objective
@@ -68,11 +68,12 @@ raw GitHub 更新地址的迁移、自动安装与当前匹配标签页重新激
 
 ## Implementation summary
 
-Implemented in the task worktree: metadata URL parsing, metadata-authoritative versions,
-record provenance fields, direct update URL discovery with backward-compatible derivation from
-the old pinned raw artifact, remote source size/identity checks, automatic installation and
-active-tab reactivation, stale-catalog UI handling, catalog-independent userscript checks, and
-ten focused pure tests passing.
+Implemented in the task worktree and independent Chrome distribution repository: metadata URL
+parsing, metadata-authoritative versions, record provenance fields, direct update URL discovery
+with backward-compatible derivation from the old pinned raw artifact, remote source size/identity
+checks, automatic installation and active-tab reactivation, stale-catalog UI handling,
+catalog-independent userscript checks, and ten focused pure tests passing. The published package
+is Chrome extension `0.6.13` with bundled userscript `2.9.38`.
 
 ## Evidence, blockers and next action
 
@@ -82,9 +83,16 @@ ten focused pure tests passing.
   Release `v2.9.38` targets `d07fd543096662f7a02d45bfb09cd6aa7c28e6ed`; live Contents API
   readback is `@version 2.9.38`, with stable `@updateURL`/`@downloadURL`, 239820 bytes and
   SHA-256 `6a5c0428c4dde083231d17f47440345fcc085d07843af56eb980a6a7f3b8d7b7`.
-- Host CI/package/post-main/Release evidence: pending.
-- Blocker: the source release is complete, but the host updater still needs its own protected
-  PR, packaged Chrome verification and required post-main delivery loop before this task can be
-  reported complete.
-- Next action: open the governed host PR, run required GitHub Actions checks, then validate the
-  installed Chrome profile against the accepted package.
+- Independent Chrome distribution: `bhrumom/fabushi-chrome-extension` PR #1 merged at
+  `5a83c837f8fff27cc57c0f2fc9e0db5d13ce9665`; release workflow `35346479236` passed and
+  published `v0.6.13` with `fabushi-chrome-0.6.13.zip`.
+- Local Chrome readback: extension ID `gdoggbammnghfbdcmlngjcbffblbllod`, original directory
+  `/Users/gloriachan/Downloads/fabushi-0.3.0`, Chrome detail page showed `0.6.13` after reload,
+  and the bundled script showed `2.9.38` with stable raw `@updateURL`/`@downloadURL`. The prior
+  directory is recoverable at `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.6.9-20260918-204801`.
+- Host CI/package/post-main/Release evidence for canonical `bhrumom/fabushi` remains pending;
+  the independent distribution package was validated and published, but the governed host PR
+  and required canonical-main packaged journey still need to close before this task is marked
+  complete.
+- Next action: publish the governed host PR, run required GitHub Actions checks/evidence, and
+  re-read canonical `main`.
