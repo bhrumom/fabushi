@@ -2,11 +2,11 @@
 
 - Portfolio Project: `FAB-P0011`
 - Project Key / Task ID: `CWA / CWA-012`
-- Status: `IN_PROGRESS / CANONICAL_HOST_PR_PENDING`
+- Status: `IN_PROGRESS / WEB_STORE_REVIEW_PENDING`
 - Started/updated: `2026-09-18`; completed: null
 - Source: `source/2026-09-18-userscript-update-url.md`
 - Branch: `codex/cwa-userscript-update-url-20260918`
-- Host PR / commit / canonical-main SHA: pending; independent Chrome distribution PR #1 merged at `5a83c837f8fff27cc57c0f2fc9e0db5d13ce9665`
+- Host PR / commit / canonical-main SHA: PR #2713 merged at `e26dda430230f36ead799f81115aa7dc9fa9bf7b`; follow-ups #2714 at `97fdb6894bb6a6228271cff933137b97d38bb73c` and #2715 at `42b8bacf6f41718da342f3c3c71114045a18ea68`
 - Source repository PR / main / Release: userscript PR #32; `main@d07fd543096662f7a02d45bfb09cd6aa7c28e6ed`; Release `v2.9.38` (ID `391438760`)
 
 ## Objective
@@ -90,9 +90,7 @@ is Chrome extension `0.6.13` with bundled userscript `2.9.38`.
   `/Users/gloriachan/Downloads/fabushi-0.3.0`, Chrome detail page showed `0.6.13` after reload,
   and the bundled script showed `2.9.38` with stable raw `@updateURL`/`@downloadURL`. The prior
   directory is recoverable at `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.6.9-20260918-204801`.
-- Host CI/package/post-main/Release evidence for canonical `bhrumom/fabushi` remains pending;
-  the independent distribution package was validated and published, but the governed host PR
-  and required canonical-main packaged journey still need to close before this task is marked
-  complete.
-- Next action: publish the governed host PR, run required GitHub Actions checks/evidence, and
-  re-read canonical `main`.
+- Canonical-main package evidence: `Chrome Extension Package (zero-test)` run `35349390987` passed for source SHA `42b8bacf6f41718da342f3c3c71114045a18ea68` and produced the exact `0.6.13` package/provenance bundle; post-package trigger `35349418461` passed.
+- Required interactive packaged journey / screenshot-video-trace-report evidence remains pending for this task; no local build or E2E was run.
+- Web Store publish workflow `35349440443` failed closed with HTTP 400 `NOT_UPDATEABLE`: the existing item is currently in review. This is an external review blocker, not a package/version failure.
+- Next action: wait for the existing Web Store review to finish, then retry the exact-main submission and run the task-specific live update readback.
