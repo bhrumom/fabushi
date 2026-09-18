@@ -4,7 +4,7 @@
 - Project Key: `PRS`
 - Task ID: `PRS-003`
 - Source requirement: `PRS-REQ-001`
-- Status: `in-progress`
+- Status: `passed`
 - Started: `2026-09-18`
 - Updated: `2026-09-18`
 - Source baseline: `cbe65975f3c4c077fa64af4171ebe3d2900185ad`
@@ -33,7 +33,11 @@ repository, and establish a readable `main` bootstrap before source extraction.
 
 - Evidence: `evidence/PRS-003-repository-bootstrap.md`.
 - Repository bootstrap commits: see evidence table and inventory.
-- Governance record PR: pending; this task remains `in-progress` until the record is on canonical `main`.
+- Governance record PR: [#2706](https://github.com/bhrumom/fabushi/pull/2706), merged to canonical `main`
+  at `a5724908bbe1579e0766677faf81353827bddbf2`.
+- Canonical-main readback after the record merge: `9b7e0abbdaff5863ac815417fc7364414fe1f191`.
+- Post-main product delivery: `N/A` — this task created repository bootstrap metadata only; no product
+  source, build, runtime, or release behavior changed.
 
 ## Risks / next action
 
