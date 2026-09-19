@@ -41,6 +41,33 @@ open before CWA-012 can be marked passed.
 
 The local profile update is verified; the remaining blocker is external Web Store review plus the required interactive packaged evidence gate.
 
+## Subsequent independent release and local update — 2026-09-19
+
+### Source userscript
+
+- Release: [v2.9.41](https://github.com/bhrumom/fabushi-chatgpt-auto-confirm-userscript/releases/tag/v2.9.41)
+- Source/Release target: `84d0d8e7c6703ad399e3f0da0639942f41c8f738`
+- Asset: `chatgpt-auto-confirm.user.js`, 248490 bytes
+- Asset SHA-256: `681d50730566bd5f302f3c8b4e5d0ca1e4317951d7c018db565ccb8abf559218`
+
+### Independent Chrome distribution
+
+- Release: [v0.6.15](https://github.com/bhrumom/fabushi-chrome-extension/releases/tag/v0.6.15)
+- Tag/source commit: `9a209c41bcd06b58994ad257bb306a06daa81c43`
+- Release ID: `391868366`
+- Asset: `fabushi-chrome-0.6.15.zip`, 132536 bytes
+- Asset SHA-256: `c07e83d1e3eec537ec088b606ef967f931ce90fd522eaaa09b2d4908d368be1`
+
+### Local Chrome readback
+
+- Installed path: `/Users/gloriachan/Downloads/fabushi-0.3.0`
+- Extension ID: `gdoggbammnghfbdcmlngjcbffblbllod`
+- Chrome extension details page after reload: `Fabushi 0.6.15` and `已重新加载`.
+- Marketplace after manual check: `ChatGPT 自动确认 2.9.41`; `已安装 2.9.41 · GitHub 发布物一致`.
+- Previous directory backup: `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.6.14-20260919.bYzVtk/extension`.
+
+This is a local release-asset replacement and UI readback; no local application build or E2E was run. The canonical host's packaged interactive evidence and Web Store review remain governed gates.
+
 ## Canonical Fabushi main delivery — version display follow-up
 
 - Version-display PR [#2719](https://github.com/bhrumom/fabushi/pull/2719) merged through Merge Queue at canonical `main@aa1549894834ba4ba6d855d8ddee7252f58dddc7`.
