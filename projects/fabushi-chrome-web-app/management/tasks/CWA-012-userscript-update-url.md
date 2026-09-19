@@ -7,7 +7,7 @@
 - Source: `source/2026-09-18-userscript-update-url.md`; follow-up `source/2026-09-19-userscript-marketplace-version-display.md`
 - Branch: `codex/cwa-version-display-20260919`
 - Host PR / commit / canonical-main SHA: implementation PR #2713 and follow-ups #2714/#2715 merged previously; version-display PR #2719 merged through Merge Queue at `aa1549894834ba4ba6d855d8ddee7252f58dddc7`
-- Source repository PR / main / Release: userscript PR #32; current Release `v2.9.39` targets `cb30da99bce3a02295863cfb9d74c592947e0a42`; Chrome distribution PR #2 merged at `dc24b66640a719b7742c84d30bb7c84483fd55e9`, Release `v0.6.14` (ID `391653936`)
+- Source repository PR / main / Release: userscript PR #36; current Release `v2.9.41` targets `84d0d8e7c6703ad399e3f0da0639942f41c8f738`; Chrome distribution PR #3 merged/tagged at `9a209c41bcd06b58994ad257bb306a06daa81c43`, Release `v0.6.15` (ID `391868366`)
 
 ## Objective
 
@@ -81,18 +81,22 @@ parsing, metadata-authoritative versions, record provenance fields, direct updat
 with backward-compatible derivation from the old pinned raw artifact, remote source size/identity
 checks, automatic installation and active-tab reactivation, stale-catalog UI handling,
 catalog-independent userscript checks, and the card-version readout based on installed script
-metadata. The independent package `v0.6.14` with bundled userscript `2.9.39` is published;
-the same source is merged to canonical Fabushi `main`.
+metadata. The version-display fix was published as independent Chrome package `v0.6.14` with
+bundled userscript `2.9.39` and merged to canonical Fabushi `main`. A subsequent independent
+Chrome Release `v0.6.15` now bundles userscript `2.9.41` and has been installed and read back
+locally; the canonical host package remains separately tracked at `0.6.14` until its own
+delivery stream advances.
 
 ## Evidence, blockers and next action
 
 - Local: changed extension modules pass `node --check`; the root host's focused Chrome tests
   pass `7/7`, and the independent repository's pure card-version regression passes `1/1` with
   `git diff --check`. No application build/package/E2E was run locally.
-- Source repository CI/Release: userscript PR #32 merged; Release `v2.9.38` was previously
-  verified. The current live source release is `v2.9.39`, targeting
-  `cb30da99bce3a02295863cfb9d74c592947e0a42`, with stable `@updateURL`/`@downloadURL` and
-  asset size `237771` bytes.
+- Source repository CI/Release: the CWA-012 baseline userscript Release `v2.9.39` remains
+  recorded above; the current live source Release is `v2.9.41`, targeting
+  `84d0d8e7c6703ad399e3f0da0639942f41c8f738`, with stable `@updateURL`/`@downloadURL`, asset
+  size `248490` bytes and asset SHA-256
+  `681d50730566bd5f302f3c8b4e5d0ca1e4317951d7c018db565ccb8abf559218`.
 - Independent Chrome distribution: `bhrumom/fabushi-chrome-extension` PR #1 merged at
   `5a83c837f8fff27cc57c0f2fc9e0db5d13ce9665`; release workflow `35346479236` passed and
   published `v0.6.13` with `fabushi-chrome-0.6.13.zip`.
@@ -107,3 +111,12 @@ the same source is merged to canonical Fabushi `main`.
   visual/debug bundle remains open, and the Web Store review remains an external blocker. This
   task therefore stays `IN_PROGRESS` even though the independent Release and local Chrome fix
   are verified.
+- Subsequent independent Chrome Release `v0.6.15` is published from
+  `main@9a209c41bcd06b58994ad257bb306a06daa81c43` (Release ID `391868366`), with package
+  `fabushi-chrome-0.6.15.zip`, 132536 bytes and SHA-256
+  `c07e83d1e3eec537ec088b606ef967f931ce90fd522eaaa09b2d4908d368be1`.
+- Local update readback: `/Users/gloriachan/Downloads/fabushi-0.3.0` was replaced from that
+  asset, Chrome reloaded extension `gdoggbammnghfbdcmlngjcbffblbllod` as `Fabushi 0.6.15`,
+  and Marketplace manual check displayed bundled userscript `2.9.41` with
+  `已安装 2.9.41 · GitHub 发布物一致`. The previous directory is recoverable at
+  `/Users/gloriachan/Downloads/fabushi-0.3.0.backup-0.6.14-20260919.bYzVtk/extension`.
