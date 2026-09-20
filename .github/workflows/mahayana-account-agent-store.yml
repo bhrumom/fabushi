@@ -1,0 +1,84 @@
+name: Mahayana Account Agent Store Platform
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "third_party/mahayana/mahayana-rs/mahayana-platform-worker/**"
+      - ".github/workflows/mahayana-account-agent-store.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mahayana-account-agent-store-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Compile platform Worker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-platform-worker-wasm-1.97.1
+      - name: Compile canonical platform Worker
+        run: cargo check --locked --target wasm32-unknown-unknown -p mahayana-platform-worker --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+
+  deploy-production:
+    name: Migrate and deploy production platform
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-platform-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          targets: wasm32-unknown-unknown
+      - name: Require Cloudflare deployment credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+      - name: Install Worker build tool
+        run: cargo install worker-build --locked
+      - name: Apply account Bot and Agent Store migration
+        run: npx --yes wrangler@4 d1 migrations apply PLATFORM_DB --remote
+      - name: Deploy canonical Mahayana platform Worker
+        run: npx --yes wrangler@4 deploy
+      - name: Verify production control-plane routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          direct="https://mahayana-platform.bhrumom.workers.dev"
+          public="https://api.ombhrum.com"
+          curl --fail --silent --show-error "${direct}/health" >/tmp/platform-health.json
+          grep -q '"ok":true' /tmp/platform-health.json
+          for path in /v1/account/bots /v1/account/agents /v1/account/sync; do
+            direct_status="$(curl --silent --output /tmp/direct-body --write-out '%{http_code}' "${direct}${path}")"
+            public_status="$(curl --silent --output /tmp/public-body --write-out '%{http_code}' "${public}${path}")"
+            test "${direct_status}" = "401"
+            test "${public_status}" = "401"
+          done
