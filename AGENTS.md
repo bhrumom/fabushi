@@ -4,6 +4,16 @@ This file is the repository-wide entrypoint. The complete pre-2026-09-16 reposit
 
 For CI/CD and release work, the latest persisted requirement in `projects/fabushi-cicd-merge-governance/SOURCE_OF_TRUTH.md` and its latest dated source takes precedence over conflicting legacy E2E/release text. As of 2026-09-18, `projects/fabushi-cicd-merge-governance/source/2026-09-18-user-directed-test-and-release-authority.md` is the controlling test/release sequencing requirement.
 
+## CRITICAL: Repository boundary — Desktop development moved to `bhrumom/fabushi-desktop`
+
+1. **Fabushi Desktop product development has been split/migrated out of this repository.** The canonical repository for the Desktop application is **`bhrumom/fabushi-desktop`**: https://github.com/bhrumom/fabushi-desktop.
+2. **Do not implement Desktop product work in `bhrumom/fabushi`.** Any task whose primary target is Electron/Desktop, the desktop renderer or shell, Desktop Agent workspace/UI, desktop Mahayana/Rust host integration, desktop E2E, macOS/Windows/Linux desktop packaging, updater, signing, notarization, Release, or other Desktop-specific behavior must be moved to `bhrumom/fabushi-desktop` before editing implementation files.
+3. **Legacy Desktop files that still exist in this repository are migration remnants/reference material, not the authoritative Desktop source of truth.** Their presence is not permission to patch, test, package, release, or continue Desktop development here.
+4. **Fail closed on repository identity.** Before changing code for a Desktop task, verify the current GitHub repository. If the current repository is `bhrumom/fabushi`, stop the Desktop implementation and switch to `bhrumom/fabushi-desktop`; do not make a “temporary” fix here first.
+5. **After switching, read the target repository's own instructions and specs first.** In `bhrumom/fabushi-desktop`, read its root `AGENTS.md` and the applicable durable Spec/project records before implementation.
+6. **This redirect is scoped to Desktop ownership.** This repository may still remain authoritative for migration/governance records (including `projects/fabushi-platform-repository-separation/`) and for other scopes that have not been reassigned to another canonical repository. Route each task to its owning repository instead of assuming the old monorepo remains authoritative.
+7. **Exception:** edit Desktop-related material in `bhrumom/fabushi` only when the user's task explicitly targets migration/governance/history records in this source repository, not Desktop product implementation.
+
 ## CRITICAL: User-directed release and testing policy
 
 1. **Behavioral/product testing is not a default release gate.** Do not require Fabushi official MCP, E2E, smoke, regression, simulator/emulator, packaged-app journeys, or any equivalent behavioral test merely because a build is a test, beta, prerelease, formal, or stable release.
