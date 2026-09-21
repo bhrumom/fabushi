@@ -4,15 +4,36 @@ This file is the repository-wide entrypoint. The complete pre-2026-09-16 reposit
 
 For CI/CD and release work, the latest persisted requirement in `projects/fabushi-cicd-merge-governance/SOURCE_OF_TRUTH.md` and its latest dated source takes precedence over conflicting legacy E2E/release text. As of 2026-09-18, `projects/fabushi-cicd-merge-governance/source/2026-09-18-user-directed-test-and-release-authority.md` is the controlling test/release sequencing requirement.
 
-## CRITICAL: Repository boundary — Desktop development moved to `bhrumom/fabushi-desktop`
+## CRITICAL: Repository routing after platform split
 
-1. **Fabushi Desktop product development has been split/migrated out of this repository.** The canonical repository for the Desktop application is **`bhrumom/fabushi-desktop`**: https://github.com/bhrumom/fabushi-desktop.
-2. **Do not implement Desktop product work in `bhrumom/fabushi`.** Any task whose primary target is Electron/Desktop, the desktop renderer or shell, Desktop Agent workspace/UI, desktop Mahayana/Rust host integration, desktop E2E, macOS/Windows/Linux desktop packaging, updater, signing, notarization, Release, or other Desktop-specific behavior must be moved to `bhrumom/fabushi-desktop` before editing implementation files.
-3. **Legacy Desktop files that still exist in this repository are migration remnants/reference material, not the authoritative Desktop source of truth.** Their presence is not permission to patch, test, package, release, or continue Desktop development here.
-4. **Fail closed on repository identity.** Before changing code for a Desktop task, verify the current GitHub repository. If the current repository is `bhrumom/fabushi`, stop the Desktop implementation and switch to `bhrumom/fabushi-desktop`; do not make a “temporary” fix here first.
-5. **After switching, read the target repository's own instructions and specs first.** In `bhrumom/fabushi-desktop`, read its root `AGENTS.md` and the applicable durable Spec/project records before implementation.
-6. **This redirect is scoped to Desktop ownership.** This repository may still remain authoritative for migration/governance records (including `projects/fabushi-platform-repository-separation/`) and for other scopes that have not been reassigned to another canonical repository. Route each task to its owning repository instead of assuming the old monorepo remains authoritative.
-7. **Exception:** edit Desktop-related material in `bhrumom/fabushi` only when the user's task explicitly targets migration/governance/history records in this source repository, not Desktop product implementation.
+Fabushi product development has been split out of this legacy source repository. **Before changing product code, identify the owning repository and work there.** Legacy copies that remain in `bhrumom/fabushi` are migration/reference material and are not authoritative product source.
+
+| Scope | Canonical repository |
+| --- | --- |
+| Shared Mahayana/Rust runtime and contracts | `bhrumom/fabushi-platform-core` |
+| CLI / TUI / harness / CLI release | `bhrumom/fabushi-cli` |
+| Web app and official site | `bhrumom/fabushi-web` |
+| Electron desktop / macOS / Windows / Linux desktop | `bhrumom/fabushi-desktop` |
+| Android app | `bhrumom/fabushi-android` |
+| iOS app | `bhrumom/fabushi-ios` |
+| WeChat Mini Program | `bhrumom/fabushi-wechat` |
+| Chrome extension / browser control | `bhrumom/fabushi-chrome-extension` |
+| Service/worker backend | `bhrumom/fabushi-backend` |
+| Forum | `bhrumom/fabushi-forum` |
+| Commerce | `bhrumom/fabushi-commerce` |
+| Marketplace | `bhrumom/fabushi-marketplace` |
+| Portfolio/migration governance control plane | `bhrumom/fabushi-governance` |
+| ChatGPT auto-confirm userscript | `bhrumom/fabushi-chatgpt-auto-confirm-userscript` |
+
+Rules:
+
+1. **Do not implement split-platform product work in `bhrumom/fabushi`.** If the task belongs to any scope above, switch to the canonical repository before editing implementation files.
+2. **Fail closed on repository identity.** The presence of old Desktop, mobile, CLI, web, backend, extension, marketplace, commerce, forum, Core, or other migrated paths here is not permission to patch them.
+3. **No temporary fixes in the legacy source repository.** Do not make a change here first and plan to copy it later.
+4. **Read the target repository instructions and Spec first.** After switching repositories, read that repository's root `AGENTS.md` and the applicable durable Spec/project records. If no usable Spec exists, create/update it before implementation.
+5. **Cross-platform work must be split by ownership.** Shared runtime/contract changes go to `fabushi-platform-core`; platform-specific consumers are changed in their own repositories. Do not recreate monorepo coupling by editing multiple migrated copies in `bhrumom/fabushi`.
+6. **This repository remains valid only for work that is explicitly owned here**, including migration/source-history records and transitional governance that has not yet moved. Product implementation for the routed scopes above belongs to their canonical repositories.
+7. **Exception:** legacy product-related files in `bhrumom/fabushi` may be edited only when the task explicitly concerns migration, archival, provenance, or source-repository cleanup—not current product behavior.
 
 ## CRITICAL: User-directed release and testing policy
 
