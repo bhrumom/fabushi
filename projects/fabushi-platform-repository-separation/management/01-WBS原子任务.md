@@ -10,4 +10,4 @@
 | PRS-006 | 独立 CI、权限和发布链路 | required checks/Release 通过 | planned | 逐仓迁移 workflows |
 | PRS-007 | 生产入口切换和回滚演练 | updater/部署/商店/CLI 入口读回 | planned | 按平台执行 cutover |
 | PRS-008 | 源仓库治理-only 收敛 | 无产品构建依赖且可回滚 | planned | 最后执行，需全量证据 |
-| PRS-009 | 全目标仓库路由 + Spec-first 门禁 | legacy root `AGENTS.md` 完整路由；所有目标 repo 有 root `AGENTS.md` + Spec policy/template | implemented | 完成全部目标 repo PR/merge/main readback |
+| PRS-009 | 全目标仓库路由 + Spec-first 门禁 | legacy root `AGENTS.md` 完整路由；所有目标 repo 有 root `AGENTS.md` + Spec policy/template | passed | #2724 + 全目标 repo canonical-main readback |
