@@ -4,10 +4,10 @@
 - Project Key: `PRS`
 - Task ID: `PRS-009`
 - Source requirement: `PRS-REQ-012`
-- Status: `implemented`
+- Status: `in-progress`
 - Started: `2026-09-21`
 - Updated: `2026-09-21`
-- Branch: `governance/prs-009-desktop-repo-routing-guardrail`
+- Branch: `governance/prs-009-cross-repo-routing-followup`
 - Source baseline: `2239369eae0161b271b8a0af2ea488f4d5d72167`
 
 ## Objective
@@ -47,10 +47,24 @@ Prevent AI/developer work from continuing in the wrong repository after the plat
 
 ## Evidence
 
-- Legacy source PR: #2723.
-- Target repositories: listed in PRS-REQ-012.
-- Final per-repository PR/merge/main evidence: to be recorded after completion.
+- Legacy source initial Desktop-only PR: #2723 -> merge `cb53b46ac606dfb54063b0a8215b290ddadb65c6`.
+- Legacy source full-routing follow-up PR: #2724 (pending merge queue at this record update).
+- Target repository merges:
+- Desktop: `bhrumom/fabushi-desktop` PR #15 -> merge `ba0eb705665a7d938f19ea334208cc941d7c23b7`
+- Core: `bhrumom/fabushi-platform-core` PR #1 -> merge `7e24aa179a44a206eceb722e650a1db6d5bb1f59`
+- CLI: `bhrumom/fabushi-cli` PR #1 -> merge `2ee9e9853f10c0813a9abbaccf7bf9dc0e84bdd1`
+- Web: `bhrumom/fabushi-web` PR #1 -> merge `c481dea9e2624a4903fe68e22e22760a47ef7727`
+- Android: `bhrumom/fabushi-android` PR #1 -> merge `59f6fc8885ce1cb8d1ad4fc5d4ab36f690fb99a2`
+- iOS: `bhrumom/fabushi-ios` PR #1 -> merge `d5ec44c14810de173f3584d1e72b067e8cd5fce2`
+- WeChat: `bhrumom/fabushi-wechat` PR #1 -> merge `50fc470ed524818dabe75b4882cf8db77df21624`
+- Chrome Extension: `bhrumom/fabushi-chrome-extension` PR #14 -> merge `a4a8fc2ef40bfe30afdad73672b434e386ac06a8`
+- Backend: `bhrumom/fabushi-backend` PR #3 -> merge `5448c51a462e0e0cd118cc63cac5a8fc06cc4b66`
+- Forum: `bhrumom/fabushi-forum` PR #1 -> merge `764b4eb45ffa5c3e9f2bcbc44023c2117c7ae946`
+- Commerce: `bhrumom/fabushi-commerce` PR #1 -> merge `2554e20c67db58cf118a7e018657062a2bafffc3`
+- Marketplace: `bhrumom/fabushi-marketplace` PR #1 -> merge `9090a933b70e8ab3c4f63a628827fb42ec81a29d`
+- Governance: `bhrumom/fabushi-governance` PR #1 -> merge `b6d3d1b5bb066054198b70a373ffbf6473741ed6`
+- Userscript: `bhrumom/fabushi-chatgpt-auto-confirm-userscript` PR #56 -> merge `68cd991578202ee25a1a0b9d92087429e5279d9d`
 
 ## Next action
 
-Finish all target-repository governance changes, merge them, then update PRS-009 to `passed` with canonical-main readback evidence.
+Target repository merges are complete. Merge #2724 through the legacy repository merge queue, read back canonical `main`, then close PRS-009.
