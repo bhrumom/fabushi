@@ -6,6 +6,7 @@ import { installBotIdentityAliases } from './agent-identity-aliases';
 import CredentialVault from './credential-vault';
 import { installDurableAgentState, restoreDurableAgentState } from './durable-agent-state';
 import { GrokChatParityRuntime, prepareGrokChatParityRuntime } from './grok-chat-parity-runtime';
+import AvatarMotionParityHarness from './avatar-motion-parity-harness';
 import DesktopShellV2 from './messaging-shell-v2';
 import MahayanaAgentWorkbench from './mahayana-agent-workbench';
 import { installMiniAppComposerOpenBridge } from './miniapp-composer-open-bridge';
@@ -51,6 +52,16 @@ async function bootstrapDesktop(rootElement: HTMLDivElement): Promise<void> {
   installSelfHostedMahayanaInvocationBridge();
 }
 
-void bootstrapDesktop(root).catch((error: unknown) => {
-  console.error('Fabushi desktop bootstrap failed', error);
-});
+const avatarMotionParity = new URLSearchParams(window.location.search).get('avatar-motion-parity') === '1';
+
+if (avatarMotionParity) {
+  createRoot(root).render(
+    <StrictMode>
+      <AvatarMotionParityHarness />
+    </StrictMode>,
+  );
+} else {
+  void bootstrapDesktop(root).catch((error: unknown) => {
+    console.error('Fabushi desktop bootstrap failed', error);
+  });
+}

@@ -1,0 +1,287 @@
+name: GBF-509 Avatar Motion Parity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/gbf-509-avatar-motion-parity.yml'
+      - 'desktop/e2e/fixtures/avatar-motion-parity.v1.json'
+      - 'desktop/scripts/avatar-motion-parity-*.mjs'
+      - 'desktop/src/avatar-motion-parity-harness.tsx'
+      - 'desktop/src/main.tsx'
+      - 'desktop/electron/main.cjs'
+      - 'frontend/apps/web/src/app/host/fabushi-avatar-runtime.tsx'
+      - 'frontend/apps/web/src/app/host/fabushi-bot-mark-engine.tsx'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gbf-509-avatar-motion-parity.yml'
+      - 'desktop/e2e/fixtures/avatar-motion-parity.v1.json'
+      - 'desktop/scripts/avatar-motion-parity-*.mjs'
+      - 'desktop/src/avatar-motion-parity-harness.tsx'
+      - 'desktop/src/main.tsx'
+      - 'desktop/electron/main.cjs'
+      - 'frontend/apps/web/src/app/host/fabushi-avatar-runtime.tsx'
+      - 'frontend/apps/web/src/app/host/fabushi-bot-mark-engine.tsx'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gbf-509-motion-parity-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  packaged-macos-motion-parity:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      REFERENCE_SHA: 647e9bd7c60290c42a738fad586589b3f36a4680
+      EVIDENCE_DIR: ${{ github.workspace }}/desktop/test-results/gbf-509-motion-parity
+    steps:
+      - name: Checkout exact Fabushi source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$SOURCE_SHA"
+          echo "Exact Fabushi source: $actual" >> "$GITHUB_STEP_SUMMARY"
+          echo "Frozen reference: $REFERENCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout frozen Grok reference
+        uses: actions/checkout@v6
+        with:
+          repository: bhrum/grok-icon-study
+          ref: ${{ env.REFERENCE_SHA }}
+          path: .reference/grok-icon-study
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify frozen reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C .reference/grok-icon-study rev-parse HEAD)"
+          test "$actual" = "$REFERENCE_SHA"
+          test -f .reference/grok-icon-study/replica/src/character.js
+          test -f .reference/grok-icon-study/replica/src/pose.js
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            chatgpt-vps-control/package-lock.json
+
+      - name: Install build and capture dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix desktop ci --prefer-offline --no-audit --no-fund
+          npm --prefix chatgpt-vps-control ci --ignore-scripts --prefer-offline --no-audit --no-fund
+          (cd desktop && npx playwright install chromium)
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: gbf-509-motion-parity-macos-rust-1.97.1
+
+      - name: Build and stage Mahayana Host
+        working-directory: desktop
+        run: npm run build:host:ci
+
+      - name: Build pinned offline ASR engine
+        shell: bash
+        run: node .github/scripts/build-offline-asr-engine.mjs
+
+      - name: Verify avatar provenance/runtime gate
+        shell: bash
+        run: python3 .github/scripts/assert-bot-mark-motion.py
+
+      - name: Build Electron renderer
+        working-directory: desktop
+        run: npm run build:renderer
+
+      - name: Install Developer ID identity
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          CONFIGURED_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          test -n "$MACOS_CERTIFICATE_P12_BASE64"
+          test -n "$MACOS_CERTIFICATE_PASSWORD"
+          cert="$RUNNER_TEMP/fabushi-developer-id.p12"
+          keychain="$RUNNER_TEMP/fabushi-developer-id.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$cert"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          identity="$CONFIGURED_IDENTITY"
+          if [ -z "$identity" ]; then
+            identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application/ {print $2; exit}')"
+          fi
+          case "$identity" in *'Developer ID Application:'*) ;; *) exit 1 ;; esac
+          echo "MACOS_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Sign native macOS payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          host=desktop/resources/bin/mahayana-app-host
+          test -x "$host"
+          codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.mahayana-app-host --sign "$MACOS_CODESIGN_IDENTITY" "$host"
+          while IFS= read -r binary; do
+            codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.whisper-cli --sign "$MACOS_CODESIGN_IDENTITY" "$binary"
+          done < <(find desktop/resources/asr -type f -name whisper-cli -print)
+
+      - name: Stage bundled Computer Use runtime
+        shell: bash
+        env:
+          CHATGPT_COMPUTER_HOME: ${{ github.workspace }}/desktop/resources/computer-control
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          export CHATGPT_COMPUTER_CODESIGN_IDENTITY="$MACOS_CODESIGN_IDENTITY"
+          export CHATGPT_COMPUTER_TEAM_ID="${{ vars.APPLE_TEAM_ID }}"
+          node chatgpt-vps-control/bin/prepare-fabushi-bundle.js
+
+      - name: Package exact macOS Electron app
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+          FABUSHI_MACOS_NOTARIZE: '0'
+        run: npx electron-builder --mac --dir --publish never
+
+      - name: Resolve packaged executable
+        id: packaged
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$(find desktop/release -maxdepth 4 -type d -name '*.app' -print -quit)"
+          test -n "$app"
+          executable="$(find "$app/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          test -x "$executable"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "executable=$executable" >> "$GITHUB_OUTPUT"
+          echo "Packaged app: $app" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Capture synchronized direct parity
+        id: capture
+        continue-on-error: true
+        shell: bash
+        env:
+          FABUSHI_ELECTRON_EXECUTABLE: ${{ steps.packaged.outputs.executable }}
+          GBF509_REFERENCE_ROOT: ${{ github.workspace }}/.reference/grok-icon-study
+          GBF509_REFERENCE_SHA: ${{ env.REFERENCE_SHA }}
+          GBF509_SOURCE_SHA: ${{ env.SOURCE_SHA }}
+          GBF509_EVIDENCE_DIR: ${{ env.EVIDENCE_DIR }}
+        run: |
+          set -euo pipefail
+          node desktop/scripts/avatar-motion-parity-capture.mjs
+
+      - name: Analyze against frozen v1 thresholds
+        id: analyze
+        if: steps.capture.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          GBF509_EVIDENCE_DIR: ${{ env.EVIDENCE_DIR }}
+        run: |
+          set -euo pipefail
+          node desktop/scripts/avatar-motion-parity-analyze.mjs
+
+      - name: Extract synchronized 30fps frame sequences and videos
+        if: steps.capture.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then brew install ffmpeg; fi
+          raw="$EVIDENCE_DIR/raw-motion-capture.json"
+          ref_video="$EVIDENCE_DIR/video/reference.webm"
+          fab_video="$EVIDENCE_DIR/video/fabushi.webm"
+          mkdir -p "$EVIDENCE_DIR/video/synchronized"
+          jq -r '.capture | keys[]' "$raw" | while IFS= read -r id; do
+            ref_ms="$(jq -r --arg id "$id" '.capture[$id].wallStartedAt - .videoTiming.refVideoStartedAt' "$raw")"
+            fab_ms="$(jq -r --arg id "$id" '.capture[$id].wallStartedAt - .videoTiming.fabVideoStartedAt' "$raw")"
+            dur_ms="$(jq -r --arg id "$id" '.capture[$id].wallDurationMs' "$raw")"
+            ref_ss="$(awk -v n="$ref_ms" 'BEGIN{printf "%.3f",n/1000}')"
+            fab_ss="$(awk -v n="$fab_ms" 'BEGIN{printf "%.3f",n/1000}')"
+            dur_s="$(awk -v n="$dur_ms" 'BEGIN{printf "%.3f",n/1000}')"
+            mkdir -p "$EVIDENCE_DIR/video/synchronized/$id/reference-frames" "$EVIDENCE_DIR/video/synchronized/$id/fabushi-frames"
+            ffmpeg -hide_banner -loglevel error -y -ss "$ref_ss" -i "$ref_video" -t "$dur_s" -vf "crop=64:64:(iw-64)/2:(ih-64)/2,fps=30" "$EVIDENCE_DIR/video/synchronized/$id/reference-frames/%05d.png"
+            ffmpeg -hide_banner -loglevel error -y -ss "$fab_ss" -i "$fab_video" -t "$dur_s" -vf "crop=64:64:(iw-64)/2:(ih-64)/2,fps=30" "$EVIDENCE_DIR/video/synchronized/$id/fabushi-frames/%05d.png"
+            ffmpeg -hide_banner -loglevel error -y               -ss "$ref_ss" -i "$ref_video" -ss "$fab_ss" -i "$fab_video" -t "$dur_s"               -filter_complex "[0:v]crop=64:64:(iw-64)/2:(ih-64)/2,fps=30[r];[1:v]crop=64:64:(iw-64)/2:(ih-64)/2,fps=30[f];[r][f]hstack=inputs=2[v]"               -map "[v]" -an -c:v libx264 -pix_fmt yuv420p "$EVIDENCE_DIR/video/synchronized/$id/side-by-side.mp4"
+          done
+
+      - name: Write evidence bundle digest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/test-results
+          if [ -d "$EVIDENCE_DIR" ]; then
+            tar -czf desktop/test-results/gbf-509-motion-parity-evidence.tar.gz -C desktop/test-results gbf-509-motion-parity
+            shasum -a 256 desktop/test-results/gbf-509-motion-parity-evidence.tar.gz | tee desktop/test-results/gbf-509-motion-parity-evidence.sha256
+          fi
+
+      - name: Upload GBF-509 direct parity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gbf-509-motion-parity-${{ env.SOURCE_SHA }}
+          path: |
+            desktop/test-results/gbf-509-motion-parity
+            desktop/test-results/gbf-509-motion-parity-evidence.tar.gz
+            desktop/test-results/gbf-509-motion-parity-evidence.sha256
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Publish parity summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## GBF-509 direct reference motion parity'
+            echo "- Source SHA: $SOURCE_SHA"
+            echo "- Reference SHA: $REFERENCE_SHA"
+            echo "- Capture outcome: ${{ steps.capture.outcome }}"
+            echo "- Analysis outcome: ${{ steps.analyze.outcome }}"
+            if [ -f "$EVIDENCE_DIR/motion-parity-report.json" ]; then
+              echo "- Frozen-threshold pass: $(jq -r '.pass' "$EVIDENCE_DIR/motion-parity-report.json")"
+              echo "- Failure count: $(jq -r '.failureCount' "$EVIDENCE_DIR/motion-parity-report.json")"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce direct parity gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.capture.outcome }}" = "success"
+          test "${{ steps.analyze.outcome }}" = "success"
+          test "$(jq -r '.pass' "$EVIDENCE_DIR/motion-parity-report.json")" = "true"

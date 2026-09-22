@@ -1,0 +1,204 @@
+{
+  "schema": "fabushi.avatar.motion-parity.v1",
+  "frozenReference": {
+    "repository": "bhrum/grok-icon-study",
+    "commit": "647e9bd7c60290c42a738fad586589b3f36a4680",
+    "path": "replica"
+  },
+  "capture": {
+    "viewport": {
+      "width": 640,
+      "height": 480
+    },
+    "avatarPx": 64,
+    "reducedMotion": false,
+    "sampleHz": 30,
+    "referenceRandomSeed": 50918,
+    "warmupMs": 500
+  },
+  "thresholds": {
+    "bodyY": {
+      "peakRelativeErrorMax": 0.35,
+      "periodRelativeErrorMax": 0.3,
+      "settlingAbsMsMax": 300,
+      "settlingRelativeErrorMax": 0.35
+    },
+    "roll": {
+      "ambientMaeDegMax": 5,
+      "actionPeakRelativeErrorMax": 0.35
+    },
+    "squash": {
+      "maeMax": 0.04,
+      "peakAbsErrorMax": 0.08
+    },
+    "eyes": {
+      "normalizedMaeMax": 0.18,
+      "winkAsymmetryErrorMax": 0.2
+    },
+    "blink": {
+      "eventCountDeltaMax": 1,
+      "medianIntervalRelativeErrorMax": 0.25,
+      "closureDurationAbsMsMax": 120
+    },
+    "gaze": {
+      "peakRelativeErrorMax": 0.25,
+      "settlingAbsMsMax": 180
+    },
+    "spin": {
+      "rotationPeakRelativeErrorMax": 0.08,
+      "settlingAbsMsMax": 180,
+      "settlingRelativeErrorMax": 0.25
+    },
+    "bounce": {
+      "firstPeakTimeAbsMsMax": 180,
+      "firstPeakRelativeErrorMax": 0.35,
+      "periodRelativeErrorMax": 0.3,
+      "settlingAbsMsMax": 300
+    },
+    "burst": {
+      "peakTimeAbsMsMax": 180,
+      "durationRelativeErrorMax": 0.35,
+      "settlingRelativeErrorMax": 0.35
+    },
+    "stateTransition": {
+      "endStateNormalizedErrorMax": 0.15,
+      "settlingAbsMsMax": 250
+    },
+    "visualMotion": {
+      "temporalDifferenceCorrelationMin": 0.75
+    }
+  },
+  "scenarios": [
+    {
+      "id": "idle",
+      "identity": "gbf509-idle-2",
+      "state": "idle",
+      "durationMs": 8000,
+      "events": []
+    },
+    {
+      "id": "curious-nod",
+      "identity": "gbf509-curious-21",
+      "state": "curious",
+      "durationMs": 4200,
+      "referenceOverrides": {
+        "nodAtMs": 1715
+      },
+      "events": []
+    },
+    {
+      "id": "pointer-gaze",
+      "identity": "gbf509-pointer",
+      "state": "idle",
+      "durationMs": 3200,
+      "events": [
+        {
+          "atMs": 400,
+          "type": "gaze",
+          "x": -0.55,
+          "y": -0.35
+        },
+        {
+          "atMs": 1200,
+          "type": "gaze",
+          "x": 0.55,
+          "y": 0.35
+        },
+        {
+          "atMs": 2200,
+          "type": "gaze",
+          "x": 0,
+          "y": 0
+        }
+      ]
+    },
+    {
+      "id": "blink-cadence",
+      "identity": "gbf509-blink",
+      "state": "idle",
+      "durationMs": 30000,
+      "events": []
+    },
+    {
+      "id": "curious-hop",
+      "identity": "gbf509-curious-3",
+      "state": "curious",
+      "durationMs": 4200,
+      "referenceOverrides": {
+        "hopAtMs": 1902
+      },
+      "events": []
+    },
+    {
+      "id": "wink",
+      "identity": "gbf509-curious-0",
+      "state": "curious",
+      "durationMs": 4200,
+      "referenceOverrides": {
+        "winkAtMs": 1990,
+        "winkEye": 0
+      },
+      "events": []
+    },
+    {
+      "id": "spin",
+      "identity": "gbf509-spin",
+      "state": "idle",
+      "durationMs": 2600,
+      "events": [
+        {
+          "atMs": 350,
+          "type": "spin",
+          "turns": 1
+        }
+      ]
+    },
+    {
+      "id": "bounce",
+      "identity": "gbf509-bounce",
+      "state": "idle",
+      "durationMs": 2600,
+      "events": [
+        {
+          "atMs": 350,
+          "type": "bounce"
+        }
+      ]
+    },
+    {
+      "id": "burst",
+      "identity": "gbf509-burst",
+      "state": "idle",
+      "durationMs": 2600,
+      "events": [
+        {
+          "atMs": 350,
+          "type": "burst"
+        }
+      ]
+    },
+    {
+      "id": "state-transition",
+      "identity": "gbf509-transition",
+      "state": "idle",
+      "durationMs": 6000,
+      "events": [
+        {
+          "atMs": 1200,
+          "type": "state",
+          "state": "curious"
+        },
+        {
+          "atMs": 2800,
+          "type": "state",
+          "state": "listening"
+        },
+        {
+          "atMs": 4400,
+          "type": "state",
+          "state": "idle"
+        }
+      ]
+    }
+  ]
+}
