@@ -18,3 +18,18 @@ GitHub code/PR/CI/release/deployment facts; external mirrors; chat memory. If re
 disagree, preserve the historical record, verify live facts, and append a correction.
 A task is not complete while protected merge, post-main package/E2E evidence, release or
 migration gates remain open.
+
+## 2026-09-23 Grok Bot extension parity amendment
+
+The latest product requirement is governed by
+`docs/08-grok-bot-0.18-extension-architecture-product-parity.md`.
+Fabushi Chrome is now required to become the Chrome-extension edition of Grok Bot 0.18
+under Fabushi identity while preserving all approved CWA browser-control, userscript,
+Mini Apps, Marketplace, account, same-account MCP and Native Messaging capabilities.
+
+The migration rule is per-source-file audit/disposition plus per-product-responsibility
+Chrome implementation; equal source/target file counts are not required. The final product
+must expose the Grok Agent UI and lifecycle through the canonical extension app, with MV3
+Service Worker limited to transport/capability brokering and with durable run truth owned
+by Coordinator/Host. Desktop Native Messaging is an optional local capability transport,
+not a prerequisite for core Agent use.
