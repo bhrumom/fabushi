@@ -2,17 +2,18 @@
 
 - Project ID: FAB-P0011
 - Project Key: CWA
-- Status: active / implementation delivered; Web Store review and live recovery evidence pending
+- Status: active / existing extension delivered; Grok Bot 0.18 Chrome parity expansion in specification
 - Canonical path: projects/fabushi-chrome-web-app/
 - Authoritative repository: bhrumom/fabushi, branch main
 - Allocation baseline: canonical main `656d05e8d66bfed241f5b9d871a062abfbf2f952`
 
 ## Objective
 
-把独立的 ChatGPT Computer Control Bridge 完整融合到 Fabushi Chrome 扩展，让一个
-Fabushi 0.6.0 扩展同时承载产品 UI、桌面账户桥、现有 Chrome 的 Computer Control
-和已批准的自动化用户脚本；迁移完成后通过 Chrome UI 删除旧 Bridge 与官方 ChatGPT
-扩展。
+把 Fabushi Chrome 扩展升级为 **Grok Bot 0.18 的 Chrome 插件版**：主应用实现
+Grok 的 Agent 工作区、对话/流式/工具/MCP/恢复等功能与 UI，同时完整保留现有
+Computer Control、CDP/OOPIF/下载、Mini Apps、Marketplace、油猴脚本、Fabushi
+独立登录、同账号 MCP 和 Native Messaging 能力。现有插件能力是批准的扩展能力，
+不得因 Grok parity 被删除或降级。
 
 ## Verified state and next gate
 
@@ -29,12 +30,15 @@ gateway deployment, Web Store release and production same-account proof remain r
 
 ## Scope
 
-In scope: product shell parity with Fabushi 0.4.1, all nine Bridge commands,
-Debugger/OOPIF/download/tab lifecycle behavior, desktop account reuse, secure Marketplace
-userscript controls, native-host migration, explicit packaging, and release evidence.
-Out of scope: copying official ChatGPT bookmarks/history/sidebar features or deleting shared
-Computer Use runtime/native accessibility helpers.
+In scope: full Grok Bot 0.18 Chrome-extension product/UI parity; per-source-file audit and
+per-product-responsibility implementation; full-page Grok-shaped extension app; durable
+Coordinator/Host/Runner lifecycle; all nine Bridge commands/eight actions; Debugger/OOPIF/
+download/tab lifecycle; Mini Apps/Marketplace; userscripts; browser login/same-account MCP;
+optional desktop/local enhancement; remote Coordinator fallback; packaging and release evidence.
+Out of scope: one-to-one file copying, copying proprietary Grok binary assets, weakening
+Chrome security boundaries, or deleting existing approved CWA capabilities.
 
-Start with SOURCE_OF_TRUTH.md, then PROJECT.yaml, docs, management records, ADRs,
-evidence and runbooks. Active tasks are CWA-006, CWA-007, CWA-008, CWA-010 and CWA-012
-under management/tasks/.
+Start with SOURCE_OF_TRUTH.md, then
+`docs/08-grok-bot-0.18-extension-architecture-product-parity.md`, PROJECT.yaml, other
+docs, management records, ADRs, evidence and runbooks. Existing delivery tasks remain active;
+CWA-013 owns the Grok Bot 0.18 extension parity expansion.
