@@ -178,5 +178,8 @@ test("device gateway exposes a stable dynamic-device tool surface", () => {
   assert.ok(tools[1].outputSchema.properties.tool);
   assert.ok(tools[2].inputSchema.properties.deviceId);
   assert.ok(tools[2].inputSchema.properties.argumentsJson);
+  assert.ok(tools[2].inputSchema.properties.diskPreflight);
+  assert.ok(tools[2].inputSchema.required.includes("diskPreflight"));
+  assert.match(tools[2].description, /diskPreflight/);
   assert.match(tools[2].description, /describe_device_tool/);
 });

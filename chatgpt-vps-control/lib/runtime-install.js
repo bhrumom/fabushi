@@ -46,6 +46,7 @@ const REQUIRED_RUNTIME_PATHS = [
   "extension/manifest.json",
   "lib/fabushi-computer-policy.js",
   "lib/device-agent.js",
+  "lib/device-disk-safety.js",
   "lib/fabushi-account-session.js",
   "lib/ci-session-tools.js",
   "lib/app-agent-surface-client.js",

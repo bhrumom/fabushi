@@ -10,6 +10,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import WebSocket from "ws";
 import { createSecureInputChannel, resolveSensitiveTemplate } from "./secure-input.js";
 import { createFabushiAccountSessionStore } from "./fabushi-account-session.js";
+import { enforceDiskPreflight } from "./device-disk-safety.js";
 
 const HEARTBEAT_MS = 20_000;
 const MAX_RECONNECT_MS = 30_000;
@@ -406,9 +407,14 @@ export function startDeviceAgent(options = {}) {
           deviceId: config.deviceId,
           toolName: String(message.toolName).slice(0, 128),
           arguments: redactDeviceCallArguments(message.toolName, message.arguments ?? {}),
+          diskPreflight: redactTrace(message.diskPreflight ?? null),
         };
         await appendDeviceTrace(config.tracePath, { ...traceBase, phase: "requested" }).catch(() => {});
         try {
+          if (!message.diskPreflight) throw new Error("Disk safety preflight is required for every remote device call.");
+          await enforceDiskPreflight(message.diskPreflight, {
+            cwd: config.local.kind === "stdio" ? config.local.cwd : process.cwd(),
+          });
           const result = message.toolName === "secure_input_submit"
             ? await runSecureInput(local, secureChannel, message.arguments ?? {})
             : await local.client.callTool({ name: message.toolName, arguments: message.arguments ?? {} });

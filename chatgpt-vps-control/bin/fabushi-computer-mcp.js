@@ -6,11 +6,12 @@ import { registerComputerUseTools } from "../computer-use.js";
 import { computerControlPolicyDecision } from "../lib/fabushi-computer-policy.js";
 import { registerCiSessionTools } from "../lib/ci-session-tools.js";
 import { registerAppAgentTools } from "../lib/app-agent-tools.js";
+import { DEVICE_DISK_SAFETY_INSTRUCTIONS } from "../lib/device-disk-safety.js";
 
 const server = new McpServer({
   name: "fabushi-computer",
   version: "1.0.0",
-});
+}, { instructions: DEVICE_DISK_SAFETY_INSTRUCTIONS });
 
 const toolMeta = (invoking, invoked) => ({
   "openai/toolInvocation/invoking": invoking,

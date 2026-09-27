@@ -10,6 +10,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { buildComputerToolDescriptors, registerComputerUseTools } from "./computer-use.js";
+import { DEVICE_DISK_SAFETY_INSTRUCTIONS, diskPreflightJsonSchema, diskPreflightSchema, enforceDiskPreflight } from "./lib/device-disk-safety.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const MCP_PREFIX = process.env.MCP_PATH_PREFIX ?? "/mcp";
@@ -469,15 +470,16 @@ const TOOL_DESCRIPTORS = [
     name: "run_shell_command",
     title: "Run shell command",
     description:
-      "Run any Bash command on the Oracle VPS as the service user. For root-level operations, prefix commands with sudo.",
+      "Run any Bash command on the Oracle VPS as the service user. For root-level operations, prefix commands with sudo. diskPreflight is mandatory: classify read-only/no-growth commands as impact=none; commands that can write/download/install/build/extract/update/log/cache data must use impact=writes with affected paths and worst-case peak bytes.",
     inputSchema: {
       type: "object",
       properties: {
         command: { type: "string", minLength: 1 },
         cwd: { type: "string", description: "Working directory. Defaults to the service user's home directory." },
         timeoutSeconds: { type: "integer", minimum: 1, maximum: MAX_TIMEOUT_SECONDS },
+        diskPreflight: diskPreflightJsonSchema,
       },
-      required: ["command"],
+      required: ["command", "diskPreflight"],
       additionalProperties: false,
     },
     outputSchema: commandResultJsonSchema,
@@ -493,7 +495,7 @@ const TOOL_DESCRIPTORS = [
     name: "write_text_file",
     title: "Write text file",
     description:
-      "Create a new UTF-8 text file or append text to an existing file on the Oracle VPS. Create mode fails if the file already exists.",
+      "Create a new UTF-8 text file or append text to an existing file on the Oracle VPS. Create mode fails if the file already exists. The server performs an automatic disk-space preflight before writing and preserves the mandatory safety reserve.",
     inputSchema: {
       type: "object",
       properties: {
@@ -662,7 +664,7 @@ async function createVpsServer(authContext, authChallenge) {
   const server = new McpServer({
     name: "oracle-vps-control",
     version: "0.1.0",
-  });
+  }, { instructions: DEVICE_DISK_SAFETY_INSTRUCTIONS });
 
   server.registerTool(
     "vps_status",
@@ -716,11 +718,12 @@ async function createVpsServer(authContext, authChallenge) {
     {
       title: "Run shell command",
       description:
-        "Run any Bash command on the Oracle VPS as the service user. For root-level operations, prefix commands with sudo.",
+        "Run any Bash command on the Oracle VPS as the service user. For root-level operations, prefix commands with sudo. diskPreflight is mandatory: classify read-only/no-growth commands as impact=none; commands that can write/download/install/build/extract/update/log/cache data must use impact=writes with affected paths and worst-case peak bytes.",
       inputSchema: {
         command: z.string().min(1),
         cwd: z.string().optional().describe("Working directory. Defaults to the service user's home directory."),
         timeoutSeconds: z.number().int().min(1).max(MAX_TIMEOUT_SECONDS).optional(),
+        diskPreflight: diskPreflightSchema,
       },
       outputSchema: commandResultSchema,
       annotations: {
@@ -731,11 +734,12 @@ async function createVpsServer(authContext, authChallenge) {
       securitySchemes: WRITE_SECURITY_SCHEMES,
       _meta: toolMeta("Running shell command", "Shell command finished", WRITE_SECURITY_SCHEMES),
     },
-    async ({ command, cwd, timeoutSeconds }) => {
+    async ({ command, cwd, timeoutSeconds, diskPreflight }) => {
       if (!hasScope(authContext, "vps.write")) {
         return toolAuthError(authChallenge);
       }
 
+      await enforceDiskPreflight(diskPreflight, { cwd: safeCwd(cwd) });
       const result = await runCommand(command, cwd, timeoutSeconds);
       return {
         structuredContent: result,
@@ -757,7 +761,7 @@ async function createVpsServer(authContext, authChallenge) {
     {
       title: "Write text file",
       description:
-        "Create a new UTF-8 text file or append text to an existing file on the Oracle VPS. Create mode fails if the file already exists.",
+        "Create a new UTF-8 text file or append text to an existing file on the Oracle VPS. Create mode fails if the file already exists. The server performs an automatic disk-space preflight before writing and preserves the mandatory safety reserve.",
       inputSchema: {
         filePath: z.string().min(1).max(1000).describe("Absolute path, ~/path, or path relative to cwd."),
         content: z.string(),
@@ -782,6 +786,11 @@ async function createVpsServer(authContext, authChallenge) {
       let targetPath = "";
       try {
         targetPath = resolveFilePath(filePath, cwd);
+        await enforceDiskPreflight({
+          impact: "writes",
+          reason: "write_text_file writes the provided UTF-8 content and must preserve disk safety reserve.",
+          targets: [{ path: targetPath, peakAdditionalBytes: byteLength(content) }],
+        }, { cwd: safeCwd(cwd) });
         await mkdir(dirname(targetPath), { recursive: true });
         if (writeMode === "append") {
           await appendFile(targetPath, content, "utf8");

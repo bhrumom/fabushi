@@ -8,6 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { attachDeviceGateway, registerDeviceTools } from "./device-gateway.js";
 import { createFabushiAccountClient } from "./fabushi-account-auth.js";
+import { DEVICE_DISK_SAFETY_INSTRUCTIONS } from "./device-disk-safety.js";
 
 const ACCESS_TOKEN_TTL_SECONDS = 8 * 60 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -508,7 +509,7 @@ export function createFabushiRemoteMcpServer(options = {}) {
   }
 
   function createMcp(account) {
-    const server = new McpServer({ name: "fabushi-device-control", version: "1.0.0" });
+    const server = new McpServer({ name: "fabushi-device-control", version: "1.0.0" }, { instructions: DEVICE_DISK_SAFETY_INSTRUCTIONS });
     server.registerTool("fabushi_account", {
       title: "Current Fabushi account",
       description: "Return the Fabushi account identity that scopes device discovery for this MCP connection.",

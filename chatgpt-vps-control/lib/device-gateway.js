@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { hostname } from "node:os";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
+import { diskPreflightJsonSchema, diskPreflightSchema, normalizeDiskPreflight } from "./device-disk-safety.js";
 
 const DEFAULT_AGENT_PATH = "/agent";
 const DEFAULT_BROWSER_AGENT_PATH = "/browser-agent";
@@ -432,7 +433,7 @@ export function describeRegisteredDeviceTool(accountId, deviceId, toolName) {
   };
 }
 
-export async function callRegisteredDevice(accountId, deviceId, toolName, args, timeoutSeconds = DEFAULT_CALL_TIMEOUT_SECONDS) {
+export async function callRegisteredDevice(accountId, deviceId, toolName, args, timeoutSeconds = DEFAULT_CALL_TIMEOUT_SECONDS, diskPreflight = { impact: "none", reason: "Internal low-level caller classified this operation as no material disk growth.", targets: [] }) {
   const key = registryKey(accountId, deviceId);
   const device = devices.get(key);
   if (!device) throw new Error(`Unknown device: ${deviceId}. Call list_devices first.`);
@@ -453,7 +454,7 @@ export async function callRegisteredDevice(accountId, deviceId, toolName, args, 
       reject(new Error(`Device call timed out after ${timeoutMs / 1000} seconds.`));
     }, timeoutMs);
     pendingCalls.set(requestId, { registryKey: key, socket: device.socket, resolve, reject, timer });
-    device.socket.send(JSON.stringify({ type: "call", requestId, toolName, arguments: args }), (error) => {
+    device.socket.send(JSON.stringify({ type: "call", requestId, toolName, arguments: args, diskPreflight: normalizeDiskPreflight(diskPreflight) }), (error) => {
       if (!error) return;
       pendingCalls.delete(requestId);
       clearTimeout(timer);
@@ -559,18 +560,19 @@ export function registerDeviceTools(server, options = {}) {
     "device_call",
     {
       title: "Call a tool on a device",
-      description: "Call one advertised MCP tool on a dynamically connected device. Obtain deviceId and toolName from list_devices; use describe_device_tool when the schema is unfamiliar or may have changed; argumentsJson must be a JSON object.",
+      description: "Call one advertised MCP tool on a dynamically connected device. Obtain deviceId and toolName from list_devices; use describe_device_tool when the schema is unfamiliar or may have changed; argumentsJson must be a JSON object. diskPreflight is mandatory for every call: impact=none only for operations with no material disk growth; otherwise impact=writes with every affected path and worst-case peak bytes.",
       inputSchema: {
         deviceId: z.string().min(1).max(128),
         toolName: z.string().min(1).max(128),
         argumentsJson: z.string().max(MAX_ARGUMENTS_JSON_CHARS).default("{}"),
         timeoutSeconds: z.number().int().min(1).max(MAX_CALL_TIMEOUT_SECONDS).optional(),
+        diskPreflight: diskPreflightSchema,
       },
       outputSchema: deviceToolOutputShape,
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       securitySchemes: writeSecuritySchemes,
     },
-    async ({ deviceId, toolName, argumentsJson, timeoutSeconds }) => {
+    async ({ deviceId, toolName, argumentsJson, timeoutSeconds, diskPreflight }) => {
       if (!canWrite()) return writeAuthError();
       let args;
       try {
@@ -584,7 +586,7 @@ export function registerDeviceTools(server, options = {}) {
       try {
         const accountId = requiredAccountId();
         if (!accountId) return writeAuthError();
-        const response = await callRegisteredDevice(accountId, deviceId, toolName, args, timeoutSeconds);
+        const response = await callRegisteredDevice(accountId, deviceId, toolName, args, timeoutSeconds, normalizeDiskPreflight(diskPreflight));
         const result = {
           deviceId,
           toolName,
@@ -661,7 +663,7 @@ export function buildDeviceToolDescriptors(options = {}) {
     {
       name: "device_call",
       title: "Call a tool on a device",
-      description: "Call one advertised MCP tool on a dynamically connected device. Obtain deviceId and toolName from list_devices; use describe_device_tool when the schema is unfamiliar or may have changed; argumentsJson must be a JSON object.",
+      description: "Call one advertised MCP tool on a dynamically connected device. Obtain deviceId and toolName from list_devices; use describe_device_tool when the schema is unfamiliar or may have changed; argumentsJson must be a JSON object. diskPreflight is mandatory for every call: impact=none only for operations with no material disk growth; otherwise impact=writes with every affected path and worst-case peak bytes.",
       inputSchema: {
         type: "object",
         properties: {
@@ -669,8 +671,9 @@ export function buildDeviceToolDescriptors(options = {}) {
           toolName: { type: "string", minLength: 1, maxLength: 128 },
           argumentsJson: { type: "string", maxLength: MAX_ARGUMENTS_JSON_CHARS, default: "{}" },
           timeoutSeconds: { type: "integer", minimum: 1, maximum: MAX_CALL_TIMEOUT_SECONDS },
+          diskPreflight: diskPreflightJsonSchema,
         },
-        required: ["deviceId", "toolName"],
+        required: ["deviceId", "toolName", "diskPreflight"],
         additionalProperties: false,
       },
       outputSchema: {

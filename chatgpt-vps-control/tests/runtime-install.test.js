@@ -25,6 +25,7 @@ async function createRuntimeSource(root) {
   await writeFixture(join(root, "lib", "fabushi-remote-mcp-server.js"), "export {};\n");
   await writeFixture(join(root, "lib", "fabushi-account-auth.js"), "export {};\n");
   await writeFixture(join(root, "lib", "device-agent.js"), "export {};\n");
+  await writeFixture(join(root, "lib", "device-disk-safety.js"), "export {};\n");
   await writeFixture(join(root, "lib", "fabushi-account-session.js"), "export {};\n");
   await writeFixture(join(root, "lib", "ci-session-tools.js"), "export {};\n");
   await writeFixture(join(root, "lib", "app-agent-surface-client.js"), "export {};\n");
