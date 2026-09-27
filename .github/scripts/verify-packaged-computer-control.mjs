@@ -36,6 +36,7 @@ const REQUIRED_RUNTIME_FILES = Object.freeze([
   "lib/fabushi-remote-mcp-server.js",
   "lib/fabushi-account-auth.js",
   "lib/device-agent.js",
+  "lib/device-disk-safety.js",
   "lib/fabushi-account-session.js",
   "lib/ci-session-tools.js",
   "lib/app-agent-surface-client.js",
