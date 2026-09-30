@@ -4,7 +4,7 @@
 - Project Key: `PRS`
 - Task ID: `PRS-009`
 - Source requirement: `PRS-REQ-012`
-- Status: `in-progress`
+- Status: `passed`
 - Started: `2026-09-21`
 - Updated: `2026-09-21`
 - Branch: `governance/prs-009-cross-repo-routing-followup`
@@ -48,7 +48,7 @@ Prevent AI/developer work from continuing in the wrong repository after the plat
 ## Evidence
 
 - Legacy source initial Desktop-only PR: #2723 -> merge `cb53b46ac606dfb54063b0a8215b290ddadb65c6`.
-- Legacy source full-routing follow-up PR: #2724 (pending merge queue at this record update).
+- Legacy source full-routing follow-up PR: #2724 -> merge `f1033a095bba7cf909fa212a6e8b7f2a099ae821`.
 - Target repository merges:
 - Desktop: `bhrumom/fabushi-desktop` PR #15 -> merge `ba0eb705665a7d938f19ea334208cc941d7c23b7`
 - Core: `bhrumom/fabushi-platform-core` PR #1 -> merge `7e24aa179a44a206eceb722e650a1db6d5bb1f59`
@@ -67,4 +67,4 @@ Prevent AI/developer work from continuing in the wrong repository after the plat
 
 ## Next action
 
-Target repository merges are complete. Merge #2724 through the legacy repository merge queue, read back canonical `main`, then close PRS-009.
+Closed: #2724 merged through the protected merge queue; canonical `main` readback confirms the full routing table. All target repositories were read back with root `AGENTS.md`, `docs/specs/spec-first-ai-development.md`, and `docs/specs/SPEC_TEMPLATE.md`.
