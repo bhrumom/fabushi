@@ -228,6 +228,11 @@ function reducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 }
 
+function parityCaptureEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  return (window as Window & { __FABUSHI_AVATAR_PARITY_CAPTURE__?: boolean }).__FABUSHI_AVATAR_PARITY_CAPTURE__ === true;
+}
+
 function hashIdentity(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
@@ -514,12 +519,27 @@ export const FabushiAvatarRuntime = forwardRef<FabushiAvatarRuntimeHandle, Fabus
         dynamics.squash.target = 1;
         stepDynamics(dynamics, dt);
 
+        const bodyY = -bob + dynamics.faceY.x;
+        if (parityCaptureEnabled() && rootRef.current) {
+          const metrics = rootRef.current.dataset;
+          metrics.motionBodyY = bodyY.toFixed(5);
+          metrics.motionRoll = dynamics.roll.x.toFixed(5);
+          metrics.motionSpin = dynamics.spin.x.toFixed(5);
+          metrics.motionRotation = (dynamics.roll.x + dynamics.spin.x).toFixed(5);
+          metrics.motionSquash = dynamics.squash.x.toFixed(5);
+          metrics.motionGazeX = dynamics.gazeX.x.toFixed(5);
+          metrics.motionGazeY = dynamics.gazeY.x.toFixed(5);
+          metrics.motionLeftEyeOpen = (eyePose.leftHeight * dynamics.leftBlink.x).toFixed(5);
+          metrics.motionRightEyeOpen = (eyePose.rightHeight * dynamics.rightBlink.x).toFixed(5);
+          metrics.motionBurst = dynamics.burst.x.toFixed(5);
+        }
+
         const squash = clamp(dynamics.squash.x, 0.78, 1.16);
         const scaleX = 2 - squash;
         const scaleY = squash;
         face.setAttribute(
           "transform",
-          `translate(0 ${(-bob + dynamics.faceY.x).toFixed(2)}) rotate(${(dynamics.roll.x + dynamics.spin.x).toFixed(2)} ${C} ${C}) translate(${C} ${C}) scale(${scaleX.toFixed(3)} ${scaleY.toFixed(3)}) translate(${-C} ${-C})`,
+          `translate(0 ${bodyY.toFixed(2)}) rotate(${(dynamics.roll.x + dynamics.spin.x).toFixed(2)} ${C} ${C}) translate(${C} ${C}) scale(${scaleX.toFixed(3)} ${scaleY.toFixed(3)}) translate(${-C} ${-C})`,
         );
 
         const gazeX = dynamics.gazeX.x * 5 * eyePose.gazeScale;
