@@ -1,3 +1,13 @@
+
+
+## Final closure — 2026-10-03
+
+- Final status: completed after PR #2732 merged through the protected merge queue.
+- Migration Actions run: https://github.com/bhrumom/fabushi/actions/runs/37125845591 — workflow and `migrate` job succeeded.
+- Target verification: all six required iOS Actions secret names are present in `fabushi-ios/fabushi`; values were neither read back nor logged.
+- Cleanup: source temporary Actions secret deleted; repository-scoped fine-grained PAT revoked; relay workflow removed by PR #2732; migration branches `bhrum-patch-1` and `bhrum-patch-2` absent after merge.
+- Product delivery: N/A; configuration-only migration, no product artifact or release behavior changed. No local build or test was run.
+- Evidence: cleanup PR #2732 merged; final repository state verified on canonical main. No configuration value is recorded here.
 # PRS-006 — iOS Actions secret migration
 
 - Project ID: FAB-P0013
