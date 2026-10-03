@@ -33,6 +33,14 @@
 
 ## Acceptance criteria
 
+## Execution result — 2026-10-03
+
+- Migration relay completed successfully: [Actions run 37125845591](https://github.com/bhrumom/fabushi/actions/runs/37125845591), job `migrate` succeeded. The relay reported secret names/status only; no configuration values were read back or logged.
+- Target verification confirmed all six required Actions secret names are present in `fabushi-ios/fabushi-ios`.
+- Temporary source secret `IOS_MIGRATION_TARGET_ACTIONS_TOKEN` was deleted. The repository-scoped fine-grained PAT was revoked and is no longer listed.
+- Temporary relay workflow removal is included in cleanup PR #2732. Keep this task `in-progress` until that PR merges and all temporary branches are deleted; then record final closure evidence.
+- Post-main product delivery: N/A; this one-time configuration transfer does not alter product artifacts or release behavior. No local build or test was run.
+
 1. The six names are validated against active iOS workflow references on canonical source main.
 2. All six target repository Actions secret names are present after the relay; values are never read back.
 3. A single GitHub Actions relay run succeeds and reports only secret names/status.
