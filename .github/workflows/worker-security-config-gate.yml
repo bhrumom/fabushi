@@ -9,6 +9,12 @@ on:
       - '.github/scripts/run-wrangler-d1-migrations.sh'
       - '.github/workflows/worker-security-config-gate.yml'
   workflow_dispatch:
+    inputs:
+      provision_human_call_turn:
+        description: Create a dedicated Cloudflare Realtime TURN key and install it as production Worker secrets when missing.
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: worker-security-config-${{ github.event.pull_request.number || github.ref }}
@@ -55,7 +61,56 @@ jobs:
           count="$(sqlite3 "$db" "SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name IN ('friend_requests','direct_messages','direct_message_resources','direct_message_reactions','human_calls','human_call_events');")"
           test "$count" = "6"
 
+  provision-human-call-turn:
+    name: Provision production Human call TURN
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.provision_human_call_turn }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: cloudflare-worker
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Create dedicated TURN key only when production secrets are absent
+        working-directory: fabushi/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          secrets_json="$RUNNER_TEMP/worker-secrets.json"
+          npx --yes wrangler@latest secret list --env production --format json > "$secrets_json"
+          has_id="$(jq -r 'any(.[]; .name == "FABUSHI_TURN_KEY_ID")' "$secrets_json")"
+          has_token="$(jq -r 'any(.[]; .name == "FABUSHI_TURN_KEY_API_TOKEN")' "$secrets_json")"
+          if [ "$has_id" = true ] && [ "$has_token" = true ]; then
+            echo "Production TURN secrets already exist; preserving them."
+            exit 0
+          fi
+          if [ "$has_id" != "$has_token" ]; then
+            echo "::error::Production TURN secret set is partial; refusing to overwrite an unknown credential pair."
+            exit 1
+          fi
+          response="$(
+            curl -fsS               -X POST               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/calls/turn_keys"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data '{"name":"fabushi-production-human-calls"}'
+          )"
+          test "$(jq -r '.success // false' <<<"$response")" = true
+          key_id="$(jq -r '.result.uid // empty' <<<"$response")"
+          key_token="$(jq -r '.result.key // empty' <<<"$response")"
+          [[ "$key_id" =~ ^[A-Za-z0-9_-]{16,128}$ ]]
+          test "${#key_token}" -ge 32
+          printf '%s' "$key_id" | npx --yes wrangler@latest secret put FABUSHI_TURN_KEY_ID --env production >/dev/null
+          printf '%s' "$key_token" | npx --yes wrangler@latest secret put FABUSHI_TURN_KEY_API_TOKEN --env production >/dev/null
+          unset key_token response
+          bash ../../.github/scripts/assert-worker-security-secrets.sh production
+
   remote-production:
+    needs: provision-human-call-turn
+    if: ${{ always() && (needs.provision-human-call-turn.result == 'success' || needs.provision-human-call-turn.result == 'skipped') }}
     name: Production Worker secret preflight
     runs-on: ubuntu-latest
     timeout-minutes: 10
