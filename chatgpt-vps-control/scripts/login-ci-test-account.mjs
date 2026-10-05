@@ -8,7 +8,7 @@ const password = String(process.env.FABUSHI_CI_TEST_PASSWORD || "");
 const deviceId = String(process.env.DEVICE_ID || "").trim();
 
 function isProtectedActionsTestDeviceId(value) {
-  return /^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app|windows-app)$/u.test(value);
+  return /^gha-[0-9]+-[0-9]+-(?:interactive|(?:ios|macos|windows)-app(?:-[ab])?)$/u.test(value);
 }
 
 function privateActionsSessionPath(value, runnerTemp) {
