@@ -374,6 +374,49 @@ export async function handleAcceptFriendRequest(request, env, db, requestId) {
   return jsonResponse({ success: true, requestId: id, status: 'accepted' });
 }
 
+export async function handleGetDirectMessageResource(request, env, db, rawResourceId) {
+  const auth = await requireStableAuth(request, env, db);
+  if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
+  if (!env.R2_BUCKET) return new Response('R2 storage unavailable', { status: 500 });
+
+  const resourceId = String(rawResourceId || '').trim();
+  if (!resourceId || resourceId.length > 128) {
+    return jsonResponse({ success: false, error: '消息附件资源编号无效' }, 400);
+  }
+
+  const resource = await db.prepare(
+    `SELECT r.id, r.owner_user_id, r.object_key, r.name, r.content_type, r.size
+     FROM direct_message_resources r
+     WHERE r.id = ?
+       AND (
+         r.owner_user_id = ?
+         OR EXISTS (
+           SELECT 1
+           FROM direct_messages d, json_each(d.attachments_json) attachment
+           WHERE (d.sender_user_id = ? OR d.recipient_user_id = ?)
+             AND json_extract(attachment.value, '$.resourceId') = r.id
+         )
+       )
+     LIMIT 1`
+  ).bind(resourceId, auth.userId, auth.userId, auth.userId).first();
+  if (!resource) {
+    return jsonResponse({ success: false, error: '消息附件不存在或无权访问' }, 404);
+  }
+
+  const object = await env.R2_BUCKET.get(String(resource.object_key));
+  if (!object) {
+    return jsonResponse({ success: false, error: '消息附件对象不存在' }, 404);
+  }
+  const headers = new Headers();
+  headers.set('Content-Type', normalizedContentType(resource.content_type));
+  headers.set('Content-Length', String(resource.size));
+  headers.set('Cache-Control', 'private, no-store');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  const safeName = normalizedResourceName(resource.name).replaceAll('"', '');
+  headers.set('Content-Disposition', `inline; filename="${safeName}"`);
+  return new Response(object.body, { status: 200, headers });
+}
+
 export async function handleUploadDirectMessageResource(request, env, db) {
   const auth = await requireStableAuth(request, env, db);
   if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
