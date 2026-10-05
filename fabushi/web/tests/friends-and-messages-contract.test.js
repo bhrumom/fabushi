@@ -16,6 +16,10 @@ const migration = readFileSync(
   join(root, 'migrations/20260713_friends_and_direct_messages.sql'),
   'utf8',
 );
+const remoteSemanticsMigration = readFileSync(
+  join(root, 'migrations/20261005_direct_message_remote_semantics.sql'),
+  'utf8',
+);
 
 test('friend and direct-message storage has durable identities and indexes', () => {
   assert.match(migration, /CREATE TABLE IF NOT EXISTS friend_requests/i);
@@ -24,6 +28,11 @@ test('friend and direct-message storage has durable identities and indexes', () 
   assert.match(migration, /CHECK \(status IN \('pending', 'accepted', 'rejected', 'cancelled'\)\)/i);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS direct_messages/i);
   assert.match(migration, /idx_direct_messages_client_request/i);
+  assert.match(remoteSemanticsMigration, /reply_to_message_id INTEGER/i);
+  assert.match(remoteSemanticsMigration, /attachments_json TEXT NOT NULL DEFAULT '\[\]'/i);
+  assert.match(remoteSemanticsMigration, /CREATE TABLE IF NOT EXISTS direct_message_resources/i);
+  assert.match(remoteSemanticsMigration, /CREATE TABLE IF NOT EXISTS direct_message_reactions/i);
+  assert.match(remoteSemanticsMigration, /PRIMARY KEY \(message_id, user_id, emoji\)/i);
 });
 
 test('friend handlers require stable authenticated account identities', () => {
@@ -32,7 +41,14 @@ test('friend handlers require stable authenticated account identities', () => {
   assert.match(handler, /只能给已添加的好友发送消息/);
   assert.match(handler, /MAX_MESSAGE_LENGTH = 4000/);
   assert.match(handler, /clientRequestId\.length > 200/);
-  assert.match(handler, /SELECT id, sender_user_id, recipient_user_id, body/);
+  assert.match(handler, /MAX_MESSAGE_RESOURCE_BYTES = 32 \* 1024 \* 1024/);
+  assert.match(handler, /env\.R2_BUCKET\.put\(objectKey, bytes/);
+  assert.match(handler, /direct_message_resources/);
+  assert.match(handler, /reply_to_message_id/);
+  assert.match(handler, /attachments_json/);
+  assert.match(handler, /direct_message_reactions/);
+  assert.match(handler, /json_each\(d\.attachments_json\)/);
+  assert.match(handler, /消息请求编号已用于不同内容/);
   assert.match(handler, /deduplicated \? 200 : 201/);
 });
 
@@ -42,11 +58,14 @@ test('router exposes the endpoints consumed by canonical apps and the CLI', () =
     '/api/social/friends',
     '/api/social/friend-requests',
     '/api/social/friend-requests/incoming',
+    '/api/social/message-resources',
     '/api/social/messages',
   ]) {
     assert.ok(communityRouter.includes(path), `missing ${path}`);
   }
   assert.match(communityRouter, /friend-requests\\\/\(\\d\+\)\\\/accept/);
+  assert.match(communityRouter, /message-resources\\\/\(\[\^\/\]\+\)/);
+  assert.match(communityRouter, /messages\\\/\(\\d\+\)\\\/reactions/);
 });
 
 test('browser embeds the WASM runtime without a cloud Agent gateway', () => {

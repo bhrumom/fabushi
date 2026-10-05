@@ -1,0 +1,51 @@
+name: FBCP Human messaging backend
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'fabushi/web/src/handlers/friends.js'
+      - 'fabushi/web/src/routes/community-routes.js'
+      - 'fabushi/web/migrations/*direct_message*.sql'
+      - 'fabushi/web/tests/friends-and-messages-contract.test.js'
+      - '.github/workflows/fbcp-human-messaging-backend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Human messaging backend contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Bind exact tested HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Check Worker source syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check fabushi/web/src/handlers/friends.js
+          node --check fabushi/web/src/routes/community-routes.js
+      - name: Run focused Human messaging contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test fabushi/web/tests/friends-and-messages-contract.test.js
+      - name: Apply direct-message migrations to SQLite
+        shell: bash
+        run: |
+          set -euo pipefail
+          db="$RUNNER_TEMP/fbcp-human-messaging.sqlite"
+          sqlite3 "$db" 'PRAGMA foreign_keys=ON; CREATE TABLE users(id INTEGER PRIMARY KEY);'
+          sqlite3 "$db" < fabushi/web/migrations/20260713_friends_and_direct_messages.sql
+          sqlite3 "$db" < fabushi/web/migrations/20261005_direct_message_remote_semantics.sql
+          sqlite3 "$db" "PRAGMA foreign_keys=ON; SELECT CASE WHEN COUNT(*) = 4 THEN 1 ELSE json_extract('missing messaging schema', '$') END FROM sqlite_schema WHERE type='table' AND name IN ('friend_requests','direct_messages','direct_message_resources','direct_message_reactions');"
