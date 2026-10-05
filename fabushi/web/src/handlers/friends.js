@@ -2,6 +2,133 @@ import { jsonResponse } from '../utils/response.js';
 import { requireAuthIdentity } from '../utils/auth-identity.js';
 
 const MAX_MESSAGE_LENGTH = 4000;
+const MAX_MESSAGE_ATTACHMENTS = 6;
+const MAX_MESSAGE_RESOURCE_BYTES = 32 * 1024 * 1024;
+const MAX_MESSAGE_RESOURCE_NAME_CHARS = 255;
+const MAX_REACTION_BYTES = 32;
+
+function positiveMessageId(value) {
+  const text = String(value ?? '').trim();
+  if (!/^\d+$/.test(text)) return null;
+  const parsed = Number(text);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizedResourceName(value) {
+  const cleaned = String(value || 'attachment')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim();
+  return Array.from(cleaned || 'attachment').slice(0, MAX_MESSAGE_RESOURCE_NAME_CHARS).join('');
+}
+
+function normalizedContentType(value) {
+  const type = String(value || 'application/octet-stream').trim().toLowerCase();
+  if (!type || type.length > 200 || /[\r\n]/.test(type)) return 'application/octet-stream';
+  return type;
+}
+
+function parseStoredAttachments(value) {
+  let parsed;
+  try {
+    parsed = JSON.parse(value || '[]');
+  } catch {
+    throw new Error('direct message attachment metadata is invalid JSON');
+  }
+  if (!Array.isArray(parsed)) throw new Error('direct message attachment metadata is invalid');
+  return parsed;
+}
+
+async function loadOwnedMessageAttachments(db, ownerUserId, requested) {
+  if (!Array.isArray(requested)) {
+    if (requested == null) return [];
+    throw new Error('消息附件格式无效');
+  }
+  if (requested.length > MAX_MESSAGE_ATTACHMENTS) {
+    throw new Error('消息附件数量超过限制');
+  }
+
+  const seen = new Set();
+  const attachments = [];
+  for (const candidate of requested) {
+    const resourceId = String(candidate?.resourceId || '').trim();
+    if (!resourceId || resourceId.length > 128 || seen.has(resourceId)) {
+      throw new Error('消息附件资源编号无效');
+    }
+    seen.add(resourceId);
+    const row = await db.prepare(
+      'SELECT id, name, content_type, size, created_at FROM direct_message_resources WHERE id = ? AND owner_user_id = ? LIMIT 1'
+    ).bind(resourceId, ownerUserId).first();
+    if (!row) throw new Error('消息附件资源不存在或不属于当前账号');
+    attachments.push({
+      resourceId: String(row.id),
+      name: String(row.name),
+      contentType: String(row.content_type),
+      size: Number(row.size),
+      createdAt: String(row.created_at),
+    });
+  }
+  return attachments;
+}
+
+async function validateReplyTarget(db, messageId, senderUserId, recipientUserId) {
+  if (messageId == null) return null;
+  const row = await db.prepare(
+    'SELECT id FROM direct_messages WHERE id = ? AND ((sender_user_id = ? AND recipient_user_id = ?) OR (sender_user_id = ? AND recipient_user_id = ?)) LIMIT 1'
+  ).bind(messageId, senderUserId, recipientUserId, recipientUserId, senderUserId).first();
+  if (!row) throw new Error('回复目标不属于当前会话');
+  return Number(row.id);
+}
+
+async function loadReactionMap(db, messageIds, currentUserId) {
+  const ids = messageIds
+    .map((value) => positiveMessageId(value))
+    .filter((value) => value != null);
+  const map = new Map();
+  if (!ids.length) return map;
+
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = await db.prepare(
+    'SELECT message_id, user_id, emoji FROM direct_message_reactions WHERE message_id IN (' + placeholders + ') ORDER BY message_id ASC, emoji ASC, user_id ASC'
+  ).bind(...ids).all();
+
+  for (const row of rows.results || []) {
+    const key = String(row.message_id);
+    let byEmoji = map.get(key);
+    if (!byEmoji) {
+      byEmoji = new Map();
+      map.set(key, byEmoji);
+    }
+    const emoji = String(row.emoji);
+    const aggregate = byEmoji.get(emoji) || { emoji, count: 0, reactedByMe: false };
+    aggregate.count += 1;
+    if (Number(row.user_id) === Number(currentUserId)) aggregate.reactedByMe = true;
+    byEmoji.set(emoji, aggregate);
+  }
+
+  const projected = new Map();
+  for (const [messageId, byEmoji] of map) {
+    projected.set(messageId, Array.from(byEmoji.values()));
+  }
+  return projected;
+}
+
+function projectDirectMessage(row, currentUserId, reactions = []) {
+  return {
+    id: row.id,
+    senderUserId: row.sender_user_id,
+    senderUsername: row.sender_username,
+    recipientUserId: row.recipient_user_id,
+    recipientUsername: row.recipient_username,
+    text: row.body,
+    clientRequestId: row.client_request_id,
+    createdAt: row.created_at,
+    readAt: row.read_at,
+    isOutgoing: Number(row.sender_user_id) === Number(currentUserId),
+    replyToMessageId: row.reply_to_message_id ?? null,
+    attachments: parseStoredAttachments(row.attachments_json),
+    reactions,
+  };
+}
 
 async function requireStableAuth(request, env, db) {
   const auth = await requireAuthIdentity(request, env, db);
@@ -247,6 +374,70 @@ export async function handleAcceptFriendRequest(request, env, db, requestId) {
   return jsonResponse({ success: true, requestId: id, status: 'accepted' });
 }
 
+export async function handleUploadDirectMessageResource(request, env, db) {
+  const auth = await requireStableAuth(request, env, db);
+  if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
+  if (!env.R2_BUCKET) {
+    return jsonResponse({ success: false, error: 'R2存储桶未绑定，无法保存消息附件' }, 500);
+  }
+
+  let formData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return jsonResponse({ success: false, error: '消息附件上传格式无效' }, 400);
+  }
+  const file = formData.get('file');
+  if (!file || typeof file.arrayBuffer !== 'function') {
+    return jsonResponse({ success: false, error: '请选择要上传的消息附件' }, 400);
+  }
+
+  const announcedSize = Number(file.size);
+  if (Number.isFinite(announcedSize) && announcedSize > MAX_MESSAGE_RESOURCE_BYTES) {
+    return jsonResponse({ success: false, error: '消息附件不能超过32MB' }, 413);
+  }
+  const bytes = await file.arrayBuffer();
+  if (!bytes.byteLength) {
+    return jsonResponse({ success: false, error: '消息附件不能为空' }, 400);
+  }
+  if (bytes.byteLength > MAX_MESSAGE_RESOURCE_BYTES) {
+    return jsonResponse({ success: false, error: '消息附件不能超过32MB' }, 413);
+  }
+
+  const resourceId = crypto.randomUUID();
+  const name = normalizedResourceName(file.name);
+  const contentType = normalizedContentType(file.type);
+  const createdAt = new Date().toISOString();
+  const objectKey = 'message-resources/' + auth.userId + '/' + resourceId;
+
+  await env.R2_BUCKET.put(objectKey, bytes, {
+    httpMetadata: { contentType },
+    customMetadata: {
+      ownerUserId: String(auth.userId),
+      resourceId,
+      name,
+    },
+  });
+
+  try {
+    await db.prepare(
+      'INSERT INTO direct_message_resources (id, owner_user_id, object_key, name, content_type, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).bind(resourceId, auth.userId, objectKey, name, contentType, bytes.byteLength, createdAt).run();
+  } catch (error) {
+    try {
+      await env.R2_BUCKET.delete(objectKey);
+    } catch {
+      // Preserve the database failure as the authoritative error.
+    }
+    throw error;
+  }
+
+  return jsonResponse({
+    success: true,
+    resource: { resourceId, name, contentType, size: bytes.byteLength, createdAt },
+  }, 201);
+}
+
 export async function handleSendDirectMessage(request, env, db) {
   const auth = await requireStableAuth(request, env, db);
   if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
@@ -261,67 +452,96 @@ export async function handleSendDirectMessage(request, env, db) {
   }
 
   const text = String(body.text ?? body.message ?? '').trim();
-  if (!text) return jsonResponse({ success: false, error: '消息不能为空' }, 400);
-  if (text.length > MAX_MESSAGE_LENGTH) {
-    return jsonResponse({ success: false, error: `消息不能超过 ${MAX_MESSAGE_LENGTH} 个字符` }, 400);
-  }
   const clientRequestId = String(body.clientRequestId || '').trim() || null;
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    return jsonResponse({ success: false, error: '消息不能超过 ' + MAX_MESSAGE_LENGTH + ' 个字符' }, 400);
+  }
   if (clientRequestId && clientRequestId.length > 200) {
     return jsonResponse({ success: false, error: '消息请求编号不能超过 200 个字符' }, 400);
   }
-  const createdAt = new Date().toISOString();
-  const result = await db.prepare(`
-    INSERT INTO direct_messages (
-      sender_user_id, sender_username, recipient_user_id,
-      recipient_username, body, client_request_id, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(sender_user_id, client_request_id) WHERE client_request_id IS NOT NULL
-    DO NOTHING
-  `).bind(
-    auth.userId, auth.username, target.id, target.username,
-    text, clientRequestId, createdAt,
-  ).run();
 
-  let persistedMessage = {
-    id: result.meta?.last_row_id ?? null,
-    senderUserId: auth.userId,
-    recipientUserId: target.id,
-    text,
-    createdAt,
-    clientRequestId,
-  };
-  let deduplicated = false;
-  if (
-    clientRequestId &&
-    (result.meta?.changes === 0 ||
-      !persistedMessage.id ||
-      Number(persistedMessage.id) <= 0)
-  ) {
-    const existing = await db.prepare(`
-      SELECT id, sender_user_id, recipient_user_id, body,
-        client_request_id, created_at
-      FROM direct_messages
-      WHERE sender_user_id = ? AND client_request_id = ?
-      LIMIT 1
-    `).bind(auth.userId, clientRequestId).first();
-    if (!existing) {
-      return jsonResponse({ success: false, error: '消息保存结果无法确认' }, 500);
-    }
-    deduplicated = true;
-    persistedMessage = {
-      id: existing.id,
-      senderUserId: existing.sender_user_id,
-      recipientUserId: existing.recipient_user_id,
-      text: existing.body,
-      createdAt: existing.created_at,
-      clientRequestId: existing.client_request_id,
-    };
+  let attachments;
+  try {
+    attachments = await loadOwnedMessageAttachments(db, auth.userId, body.attachments);
+  } catch (error) {
+    return jsonResponse({ success: false, error: error.message }, 400);
+  }
+  if (!text && !attachments.length) {
+    return jsonResponse({ success: false, error: '消息或附件至少需要一项' }, 400);
   }
 
+  let replyToMessageId = null;
+  if (body.replyToMessageId != null && String(body.replyToMessageId).trim()) {
+    replyToMessageId = positiveMessageId(body.replyToMessageId);
+    if (replyToMessageId == null) {
+      return jsonResponse({ success: false, error: '回复目标编号无效' }, 400);
+    }
+    try {
+      replyToMessageId = await validateReplyTarget(db, replyToMessageId, auth.userId, target.id);
+    } catch (error) {
+      return jsonResponse({ success: false, error: error.message }, 400);
+    }
+  }
+
+  const attachmentsJson = JSON.stringify(attachments);
+  const createdAt = new Date().toISOString();
+  const result = await db.prepare(
+    'INSERT INTO direct_messages (sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, reply_to_message_id, attachments_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(sender_user_id, client_request_id) WHERE client_request_id IS NOT NULL DO NOTHING'
+  ).bind(
+    auth.userId,
+    auth.username,
+    target.id,
+    target.username,
+    text,
+    clientRequestId,
+    createdAt,
+    replyToMessageId,
+    attachmentsJson,
+  ).run();
+
+  let persistedRow = null;
+  let deduplicated = false;
+  if (result.meta?.changes > 0 && result.meta?.last_row_id) {
+    persistedRow = await db.prepare(
+      'SELECT id, sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, read_at, reply_to_message_id, attachments_json FROM direct_messages WHERE id = ? LIMIT 1'
+    ).bind(result.meta.last_row_id).first();
+  } else if (clientRequestId) {
+    persistedRow = await db.prepare(
+      'SELECT id, sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, read_at, reply_to_message_id, attachments_json FROM direct_messages WHERE sender_user_id = ? AND client_request_id = ? LIMIT 1'
+    ).bind(auth.userId, clientRequestId).first();
+    deduplicated = true;
+  }
+
+  if (!persistedRow) {
+    return jsonResponse({ success: false, error: '消息保存结果无法确认' }, 500);
+  }
+
+  if (deduplicated) {
+    let storedAttachments;
+    try {
+      storedAttachments = parseStoredAttachments(persistedRow.attachments_json);
+    } catch {
+      return jsonResponse({ success: false, error: '已保存消息的附件元数据损坏' }, 500);
+    }
+    const samePayload =
+      Number(persistedRow.recipient_user_id) === Number(target.id)
+      && String(persistedRow.body) === text
+      && (persistedRow.reply_to_message_id == null ? null : Number(persistedRow.reply_to_message_id)) === replyToMessageId
+      && JSON.stringify(storedAttachments) === attachmentsJson;
+    if (!samePayload) {
+      return jsonResponse({ success: false, error: '消息请求编号已用于不同内容' }, 409);
+    }
+  }
+
+  const reactions = await loadReactionMap(db, [persistedRow.id], auth.userId);
   return jsonResponse({
     success: true,
     deduplicated,
-    message: persistedMessage,
+    message: projectDirectMessage(
+      persistedRow,
+      auth.userId,
+      reactions.get(String(persistedRow.id)) || [],
+    ),
   }, deduplicated ? 200 : 201);
 }
 
@@ -339,31 +559,77 @@ export async function handleListDirectMessages(request, env, db) {
   }
   const limit = clampLimit(url.searchParams.get('limit'), 50, 200);
   const before = (url.searchParams.get('before') || '').trim();
-  const rows = await db.prepare(`
-    SELECT id, sender_user_id, sender_username, recipient_user_id,
-      recipient_username, body, client_request_id, created_at, read_at
-    FROM direct_messages
-    WHERE ((sender_user_id = ? AND recipient_user_id = ?)
-      OR (sender_user_id = ? AND recipient_user_id = ?))
-      AND (? = '' OR created_at < ?)
-    ORDER BY created_at DESC, id DESC
-    LIMIT ?
-  `).bind(
-    auth.userId, target.id, target.id, auth.userId,
-    before, before, limit,
+  const rows = await db.prepare(
+    'SELECT id, sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, read_at, reply_to_message_id, attachments_json FROM direct_messages WHERE ((sender_user_id = ? AND recipient_user_id = ?) OR (sender_user_id = ? AND recipient_user_id = ?)) AND (? = \'\' OR created_at < ?) ORDER BY created_at DESC, id DESC LIMIT ?'
+  ).bind(
+    auth.userId,
+    target.id,
+    target.id,
+    auth.userId,
+    before,
+    before,
+    limit,
   ).all();
 
-  const messages = (rows.results || []).reverse().map((row) => ({
-    id: row.id,
-    senderUserId: row.sender_user_id,
-    senderUsername: row.sender_username,
-    recipientUserId: row.recipient_user_id,
-    recipientUsername: row.recipient_username,
-    text: row.body,
-    clientRequestId: row.client_request_id,
-    createdAt: row.created_at,
-    readAt: row.read_at,
-    isOutgoing: row.sender_user_id === auth.userId,
-  }));
+  const orderedRows = (rows.results || []).reverse();
+  const reactions = await loadReactionMap(db, orderedRows.map((row) => row.id), auth.userId);
+  const messages = orderedRows.map((row) => projectDirectMessage(
+    row,
+    auth.userId,
+    reactions.get(String(row.id)) || [],
+  ));
   return jsonResponse({ success: true, data: { contact: mapContact(target), messages } });
+}
+
+export async function handleSetDirectMessageReaction(request, env, db, rawMessageId) {
+  const auth = await requireStableAuth(request, env, db);
+  if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
+  const messageId = positiveMessageId(rawMessageId);
+  if (messageId == null) {
+    return jsonResponse({ success: false, error: '消息编号无效' }, 400);
+  }
+  const message = await db.prepare(
+    'SELECT id, sender_user_id, recipient_user_id FROM direct_messages WHERE id = ? LIMIT 1'
+  ).bind(messageId).first();
+  if (!message || (
+    Number(message.sender_user_id) !== Number(auth.userId)
+    && Number(message.recipient_user_id) !== Number(auth.userId)
+  )) {
+    return jsonResponse({ success: false, error: '消息不存在' }, 404);
+  }
+
+  const peerUserId = Number(message.sender_user_id) === Number(auth.userId)
+    ? Number(message.recipient_user_id)
+    : Number(message.sender_user_id);
+  if (!(await areFriends(db, auth.userId, peerUserId))) {
+    return jsonResponse({ success: false, error: '只能操作已添加好友的消息' }, 403);
+  }
+
+  const body = await request.json();
+  const emoji = String(body.emoji || '').trim();
+  const active = body.active;
+  if (!emoji || new TextEncoder().encode(emoji).byteLength > MAX_REACTION_BYTES) {
+    return jsonResponse({ success: false, error: '消息表情无效或过长' }, 400);
+  }
+  if (typeof active !== 'boolean') {
+    return jsonResponse({ success: false, error: '消息表情状态必须是布尔值' }, 400);
+  }
+
+  const now = new Date().toISOString();
+  if (active) {
+    await db.prepare(
+      'INSERT INTO direct_message_reactions (message_id, user_id, emoji, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(message_id, user_id, emoji) DO UPDATE SET updated_at = excluded.updated_at'
+    ).bind(messageId, auth.userId, emoji, now, now).run();
+  } else {
+    await db.prepare(
+      'DELETE FROM direct_message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?'
+    ).bind(messageId, auth.userId, emoji).run();
+  }
+
+  const reactions = await loadReactionMap(db, [messageId], auth.userId);
+  return jsonResponse({
+    success: true,
+    messageId,
+    reactions: reactions.get(String(messageId)) || [],
+  });
 }
