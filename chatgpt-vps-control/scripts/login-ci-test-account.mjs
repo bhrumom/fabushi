@@ -2,14 +2,12 @@
 import { createHash } from "node:crypto";
 import { resolve, sep } from "node:path";
 import { createFabushiAccountSessionStore } from "../lib/fabushi-account-session.js";
+import { isProtectedActionsTestDeviceId } from "../lib/protected-actions-device-id.js";
 
 const username = String(process.env.FABUSHI_CI_TEST_USERNAME || "").trim();
 const password = String(process.env.FABUSHI_CI_TEST_PASSWORD || "");
 const deviceId = String(process.env.DEVICE_ID || "").trim();
 
-function isProtectedActionsTestDeviceId(value) {
-  return /^gha-[0-9]+-[0-9]+-(?:interactive|(?:ios|macos|windows)-app(?:-[ab])?)$/u.test(value);
-}
 
 function privateActionsSessionPath(value, runnerTemp) {
   const rawPath = String(value || "").trim();
