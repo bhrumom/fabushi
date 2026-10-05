@@ -24,6 +24,9 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
       - name: Validate deployment guard scripts
         shell: bash
         run: |
@@ -35,6 +38,43 @@ jobs:
             echo 'Static Worker configuration contains a JWT secret literal.' >&2
             exit 1
           }
+      - name: Verify Human messaging and call Worker contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check fabushi/web/src/handlers/friends.js
+          node --check fabushi/web/src/handlers/human-calls.js
+          node --check fabushi/web/src/routes/community-routes.js
+          node --test fabushi/web/tests/friends-and-messages-contract.test.js
+          node --test fabushi/web/tests/human-calls-contract.test.js
+          db="$RUNNER_TEMP/human-messaging.sqlite"
+          sqlite3 "$db" 'PRAGMA foreign_keys=ON; CREATE TABLE users(id INTEGER PRIMARY KEY);'
+          sqlite3 "$db" < fabushi/web/migrations/20260713_friends_and_direct_messages.sql
+          sqlite3 "$db" < fabushi/web/migrations/20261005_direct_message_remote_semantics.sql
+          sqlite3 "$db" < fabushi/web/migrations/20261006_human_calls.sql
+          sqlite3 "$db" "PRAGMA foreign_keys=ON; SELECT CASE WHEN COUNT(*) = 6 THEN 1 ELSE json_extract('missing messaging schema', '
+
+  remote-production:
+    name: Production Worker secret preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Verify required production secret names exist in Cloudflare
+        working-directory: fabushi/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          bash ../../.github/scripts/assert-worker-security-secrets.sh production
+) END FROM sqlite_schema WHERE type='table' AND name IN ('friend_requests','direct_messages','direct_message_resources','direct_message_reactions','human_calls','human_call_events');"
 
   remote-production:
     name: Production Worker secret preflight
