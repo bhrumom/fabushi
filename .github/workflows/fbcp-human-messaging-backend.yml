@@ -14,6 +14,7 @@ on:
       - 'chatgpt-vps-control/lib/protected-actions-device-id.js'
       - 'chatgpt-vps-control/scripts/login-ci-test-account.mjs'
       - 'chatgpt-vps-control/scripts/export-ci-app-account-session.mjs'
+      - 'chatgpt-vps-control/scripts/prepare-ci-human-peer.mjs'
       - 'chatgpt-vps-control/test/protected-actions-device-id.test.mjs'
       - '.github/workflows/fbcp-human-messaging-backend.yml'
   workflow_dispatch:
@@ -43,6 +44,7 @@ jobs:
           node --check fabushi/web/src/handlers/friends.js
           node --check fabushi/web/src/handlers/human-calls.js
           node --check fabushi/web/src/routes/community-routes.js
+          node --check chatgpt-vps-control/scripts/prepare-ci-human-peer.mjs
       - name: Run focused Human messaging contracts
         shell: bash
         run: |
