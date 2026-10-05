@@ -23,6 +23,8 @@ import {
   handleListIncomingFriendRequests,
   handleSearchFriendUsers,
   handleSendDirectMessage,
+  handleSetDirectMessageReaction,
+  handleUploadDirectMessageResource,
 } from '../handlers/friends.js';
 import {
   handleToggleLike,
@@ -57,8 +59,11 @@ export async function routeCommunityRequest({ pathname, method, request, env, db
   if (pathname === '/api/social/friend-requests/incoming' && method === 'GET') return handleListIncomingFriendRequests(request, env, db);
   const friendAcceptMatch = pathname.match(/^\/api\/social\/friend-requests\/(\d+)\/accept$/);
   if (friendAcceptMatch && method === 'POST') return handleAcceptFriendRequest(request, env, db, friendAcceptMatch[1]);
+  if (pathname === '/api/social/message-resources' && method === 'POST') return handleUploadDirectMessageResource(request, env, db);
   if (pathname === '/api/social/messages' && method === 'GET') return handleListDirectMessages(request, env, db);
   if (pathname === '/api/social/messages' && method === 'POST') return handleSendDirectMessage(request, env, db);
+  const messageReactionMatch = pathname.match(/^\/api\/social\/messages\/(\d+)\/reactions$/);
+  if (messageReactionMatch && method === 'POST') return handleSetDirectMessageReaction(request, env, db, messageReactionMatch[1]);
 
   if (pathname === '/api/likes/toggle' && method === 'POST') return handleToggleLike(request, env, db);
   if (pathname === '/api/likes/count' && method === 'GET') return handleGetLikeCount(request, env, db);
