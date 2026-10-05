@@ -38,6 +38,13 @@ import { handleToggleFavorite, handleGetMyFavorites, handleBatchCheckFavorites }
 import { handleBatchGetContentStats } from '../handlers/content-stats.js';
 import { handleOnlineJoin, handleOnlineHeartbeat, handleOnlineLeave, handleOnlineCount } from '../handlers/online.js';
 import { handleReport, handleBlockUser, handleGetReports, handleReviewReport, handleGetBlocks } from '../handlers/moderation.js';
+import {
+  handleAppendHumanCallEvent,
+  handleCreateHumanCall,
+  handleGetHumanCall,
+  handleGetHumanCallIceServers,
+  handleListHumanCalls,
+} from '../handlers/human-calls.js';
 
 export async function routeCommunityRequest({ pathname, method, request, env, db }) {
   if (pathname === '/api/comments' && method === 'GET') return handleGetComments(request, env, db);
@@ -67,6 +74,13 @@ export async function routeCommunityRequest({ pathname, method, request, env, db
   if (pathname === '/api/social/messages' && method === 'POST') return handleSendDirectMessage(request, env, db);
   const messageReactionMatch = pathname.match(/^\/api\/social\/messages\/(\d+)\/reactions$/);
   if (messageReactionMatch && method === 'POST') return handleSetDirectMessageReaction(request, env, db, messageReactionMatch[1]);
+  if (pathname === '/api/social/calls/ice' && method === 'GET') return handleGetHumanCallIceServers(request, env, db);
+  if (pathname === '/api/social/calls' && method === 'GET') return handleListHumanCalls(request, env, db);
+  if (pathname === '/api/social/calls' && method === 'POST') return handleCreateHumanCall(request, env, db);
+  const callEventMatch = pathname.match(/^\/api\/social\/calls\/([^/]+)\/events$/);
+  if (callEventMatch && method === 'POST') return handleAppendHumanCallEvent(request, env, db, callEventMatch[1]);
+  const callMatch = pathname.match(/^\/api\/social\/calls\/([^/]+)$/);
+  if (callMatch && method === 'GET') return handleGetHumanCall(request, env, db, callMatch[1]);
 
   if (pathname === '/api/likes/toggle' && method === 'POST') return handleToggleLike(request, env, db);
   if (pathname === '/api/likes/count' && method === 'GET') return handleGetLikeCount(request, env, db);
