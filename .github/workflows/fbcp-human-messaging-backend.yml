@@ -11,6 +11,10 @@ on:
       - 'fabushi/web/migrations/*human_calls*.sql'
       - 'fabushi/web/tests/friends-and-messages-contract.test.js'
       - 'fabushi/web/tests/human-calls-contract.test.js'
+      - 'chatgpt-vps-control/lib/protected-actions-device-id.js'
+      - 'chatgpt-vps-control/scripts/login-ci-test-account.mjs'
+      - 'chatgpt-vps-control/scripts/export-ci-app-account-session.mjs'
+      - 'chatgpt-vps-control/test/protected-actions-device-id.test.mjs'
       - '.github/workflows/fbcp-human-messaging-backend.yml'
   workflow_dispatch:
 
@@ -45,6 +49,7 @@ jobs:
           set -euo pipefail
           node --test fabushi/web/tests/friends-and-messages-contract.test.js
           node --test fabushi/web/tests/human-calls-contract.test.js
+          node --test chatgpt-vps-control/test/protected-actions-device-id.test.mjs
       - name: Apply Human messaging migrations to SQLite
         shell: bash
         run: |
