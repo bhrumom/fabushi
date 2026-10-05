@@ -20,6 +20,7 @@ import {
   handleCreateFriendRequest,
   handleListDirectMessages,
   handleListFriends,
+  handleGetDirectMessageResource,
   handleListIncomingFriendRequests,
   handleSearchFriendUsers,
   handleSendDirectMessage,
@@ -60,6 +61,8 @@ export async function routeCommunityRequest({ pathname, method, request, env, db
   const friendAcceptMatch = pathname.match(/^\/api\/social\/friend-requests\/(\d+)\/accept$/);
   if (friendAcceptMatch && method === 'POST') return handleAcceptFriendRequest(request, env, db, friendAcceptMatch[1]);
   if (pathname === '/api/social/message-resources' && method === 'POST') return handleUploadDirectMessageResource(request, env, db);
+  const messageResourceMatch = pathname.match(/^\/api\/social\/message-resources\/([^/]+)$/);
+  if (messageResourceMatch && method === 'GET') return handleGetDirectMessageResource(request, env, db, messageResourceMatch[1]);
   if (pathname === '/api/social/messages' && method === 'GET') return handleListDirectMessages(request, env, db);
   if (pathname === '/api/social/messages' && method === 'POST') return handleSendDirectMessage(request, env, db);
   const messageReactionMatch = pathname.match(/^\/api\/social\/messages\/(\d+)\/reactions$/);
