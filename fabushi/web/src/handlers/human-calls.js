@@ -270,18 +270,9 @@ function normalizeIceUrl(value) {
 }
 
 export function normalizeHumanCallIceServers(raw) {
-  let parsed = raw;
-  if (typeof raw === 'string') {
-    const text = raw.trim();
-    if (!text) throw new Error('Fabushi call ICE server configuration is missing');
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new Error('FABUSHI_CALL_ICE_SERVERS_JSON must be valid JSON');
-    }
-  }
+  const parsed = raw;
   if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > MAX_ICE_SERVERS) {
-    throw new Error('Fabushi call ICE server configuration must contain 1-' + MAX_ICE_SERVERS + ' servers');
+    throw new Error('Fabushi call ICE credential response must contain 1-' + MAX_ICE_SERVERS + ' servers');
   }
   return parsed.map((entry) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
@@ -304,6 +295,48 @@ export function normalizeHumanCallIceServers(raw) {
     }
     return normalized;
   });
+}
+
+export async function generateHumanCallIceServers(env, fetchImpl = fetch) {
+  const keyId = boundedText(env.FABUSHI_TURN_KEY_ID, 'FABUSHI_TURN_KEY_ID', 128);
+  const keyToken = boundedText(env.FABUSHI_TURN_KEY_API_TOKEN, 'FABUSHI_TURN_KEY_API_TOKEN', 256);
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(keyId)) {
+    throw new Error('FABUSHI_TURN_KEY_ID is invalid');
+  }
+  const configuredTtl = Number(env.FABUSHI_CALL_ICE_TTL_SECONDS ?? 3600);
+  const ttlSeconds = Number.isSafeInteger(configuredTtl) && configuredTtl >= 300 && configuredTtl <= 86400
+    ? configuredTtl
+    : 3600;
+  const endpoint = 'https://rtc.live.cloudflare.com/v1/turn/keys/' + encodeURIComponent(keyId) + '/credentials/generate-ice-servers';
+  const response = await fetchImpl(endpoint, {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer ' + keyToken,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ ttl: ttlSeconds }),
+  });
+  if (!response.ok) {
+    throw new Error('Cloudflare Realtime TURN credential generation failed (HTTP ' + response.status + ')');
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error('Cloudflare Realtime TURN credential response is invalid JSON');
+  }
+  const iceServers = normalizeHumanCallIceServers(payload?.iceServers);
+  const hasTurn = iceServers.some((server) =>
+    server.urls.some((url) => /^turns?:/i.test(url))
+    && typeof server.username === 'string'
+    && server.username.length > 0
+    && typeof server.credential === 'string'
+    && server.credential.length > 0
+  );
+  if (!hasTurn) {
+    throw new Error('Cloudflare Realtime TURN credential response does not contain authenticated TURN servers');
+  }
+  return { iceServers, ttlSeconds };
 }
 
 function validateEventAgainstCall(row, body, deviceId) {
@@ -391,17 +424,13 @@ async function loadEventByClientId(db, callId, userId, clientEventId) {
 export async function handleGetHumanCallIceServers(request, env, db) {
   const identity = await requireCallIdentity(request, env, db);
   if (identity.response) return identity.response;
-  let iceServers;
   try {
-    iceServers = normalizeHumanCallIceServers(env.FABUSHI_CALL_ICE_SERVERS_JSON);
+    const generated = await generateHumanCallIceServers(env);
+    return jsonResponse({ success: true, iceServers: generated.iceServers, ttlSeconds: generated.ttlSeconds });
   } catch (error) {
-    return errorResponse(error.message, 503);
+    console.error('Human call ICE credential generation failed:', error?.message || error);
+    return errorResponse('Human call relay credentials are temporarily unavailable', 503);
   }
-  const configuredTtl = Number(env.FABUSHI_CALL_ICE_TTL_SECONDS ?? 3600);
-  const ttlSeconds = Number.isSafeInteger(configuredTtl) && configuredTtl >= 300 && configuredTtl <= 86400
-    ? configuredTtl
-    : 3600;
-  return jsonResponse({ success: true, iceServers, ttlSeconds });
 }
 
 export async function handleListHumanCalls(request, env, db) {
