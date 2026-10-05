@@ -23,7 +23,13 @@ import {
   handleListIncomingFriendRequests,
   handleSearchFriendUsers,
   handleSendDirectMessage,
+  handleSetDirectMessageReaction,
 } from '../handlers/friends.js';
+import {
+  handleDeleteDirectMessageAttachment,
+  handleGetDirectMessageAttachment,
+  handleUploadDirectMessageAttachment,
+} from '../handlers/message-attachments.js';
 import {
   handleToggleLike,
   handleGetLikeCount,
@@ -59,6 +65,20 @@ export async function routeCommunityRequest({ pathname, method, request, env, db
   if (friendAcceptMatch && method === 'POST') return handleAcceptFriendRequest(request, env, db, friendAcceptMatch[1]);
   if (pathname === '/api/social/messages' && method === 'GET') return handleListDirectMessages(request, env, db);
   if (pathname === '/api/social/messages' && method === 'POST') return handleSendDirectMessage(request, env, db);
+  if (pathname === '/api/social/message-attachments' && method === 'POST') {
+    return handleUploadDirectMessageAttachment(request, env, db);
+  }
+  const messageAttachmentMatch = pathname.match(/^\/api\/social\/message-attachments\/([0-9a-f-]{36})$/i);
+  if (messageAttachmentMatch && method === 'GET') {
+    return handleGetDirectMessageAttachment(request, env, db, messageAttachmentMatch[1]);
+  }
+  if (messageAttachmentMatch && method === 'DELETE') {
+    return handleDeleteDirectMessageAttachment(request, env, db, messageAttachmentMatch[1]);
+  }
+  const messageReactionMatch = pathname.match(/^\/api\/social\/messages\/(\d+)\/reactions$/);
+  if (messageReactionMatch && method === 'POST') {
+    return handleSetDirectMessageReaction(request, env, db, messageReactionMatch[1]);
+  }
 
   if (pathname === '/api/likes/toggle' && method === 'POST') return handleToggleLike(request, env, db);
   if (pathname === '/api/likes/count' && method === 'GET') return handleGetLikeCount(request, env, db);

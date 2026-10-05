@@ -16,6 +16,14 @@ const migration = readFileSync(
   join(root, 'migrations/20260713_friends_and_direct_messages.sql'),
   'utf8',
 );
+const messageSemanticsMigration = readFileSync(
+  join(root, 'migrations/20261005_direct_message_semantics.sql'),
+  'utf8',
+);
+const attachmentHandler = readFileSync(
+  join(root, 'src/handlers/message-attachments.js'),
+  'utf8',
+);
 
 test('friend and direct-message storage has durable identities and indexes', () => {
   assert.match(migration, /CREATE TABLE IF NOT EXISTS friend_requests/i);
@@ -24,6 +32,9 @@ test('friend and direct-message storage has durable identities and indexes', () 
   assert.match(migration, /CHECK \(status IN \('pending', 'accepted', 'rejected', 'cancelled'\)\)/i);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS direct_messages/i);
   assert.match(migration, /idx_direct_messages_client_request/i);
+  assert.match(messageSemanticsMigration, /reply_to_message_id/i);
+  assert.match(messageSemanticsMigration, /direct_message_attachments/i);
+  assert.match(messageSemanticsMigration, /direct_message_reactions/i);
 });
 
 test('friend handlers require stable authenticated account identities', () => {
@@ -34,6 +45,14 @@ test('friend handlers require stable authenticated account identities', () => {
   assert.match(handler, /clientRequestId\.length > 200/);
   assert.match(handler, /SELECT id, sender_user_id, recipient_user_id, body/);
   assert.match(handler, /deduplicated \? 200 : 201/);
+  assert.match(handler, /resolvePendingAttachments/);
+  assert.match(handler, /requireConversationMessage/);
+  assert.match(handler, /replyToMessageId/);
+  assert.match(handler, /handleSetDirectMessageReaction/);
+  assert.match(handler, /消息请求编号已绑定到不同内容/);
+  assert.match(attachmentHandler, /MAX_MESSAGE_ATTACHMENT_BYTES = 25 \* 1024 \* 1024/);
+  assert.match(attachmentHandler, /message-attachments\//);
+  assert.match(attachmentHandler, /JOIN direct_messages m ON m.id = a.message_id/);
 });
 
 test('router exposes the endpoints consumed by canonical apps and the CLI', () => {
@@ -43,10 +62,13 @@ test('router exposes the endpoints consumed by canonical apps and the CLI', () =
     '/api/social/friend-requests',
     '/api/social/friend-requests/incoming',
     '/api/social/messages',
+    '/api/social/message-attachments',
   ]) {
     assert.ok(communityRouter.includes(path), `missing ${path}`);
   }
   assert.match(communityRouter, /friend-requests\\\/\(\\d\+\)\\\/accept/);
+  assert.match(communityRouter, /messages\\\/\(\\d\+\)\\\/reactions/);
+  assert.match(communityRouter, /message-attachments\\\/\(\[0-9a-f-\]/i);
 });
 
 test('browser embeds the WASM runtime without a cloud Agent gateway', () => {

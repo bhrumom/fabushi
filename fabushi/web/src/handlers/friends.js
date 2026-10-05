@@ -65,6 +65,94 @@ async function areFriends(db, firstUserId, secondUserId) {
   return Boolean(row);
 }
 
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function mapDirectMessage(row, authUserId) {
+  return {
+    id: row.id,
+    senderUserId: row.sender_user_id,
+    senderUsername: row.sender_username,
+    recipientUserId: row.recipient_user_id,
+    recipientUsername: row.recipient_username,
+    text: row.body,
+    clientRequestId: row.client_request_id,
+    createdAt: row.created_at,
+    readAt: row.read_at ?? null,
+    isOutgoing: row.sender_user_id === authUserId,
+    replyToMessageId: row.reply_to_message_id ?? null,
+    attachments: parseJsonArray(row.attachments_json),
+    reactions: parseJsonArray(row.reactions_json).map((reaction) => ({
+      ...reaction,
+      isSelf: Number(reaction.userId) === Number(authUserId),
+    })),
+  };
+}
+
+async function requireConversationMessage(db, messageId, firstUserId, secondUserId) {
+  const id = Number(messageId);
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  return await db.prepare(`
+    SELECT id, sender_user_id, recipient_user_id
+    FROM direct_messages
+    WHERE id = ?
+      AND ((sender_user_id = ? AND recipient_user_id = ?)
+        OR (sender_user_id = ? AND recipient_user_id = ?))
+    LIMIT 1
+  `).bind(id, firstUserId, secondUserId, secondUserId, firstUserId).first();
+}
+
+async function resolvePendingAttachments(db, authUserId, attachmentIds) {
+  if (!Array.isArray(attachmentIds) || attachmentIds.length === 0) return [];
+  const ids = [...new Set(attachmentIds.map((value) => String(value || '').trim()).filter(Boolean))];
+  if (ids.length === 0) return [];
+  if (ids.length > 10) throw new Error('ATTACHMENT_LIMIT');
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = await db.prepare(`
+    SELECT id, file_name, content_type, size_bytes
+    FROM direct_message_attachments
+    WHERE uploader_user_id = ? AND message_id IS NULL
+      AND id IN (${placeholders})
+  `).bind(authUserId, ...ids).all();
+  if ((rows.results || []).length !== ids.length) throw new Error('ATTACHMENT_NOT_OWNED');
+  const byId = new Map((rows.results || []).map((row) => [String(row.id), row]));
+  return ids.map((id) => {
+    const row = byId.get(id);
+    return {
+      id,
+      name: row.file_name,
+      contentType: row.content_type,
+      size: row.size_bytes,
+    };
+  });
+}
+
+function directMessageSelectColumns() {
+  return `
+    dm.id, dm.sender_user_id, dm.sender_username, dm.recipient_user_id,
+    dm.recipient_username, dm.body, dm.client_request_id, dm.created_at,
+    dm.read_at, dm.reply_to_message_id, dm.attachments_json,
+    COALESCE((
+      SELECT json_group_array(json_object(
+        'emoji', r.emoji,
+        'userId', r.user_id,
+        'createdAt', r.created_at
+      ))
+      FROM direct_message_reactions r
+      WHERE r.message_id = dm.id
+    ), '[]') AS reactions_json
+  `;
+}
+
 export async function handleSearchFriendUsers(request, env, db) {
   const auth = await requireStableAuth(request, env, db);
   if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
@@ -260,8 +348,23 @@ export async function handleSendDirectMessage(request, env, db) {
     return jsonResponse({ success: false, error: '只能给已添加的好友发送消息' }, 403);
   }
 
+  let attachments;
+  try {
+    attachments = await resolvePendingAttachments(db, auth.userId, body.attachmentIds);
+  } catch (error) {
+    if (error?.message === 'ATTACHMENT_LIMIT') {
+      return jsonResponse({ success: false, error: '每条消息最多包含 10 个附件' }, 400);
+    }
+    if (error?.message === 'ATTACHMENT_NOT_OWNED') {
+      return jsonResponse({ success: false, error: '消息附件不存在、已使用或不属于当前账号' }, 400);
+    }
+    throw error;
+  }
+
   const text = String(body.text ?? body.message ?? '').trim();
-  if (!text) return jsonResponse({ success: false, error: '消息不能为空' }, 400);
+  if (!text && attachments.length === 0) {
+    return jsonResponse({ success: false, error: '消息或附件不能为空' }, 400);
+  }
   if (text.length > MAX_MESSAGE_LENGTH) {
     return jsonResponse({ success: false, error: `消息不能超过 ${MAX_MESSAGE_LENGTH} 个字符` }, 400);
   }
@@ -269,59 +372,77 @@ export async function handleSendDirectMessage(request, env, db) {
   if (clientRequestId && clientRequestId.length > 200) {
     return jsonResponse({ success: false, error: '消息请求编号不能超过 200 个字符' }, 400);
   }
+
+  const rawReplyId = body.replyToMessageId ?? body.replyToId ?? null;
+  let replyToMessageId = null;
+  if (rawReplyId !== null && rawReplyId !== undefined && rawReplyId !== '') {
+    const reply = await requireConversationMessage(db, rawReplyId, auth.userId, target.id);
+    if (!reply) return jsonResponse({ success: false, error: '回复目标不属于当前会话' }, 400);
+    replyToMessageId = Number(reply.id);
+  }
+
+  const attachmentIds = attachments.map((attachment) => attachment.id);
+  const attachmentsJson = JSON.stringify(attachments);
   const createdAt = new Date().toISOString();
   const result = await db.prepare(`
     INSERT INTO direct_messages (
       sender_user_id, sender_username, recipient_user_id,
-      recipient_username, body, client_request_id, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      recipient_username, body, client_request_id, created_at,
+      reply_to_message_id, attachments_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(sender_user_id, client_request_id) WHERE client_request_id IS NOT NULL
     DO NOTHING
   `).bind(
     auth.userId, auth.username, target.id, target.username,
-    text, clientRequestId, createdAt,
+    text, clientRequestId, createdAt, replyToMessageId, attachmentsJson,
   ).run();
 
-  let persistedMessage = {
-    id: result.meta?.last_row_id ?? null,
-    senderUserId: auth.userId,
-    recipientUserId: target.id,
-    text,
-    createdAt,
-    clientRequestId,
-  };
+  let persistedRow = null;
   let deduplicated = false;
-  if (
-    clientRequestId &&
-    (result.meta?.changes === 0 ||
-      !persistedMessage.id ||
-      Number(persistedMessage.id) <= 0)
-  ) {
-    const existing = await db.prepare(`
-      SELECT id, sender_user_id, recipient_user_id, body,
-        client_request_id, created_at
-      FROM direct_messages
-      WHERE sender_user_id = ? AND client_request_id = ?
+  const insertedId = Number(result.meta?.last_row_id || 0);
+  if (result.meta?.changes !== 0 && insertedId > 0) {
+    persistedRow = await db.prepare(`
+      SELECT ${directMessageSelectColumns()}
+      FROM direct_messages dm
+      WHERE dm.id = ?
+      LIMIT 1
+    `).bind(insertedId).first();
+  } else if (clientRequestId) {
+    deduplicated = true;
+    persistedRow = await db.prepare(`
+      SELECT ${directMessageSelectColumns()}
+      FROM direct_messages dm
+      WHERE dm.sender_user_id = ? AND dm.client_request_id = ?
       LIMIT 1
     `).bind(auth.userId, clientRequestId).first();
-    if (!existing) {
-      return jsonResponse({ success: false, error: '消息保存结果无法确认' }, 500);
-    }
-    deduplicated = true;
-    persistedMessage = {
-      id: existing.id,
-      senderUserId: existing.sender_user_id,
-      recipientUserId: existing.recipient_user_id,
-      text: existing.body,
-      createdAt: existing.created_at,
-      clientRequestId: existing.client_request_id,
-    };
+  }
+  if (!persistedRow) {
+    return jsonResponse({ success: false, error: '消息保存结果无法确认' }, 500);
+  }
+
+  const persisted = mapDirectMessage(persistedRow, auth.userId);
+  if (
+    persisted.recipientUserId !== target.id
+    || persisted.text !== text
+    || Number(persisted.replyToMessageId || 0) !== Number(replyToMessageId || 0)
+    || JSON.stringify(persisted.attachments || []) !== attachmentsJson
+  ) {
+    return jsonResponse({ success: false, error: '消息请求编号已绑定到不同内容' }, 409);
+  }
+
+  if (attachmentIds.length > 0) {
+    await db.batch(attachmentIds.map((attachmentId) => db.prepare(`
+      UPDATE direct_message_attachments
+      SET message_id = ?
+      WHERE id = ? AND uploader_user_id = ?
+        AND (message_id IS NULL OR message_id = ?)
+    `).bind(persisted.id, attachmentId, auth.userId, persisted.id)));
   }
 
   return jsonResponse({
     success: true,
     deduplicated,
-    message: persistedMessage,
+    message: persisted,
   }, deduplicated ? 200 : 201);
 }
 
@@ -340,30 +461,71 @@ export async function handleListDirectMessages(request, env, db) {
   const limit = clampLimit(url.searchParams.get('limit'), 50, 200);
   const before = (url.searchParams.get('before') || '').trim();
   const rows = await db.prepare(`
-    SELECT id, sender_user_id, sender_username, recipient_user_id,
-      recipient_username, body, client_request_id, created_at, read_at
-    FROM direct_messages
-    WHERE ((sender_user_id = ? AND recipient_user_id = ?)
-      OR (sender_user_id = ? AND recipient_user_id = ?))
-      AND (? = '' OR created_at < ?)
-    ORDER BY created_at DESC, id DESC
+    SELECT ${directMessageSelectColumns()}
+    FROM direct_messages dm
+    WHERE ((dm.sender_user_id = ? AND dm.recipient_user_id = ?)
+      OR (dm.sender_user_id = ? AND dm.recipient_user_id = ?))
+      AND (? = '' OR dm.created_at < ?)
+    ORDER BY dm.created_at DESC, dm.id DESC
     LIMIT ?
   `).bind(
     auth.userId, target.id, target.id, auth.userId,
     before, before, limit,
   ).all();
 
-  const messages = (rows.results || []).reverse().map((row) => ({
-    id: row.id,
-    senderUserId: row.sender_user_id,
-    senderUsername: row.sender_username,
-    recipientUserId: row.recipient_user_id,
-    recipientUsername: row.recipient_username,
-    text: row.body,
-    clientRequestId: row.client_request_id,
-    createdAt: row.created_at,
-    readAt: row.read_at,
-    isOutgoing: row.sender_user_id === auth.userId,
-  }));
+  const messages = (rows.results || []).reverse().map((row) =>
+    mapDirectMessage(row, auth.userId));
   return jsonResponse({ success: true, data: { contact: mapContact(target), messages } });
+}
+
+export async function handleSetDirectMessageReaction(request, env, db, messageId) {
+  const auth = await requireStableAuth(request, env, db);
+  if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
+  const id = Number(messageId);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    return jsonResponse({ success: false, error: '消息编号无效' }, 400);
+  }
+  const message = await db.prepare(`
+    SELECT id
+    FROM direct_messages
+    WHERE id = ? AND (sender_user_id = ? OR recipient_user_id = ?)
+    LIMIT 1
+  `).bind(id, auth.userId, auth.userId).first();
+  if (!message) return jsonResponse({ success: false, error: '消息不存在或无权操作' }, 404);
+
+  const body = await request.json();
+  const emoji = String(body.emoji || '').trim();
+  if (!emoji || emoji.length > 32) {
+    return jsonResponse({ success: false, error: 'Reaction 必须是 1-32 个字符' }, 400);
+  }
+  const active = body.active !== false;
+  if (active) {
+    await db.prepare(`
+      INSERT INTO direct_message_reactions (message_id, user_id, emoji, created_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(message_id, user_id, emoji) DO NOTHING
+    `).bind(id, auth.userId, emoji, new Date().toISOString()).run();
+  } else {
+    await db.prepare(`
+      DELETE FROM direct_message_reactions
+      WHERE message_id = ? AND user_id = ? AND emoji = ?
+    `).bind(id, auth.userId, emoji).run();
+  }
+
+  const rows = await db.prepare(`
+    SELECT emoji, user_id, created_at
+    FROM direct_message_reactions
+    WHERE message_id = ?
+    ORDER BY created_at ASC, user_id ASC, emoji ASC
+  `).bind(id).all();
+  return jsonResponse({
+    success: true,
+    messageId: id,
+    reactions: (rows.results || []).map((row) => ({
+      emoji: row.emoji,
+      userId: row.user_id,
+      createdAt: row.created_at,
+      isSelf: Number(row.user_id) === Number(auth.userId),
+    })),
+  });
 }
