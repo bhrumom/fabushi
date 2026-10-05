@@ -31,6 +31,7 @@ jobs:
     environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
+      CLOUDFLARE_CALLS_API_TOKEN: ${{ secrets.CLOUDFLARE_CALLS_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_CALLS_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
       EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
       MODE: ${{ inputs.mode }}
@@ -59,7 +60,11 @@ jobs:
           fi
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
-          case "$MODE" in bootstrap-turn|deploy-human-call) ;; *) exit 64 ;; esac
+          case "$MODE" in
+            bootstrap-turn) test -n "${CLOUDFLARE_CALLS_API_TOKEN:-}" ;;
+            deploy-human-call) ;;
+            *) exit 64 ;;
+          esac
 
       - name: Create fresh Cloudflare Realtime TURN key
         if: inputs.mode == 'bootstrap-turn'
@@ -69,7 +74,7 @@ jobs:
           set -euo pipefail
           key_name="${TURN_KEY_NAME_PREFIX}${EXPECTED_SOURCE_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           response="$RUNNER_TEMP/turn-key-create.json"
-          status="$(curl --silent --show-error --output "$response" --write-out '%{http_code}'             --request POST             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/calls/turn_keys"             --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             --header 'Content-Type: application/json'             --data "$(jq -cn --arg name "$key_name" '{name:$name}')")"
+          status="$(curl --silent --show-error --output "$response" --write-out '%{http_code}'             --request POST             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/calls/turn_keys"             --header "Authorization: Bearer $CLOUDFLARE_CALLS_API_TOKEN"             --header 'Content-Type: application/json'             --data "$(jq -cn --arg name "$key_name" '{name:$name}')")"
           test "$status" = "200" || {
             jq '{success,errors,messages}' "$response" >&2 || true
             echo "::error::Cloudflare Realtime TURN key creation failed with HTTP $status"
@@ -113,12 +118,12 @@ jobs:
         run: |
           set -euo pipefail
           keys="$RUNNER_TEMP/turn-keys.json"
-          curl --fail --silent --show-error             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/calls/turn_keys"             --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" > "$keys"
+          curl --fail --silent --show-error             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/calls/turn_keys"             --header "Authorization: Bearer $CLOUDFLARE_CALLS_API_TOKEN" > "$keys"
           jq -e '.success == true' "$keys" >/dev/null
           jq -r --arg prefix "$TURN_KEY_NAME_PREFIX" --arg current "$CURRENT_TURN_KEY_ID"             '.result[]? | select((.name // "") | startswith($prefix)) | select(.uid != $current) | .uid' "$keys" |
           while IFS= read -r key_id; do
             test -n "$key_id" || continue
-            curl --fail --silent --show-error --request DELETE               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/calls/turn_keys/$key_id"               --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" >/dev/null
+            curl --fail --silent --show-error --request DELETE               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/calls/turn_keys/$key_id"               --header "Authorization: Bearer $CLOUDFLARE_CALLS_API_TOKEN" >/dev/null
           done
           rm -f "$keys"
 
