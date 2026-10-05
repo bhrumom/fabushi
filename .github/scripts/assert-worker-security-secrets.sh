@@ -24,6 +24,7 @@ case "$environment" in
       APPLE_PRIVATE_KEY
       APPLE_BUNDLE_ID
       FIREBASE_PROJECT_ID
+      FABUSHI_CALL_ICE_SERVERS_JSON
     )
     ;;
   development)
