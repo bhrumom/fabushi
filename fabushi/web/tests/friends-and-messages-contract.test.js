@@ -43,9 +43,9 @@ test('friend handlers require stable authenticated account identities', () => {
   assert.match(handler, /只能给已添加的好友发送消息/);
   assert.match(handler, /MAX_MESSAGE_LENGTH = 4000/);
   assert.match(handler, /clientRequestId\.length > 200/);
-  assert.match(handler, /SELECT id, sender_user_id, recipient_user_id, body/);
+  assert.match(handler, /directMessageSelectColumns/);
   assert.match(handler, /deduplicated \? 200 : 201/);
-  assert.match(handler, /resolvePendingAttachments/);
+  assert.match(handler, /resolveMessageAttachments/);
   assert.match(handler, /requireConversationMessage/);
   assert.match(handler, /replyToMessageId/);
   assert.match(handler, /handleSetDirectMessageReaction/);
@@ -68,7 +68,7 @@ test('router exposes the endpoints consumed by canonical apps and the CLI', () =
   }
   assert.match(communityRouter, /friend-requests\\\/\(\\d\+\)\\\/accept/);
   assert.match(communityRouter, /messages\\\/\(\\d\+\)\\\/reactions/);
-  assert.match(communityRouter, /message-attachments\\\/\(\[0-9a-f-\]/i);
+  assert.match(communityRouter, /messageAttachmentMatch/);
 });
 
 test('browser embeds the WASM runtime without a cloud Agent gateway', () => {

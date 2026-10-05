@@ -111,7 +111,7 @@ async function requireConversationMessage(db, messageId, firstUserId, secondUser
   `).bind(id, firstUserId, secondUserId, secondUserId, firstUserId).first();
 }
 
-async function resolvePendingAttachments(db, authUserId, attachmentIds) {
+async function resolveMessageAttachments(db, authUserId, attachmentIds, permittedMessageId = null) {
   if (!Array.isArray(attachmentIds) || attachmentIds.length === 0) return [];
   const ids = [...new Set(attachmentIds.map((value) => String(value || '').trim()).filter(Boolean))];
   if (ids.length === 0) return [];
@@ -120,9 +120,10 @@ async function resolvePendingAttachments(db, authUserId, attachmentIds) {
   const rows = await db.prepare(`
     SELECT id, file_name, content_type, size_bytes
     FROM direct_message_attachments
-    WHERE uploader_user_id = ? AND message_id IS NULL
+    WHERE uploader_user_id = ?
+      AND (message_id IS NULL OR message_id = ?)
       AND id IN (${placeholders})
-  `).bind(authUserId, ...ids).all();
+  `).bind(authUserId, permittedMessageId, ...ids).all();
   if ((rows.results || []).length !== ids.length) throw new Error('ATTACHMENT_NOT_OWNED');
   const byId = new Map((rows.results || []).map((row) => [String(row.id), row]));
   return ids.map((id) => {
@@ -348,9 +349,27 @@ export async function handleSendDirectMessage(request, env, db) {
     return jsonResponse({ success: false, error: '只能给已添加的好友发送消息' }, 403);
   }
 
+  const clientRequestId = String(body.clientRequestId || '').trim() || null;
+  if (clientRequestId && clientRequestId.length > 200) {
+    return jsonResponse({ success: false, error: '消息请求编号不能超过 200 个字符' }, 400);
+  }
+  const existingRequestRow = clientRequestId
+    ? await db.prepare(`
+        SELECT ${directMessageSelectColumns()}
+        FROM direct_messages dm
+        WHERE dm.sender_user_id = ? AND dm.client_request_id = ?
+        LIMIT 1
+      `).bind(auth.userId, clientRequestId).first()
+    : null;
+
   let attachments;
   try {
-    attachments = await resolvePendingAttachments(db, auth.userId, body.attachmentIds);
+    attachments = await resolveMessageAttachments(
+      db,
+      auth.userId,
+      body.attachmentIds,
+      existingRequestRow?.id ?? null,
+    );
   } catch (error) {
     if (error?.message === 'ATTACHMENT_LIMIT') {
       return jsonResponse({ success: false, error: '每条消息最多包含 10 个附件' }, 400);
@@ -368,10 +387,6 @@ export async function handleSendDirectMessage(request, env, db) {
   if (text.length > MAX_MESSAGE_LENGTH) {
     return jsonResponse({ success: false, error: `消息不能超过 ${MAX_MESSAGE_LENGTH} 个字符` }, 400);
   }
-  const clientRequestId = String(body.clientRequestId || '').trim() || null;
-  if (clientRequestId && clientRequestId.length > 200) {
-    return jsonResponse({ success: false, error: '消息请求编号不能超过 200 个字符' }, 400);
-  }
 
   const rawReplyId = body.replyToMessageId ?? body.replyToId ?? null;
   let replyToMessageId = null;
@@ -383,38 +398,41 @@ export async function handleSendDirectMessage(request, env, db) {
 
   const attachmentIds = attachments.map((attachment) => attachment.id);
   const attachmentsJson = JSON.stringify(attachments);
-  const createdAt = new Date().toISOString();
-  const result = await db.prepare(`
-    INSERT INTO direct_messages (
-      sender_user_id, sender_username, recipient_user_id,
-      recipient_username, body, client_request_id, created_at,
-      reply_to_message_id, attachments_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(sender_user_id, client_request_id) WHERE client_request_id IS NOT NULL
-    DO NOTHING
-  `).bind(
-    auth.userId, auth.username, target.id, target.username,
-    text, clientRequestId, createdAt, replyToMessageId, attachmentsJson,
-  ).run();
+  let persistedRow = existingRequestRow;
+  let deduplicated = persistedRow != null;
 
-  let persistedRow = null;
-  let deduplicated = false;
-  const insertedId = Number(result.meta?.last_row_id || 0);
-  if (result.meta?.changes !== 0 && insertedId > 0) {
-    persistedRow = await db.prepare(`
-      SELECT ${directMessageSelectColumns()}
-      FROM direct_messages dm
-      WHERE dm.id = ?
-      LIMIT 1
-    `).bind(insertedId).first();
-  } else if (clientRequestId) {
-    deduplicated = true;
-    persistedRow = await db.prepare(`
-      SELECT ${directMessageSelectColumns()}
-      FROM direct_messages dm
-      WHERE dm.sender_user_id = ? AND dm.client_request_id = ?
-      LIMIT 1
-    `).bind(auth.userId, clientRequestId).first();
+  if (persistedRow == null) {
+    const createdAt = new Date().toISOString();
+    const result = await db.prepare(`
+      INSERT INTO direct_messages (
+        sender_user_id, sender_username, recipient_user_id,
+        recipient_username, body, client_request_id, created_at,
+        reply_to_message_id, attachments_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(sender_user_id, client_request_id) WHERE client_request_id IS NOT NULL
+      DO NOTHING
+    `).bind(
+      auth.userId, auth.username, target.id, target.username,
+      text, clientRequestId, createdAt, replyToMessageId, attachmentsJson,
+    ).run();
+
+    const insertedId = Number(result.meta?.last_row_id || 0);
+    if (result.meta?.changes !== 0 && insertedId > 0) {
+      persistedRow = await db.prepare(`
+        SELECT ${directMessageSelectColumns()}
+        FROM direct_messages dm
+        WHERE dm.id = ?
+        LIMIT 1
+      `).bind(insertedId).first();
+    } else if (clientRequestId) {
+      deduplicated = true;
+      persistedRow = await db.prepare(`
+        SELECT ${directMessageSelectColumns()}
+        FROM direct_messages dm
+        WHERE dm.sender_user_id = ? AND dm.client_request_id = ?
+        LIMIT 1
+      `).bind(auth.userId, clientRequestId).first();
+    }
   }
   if (!persistedRow) {
     return jsonResponse({ success: false, error: '消息保存结果无法确认' }, 500);
