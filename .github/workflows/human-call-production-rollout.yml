@@ -75,11 +75,14 @@ jobs:
           key_name="${TURN_KEY_NAME_PREFIX}${EXPECTED_SOURCE_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           response="$RUNNER_TEMP/turn-key-create.json"
           status="$(curl --silent --show-error --output "$response" --write-out '%{http_code}'             --request POST             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/calls/turn_keys"             --header "Authorization: Bearer $CLOUDFLARE_CALLS_API_TOKEN"             --header 'Content-Type: application/json'             --data "$(jq -cn --arg name "$key_name" '{name:$name}')")"
-          test "$status" = "200" || {
+          case "$status" in
+            200|201) ;;
+            *)
             jq '{success,errors,messages}' "$response" >&2 || true
             echo "::error::Cloudflare Realtime TURN key creation failed with HTTP $status"
             exit 1
-          }
+            ;;
+          esac
           jq -e '.success == true and (.result.uid|type=="string") and (.result.key|type=="string")' "$response" >/dev/null
           turn_key_id="$(jq -r '.result.uid' "$response")"
           turn_key_token="$(jq -r '.result.key' "$response")"
