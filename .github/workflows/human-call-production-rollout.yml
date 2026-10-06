@@ -83,7 +83,11 @@ jobs:
             exit 1
             ;;
           esac
-          jq -e '.success == true and (.result.uid|type=="string") and (.result.key|type=="string")' "$response" >/dev/null
+          jq -e '.success == true and (.result.uid|type=="string") and (.result.key|type=="string")' "$response" >/dev/null || {
+            jq '{success, top_level_type:type, top_level_keys:(keys? // []), result_type:(.result|type), result_keys:((.result|keys?) // [])}' "$response" >&2 || true
+            echo "::error::Cloudflare TURN create response contract mismatch"
+            exit 1
+          }
           turn_key_id="$(jq -r '.result.uid' "$response")"
           turn_key_token="$(jq -r '.result.key' "$response")"
           test -n "$turn_key_id"
