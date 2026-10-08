@@ -5,10 +5,24 @@ import { OnlineCounter } from './src/durable-objects/OnlineCounter.js';
 import { jsonResponse } from './src/utils/response.js';
 import { enforceRequestSecurityGate } from './src/security/request-gate.js';
 import { configureRuntimeAdminEmails } from './src/utils/helpers.js';
+import { activateDueDirectMessages } from './src/handlers/friends.js';
 
 export { OnlineCounter };
 
 export default {
+  async scheduled(controller, env, ctx) {
+    const db = new DatabaseService(env.DB);
+    const run = activateDueDirectMessages(db, controller?.scheduledTime || Date.now())
+      .then((delivered) => {
+        if (delivered > 0) console.log('Activated due direct messages:', delivered);
+      })
+      .catch((error) => {
+        console.error('Direct message scheduler failed:', error?.message || error);
+        throw error;
+      });
+    ctx.waitUntil(run);
+  },
+
   async fetch(request, env, ctx) {
     try {
       const url = new URL(request.url);

@@ -20,6 +20,12 @@ const remoteSemanticsMigration = readFileSync(
   join(root, 'migrations/20261005_direct_message_remote_semantics.sql'),
   'utf8',
 );
+const schedulingMigration = readFileSync(
+  join(root, 'migrations/20261009_direct_message_scheduling.sql'),
+  'utf8',
+);
+const workerEntry = readFileSync(join(root, 'worker-modular.js'), 'utf8');
+const wrangler = readFileSync(join(root, 'wrangler.toml'), 'utf8');
 
 test('friend and direct-message storage has durable identities and indexes', () => {
   assert.match(migration, /CREATE TABLE IF NOT EXISTS friend_requests/i);
@@ -33,6 +39,10 @@ test('friend and direct-message storage has durable identities and indexes', () 
   assert.match(remoteSemanticsMigration, /CREATE TABLE IF NOT EXISTS direct_message_resources/i);
   assert.match(remoteSemanticsMigration, /CREATE TABLE IF NOT EXISTS direct_message_reactions/i);
   assert.match(remoteSemanticsMigration, /PRIMARY KEY \(message_id, user_id, emoji\)/i);
+  assert.match(schedulingMigration, /ADD COLUMN silent INTEGER NOT NULL DEFAULT 0/i);
+  assert.match(schedulingMigration, /ADD COLUMN scheduled_at_ms INTEGER/i);
+  assert.match(schedulingMigration, /delivery_state TEXT NOT NULL DEFAULT 'delivered'/i);
+  assert.match(schedulingMigration, /idx_direct_messages_due_schedule/i);
 });
 
 test('friend handlers require stable authenticated account identities', () => {
@@ -50,6 +60,14 @@ test('friend handlers require stable authenticated account identities', () => {
   assert.match(handler, /json_each\(d\.attachments_json\)/);
   assert.match(handler, /消息请求编号已用于不同内容/);
   assert.match(handler, /deduplicated \? 200 : 201/);
+  assert.match(handler, /normalizeDirectMessageDeliveryOptions\(body\)/);
+  assert.match(handler, /Boolean\(Number\(persistedRow\.silent/);
+  assert.match(handler, /persistedRow\.scheduled_at_ms/);
+  assert.match(handler, /sender_user_id = \? OR delivery_state = 'delivered'/);
+  assert.match(handler, /UPDATE direct_messages SET delivery_state = 'delivered'/);
+  assert.match(workerEntry, /async scheduled\(controller, env, ctx\)/);
+  assert.match(workerEntry, /activateDueDirectMessages\(db, controller\?\.scheduledTime \|\| Date\.now\(\)\)/);
+  assert.match(wrangler, /crons = \["\* \* \* \* \*"\]/);
 });
 
 test('router exposes the endpoints consumed by canonical apps and the CLI', () => {
