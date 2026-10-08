@@ -1,5 +1,6 @@
 import { jsonResponse } from '../utils/response.js';
 import { requireAuthIdentity } from '../utils/auth-identity.js';
+import { normalizeHumanCallVoIPToken, sendHumanCallVoIPPush } from '../utils/human-call-apns.js';
 
 const MAX_CALL_ID_CHARS = 200;
 const MAX_DEVICE_ID_CHARS = 200;
@@ -433,6 +434,117 @@ export async function handleGetHumanCallIceServers(request, env, db) {
   }
 }
 
+export async function handleUpsertHumanCallVoIPDevice(request, env, db) {
+  const identity = await requireCallIdentity(request, env, db);
+  if (identity.response) return identity.response;
+  let body;
+  try {
+    body = await readJsonBody(request);
+  } catch (error) {
+    return errorResponse(error.message, 400);
+  }
+  let token;
+  try {
+    token = normalizeHumanCallVoIPToken(body.token);
+  } catch (error) {
+    return errorResponse(error.message, 400);
+  }
+  const now = new Date().toISOString();
+  try {
+    await db.batch([
+      db.prepare(
+        'DELETE FROM human_call_voip_devices WHERE voip_token = ? AND NOT (user_id = ? AND device_id = ?)'
+      ).bind(token, identity.auth.userId, identity.deviceId),
+      db.prepare(
+        'INSERT INTO human_call_voip_devices (user_id, device_id, voip_token, token_updated_at, last_success_at, last_failure_at) ' +
+        'VALUES (?, ?, ?, ?, NULL, NULL) ' +
+        'ON CONFLICT(user_id, device_id) DO UPDATE SET voip_token = excluded.voip_token, token_updated_at = excluded.token_updated_at'
+      ).bind(identity.auth.userId, identity.deviceId, token, now),
+    ]);
+  } catch {
+    return errorResponse('VoIP device registration failed', 503);
+  }
+  return jsonResponse({ success: true, deviceId: identity.deviceId });
+}
+
+export async function handleDeleteHumanCallVoIPDevice(request, env, db) {
+  const identity = await requireCallIdentity(request, env, db);
+  if (identity.response) return identity.response;
+  await db.prepare(
+    'DELETE FROM human_call_voip_devices WHERE user_id = ? AND device_id = ?'
+  ).bind(identity.auth.userId, identity.deviceId).run();
+  return jsonResponse({ success: true, deviceId: identity.deviceId });
+}
+
+async function humanCallPushTargets(db, userId) {
+  const rows = await db.prepare(
+    'SELECT device_id, voip_token FROM human_call_voip_devices WHERE user_id = ? ORDER BY device_id ASC'
+  ).bind(userId).all();
+  return (rows.results || []).map((row) => ({
+    deviceId: String(row.device_id),
+    token: String(row.voip_token),
+  }));
+}
+
+async function deliverIncomingHumanCall(env, db, row, displayName, hasVideo, fetchImpl = fetch) {
+  if (!['invited', 'ringing'].includes(String(row.state))) return [];
+  const generation = Number(row.generation);
+  if (!Number.isSafeInteger(generation) || generation < 0) return [];
+  const targets = await humanCallPushTargets(db, row.peer_user_id);
+  const results = [];
+  for (const target of targets) {
+    const existing = await db.prepare(
+      'SELECT status, attempt_count FROM human_call_push_deliveries WHERE call_id = ? AND generation = ? AND device_id = ? LIMIT 1'
+    ).bind(row.call_id, generation, target.deviceId).first();
+    if (existing?.status === 'delivered') {
+      results.push({ deviceId: target.deviceId, status: 'delivered', replay: true });
+      continue;
+    }
+
+    const attempt = Number(existing?.attempt_count || 0) + 1;
+    const now = new Date().toISOString();
+    await db.prepare(
+      'INSERT INTO human_call_push_deliveries (call_id, generation, device_id, status, attempt_count, last_http_status, last_reason, updated_at) ' +
+      "VALUES (?, ?, ?, 'pending', ?, NULL, NULL, ?) " +
+      "ON CONFLICT(call_id, generation, device_id) DO UPDATE SET status = 'pending', attempt_count = excluded.attempt_count, updated_at = excluded.updated_at"
+    ).bind(row.call_id, generation, target.deviceId, attempt, now).run();
+
+    let result;
+    try {
+      result = await sendHumanCallVoIPPush(env, target.token, {
+        callId: String(row.call_id),
+        generation,
+        displayName,
+        hasVideo,
+      }, fetchImpl);
+    } catch {
+      result = { ok: false, status: 0, reason: 'transport-error', permanentInvalid: false };
+    }
+
+    const status = result.ok ? 'delivered' : result.permanentInvalid ? 'invalid-token' : 'retryable-failure';
+    await db.prepare(
+      'UPDATE human_call_push_deliveries SET status = ?, last_http_status = ?, last_reason = ?, updated_at = ? ' +
+      'WHERE call_id = ? AND generation = ? AND device_id = ?'
+    ).bind(status, result.status || null, result.reason || null, new Date().toISOString(), row.call_id, generation, target.deviceId).run();
+    if (result.ok) {
+      await db.prepare(
+        'UPDATE human_call_voip_devices SET last_success_at = ?, last_failure_at = NULL WHERE user_id = ? AND device_id = ?'
+      ).bind(new Date().toISOString(), row.peer_user_id, target.deviceId).run();
+    } else {
+      await db.prepare(
+        'UPDATE human_call_voip_devices SET last_failure_at = ? WHERE user_id = ? AND device_id = ?'
+      ).bind(new Date().toISOString(), row.peer_user_id, target.deviceId).run();
+      if (result.permanentInvalid) {
+        await db.prepare(
+          'DELETE FROM human_call_voip_devices WHERE user_id = ? AND device_id = ? AND voip_token = ?'
+        ).bind(row.peer_user_id, target.deviceId, target.token).run();
+      }
+    }
+    results.push({ deviceId: target.deviceId, status, replay: false });
+  }
+  return results;
+}
+
 export async function handleListHumanCalls(request, env, db) {
   const identity = await requireCallIdentity(request, env, db);
   if (identity.response) return identity.response;
@@ -505,7 +617,17 @@ export async function handleCreateHumanCall(request, env, db) {
   }
 
   const created = Number(insert.meta?.changes || 0) > 0;
-  return jsonResponse({ success: true, call: projectCall(row) }, created ? 201 : 200);
+  const displayName = String(identity.auth.username || 'Fabushi 通话').trim().slice(0, 200) || 'Fabushi 通话';
+  const hasVideo = body.hasVideo === true;
+  const push = await deliverIncomingHumanCall(env, db, row, displayName, hasVideo);
+  return jsonResponse({
+    success: true,
+    call: projectCall(row),
+    push: {
+      targetedDevices: push.length,
+      deliveredDevices: push.filter((entry) => entry.status === 'delivered').length,
+    },
+  }, created ? 201 : 200);
 }
 
 export async function handleGetHumanCall(request, env, db, rawCallId) {
