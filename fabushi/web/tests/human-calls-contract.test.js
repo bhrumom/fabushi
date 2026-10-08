@@ -247,3 +247,17 @@ test('Human Call push storage stays account+device scoped and idempotent', () =>
   assert.match(handler, /DELETE FROM human_call_voip_devices WHERE user_id = \? AND device_id = \? AND voip_token = \?/);
   assert.ok(router.includes('/api/social/calls/voip-device'));
 });
+
+
+test('stale-generation idempotent replay reuses the persisted event and wakes at most once', () => {
+  const catchReplay = handler.match(
+    /catch \(error\) \{[\s\S]*?if \(existing\) \{[\s\S]*?const replayExpected = \{[\s\S]*?if \(existingEventMatches\(existing, replayExpected, identity\.deviceId\)\) \{([\s\S]*?)return jsonResponse\(\{ success: true, call: projectCall\(row\), event: projectEvent\(existing\) \}\);/
+  );
+  assert.ok(catchReplay, 'stale replay branch must stay explicit');
+  const branch = catchReplay[1];
+  assert.equal((branch.match(/maybeDeliverCreatorMediaWake/g) || []).length, 1);
+  assert.match(branch, /\.\.\.replayExpected/);
+  assert.match(branch, /role: roleFor\(row, identity\.auth\.userId\)/);
+  assert.doesNotMatch(branch, /maybeDeliverCreatorMediaWake\(env, db, row, identity, expected\)/);
+  assert.match(handler, /stale call generation: expected/);
+});
