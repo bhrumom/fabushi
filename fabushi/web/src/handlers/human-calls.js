@@ -711,8 +711,7 @@ export async function handleAppendHumanCallEvent(request, env, db, rawCallId) {
             ...replayExpected,
             role: roleFor(row, identity.auth.userId),
           });
-          await maybeDeliverCreatorMediaWake(env, db, row, identity, expected);
-      return jsonResponse({ success: true, call: projectCall(row), event: projectEvent(existing) });
+          return jsonResponse({ success: true, call: projectCall(row), event: projectEvent(existing) });
         }
       }
       const status = /another device|stale call generation|canonical state machine|terminal call/.test(error.message)
