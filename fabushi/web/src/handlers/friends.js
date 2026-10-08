@@ -6,6 +6,43 @@ const MAX_MESSAGE_ATTACHMENTS = 6;
 const MAX_MESSAGE_RESOURCE_BYTES = 32 * 1024 * 1024;
 const MAX_MESSAGE_RESOURCE_NAME_CHARS = 255;
 const MAX_REACTION_BYTES = 32;
+const DIRECT_MESSAGE_SELECT_FIELDS = 'id, sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, read_at, reply_to_message_id, attachments_json, silent, scheduled_at_ms, delivery_state, delivered_at';
+
+export function normalizeDirectMessageDeliveryOptions(body, nowMs = Date.now()) {
+  const silent = body?.silent ?? false;
+  if (typeof silent !== 'boolean') {
+    throw new Error('silent 必须是布尔值');
+  }
+
+  let scheduledAtMs = null;
+  if (body?.scheduledAtMs !== undefined && body?.scheduledAtMs !== null) {
+    if (typeof body.scheduledAtMs !== 'number'
+      || !Number.isSafeInteger(body.scheduledAtMs)
+      || body.scheduledAtMs <= 0) {
+      throw new Error('scheduledAtMs 必须是正的安全整数毫秒时间戳');
+    }
+    scheduledAtMs = body.scheduledAtMs;
+  }
+
+  const scheduled = scheduledAtMs !== null && scheduledAtMs > nowMs;
+  return {
+    silent,
+    scheduledAtMs,
+    deliveryState: scheduled ? 'scheduled' : 'delivered',
+    deliveredAt: scheduled ? null : new Date(nowMs).toISOString(),
+  };
+}
+
+export async function activateDueDirectMessages(db, nowMs = Date.now()) {
+  if (!Number.isSafeInteger(nowMs) || nowMs <= 0) {
+    throw new Error('direct message scheduler requires a positive safe integer timestamp');
+  }
+  const deliveredAt = new Date(nowMs).toISOString();
+  const result = await db.prepare(
+    "UPDATE direct_messages SET delivery_state = 'delivered', delivered_at = ? WHERE delivery_state = 'scheduled' AND scheduled_at_ms IS NOT NULL AND scheduled_at_ms <= ?"
+  ).bind(deliveredAt, nowMs).run();
+  return Number(result?.meta?.changes || 0);
+}
 
 function positiveMessageId(value) {
   const text = String(value ?? '').trim();
@@ -73,8 +110,8 @@ async function loadOwnedMessageAttachments(db, ownerUserId, requested) {
 async function validateReplyTarget(db, messageId, senderUserId, recipientUserId) {
   if (messageId == null) return null;
   const row = await db.prepare(
-    'SELECT id FROM direct_messages WHERE id = ? AND ((sender_user_id = ? AND recipient_user_id = ?) OR (sender_user_id = ? AND recipient_user_id = ?)) LIMIT 1'
-  ).bind(messageId, senderUserId, recipientUserId, recipientUserId, senderUserId).first();
+    'SELECT id FROM direct_messages WHERE id = ? AND ((sender_user_id = ? AND recipient_user_id = ?) OR (sender_user_id = ? AND recipient_user_id = ?)) AND (sender_user_id = ? OR delivery_state = \'delivered\') LIMIT 1'
+  ).bind(messageId, senderUserId, recipientUserId, recipientUserId, senderUserId, senderUserId).first();
   if (!row) throw new Error('回复目标不属于当前会话');
   return Number(row.id);
 }
@@ -123,6 +160,10 @@ function projectDirectMessage(row, currentUserId, reactions = []) {
     clientRequestId: row.client_request_id,
     createdAt: row.created_at,
     readAt: row.read_at,
+    silent: Boolean(Number(row.silent || 0)),
+    scheduledAtMs: row.scheduled_at_ms == null ? null : Number(row.scheduled_at_ms),
+    deliveryState: row.delivery_state || 'delivered',
+    deliveredAt: row.delivered_at ?? null,
     isOutgoing: Number(row.sender_user_id) === Number(currentUserId),
     replyToMessageId: row.reply_to_message_id ?? null,
     attachments: parseStoredAttachments(row.attachments_json),
@@ -393,7 +434,7 @@ export async function handleGetDirectMessageResource(request, env, db, rawResour
          OR EXISTS (
            SELECT 1
            FROM direct_messages d, json_each(d.attachments_json) attachment
-           WHERE (d.sender_user_id = ? OR d.recipient_user_id = ?)
+           WHERE (d.sender_user_id = ? OR (d.recipient_user_id = ? AND d.delivery_state = 'delivered'))
              AND json_extract(attachment.value, '$.resourceId') = r.id
          )
        )
@@ -496,6 +537,12 @@ export async function handleSendDirectMessage(request, env, db) {
 
   const text = String(body.text ?? body.message ?? '').trim();
   const clientRequestId = String(body.clientRequestId || '').trim() || null;
+  let delivery;
+  try {
+    delivery = normalizeDirectMessageDeliveryOptions(body);
+  } catch (error) {
+    return jsonResponse({ success: false, error: error.message }, 400);
+  }
   if (text.length > MAX_MESSAGE_LENGTH) {
     return jsonResponse({ success: false, error: '消息不能超过 ' + MAX_MESSAGE_LENGTH + ' 个字符' }, 400);
   }
@@ -529,7 +576,7 @@ export async function handleSendDirectMessage(request, env, db) {
   const attachmentsJson = JSON.stringify(attachments);
   const createdAt = new Date().toISOString();
   const result = await db.prepare(
-    'INSERT INTO direct_messages (sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, reply_to_message_id, attachments_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(sender_user_id, client_request_id) WHERE client_request_id IS NOT NULL DO NOTHING'
+    "INSERT INTO direct_messages (sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, reply_to_message_id, attachments_json, silent, scheduled_at_ms, delivery_state, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(sender_user_id, client_request_id) WHERE client_request_id IS NOT NULL DO NOTHING"
   ).bind(
     auth.userId,
     auth.username,
@@ -540,17 +587,21 @@ export async function handleSendDirectMessage(request, env, db) {
     createdAt,
     replyToMessageId,
     attachmentsJson,
+    delivery.silent ? 1 : 0,
+    delivery.scheduledAtMs,
+    delivery.deliveryState,
+    delivery.deliveredAt,
   ).run();
 
   let persistedRow = null;
   let deduplicated = false;
   if (result.meta?.changes > 0 && result.meta?.last_row_id) {
     persistedRow = await db.prepare(
-      'SELECT id, sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, read_at, reply_to_message_id, attachments_json FROM direct_messages WHERE id = ? LIMIT 1'
+      `SELECT ${DIRECT_MESSAGE_SELECT_FIELDS} FROM direct_messages WHERE id = ? LIMIT 1`
     ).bind(result.meta.last_row_id).first();
   } else if (clientRequestId) {
     persistedRow = await db.prepare(
-      'SELECT id, sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, read_at, reply_to_message_id, attachments_json FROM direct_messages WHERE sender_user_id = ? AND client_request_id = ? LIMIT 1'
+      `SELECT ${DIRECT_MESSAGE_SELECT_FIELDS} FROM direct_messages WHERE sender_user_id = ? AND client_request_id = ? LIMIT 1`
     ).bind(auth.userId, clientRequestId).first();
     deduplicated = true;
   }
@@ -570,7 +621,9 @@ export async function handleSendDirectMessage(request, env, db) {
       Number(persistedRow.recipient_user_id) === Number(target.id)
       && String(persistedRow.body) === text
       && (persistedRow.reply_to_message_id == null ? null : Number(persistedRow.reply_to_message_id)) === replyToMessageId
-      && JSON.stringify(storedAttachments) === attachmentsJson;
+      && JSON.stringify(storedAttachments) === attachmentsJson
+      && Boolean(Number(persistedRow.silent || 0)) === delivery.silent
+      && (persistedRow.scheduled_at_ms == null ? null : Number(persistedRow.scheduled_at_ms)) === delivery.scheduledAtMs;
     if (!samePayload) {
       return jsonResponse({ success: false, error: '消息请求编号已用于不同内容' }, 409);
     }
@@ -603,11 +656,17 @@ export async function handleListDirectMessages(request, env, db) {
   const limit = clampLimit(url.searchParams.get('limit'), 50, 200);
   const before = (url.searchParams.get('before') || '').trim();
   const rows = await db.prepare(
-    'SELECT id, sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, read_at, reply_to_message_id, attachments_json FROM direct_messages WHERE ((sender_user_id = ? AND recipient_user_id = ?) OR (sender_user_id = ? AND recipient_user_id = ?)) AND (? = \'\' OR created_at < ?) ORDER BY created_at DESC, id DESC LIMIT ?'
+    `SELECT ${DIRECT_MESSAGE_SELECT_FIELDS} FROM direct_messages
+     WHERE ((sender_user_id = ? AND recipient_user_id = ?) OR (sender_user_id = ? AND recipient_user_id = ?))
+       AND (sender_user_id = ? OR delivery_state = 'delivered')
+       AND (? = '' OR created_at < ?)
+     ORDER BY CASE WHEN delivery_state = 'delivered' THEN COALESCE(delivered_at, created_at) ELSE created_at END DESC, id DESC
+     LIMIT ?`
   ).bind(
     auth.userId,
     target.id,
     target.id,
+    auth.userId,
     auth.userId,
     before,
     before,
@@ -632,8 +691,8 @@ export async function handleSetDirectMessageReaction(request, env, db, rawMessag
     return jsonResponse({ success: false, error: '消息编号无效' }, 400);
   }
   const message = await db.prepare(
-    'SELECT id, sender_user_id, recipient_user_id FROM direct_messages WHERE id = ? LIMIT 1'
-  ).bind(messageId).first();
+    "SELECT id, sender_user_id, recipient_user_id FROM direct_messages WHERE id = ? AND (sender_user_id = ? OR delivery_state = 'delivered') LIMIT 1"
+  ).bind(messageId, auth.userId).first();
   if (!message || (
     Number(message.sender_user_id) !== Number(auth.userId)
     && Number(message.recipient_user_id) !== Number(auth.userId)

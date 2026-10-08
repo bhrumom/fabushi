@@ -2,6 +2,9 @@ name = "fabushi-flutter-web"
 main = "worker-modular.js"
 compatibility_date = "2024-08-01"
 
+[triggers]
+crons = ["* * * * *"]
+
 [[services]]
 binding = "MAHAYANA_PLATFORM"
 service = "mahayana-platform"
@@ -63,6 +66,9 @@ DACHENG_RESPONSES_ADAPTER_URL = "https://dacheng-responses-adapter.bhrumom.worke
 
 [env.production]
 name = "fabushi-flutter-web-prod"
+
+[env.production.triggers]
+crons = ["* * * * *"]
 routes = [
   { pattern = "api.ombhrum.com", custom_domain = true }
 ]
@@ -125,6 +131,9 @@ ALIPAY_RETURN_URL = "https://flutter.ombhrum.com/payment-success.html"
 
 [env.development]
 name = "fabushi-flutter-web-dev"
+
+[env.development.triggers]
+crons = ["* * * * *"]
 
 [[env.development.services]]
 binding = "MAHAYANA_PLATFORM"
