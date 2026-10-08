@@ -5,9 +5,22 @@ on:
     branches: [main]
     paths:
       - 'fabushi/web/src/handlers/friends.js'
+      - 'fabushi/web/src/handlers/human-calls.js'
+      - 'fabushi/web/src/utils/human-call-apns.js'
       - 'fabushi/web/src/routes/community-routes.js'
       - 'fabushi/web/migrations/*direct_message*.sql'
+      - 'fabushi/web/migrations/*human_calls*.sql'
+      - 'fabushi/web/migrations/*human_call_voip*.sql'
       - 'fabushi/web/tests/friends-and-messages-contract.test.js'
+      - 'fabushi/web/tests/human-calls-contract.test.js'
+      - 'chatgpt-vps-control/lib/protected-actions-device-id.js'
+      - 'chatgpt-vps-control/lib/device-gateway.js'
+      - 'chatgpt-vps-control/lib/fabushi-remote-mcp-server.js'
+      - 'chatgpt-vps-control/tests/device-gateway-account.test.js'
+      - 'chatgpt-vps-control/scripts/login-ci-test-account.mjs'
+      - 'chatgpt-vps-control/scripts/export-ci-app-account-session.mjs'
+      - 'chatgpt-vps-control/scripts/prepare-ci-human-peer.mjs'
+      - 'chatgpt-vps-control/test/protected-actions-device-id.test.mjs'
       - '.github/workflows/fbcp-human-messaging-backend.yml'
   workflow_dispatch:
 
@@ -29,18 +42,31 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Install device gateway test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix chatgpt-vps-control --ignore-scripts
       - name: Check Worker source syntax
         shell: bash
         run: |
           set -euo pipefail
           node --check fabushi/web/src/handlers/friends.js
+          node --check fabushi/web/src/handlers/human-calls.js
+          node --check fabushi/web/src/utils/human-call-apns.js
           node --check fabushi/web/src/routes/community-routes.js
+          node --check chatgpt-vps-control/scripts/prepare-ci-human-peer.mjs
+          node --check chatgpt-vps-control/lib/device-gateway.js
+          node --check chatgpt-vps-control/lib/fabushi-remote-mcp-server.js
       - name: Run focused Human messaging contracts
         shell: bash
         run: |
           set -euo pipefail
           node --test fabushi/web/tests/friends-and-messages-contract.test.js
-      - name: Apply direct-message migrations to SQLite
+          node --test fabushi/web/tests/human-calls-contract.test.js
+          node --test chatgpt-vps-control/test/protected-actions-device-id.test.mjs
+          node --test chatgpt-vps-control/tests/device-gateway-account.test.js
+      - name: Apply Human messaging migrations to SQLite
         shell: bash
         run: |
           set -euo pipefail
@@ -48,4 +74,7 @@ jobs:
           sqlite3 "$db" 'PRAGMA foreign_keys=ON; CREATE TABLE users(id INTEGER PRIMARY KEY);'
           sqlite3 "$db" < fabushi/web/migrations/20260713_friends_and_direct_messages.sql
           sqlite3 "$db" < fabushi/web/migrations/20261005_direct_message_remote_semantics.sql
-          sqlite3 "$db" "PRAGMA foreign_keys=ON; SELECT CASE WHEN COUNT(*) = 4 THEN 1 ELSE json_extract('missing messaging schema', '$') END FROM sqlite_schema WHERE type='table' AND name IN ('friend_requests','direct_messages','direct_message_resources','direct_message_reactions');"
+          sqlite3 "$db" < fabushi/web/migrations/20261006_human_calls.sql
+          sqlite3 "$db" < fabushi/web/migrations/20261009_human_call_voip_push.sql
+          count="$(sqlite3 "$db" "SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name IN ('friend_requests','direct_messages','direct_message_resources','direct_message_reactions','human_calls','human_call_events','human_call_voip_devices','human_call_push_deliveries');")"
+          test "$count" = "8"

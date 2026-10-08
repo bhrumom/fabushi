@@ -9,6 +9,8 @@ permissions:
 env:
   ACCOUNT_USERNAME: fabushi_mcp_ci_test
   ACCOUNT_EMAIL: fabushi-mcp-ci-test@internal.ombhrum.com
+  PEER_ACCOUNT_USERNAME: fabushi_mcp_ci_peer
+  PEER_ACCOUNT_EMAIL: fabushi-mcp-ci-peer@internal.ombhrum.com
   PLATFORM_WORKER_DIR: third_party/mahayana/mahayana-rs/mahayana-platform-worker
 
 jobs:
@@ -53,33 +55,48 @@ jobs:
           const fs = require('node:fs');
           const password = process.env.FABUSHI_CI_TEST_PASSWORD || '';
           if (password.length < 11) throw new Error('managed test password must contain at least 11 characters');
-          const salt = crypto.randomBytes(16);
-          const hash = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+          const peerPassword = crypto.createHmac('sha256', password)
+            .update('fabushi-mcp-ci-peer-v1')
+            .digest('base64url');
           const encode = (value) => value.toString('base64url');
           const escapeSql = (value) => String(value).replaceAll("'", "''");
-          const username = escapeSql(process.env.ACCOUNT_USERNAME);
-          const email = escapeSql(process.env.ACCOUNT_EMAIL);
-          const encodedSalt = escapeSql(encode(salt));
-          const encodedHash = escapeSql(encode(hash));
-          const sql = `
-          INSERT INTO users
-            (id, user_no, username, email, password_hash, salt, iterations, algo,
-             email_verified, membership_type, created_at)
-          SELECT COALESCE(MAX(id), 10000) + 1,
-                 COALESCE(MAX(id), 10000) + 1,
-                 '${username}', '${email}', '${encodedHash}', '${encodedSalt}',
-                 100000, 'PBKDF2-SHA256', 0, 'trial', datetime('now')
-          FROM users
-          WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = '${username}');
-          UPDATE users
-             SET password_hash = '${encodedHash}', salt = '${encodedSalt}',
-                 iterations = 100000, algo = 'PBKDF2-SHA256'
-           WHERE username = '${username}';
-          DELETE FROM account_password_credentials
-           WHERE user_id = (SELECT CAST(id AS TEXT) FROM users WHERE username = '${username}');
-          INSERT OR REPLACE INTO email_username_mapping (email, username, user_id)
-          SELECT '${email}', '${username}', id FROM users WHERE username = '${username}';
-          `;
+          const accountSql = (usernameValue, emailValue, credential) => {
+            const salt = crypto.randomBytes(16);
+            const hash = crypto.pbkdf2Sync(credential, salt, 100000, 32, 'sha256');
+            const username = escapeSql(usernameValue);
+            const email = escapeSql(emailValue);
+            const encodedSalt = escapeSql(encode(salt));
+            const encodedHash = escapeSql(encode(hash));
+            return `
+            INSERT INTO users
+              (id, user_no, username, email, password_hash, salt, iterations, algo,
+               email_verified, membership_type, created_at)
+            SELECT COALESCE(MAX(id), 10000) + 1,
+                   COALESCE(MAX(id), 10000) + 1,
+                   '${username}', '${email}', '${encodedHash}', '${encodedSalt}',
+                   100000, 'PBKDF2-SHA256', 0, 'trial', datetime('now')
+            FROM users
+            WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = '${username}');
+            UPDATE users
+               SET password_hash = '${encodedHash}', salt = '${encodedSalt}',
+                   iterations = 100000, algo = 'PBKDF2-SHA256'
+             WHERE username = '${username}';
+            DELETE FROM account_password_credentials
+             WHERE user_id = (SELECT CAST(id AS TEXT) FROM users WHERE username = '${username}');
+            INSERT OR REPLACE INTO email_username_mapping (email, username, user_id)
+            SELECT '${email}', '${username}', id FROM users WHERE username = '${username}';
+            `;
+          };
+          if (!process.env.PEER_ACCOUNT_USERNAME || !process.env.PEER_ACCOUNT_EMAIL) {
+            throw new Error('managed peer account identity is required');
+          }
+          if (process.env.ACCOUNT_USERNAME === process.env.PEER_ACCOUNT_USERNAME) {
+            throw new Error('primary and peer CI account usernames must differ');
+          }
+          const sql = [
+            accountSql(process.env.ACCOUNT_USERNAME, process.env.ACCOUNT_EMAIL, password),
+            accountSql(process.env.PEER_ACCOUNT_USERNAME, process.env.PEER_ACCOUNT_EMAIL, peerPassword),
+          ].join('\n');
           fs.writeFileSync(process.env.RUNNER_TEMP + '/provision-mcp-ci-account.sql', sql, { mode: 0o600 });
           NODE
 
@@ -97,10 +114,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          body="$(jq -cn --arg username "$ACCOUNT_USERNAME" --arg password "$FABUSHI_CI_TEST_PASSWORD" --arg deviceId "provision-${GITHUB_RUN_ID}" '{username:$username,password:$password,deviceId:$deviceId}')"
-          response="$(curl --fail --silent --show-error -H 'content-type: application/json' --data "$body" https://api.ombhrum.com/api/auth/login)"
-          jq -e --arg username "$ACCOUNT_USERNAME" '.user.id != null and .user.username == $username and (.accessToken|type)=="string" and (.refreshToken|type)=="string"' <<<"$response" >/dev/null
-          echo 'Production Fabushi MCP CI account login verified.'
+          verify_login() {
+            local username="$1"
+            local password="$2"
+            local suffix="$3"
+            local body response
+            body="$(jq -cn --arg username "$username" --arg password "$password" --arg deviceId "provision-${GITHUB_RUN_ID}-$suffix" '{username:$username,password:$password,deviceId:$deviceId}')"
+            response="$(curl --fail --silent --show-error -H 'content-type: application/json' --data "$body" https://api.ombhrum.com/api/auth/login)"
+            jq -e --arg username "$username" '.user.id != null and .user.username == $username and (.accessToken|type)=="string" and (.refreshToken|type)=="string"' <<<"$response" >/dev/null
+          }
+          peer_password="$(node -e 'const c=require("node:crypto");process.stdout.write(c.createHmac("sha256",process.env.FABUSHI_CI_TEST_PASSWORD).update("fabushi-mcp-ci-peer-v1").digest("base64url"))')"
+          echo "::add-mask::$peer_password"
+          verify_login "$ACCOUNT_USERNAME" "$FABUSHI_CI_TEST_PASSWORD" primary
+          verify_login "$PEER_ACCOUNT_USERNAME" "$peer_password" peer
+          unset peer_password
+          echo 'Production Fabushi primary and peer CI account logins verified.'
 
       - name: Remove local credential material
         if: always()

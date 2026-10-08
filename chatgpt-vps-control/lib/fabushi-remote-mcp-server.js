@@ -614,6 +614,22 @@ export function createFabushiRemoteMcpServer(options = {}) {
     browserPath: browserAgentPath,
     browserExtensionId: options.browserExtensionId,
     resolveAccount: (token) => accountClient.resolveAccessToken(token),
+    syncHumanCallVoIPDevice: async ({ accessToken, deviceId, token }) => {
+      if (!accessToken || !deviceId) throw new Error("missing authenticated device identity");
+      const endpoint = new URL("/api/social/calls/voip-device", accountClient.baseUrl);
+      const response = await (options.fetchImpl ?? globalThis.fetch)(endpoint, {
+        method: token ? "PUT" : "DELETE",
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          "x-fabushi-device-id": deviceId,
+          ...(token ? { "content-type": "application/json" } : {}),
+        },
+        ...(token ? { body: JSON.stringify({ token }) } : {}),
+      });
+      if (!response.ok) {
+        throw new Error(`Human Call VoIP device sync failed (HTTP ${response.status})`);
+      }
+    },
     audit: (record) => void audit({ ...record, accountRef: record.accountId ? safeAccountRef(record.accountId) : undefined, accountId: undefined }),
     defaultLeaseSeconds: Number(options.defaultLeaseSeconds ?? process.env.DEVICE_DEFAULT_LEASE_SECONDS ?? 2 * 60 * 60),
     maxLeaseSeconds: Number(options.maxLeaseSeconds ?? process.env.DEVICE_MAX_LEASE_SECONDS ?? 4 * 60 * 60),

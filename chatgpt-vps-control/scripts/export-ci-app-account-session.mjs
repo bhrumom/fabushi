@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
+import { isProtectedActionsTestDeviceId } from "../lib/protected-actions-device-id.js";
 
 const MAX_SESSION_BYTES = 64 * 1024;
 const MAX_LIFETIME_SECONDS = 5 * 60 * 60;
@@ -24,9 +25,6 @@ function validCredential(value) {
   return value.length >= 24 && value.length <= 16 * 1024 && !/\s/u.test(value);
 }
 
-function isProtectedActionsTestDeviceId(value) {
-  return /^gha-[0-9]+-[0-9]+-(?:interactive|ios-app|macos-app|windows-app)$/u.test(value);
-}
 
 if (process.env.GITHUB_ACTIONS !== "true") {
   throw new Error("CI application sessions can be exported only inside GitHub Actions.");
