@@ -44,6 +44,8 @@ import {
   handleGetHumanCall,
   handleGetHumanCallIceServers,
   handleListHumanCalls,
+  handleUpsertHumanCallVoIPDevice,
+  handleDeleteHumanCallVoIPDevice,
 } from '../handlers/human-calls.js';
 
 export async function routeCommunityRequest({ pathname, method, request, env, db }) {
@@ -75,6 +77,8 @@ export async function routeCommunityRequest({ pathname, method, request, env, db
   const messageReactionMatch = pathname.match(/^\/api\/social\/messages\/(\d+)\/reactions$/);
   if (messageReactionMatch && method === 'POST') return handleSetDirectMessageReaction(request, env, db, messageReactionMatch[1]);
   if (pathname === '/api/social/calls/ice' && method === 'GET') return handleGetHumanCallIceServers(request, env, db);
+  if (pathname === '/api/social/calls/voip-device' && method === 'PUT') return handleUpsertHumanCallVoIPDevice(request, env, db);
+  if (pathname === '/api/social/calls/voip-device' && method === 'DELETE') return handleDeleteHumanCallVoIPDevice(request, env, db);
   if (pathname === '/api/social/calls' && method === 'GET') return handleListHumanCalls(request, env, db);
   if (pathname === '/api/social/calls' && method === 'POST') return handleCreateHumanCall(request, env, db);
   const callEventMatch = pathname.match(/^\/api\/social\/calls\/([^/]+)\/events$/);
