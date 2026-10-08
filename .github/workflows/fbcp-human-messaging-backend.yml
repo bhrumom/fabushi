@@ -42,6 +42,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Install device gateway test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix chatgpt-vps-control --ignore-scripts
       - name: Check Worker source syntax
         shell: bash
         run: |
