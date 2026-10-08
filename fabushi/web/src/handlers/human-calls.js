@@ -486,7 +486,7 @@ async function humanCallPushTargets(db, userId) {
   }));
 }
 
-async function deliverIncomingHumanCall(env, db, row, displayName, hasVideo, fetchImpl = fetch) {
+export async function deliverIncomingHumanCall(env, db, row, displayName, hasVideo, fetchImpl = fetch) {
   if (!['invited', 'ringing'].includes(String(row.state))) return [];
   const generation = Number(row.generation);
   if (!Number.isSafeInteger(generation) || generation < 0) return [];
