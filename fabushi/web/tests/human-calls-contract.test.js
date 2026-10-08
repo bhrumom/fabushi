@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  deliverIncomingHumanCall,
   generateHumanCallIceServers,
   normalizeHumanCallDeviceId,
   normalizeHumanCallIceServers,
@@ -260,4 +261,201 @@ test('stale-generation idempotent replay reuses the persisted event and wakes at
   assert.match(branch, /role: roleFor\(row, identity\.auth\.userId\)/);
   assert.doesNotMatch(branch, /maybeDeliverCreatorMediaWake\(env, db, row, identity, expected\)/);
   assert.match(handler, /stale call generation: expected/);
+});
+
+
+class MemoryPushDb {
+  constructor(devices = []) {
+    this.devices = new Map(devices.map((entry) => [entry.deviceId, {
+      userId: entry.userId,
+      deviceId: entry.deviceId,
+      token: entry.token,
+      lastSuccessAt: null,
+      lastFailureAt: null,
+    }]));
+    this.deliveries = new Map();
+  }
+
+  prepare(sql) {
+    return {
+      bind: (...args) => ({
+        all: async () => {
+          if (/SELECT device_id, voip_token FROM human_call_voip_devices/u.test(sql)) {
+            const [userId] = args;
+            return {
+              results: [...this.devices.values()]
+                .filter((entry) => entry.userId === userId)
+                .sort((left, right) => left.deviceId.localeCompare(right.deviceId))
+                .map((entry) => ({ device_id: entry.deviceId, voip_token: entry.token })),
+            };
+          }
+          throw new Error('unsupported all SQL: ' + sql);
+        },
+        first: async () => {
+          if (/SELECT status, attempt_count FROM human_call_push_deliveries/u.test(sql)) {
+            const [callId, generation, deviceId] = args;
+            return this.deliveries.get(`${callId}:${generation}:${deviceId}`) ?? null;
+          }
+          throw new Error('unsupported first SQL: ' + sql);
+        },
+        run: async () => {
+          if (/INSERT INTO human_call_push_deliveries/u.test(sql)) {
+            const [callId, generation, deviceId, attemptCount] = args;
+            const key = `${callId}:${generation}:${deviceId}`;
+            const previous = this.deliveries.get(key);
+            this.deliveries.set(key, {
+              status: 'pending',
+              attempt_count: attemptCount,
+              last_http_status: previous?.last_http_status ?? null,
+              last_reason: previous?.last_reason ?? null,
+            });
+            return { meta: { changes: 1 } };
+          }
+          if (/UPDATE human_call_push_deliveries SET status/u.test(sql)) {
+            const [status, httpStatus, reason, _updatedAt, callId, generation, deviceId] = args;
+            const key = `${callId}:${generation}:${deviceId}`;
+            const previous = this.deliveries.get(key) ?? { attempt_count: 0 };
+            this.deliveries.set(key, {
+              ...previous,
+              status,
+              last_http_status: httpStatus,
+              last_reason: reason,
+            });
+            return { meta: { changes: 1 } };
+          }
+          if (/UPDATE human_call_voip_devices SET last_success_at/u.test(sql)) {
+            const [_timestamp, userId, deviceId] = args;
+            const device = this.devices.get(deviceId);
+            assert.equal(device?.userId, userId);
+            device.lastSuccessAt = 'set';
+            device.lastFailureAt = null;
+            return { meta: { changes: 1 } };
+          }
+          if (/UPDATE human_call_voip_devices SET last_failure_at/u.test(sql)) {
+            const [_timestamp, userId, deviceId] = args;
+            const device = this.devices.get(deviceId);
+            assert.equal(device?.userId, userId);
+            device.lastFailureAt = 'set';
+            return { meta: { changes: 1 } };
+          }
+          if (/DELETE FROM human_call_voip_devices WHERE user_id = \? AND device_id = \? AND voip_token = \?/u.test(sql)) {
+            const [userId, deviceId, token] = args;
+            const device = this.devices.get(deviceId);
+            if (device?.userId === userId && device.token === token) this.devices.delete(deviceId);
+            return { meta: { changes: device ? 1 : 0 } };
+          }
+          throw new Error('unsupported run SQL: ' + sql);
+        },
+      }),
+    };
+  }
+}
+
+function apnsTestEnv() {
+  const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  return {
+    FABUSHI_APNS_TEAM_ID: 'TEAMID1234',
+    FABUSHI_APNS_KEY_ID: 'KEYID12345',
+    FABUSHI_APNS_PRIVATE_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+  };
+}
+
+test('Human Call wake delivery handles no-token and multiple devices without duplicate delivery', async () => {
+  const noDeviceDb = new MemoryPushDb();
+  let fetchCount = 0;
+  const noTargets = await deliverIncomingHumanCall(
+    apnsTestEnv(),
+    noDeviceDb,
+    { call_id: 'call-empty', peer_user_id: 7, state: 'ringing', generation: 2 },
+    'Alice',
+    false,
+    async () => {
+      fetchCount += 1;
+      return new Response(null, { status: 200 });
+    },
+  );
+  assert.deepEqual(noTargets, []);
+  assert.equal(fetchCount, 0);
+
+  const db = new MemoryPushDb([
+    { userId: 7, deviceId: 'iphone-a', token: 'aa'.repeat(32) },
+    { userId: 7, deviceId: 'iphone-b', token: 'bb'.repeat(32) },
+    { userId: 8, deviceId: 'other-account', token: 'cc'.repeat(32) },
+  ]);
+  const sent = [];
+  const row = { call_id: 'call-multi', peer_user_id: 7, state: 'ringing', generation: 3 };
+  const first = await deliverIncomingHumanCall(apnsTestEnv(), db, row, 'Alice', true, async (url, init) => {
+    sent.push({ url, body: JSON.parse(init.body) });
+    return new Response(null, { status: 200 });
+  });
+  assert.equal(first.length, 2);
+  assert.equal(sent.length, 2);
+  assert.deepEqual(first.map((entry) => entry.deviceId), ['iphone-a', 'iphone-b']);
+  assert.ok(sent.every((entry) => entry.body.callId === 'call-multi'));
+  assert.ok(sent.every((entry) => entry.body.generation === 3));
+  assert.ok(sent.every((entry) => entry.body.hasVideo === true));
+
+  const replay = await deliverIncomingHumanCall(apnsTestEnv(), db, row, 'Alice', true, async () => {
+    throw new Error('delivered replay must not contact APNs again');
+  });
+  assert.deepEqual(replay, [
+    { deviceId: 'iphone-a', status: 'delivered', replay: true },
+    { deviceId: 'iphone-b', status: 'delivered', replay: true },
+  ]);
+});
+
+test('Human Call wake delivery retries transient failures and revokes APNs-invalid tokens', async () => {
+  const db = new MemoryPushDb([
+    { userId: 11, deviceId: 'iphone-retry', token: 'dd'.repeat(32) },
+    { userId: 11, deviceId: 'iphone-invalid', token: 'ee'.repeat(32) },
+  ]);
+  const row = { call_id: 'call-retry', peer_user_id: 11, state: 'ringing', generation: 5 };
+  let retryAttempts = 0;
+  const first = await deliverIncomingHumanCall(apnsTestEnv(), db, row, 'Bob', false, async (url) => {
+    if (url.endsWith('dd'.repeat(32))) {
+      retryAttempts += 1;
+      return new Response(JSON.stringify({ reason: 'InternalServerError' }), {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ reason: 'Unregistered' }), {
+      status: 410,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+  assert.deepEqual(first.map((entry) => entry.status), ['invalid-token', 'retryable-failure'].sort());
+  assert.equal(db.devices.has('iphone-invalid'), false);
+  assert.equal(db.devices.has('iphone-retry'), true);
+  assert.equal(db.deliveries.get('call-retry:5:iphone-retry').attempt_count, 1);
+
+  const second = await deliverIncomingHumanCall(apnsTestEnv(), db, row, 'Bob', false, async (url) => {
+    assert.ok(url.endsWith('dd'.repeat(32)));
+    retryAttempts += 1;
+    return new Response(null, { status: 200 });
+  });
+  assert.deepEqual(second, [{ deviceId: 'iphone-retry', status: 'delivered', replay: false }]);
+  assert.equal(retryAttempts, 2);
+  assert.equal(db.deliveries.get('call-retry:5:iphone-retry').attempt_count, 2);
+  assert.equal(db.deliveries.get('call-retry:5:iphone-retry').status, 'delivered');
+});
+
+test('Human Call wake delivery rejects stale/non-ringing session state before APNs', async () => {
+  const db = new MemoryPushDb([
+    { userId: 9, deviceId: 'iphone-a', token: 'aa'.repeat(32) },
+  ]);
+  let fetchCount = 0;
+  for (const row of [
+    { call_id: 'call-ended', peer_user_id: 9, state: 'ended', generation: 3 },
+    { call_id: 'call-bad-generation', peer_user_id: 9, state: 'ringing', generation: -1 },
+  ]) {
+    assert.deepEqual(
+      await deliverIncomingHumanCall(apnsTestEnv(), db, row, 'Alice', false, async () => {
+        fetchCount += 1;
+        return new Response(null, { status: 200 });
+      }),
+      [],
+    );
+  }
+  assert.equal(fetchCount, 0);
 });
