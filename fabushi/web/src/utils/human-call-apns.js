@@ -20,7 +20,15 @@ function base64Url(bytes) {
 }
 
 function pemPkcs8Bytes(value) {
-  const pem = bounded(value, 'FABUSHI_APNS_PRIVATE_KEY', 16 * 1024);
+  const pem = String(value ?? '').trim();
+  if (
+    pem.length < 64
+    || pem.length > 16 * 1024
+    || !pem.startsWith('-----BEGIN PRIVATE KEY-----')
+    || !pem.endsWith('-----END PRIVATE KEY-----')
+  ) {
+    throw new Error('FABUSHI_APNS_PRIVATE_KEY is invalid');
+  }
   const body = pem
     .replace(/-----BEGIN PRIVATE KEY-----/gu, '')
     .replace(/-----END PRIVATE KEY-----/gu, '')
