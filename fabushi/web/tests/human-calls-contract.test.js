@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,11 +11,18 @@ import {
   normalizeHumanCallIceServers,
   projectHumanCallTransition,
 } from '../src/handlers/human-calls.js';
+import {
+  humanCallVoIPTopic,
+  normalizeHumanCallPushPayload,
+  normalizeHumanCallVoIPToken,
+  sendHumanCallVoIPPush,
+} from '../src/utils/human-call-apns.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const router = readFileSync(join(root, 'src/routes/community-routes.js'), 'utf8');
 const handler = readFileSync(join(root, 'src/handlers/human-calls.js'), 'utf8');
 const migration = readFileSync(join(root, 'migrations/20261006_human_calls.sql'), 'utf8');
+const pushMigration = readFileSync(join(root, 'migrations/20261009_human_call_voip_push.sql'), 'utf8');
 
 test('production Human call routes exactly match Desktop Host transport', () => {
   for (const path of [
@@ -152,4 +160,90 @@ test('ICE configuration is short-lived, server-minted, and fail-closed', async (
     ),
     /does not contain authenticated TURN servers/,
   );
+});
+
+
+test('PushKit registration and APNs payload contracts are strict and secret-free', async () => {
+  const token = 'ab'.repeat(32);
+  assert.equal(normalizeHumanCallVoIPToken(token.toUpperCase()), token);
+  assert.throws(() => normalizeHumanCallVoIPToken('not-a-token'), /invalid/);
+  assert.throws(() => normalizeHumanCallVoIPToken('a'.repeat(33)), /invalid/);
+  assert.equal(humanCallVoIPTopic, 'com.ombhrum.fabushi.voip');
+  assert.deepEqual(
+    normalizeHumanCallPushPayload({ callId: 'call-1', generation: 4, displayName: 'Alice', hasVideo: true }),
+    { callId: 'call-1', generation: 4, displayName: 'Alice', hasVideo: true },
+  );
+  assert.throws(() => normalizeHumanCallPushPayload({ callId: 'call-1', generation: -1 }), /generation/);
+
+  const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  const env = {
+    FABUSHI_APNS_TEAM_ID: 'TEAMID1234',
+    FABUSHI_APNS_KEY_ID: 'KEYID12345',
+    FABUSHI_APNS_PRIVATE_KEY: pem,
+  };
+  const requests = [];
+  const delivered = await sendHumanCallVoIPPush(env, token, {
+    callId: 'call-1',
+    generation: 4,
+    displayName: 'Alice',
+    hasVideo: true,
+  }, async (url, init) => {
+    requests.push({ url, init });
+    return new Response(null, { status: 200 });
+  }, () => 1_800_000_000_000);
+  assert.equal(delivered.ok, true);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, 'https://api.push.apple.com/3/device/' + token);
+  assert.equal(requests[0].init.headers['apns-push-type'], 'voip');
+  assert.equal(requests[0].init.headers['apns-topic'], 'com.ombhrum.fabushi.voip');
+  assert.equal(requests[0].init.headers['apns-priority'], '10');
+  assert.deepEqual(JSON.parse(requests[0].init.body), {
+    aps: { 'content-available': 1 },
+    callId: 'call-1',
+    generation: 4,
+    displayName: 'Alice',
+    hasVideo: true,
+  });
+  assert.ok(/^bearer eyJ/u.test(requests[0].init.headers.authorization));
+  assert.equal(requests[0].init.headers.authorization.includes(token), false);
+
+  const invalid = await sendHumanCallVoIPPush(env, token, {
+    callId: 'call-2',
+    generation: 0,
+    displayName: 'Bob',
+    hasVideo: false,
+  }, async () => new Response(JSON.stringify({ reason: 'Unregistered' }), {
+    status: 410,
+    headers: { 'content-type': 'application/json' },
+  }), () => 1_800_000_000_000);
+  assert.deepEqual(invalid, {
+    ok: false,
+    status: 410,
+    reason: 'Unregistered',
+    permanentInvalid: true,
+  });
+
+  const retryable = await sendHumanCallVoIPPush(env, token, {
+    callId: 'call-3',
+    generation: 0,
+    displayName: 'Carol',
+    hasVideo: false,
+  }, async () => new Response(JSON.stringify({ reason: 'InternalServerError' }), {
+    status: 500,
+    headers: { 'content-type': 'application/json' },
+  }), () => 1_800_000_000_000);
+  assert.equal(retryable.permanentInvalid, false);
+});
+
+test('Human Call push storage stays account+device scoped and idempotent', () => {
+  assert.match(pushMigration, /PRIMARY KEY \(user_id, device_id\)/i);
+  assert.match(pushMigration, /UNIQUE INDEX IF NOT EXISTS idx_human_call_voip_token_unique/i);
+  assert.match(pushMigration, /PRIMARY KEY \(call_id, generation, device_id\)/i);
+  assert.match(pushMigration, /retryable-failure/i);
+  assert.match(handler, /ON CONFLICT\(user_id, device_id\) DO UPDATE/i);
+  assert.match(handler, /existing\?\.status === 'delivered'/);
+  assert.match(handler, /result\.permanentInvalid/);
+  assert.match(handler, /DELETE FROM human_call_voip_devices WHERE user_id = \? AND device_id = \? AND voip_token = \?/);
+  assert.ok(router.includes('/api/social/calls/voip-device'));
 });
