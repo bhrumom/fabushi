@@ -617,17 +617,7 @@ export async function handleCreateHumanCall(request, env, db) {
   }
 
   const created = Number(insert.meta?.changes || 0) > 0;
-  const displayName = String(identity.auth.username || 'Fabushi 通话').trim().slice(0, 200) || 'Fabushi 通话';
-  const hasVideo = body.hasVideo === true;
-  const push = await deliverIncomingHumanCall(env, db, row, displayName, hasVideo);
-  return jsonResponse({
-    success: true,
-    call: projectCall(row),
-    push: {
-      targetedDevices: push.length,
-      deliveredDevices: push.filter((entry) => entry.status === 'delivered').length,
-    },
-  }, created ? 201 : 200);
+  return jsonResponse({ success: true, call: projectCall(row) }, created ? 201 : 200);
 }
 
 export async function handleGetHumanCall(request, env, db, rawCallId) {
@@ -662,6 +652,19 @@ export async function handleGetHumanCall(request, env, db, rawCallId) {
     events,
     nextAfterSeq,
   });
+}
+
+async function maybeDeliverCreatorMediaWake(env, db, row, identity, expected) {
+  if (
+    expected.kind !== 'media'
+    || expected.role.role !== 'creator'
+    || !['invited', 'ringing'].includes(String(row.state))
+  ) {
+    return [];
+  }
+  const hasVideo = expected.payload?.mediaCapabilities?.video === true;
+  const displayName = String(identity.auth.username || 'Fabushi 通话').trim().slice(0, 200) || 'Fabushi 通话';
+  return deliverIncomingHumanCall(env, db, row, displayName, hasVideo);
 }
 
 export async function handleAppendHumanCallEvent(request, env, db, rawCallId) {
@@ -704,7 +707,12 @@ export async function handleAppendHumanCallEvent(request, env, db, rawCallId) {
           payload: body.payload,
         };
         if (existingEventMatches(existing, replayExpected, identity.deviceId)) {
-          return jsonResponse({ success: true, call: projectCall(row), event: projectEvent(existing) });
+          await maybeDeliverCreatorMediaWake(env, db, row, identity, {
+            ...replayExpected,
+            role: roleFor(row, identity.auth.userId),
+          });
+          await maybeDeliverCreatorMediaWake(env, db, row, identity, expected);
+      return jsonResponse({ success: true, call: projectCall(row), event: projectEvent(existing) });
         }
       }
       const status = /another device|stale call generation|canonical state machine|terminal call/.test(error.message)
@@ -790,6 +798,7 @@ export async function handleAppendHumanCallEvent(request, env, db, rawCallId) {
     }
     const latest = await loadParticipantCall(db, callId, identity.auth.userId);
     if (!latest) return errorResponse('通话在事件保存后消失', 500);
+    await maybeDeliverCreatorMediaWake(env, db, latest, identity, expected);
     return jsonResponse({ success: true, call: projectCall(latest), event: projectEvent(accepted) }, 201);
   }
 
