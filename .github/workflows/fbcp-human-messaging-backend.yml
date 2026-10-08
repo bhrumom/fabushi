@@ -14,6 +14,9 @@ on:
       - 'fabushi/web/tests/friends-and-messages-contract.test.js'
       - 'fabushi/web/tests/human-calls-contract.test.js'
       - 'chatgpt-vps-control/lib/protected-actions-device-id.js'
+      - 'chatgpt-vps-control/lib/device-gateway.js'
+      - 'chatgpt-vps-control/lib/fabushi-remote-mcp-server.js'
+      - 'chatgpt-vps-control/tests/device-gateway-account.test.js'
       - 'chatgpt-vps-control/scripts/login-ci-test-account.mjs'
       - 'chatgpt-vps-control/scripts/export-ci-app-account-session.mjs'
       - 'chatgpt-vps-control/scripts/prepare-ci-human-peer.mjs'
@@ -48,6 +51,8 @@ jobs:
           node --check fabushi/web/src/utils/human-call-apns.js
           node --check fabushi/web/src/routes/community-routes.js
           node --check chatgpt-vps-control/scripts/prepare-ci-human-peer.mjs
+          node --check chatgpt-vps-control/lib/device-gateway.js
+          node --check chatgpt-vps-control/lib/fabushi-remote-mcp-server.js
       - name: Run focused Human messaging contracts
         shell: bash
         run: |
@@ -55,6 +60,7 @@ jobs:
           node --test fabushi/web/tests/friends-and-messages-contract.test.js
           node --test fabushi/web/tests/human-calls-contract.test.js
           node --test chatgpt-vps-control/test/protected-actions-device-id.test.mjs
+          node --test chatgpt-vps-control/tests/device-gateway-account.test.js
       - name: Apply Human messaging migrations to SQLite
         shell: bash
         run: |
