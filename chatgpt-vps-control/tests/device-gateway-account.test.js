@@ -274,3 +274,79 @@ test("device discovery hides every disconnected device and drops ephemeral GitHu
   assert.equal(listRegisteredDevices("account:live").length, 0);
   await assert.rejects(() => callRegisteredDevice("account:live", "gha-123-1-cli", "vps_status", {}), /Unknown device/);
 });
+
+
+test("iOS device registration strictly projects PushKit token and explicit logout revokes it", async (t) => {
+  resetDeviceGatewayStateForTests();
+  const server = createServer((_req, res) => res.writeHead(404).end());
+  const syncs = [];
+  const gateway = attachDeviceGateway(server, {
+    resolveAccount: async (token) => token === "ios-account-token" ? { userId: "account:ios" } : null,
+    syncHumanCallVoIPDevice: async (record) => {
+      syncs.push({ accountId: record.accountId, deviceId: record.deviceId, token: record.token });
+    },
+    defaultLeaseSeconds: 60,
+  });
+  const port = await listen(server);
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/agent`, {
+    headers: { Authorization: "Bearer ios-account-token" },
+  });
+  t.after(async () => {
+    ws.terminate();
+    await closeServer(server, gateway);
+    resetDeviceGatewayStateForTests();
+  });
+  await opened(ws);
+  const token = "ab".repeat(32);
+  ws.send(JSON.stringify({
+    type: "register",
+    deviceId: "ios-phone-1",
+    name: "Fabushi iPhone",
+    platform: "ios",
+    capabilities: ["fabushi.app.status"],
+    metadata: { kind: "fabushi-ios", humanCallVoIPToken: token },
+  }));
+  assert.equal((await nextJson(ws)).type, "registered");
+  assert.deepEqual(syncs, [{ accountId: "account:ios", deviceId: "ios-phone-1", token }]);
+  const listed = listRegisteredDevices("account:ios")[0];
+  assert.equal(listed.metadata.kind, "fabushi-ios");
+  assert.equal(Object.hasOwn(listed.metadata, "humanCallVoIPToken"), false);
+
+  ws.send(JSON.stringify({ type: "unregister", reason: "logout" }));
+  assert.equal((await nextJson(ws)).type, "unregistered");
+  assert.deepEqual(syncs[1], { accountId: "account:ios", deviceId: "ios-phone-1", token: null });
+  assert.equal(listRegisteredDevices("account:ios").length, 0);
+});
+
+test("iOS device registration rejects malformed PushKit tokens before persistence", async (t) => {
+  resetDeviceGatewayStateForTests();
+  const server = createServer((_req, res) => res.writeHead(404).end());
+  let syncCount = 0;
+  const gateway = attachDeviceGateway(server, {
+    resolveAccount: async () => ({ userId: "account:ios" }),
+    syncHumanCallVoIPDevice: async () => { syncCount += 1; },
+    defaultLeaseSeconds: 60,
+  });
+  const port = await listen(server);
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/agent`, {
+    headers: { Authorization: "Bearer valid-account-token-that-is-long" },
+  });
+  t.after(async () => {
+    ws.terminate();
+    await closeServer(server, gateway);
+    resetDeviceGatewayStateForTests();
+  });
+  await opened(ws);
+  const closed = new Promise((resolve) => ws.once("close", (code) => resolve(code)));
+  ws.send(JSON.stringify({
+    type: "register",
+    deviceId: "ios-phone-bad",
+    name: "Fabushi iPhone",
+    platform: "ios",
+    capabilities: ["fabushi.app.status"],
+    metadata: { kind: "fabushi-ios", humanCallVoIPToken: "not-hex" },
+  }));
+  assert.equal(await closed, 1008);
+  assert.equal(syncCount, 0);
+  assert.equal(listRegisteredDevices("account:ios").length, 0);
+});
