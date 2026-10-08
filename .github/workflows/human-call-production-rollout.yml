@@ -141,9 +141,13 @@ jobs:
           set -euo pipefail
           test -s fabushi/web/src/handlers/human-calls.js
           test -s fabushi/web/migrations/20261006_human_calls.sql
+          test -s fabushi/web/migrations/20261009_human_call_voip_push.sql
+          test -s fabushi/web/src/utils/human-call-apns.js
           grep -Fq '/api/social/calls' fabushi/web/src/routes/community-routes.js
           grep -Fq 'FABUSHI_TURN_KEY_ID' fabushi/web/src/handlers/human-calls.js
           grep -Fq 'FABUSHI_TURN_KEY_API_TOKEN' fabushi/web/src/handlers/human-calls.js
+          grep -Fq 'sendHumanCallVoIPPush' fabushi/web/src/handlers/human-calls.js
+          grep -Fq 'com.ombhrum.fabushi.voip' fabushi/web/src/utils/human-call-apns.js
 
       - name: Require all production Worker secrets before backend mutation
         if: inputs.mode == 'deploy-human-call'
@@ -152,6 +156,11 @@ jobs:
         run: |
           set -euo pipefail
           bash ../../.github/scripts/assert-worker-security-secrets.sh production
+          worker_secrets="$(npx --yes wrangler@latest secret list --env production)"
+          jq -e '[.[].name] |
+            index("FABUSHI_APNS_TEAM_ID") != null and
+            index("FABUSHI_APNS_KEY_ID") != null and
+            index("FABUSHI_APNS_PRIVATE_KEY") != null' <<< "$worker_secrets" >/dev/null
 
       - name: Apply canonical production D1 migrations
         if: inputs.mode == 'deploy-human-call'
