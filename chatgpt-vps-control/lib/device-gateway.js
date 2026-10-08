@@ -100,6 +100,14 @@ function safeMetadata(value) {
   return Buffer.byteLength(JSON.stringify(output)) <= MAX_METADATA_BYTES ? output : {};
 }
 
+function humanCallVoIPToken(value) {
+  const token = String(value ?? '').trim().toLowerCase();
+  if (token.length < 32 || token.length > 512 || token.length % 2 !== 0 || !/^[0-9a-f]+$/u.test(token)) {
+    throw new Error('invalid humanCallVoIPToken');
+  }
+  return token;
+}
+
 function publicDevice(device) {
   return {
     id: device.id,
@@ -163,7 +171,7 @@ function audit(options, record) {
   }
 }
 
-function handleAgentMessage(socket, raw, options) {
+async function handleAgentMessage(socket, raw, options) {
   let message;
   try {
     message = JSON.parse(raw.toString("utf8"));
@@ -176,6 +184,15 @@ function handleAgentMessage(socket, raw, options) {
     const id = String(message.deviceId ?? "").trim();
     const name = String(message.name ?? id).trim();
     const platform = String(message.platform ?? "unknown").trim().slice(0, 80);
+    let voipToken = null;
+    if (platform === "ios" && Object.prototype.hasOwnProperty.call(message.metadata ?? {}, "humanCallVoIPToken")) {
+      try {
+        voipToken = humanCallVoIPToken(message.metadata?.humanCallVoIPToken);
+      } catch {
+        rejectSocket(socket, 1008, "invalid VoIP device registration");
+        return;
+      }
+    }
     const capabilities = Array.isArray(message.capabilities)
       ? [...new Set(message.capabilities.map(String))].slice(0, 100)
       : [];
@@ -207,6 +224,19 @@ function handleAgentMessage(socket, raw, options) {
     }
     const metadata = safeMetadata(message.metadata);
     const secureInputPublicKey = safeSecureInputPublicKey(message.secureInputPublicKey);
+    if (platform === "ios" && typeof options.syncHumanCallVoIPDevice === "function") {
+      try {
+        await options.syncHumanCallVoIPDevice({
+          accountId: socket.accountId,
+          deviceId: id,
+          accessToken: socket.accountAccessToken || "",
+          token: voipToken,
+        });
+      } catch {
+        rejectSocket(socket, 1011, "VoIP device registration unavailable");
+        return;
+      }
+    }
     devices.set(key, {
       accountId: socket.accountId,
       id,
@@ -226,6 +256,29 @@ function handleAgentMessage(socket, raw, options) {
     socket.registryKey = key;
     socket.send(JSON.stringify({ type: "registered", deviceId: id, expiresAt: new Date(expiresAt).toISOString() }));
     audit(options, { type: "device.registered", accountId: socket.accountId, deviceId: id, metadata });
+    return;
+  }
+
+  if (message.type === "unregister") {
+    if (!socket.registryKey || !socket.deviceId) return;
+    const current = devices.get(socket.registryKey);
+    if (!current || current.socket !== socket) return;
+    if (current.platform === "ios" && typeof options.syncHumanCallVoIPDevice === "function") {
+      try {
+        await options.syncHumanCallVoIPDevice({
+          accountId: socket.accountId,
+          deviceId: socket.deviceId,
+          accessToken: socket.accountAccessToken || "",
+          token: null,
+        });
+      } catch {
+        rejectSocket(socket, 1011, "VoIP device revocation unavailable");
+        return;
+      }
+    }
+    devices.delete(socket.registryKey);
+    socket.send(JSON.stringify({ type: "unregistered", deviceId: socket.deviceId }));
+    audit(options, { type: "device.unregistered", accountId: socket.accountId, deviceId: socket.deviceId });
     return;
   }
 
@@ -306,6 +359,7 @@ export function attachDeviceGateway(httpServer, options = {}) {
       else if (legacyToken.length >= 32 && safeEqual(token, legacyToken)) account = { userId: legacyAccountId };
       if (!account?.userId) return rejectUpgrade(socket);
       req.fabushiAccount = account;
+      req.fabushiAccessToken = token;
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
     } catch {
       rejectUpgrade(socket);
@@ -315,13 +369,16 @@ export function attachDeviceGateway(httpServer, options = {}) {
 
   wss.on("connection", (socket, req) => {
     socket.accountId = String(req.fabushiAccount?.userId || "");
+    socket.accountAccessToken = String(req.fabushiAccessToken || "");
     socket.isAlive = true;
     socket.on("pong", () => {
       socket.isAlive = true;
       const device = devices.get(socket.registryKey);
       if (device && device.socket === socket) device.lastSeen = Date.now();
     });
-    socket.on("message", (raw) => handleAgentMessage(socket, raw, options));
+    socket.on("message", (raw) => {
+      void handleAgentMessage(socket, raw, options).catch(() => rejectSocket(socket, 1011, "device message failed"));
+    });
     socket.on("close", () => {
       audit(options, { type: "device.disconnected", accountId: socket.accountId, deviceId: socket.deviceId || "" });
       markDisconnected(socket);
@@ -348,7 +405,9 @@ export function attachDeviceGateway(httpServer, options = {}) {
         clearTimeout(authTimer);
         socket.send(JSON.stringify({ type: "authenticated", accountLabel: String(account.label || "Fabushi").slice(0, 200) }));
         audit(options, { type: "browser.authenticated", accountId: socket.accountId });
-        socket.on("message", (nextRaw) => handleAgentMessage(socket, nextRaw, options));
+        socket.on("message", (nextRaw) => {
+          void handleAgentMessage(socket, nextRaw, options).catch(() => rejectSocket(socket, 1011, "device message failed"));
+        });
       } catch {
         clearTimeout(authTimer);
         rejectSocket(socket, 4003, "browser authentication failed");
