@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeDirectMessageDestination } from '../src/handlers/friends.js';
+import { authorizeDirectMessageDestination, canonicalHumanDirectConversationId, normalizeDirectMessageDestination } from '../src/handlers/friends.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const handler = readFileSync(join(root, 'src/handlers/friends.js'), 'utf8');
@@ -72,6 +72,7 @@ test('friend handlers require stable authenticated account identities', () => {
   assert.match(handler, /persistedRow\.scheduled_at_ms/);
   assert.match(handler, /persistedRow\.destination_json/);
   assert.match(handler, /normalizeDirectMessageDestination\(body\.destination\)/);
+  assert.match(handler, /authorizeDirectMessageDestination/);
   assert.match(handler, /sender_user_id = \? OR delivery_state = 'delivered'/);
   assert.match(handler, /UPDATE direct_messages SET delivery_state = 'delivered'/);
   assert.match(workerEntry, /async scheduled\(controller, env, ctx\)/);
@@ -122,6 +123,45 @@ test('direct-message destination normalization preserves canonical child identit
       child: { kind: 'unknown', conversationId: 'child' },
     }),
     /kind/,
+  );
+});
+
+test('SavedSublist destination authorization binds parent and participant to the authenticated Human relation', async () => {
+  const expected = 'human-direct-c502b17784e13034ef2d55d022a2a08e66226f4375deadb525329677f6997033';
+  assert.equal(await canonicalHumanDirectConversationId(1, 2), expected);
+  assert.equal(await canonicalHumanDirectConversationId(2, 1), expected);
+
+  const authorized = {
+    conversationId: expected,
+    child: { kind: 'savedSublist', participantId: '2' },
+  };
+  assert.deepEqual(
+    await authorizeDirectMessageDestination(authorized, 1, 2),
+    authorized,
+  );
+  await assert.rejects(
+    authorizeDirectMessageDestination({
+      conversationId: 'saved:self',
+      child: { kind: 'savedSublist', participantId: '2' },
+    }, 1, 2),
+    /not authorized/,
+  );
+  await assert.rejects(
+    authorizeDirectMessageDestination({
+      conversationId: expected,
+      child: { kind: 'savedSublist', participantId: '999' },
+    }, 1, 2),
+    /not authorized/,
+  );
+
+  const topic = {
+    conversationId: expected,
+    child: { kind: 'topic', rootMessageId: 'message:root' },
+  };
+  assert.deepEqual(
+    await authorizeDirectMessageDestination(topic, 1, 2),
+    topic,
+    'server must not claim SavedSublist authority for unrelated typed children',
   );
 });
 
