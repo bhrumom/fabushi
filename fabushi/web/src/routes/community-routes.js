@@ -21,10 +21,12 @@ import {
   handleListDirectMessages,
   handleListFriends,
   handleGetDirectMessageResource,
+  handleGetDirectMessageRetention,
   handleListIncomingFriendRequests,
   handleSearchFriendUsers,
   handleSendDirectMessage,
   handleSetDirectMessageReaction,
+  handleSetDirectMessageRetention,
   handleUploadDirectMessageResource,
 } from '../handlers/friends.js';
 import {
@@ -74,6 +76,8 @@ export async function routeCommunityRequest({ pathname, method, request, env, db
   if (messageResourceMatch && method === 'GET') return handleGetDirectMessageResource(request, env, db, messageResourceMatch[1]);
   if (pathname === '/api/social/messages' && method === 'GET') return handleListDirectMessages(request, env, db);
   if (pathname === '/api/social/messages' && method === 'POST') return handleSendDirectMessage(request, env, db);
+  if (pathname === '/api/social/message-retention' && method === 'GET') return handleGetDirectMessageRetention(request, env, db);
+  if (pathname === '/api/social/message-retention' && method === 'PUT') return handleSetDirectMessageRetention(request, env, db);
   const messageReactionMatch = pathname.match(/^\/api\/social\/messages\/(\d+)\/reactions$/);
   if (messageReactionMatch && method === 'POST') return handleSetDirectMessageReaction(request, env, db, messageReactionMatch[1]);
   if (pathname === '/api/social/calls/ice' && method === 'GET') return handleGetHumanCallIceServers(request, env, db);
