@@ -258,7 +258,7 @@ async function loadOwnedMessageAttachments(db, ownerUserId, requested) {
 async function validateReplyTarget(db, messageId, senderUserId, recipientUserId) {
   if (messageId == null) return null;
   const row = await db.prepare(
-    'SELECT id FROM direct_messages WHERE id = ? AND ((sender_user_id = ? AND recipient_user_id = ?) OR (sender_user_id = ? AND recipient_user_id = ?)) AND (sender_user_id = ? OR delivery_state = \'delivered\') LIMIT 1'
+    'SELECT id FROM direct_messages WHERE id = ? AND expired_at_ms IS NULL AND ((sender_user_id = ? AND recipient_user_id = ?) OR (sender_user_id = ? AND recipient_user_id = ?)) AND (sender_user_id = ? OR delivery_state = \'delivered\') LIMIT 1'
   ).bind(messageId, senderUserId, recipientUserId, recipientUserId, senderUserId, senderUserId).first();
   if (!row) throw new Error('回复目标不属于当前会话');
   return Number(row.id);
@@ -586,7 +586,8 @@ export async function handleGetDirectMessageResource(request, env, db, rawResour
          OR EXISTS (
            SELECT 1
            FROM direct_messages d, json_each(d.attachments_json) attachment
-           WHERE (d.sender_user_id = ? OR (d.recipient_user_id = ? AND d.delivery_state = 'delivered'))
+           WHERE d.expired_at_ms IS NULL
+             AND (d.sender_user_id = ? OR (d.recipient_user_id = ? AND d.delivery_state = 'delivered'))
              AND json_extract(attachment.value, '$.resourceId') = r.id
          )
        )
@@ -961,7 +962,7 @@ export async function handleSetDirectMessageReaction(request, env, db, rawMessag
     return jsonResponse({ success: false, error: '消息编号无效' }, 400);
   }
   const message = await db.prepare(
-    "SELECT id, sender_user_id, recipient_user_id FROM direct_messages WHERE id = ? AND (sender_user_id = ? OR delivery_state = 'delivered') LIMIT 1"
+    "SELECT id, sender_user_id, recipient_user_id FROM direct_messages WHERE id = ? AND expired_at_ms IS NULL AND (sender_user_id = ? OR delivery_state = 'delivered') LIMIT 1"
   ).bind(messageId, auth.userId).first();
   if (!message || (
     Number(message.sender_user_id) !== Number(auth.userId)
