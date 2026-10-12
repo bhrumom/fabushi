@@ -4,10 +4,13 @@
 - Project Key: `GBF`
 - Task ID: `GBF-509`
 - Stage: `M5`
-- Status: `RELEASED`
+- Status: `IN_PROGRESS`
 - Owner: Fabushi desktop / UI
 - Source: `projects/grok-bot-fabushi-integration/source/2026-09-14-grok-icon-study-avatar-parity.md`
-- Reference: `bhrum/grok-icon-study@main` (`replica/` behavior study only)
+- Reference: `bhrum/grok-icon-study@647e9bd7c60290c42a738fad586589b3f36a4680` (`replica/` behavior study only)
+- Direct parity source: `projects/grok-bot-fabushi-integration/source/2026-09-18-grok-icon-reference-motion-parity.md`
+- Frozen parity contract: `desktop/e2e/fixtures/avatar-motion-parity.v1.json`
+- Acceptance branch: `codex/gbf-509-reference-motion-parity-20260918`
 - Implementation branch: `codex/gbf-509-grok-avatar-motion-parity`
 - Implementation PR: `#2621`
 - Implementation head: `72d987e5e32546ab31a7c6650219ed58dcf1a1bf`
@@ -17,6 +20,20 @@
 ## Objective
 
 Upgrade the existing Fabushi-owned avatar runtime from simple sinusoidal bob/blink motion to a richer stateful spring character system that matches the observable liveliness of the Grok icon study while preserving Fabushi ownership, identity continuity, accessibility, performance controls, and the existing single production runtime chain.
+
+## Direct reference parity re-open — 2026-09-18
+
+The prior packaged/release closeout did not contain synchronized direct reference-vs-Fabushi numerical motion evidence. The original objective therefore remains open. The v1 thresholds were frozen in `a154fe90542fb92a30de6726412c5b09bc7743e8`; the initial timeline was frozen in `e2ec6ca0e325296ed8fa4afb28b98a0e000fd320`. Before the first capture existed, coverage review found hop was not independent from bounce, so `1c70ca34b3e72f8d5a362003d9067c684676d83e` added a deterministic `curious-hop` timeline. No v1 threshold changed, and no capture/tuning preceded that correction.
+
+Additional required acceptance:
+
+- [ ] fixed reference commit and deterministic timelines cover idle, curious, pointer gaze, blink, nod/hop/wink, spin, bounce, burst and major state transitions;
+- [ ] reference and packaged macOS Electron run at 640x480, 64px and reduced-motion=false on the same timelines;
+- [ ] body Y/roll/squash, L/R eye openness, gaze X/Y, blink cadence, transition settling and spin/bounce/burst peak/period/damping metrics pass frozen v1 thresholds;
+- [ ] paired frame sequences, side-by-side/overlay evidence, both videos, traces/logs and artifact digest are retained;
+- [ ] any remediation changes only the existing `FabushiAvatarRuntime` parameter/timing surface and keeps reference geometry/assets out of production;
+- [ ] exact-head PR capture passes, protected merge completes, then the same capture passes on exact canonical main and runtime lineage is re-read;
+- [ ] evidence/acceptance/status records are updated only after exact-main proof.
 
 ## Acceptance criteria
 

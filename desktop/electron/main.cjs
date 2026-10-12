@@ -1011,12 +1011,13 @@ function installIpcHandlers() {
 
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+  const avatarMotionParity = process.env.FABUSHI_AVATAR_MOTION_PARITY === '1';
   const win = new BrowserWindow({
     title: '全球法布施',
-    width: 1180,
-    height: 840,
-    minWidth: 880,
-    minHeight: 640,
+    width: avatarMotionParity ? 640 : 1180,
+    height: avatarMotionParity ? 480 : 840,
+    minWidth: avatarMotionParity ? 1 : 880,
+    minHeight: avatarMotionParity ? 1 : 640,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -1069,7 +1070,10 @@ function createWindow() {
   if (process.env.VITE_DEV_SERVER_URL) {
     void win.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    void win.loadURL('app://bundle/index.html');
+    const rendererUrl = process.env.FABUSHI_AVATAR_MOTION_PARITY === '1'
+      ? 'app://bundle/index.html?avatar-motion-parity=1'
+      : 'app://bundle/index.html';
+    void win.loadURL(rendererUrl);
   }
   return win;
 }
