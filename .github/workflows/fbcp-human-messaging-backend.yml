@@ -79,11 +79,12 @@ jobs:
           sqlite3 "$db" < fabushi/web/migrations/20260713_friends_and_direct_messages.sql
           sqlite3 "$db" < fabushi/web/migrations/20261005_direct_message_remote_semantics.sql
           sqlite3 "$db" < fabushi/web/migrations/20261009_direct_message_scheduling.sql
+          sqlite3 "$db" < fabushi/web/migrations/20261012_direct_message_destination.sql
           sqlite3 "$db" < fabushi/web/migrations/20261006_human_calls.sql
           sqlite3 "$db" < fabushi/web/migrations/20261009_human_call_voip_push.sql
           count="$(sqlite3 "$db" "SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name IN ('friend_requests','direct_messages','direct_message_resources','direct_message_reactions','human_calls','human_call_events','human_call_voip_devices','human_call_push_deliveries');")"
           test "$count" = "8"
-          sqlite3 "$db" "INSERT INTO direct_messages(sender_user_id,sender_username,recipient_user_id,recipient_username,body,client_request_id,created_at,silent,scheduled_at_ms,delivery_state) VALUES(1,'sender',2,'recipient','scheduled','contract-1','2026-10-09T00:00:00.000Z',1,2000000000000,'scheduled');"
-          test "$(sqlite3 "$db" "SELECT silent || ':' || scheduled_at_ms || ':' || delivery_state FROM direct_messages WHERE client_request_id='contract-1';")" = "1:2000000000000:scheduled"
+          sqlite3 "$db" "INSERT INTO direct_messages(sender_user_id,sender_username,recipient_user_id,recipient_username,body,client_request_id,created_at,silent,scheduled_at_ms,delivery_state,destination_json) VALUES(1,'sender',2,'recipient','scheduled','contract-1','2026-10-09T00:00:00.000Z',1,2000000000000,'scheduled','{\"conversationId\":\"saved:self\",\"child\":{\"kind\":\"savedSublist\",\"participantId\":\"human:peer\"}}');"
+          test "$(sqlite3 "$db" "SELECT silent || ':' || scheduled_at_ms || ':' || delivery_state || ':' || json_extract(destination_json,'$.child.kind') FROM direct_messages WHERE client_request_id='contract-1';")" = "1:2000000000000:scheduled:savedSublist"
           sqlite3 "$db" "UPDATE direct_messages SET delivery_state='delivered', delivered_at='2026-10-09T00:01:00.000Z' WHERE delivery_state='scheduled' AND scheduled_at_ms <= 2000000000000;"
           test "$(sqlite3 "$db" "SELECT delivery_state || ':' || delivered_at FROM direct_messages WHERE client_request_id='contract-1';")" = "delivered:2026-10-09T00:01:00.000Z"
