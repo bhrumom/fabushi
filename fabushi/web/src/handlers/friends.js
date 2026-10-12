@@ -6,7 +6,7 @@ const MAX_MESSAGE_ATTACHMENTS = 6;
 const MAX_MESSAGE_RESOURCE_BYTES = 32 * 1024 * 1024;
 const MAX_MESSAGE_RESOURCE_NAME_CHARS = 255;
 const MAX_REACTION_BYTES = 32;
-const DIRECT_MESSAGE_SELECT_FIELDS = 'id, sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, read_at, reply_to_message_id, attachments_json, silent, scheduled_at_ms, delivery_state, delivered_at, destination_json';
+const DIRECT_MESSAGE_SELECT_FIELDS = 'id, sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, read_at, reply_to_message_id, attachments_json, silent, scheduled_at_ms, delivery_state, delivered_at, destination_json, expires_at_ms, expired_at_ms';
 
 export function normalizeDirectMessageDeliveryOptions(body, nowMs = Date.now()) {
   const silent = body?.silent ?? false;
@@ -145,6 +145,42 @@ function parseStoredDestination(value) {
   return normalizeDirectMessageDestination(parsed);
 }
 
+function normalizeRetentionSeconds(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0 || value > 0xffffffff) {
+    throw new Error('retentionSeconds 必须为空或正的 32 位整数秒数');
+  }
+  return value;
+}
+
+function retentionPair(firstUserId, secondUserId) {
+  const first = Number(firstUserId);
+  const second = Number(secondUserId);
+  return first < second ? [first, second] : [second, first];
+}
+
+async function readDirectMessageRetention(db, firstUserId, secondUserId) {
+  const conversationId = await canonicalHumanDirectConversationId(firstUserId, secondUserId);
+  const row = await db.prepare(
+    'SELECT retention_seconds, retention_revision FROM direct_message_retention_policies WHERE conversation_id = ? LIMIT 1'
+  ).bind(conversationId).first();
+  return {
+    conversationId,
+    retentionSeconds: row?.retention_seconds == null ? null : Number(row.retention_seconds),
+    revision: row == null ? 0 : Number(row.retention_revision),
+  };
+}
+
+export async function settleExpiredDirectMessages(db, nowMs = Date.now()) {
+  if (!Number.isSafeInteger(nowMs) || nowMs <= 0) {
+    throw new Error('direct message expiry settlement requires a positive safe integer timestamp');
+  }
+  const result = await db.prepare(
+    "UPDATE direct_messages SET expired_at_ms = ?, body = '', attachments_json = '[]', reply_to_message_id = NULL WHERE expired_at_ms IS NULL AND expires_at_ms IS NOT NULL AND expires_at_ms <= ?"
+  ).bind(nowMs, nowMs).run();
+  return Number(result?.meta?.changes || 0);
+}
+
 export async function activateDueDirectMessages(db, nowMs = Date.now()) {
   if (!Number.isSafeInteger(nowMs) || nowMs <= 0) {
     throw new Error('direct message scheduler requires a positive safe integer timestamp');
@@ -281,6 +317,9 @@ function projectDirectMessage(row, currentUserId, reactions = []) {
     attachments: parseStoredAttachments(row.attachments_json),
     reactions,
     destination: parseStoredDestination(row.destination_json),
+    expiresAtMs: row.expires_at_ms == null ? null : Number(row.expires_at_ms),
+    expiredAtMs: row.expired_at_ms == null ? null : Number(row.expired_at_ms),
+    expired: row.expired_at_ms != null,
   };
 }
 
@@ -703,9 +742,18 @@ export async function handleSendDirectMessage(request, env, db) {
   }
 
   const attachmentsJson = JSON.stringify(attachments);
-  const createdAt = new Date().toISOString();
+  const createdAtMs = Date.now();
+  const createdAt = new Date(createdAtMs).toISOString();
+  const retention = await readDirectMessageRetention(db, auth.userId, target.id);
+  const expiryBaseMs = delivery.scheduledAtMs ?? createdAtMs;
+  const expiresAtMs = retention.retentionSeconds == null
+    ? null
+    : expiryBaseMs + retention.retentionSeconds * 1000;
+  if (expiresAtMs != null && !Number.isSafeInteger(expiresAtMs)) {
+    return jsonResponse({ success: false, error: '消息到期时间超出安全整数范围' }, 400);
+  }
   const result = await db.prepare(
-    "INSERT INTO direct_messages (sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, reply_to_message_id, attachments_json, silent, scheduled_at_ms, delivery_state, delivered_at, destination_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(sender_user_id, client_request_id) WHERE client_request_id IS NOT NULL DO NOTHING"
+    "INSERT INTO direct_messages (sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, reply_to_message_id, attachments_json, silent, scheduled_at_ms, delivery_state, delivered_at, destination_json, expires_at_ms, expired_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) ON CONFLICT(sender_user_id, client_request_id) WHERE client_request_id IS NOT NULL DO NOTHING"
   ).bind(
     auth.userId,
     auth.username,
@@ -721,6 +769,7 @@ export async function handleSendDirectMessage(request, env, db) {
     delivery.deliveryState,
     delivery.deliveredAt,
     destinationJson,
+    expiresAtMs,
   ).run();
 
   let persistedRow = null;
@@ -738,6 +787,18 @@ export async function handleSendDirectMessage(request, env, db) {
 
   if (!persistedRow) {
     return jsonResponse({ success: false, error: '消息保存结果无法确认' }, 500);
+  }
+
+  if (deduplicated && persistedRow.expired_at_ms != null) {
+    return jsonResponse({
+      success: false,
+      error: '消息请求编号对应的消息已经按保留策略到期',
+      tombstone: {
+        messageId: persistedRow.id,
+        clientRequestId: persistedRow.client_request_id,
+        expiredAtMs: Number(persistedRow.expired_at_ms),
+      },
+    }, 410);
   }
 
   if (deduplicated) {
@@ -775,6 +836,7 @@ export async function handleSendDirectMessage(request, env, db) {
 export async function handleListDirectMessages(request, env, db) {
   const auth = await requireStableAuth(request, env, db);
   if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
+  await settleExpiredDirectMessages(db);
   const url = new URL(request.url);
   const target = await findUser(
     db,
@@ -790,6 +852,7 @@ export async function handleListDirectMessages(request, env, db) {
     `SELECT ${DIRECT_MESSAGE_SELECT_FIELDS} FROM direct_messages
      WHERE ((sender_user_id = ? AND recipient_user_id = ?) OR (sender_user_id = ? AND recipient_user_id = ?))
        AND (sender_user_id = ? OR delivery_state = 'delivered')
+       AND expired_at_ms IS NULL
        AND (? = '' OR created_at < ?)
      ORDER BY CASE WHEN delivery_state = 'delivered' THEN COALESCE(delivered_at, created_at) ELSE created_at END DESC, id DESC
      LIMIT ?`
@@ -812,6 +875,82 @@ export async function handleListDirectMessages(request, env, db) {
     reactions.get(String(row.id)) || [],
   ));
   return jsonResponse({ success: true, data: { contact: mapContact(target), messages } });
+}
+
+export async function handleGetDirectMessageRetention(request, env, db) {
+  const auth = await requireStableAuth(request, env, db);
+  if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
+  const url = new URL(request.url);
+  const target = await findUser(db, url.searchParams.get('contactId') || url.searchParams.get('username'));
+  if (!target) return jsonResponse({ success: false, error: '未找到联系人' }, 404);
+  if (!(await areFriends(db, auth.userId, target.id))) {
+    return jsonResponse({ success: false, error: '只能读取已添加好友的消息保留策略' }, 403);
+  }
+  const retention = await readDirectMessageRetention(db, auth.userId, target.id);
+  return jsonResponse({ success: true, retention });
+}
+
+export async function handleSetDirectMessageRetention(request, env, db) {
+  const auth = await requireStableAuth(request, env, db);
+  if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
+  const body = await request.json();
+  const target = await findUser(
+    db,
+    body.contactId ?? body.targetUserId ?? body.targetUsername ?? body.username,
+  );
+  if (!target) return jsonResponse({ success: false, error: '未找到联系人' }, 404);
+  if (!(await areFriends(db, auth.userId, target.id))) {
+    return jsonResponse({ success: false, error: '只能修改已添加好友的消息保留策略' }, 403);
+  }
+  let retentionSeconds;
+  try {
+    retentionSeconds = normalizeRetentionSeconds(body.retentionSeconds);
+  } catch (error) {
+    return jsonResponse({ success: false, error: error.message }, 400);
+  }
+  const expectedRevision = body.expectedRevision;
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+    return jsonResponse({ success: false, error: 'expectedRevision 必须是非负安全整数' }, 400);
+  }
+
+  const current = await readDirectMessageRetention(db, auth.userId, target.id);
+  if (current.revision !== expectedRevision) {
+    return jsonResponse({
+      success: false,
+      error: '消息保留策略版本已过期',
+      retention: current,
+    }, 409);
+  }
+
+  const [userLowId, userHighId] = retentionPair(auth.userId, target.id);
+  const nextRevision = expectedRevision + 1;
+  const updatedAt = new Date().toISOString();
+  let result;
+  if (expectedRevision === 0) {
+    result = await db.prepare(
+      'INSERT INTO direct_message_retention_policies (conversation_id, user_low_id, user_high_id, retention_seconds, retention_revision, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(conversation_id) DO NOTHING'
+    ).bind(current.conversationId, userLowId, userHighId, retentionSeconds, nextRevision, updatedAt).run();
+  } else {
+    result = await db.prepare(
+      'UPDATE direct_message_retention_policies SET retention_seconds = ?, retention_revision = ?, updated_at = ? WHERE conversation_id = ? AND retention_revision = ?'
+    ).bind(retentionSeconds, nextRevision, updatedAt, current.conversationId, expectedRevision).run();
+  }
+  if (Number(result?.meta?.changes || 0) !== 1) {
+    const latest = await readDirectMessageRetention(db, auth.userId, target.id);
+    return jsonResponse({
+      success: false,
+      error: '消息保留策略版本已过期',
+      retention: latest,
+    }, 409);
+  }
+  return jsonResponse({
+    success: true,
+    retention: {
+      conversationId: current.conversationId,
+      retentionSeconds,
+      revision: nextRevision,
+    },
+  });
 }
 
 export async function handleSetDirectMessageReaction(request, env, db, rawMessageId) {
