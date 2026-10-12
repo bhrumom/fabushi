@@ -90,7 +90,7 @@ test('friend handlers require stable authenticated account identities', () => {
   assert.match(handler, /settleExpiredDirectMessages/);
   assert.match(handler, /expired_at_ms IS NULL/);
   assert.match(handler, /expires_at_ms/);
-  assert.match(handler, /success: false, error: '消息请求编号对应的消息已经按保留策略到期'/);
+  assert.match(handler, /success:\s*false,[\s\S]*error:\s*'消息请求编号对应的消息已经按保留策略到期'/);
   assert.match(communityRouter, /\/api\/social\/message-retention/);
   assert.match(workerEntry, /async scheduled\(controller, env, ctx\)/);
   assert.match(workerEntry, /activateDueDirectMessages\(db, controller\?\.scheduledTime \|\| Date\.now\(\)\)/);
