@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { normalizeDirectMessageDestination } from '../src/handlers/friends.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const handler = readFileSync(join(root, 'src/handlers/friends.js'), 'utf8');
@@ -24,6 +25,10 @@ const schedulingMigration = readFileSync(
   join(root, 'migrations/20261009_direct_message_scheduling.sql'),
   'utf8',
 );
+const destinationMigration = readFileSync(
+  join(root, 'migrations/20261012_direct_message_destination.sql'),
+  'utf8',
+);
 const workerEntry = readFileSync(join(root, 'worker-modular.js'), 'utf8');
 const wrangler = readFileSync(join(root, 'wrangler.toml'), 'utf8');
 
@@ -43,6 +48,8 @@ test('friend and direct-message storage has durable identities and indexes', () 
   assert.match(schedulingMigration, /ADD COLUMN scheduled_at_ms INTEGER/i);
   assert.match(schedulingMigration, /delivery_state TEXT NOT NULL DEFAULT 'delivered'/i);
   assert.match(schedulingMigration, /idx_direct_messages_due_schedule/i);
+  assert.match(destinationMigration, /ADD COLUMN destination_json TEXT/i);
+  assert.match(destinationMigration, /json_valid\(destination_json\)/i);
 });
 
 test('friend handlers require stable authenticated account identities', () => {
@@ -63,11 +70,59 @@ test('friend handlers require stable authenticated account identities', () => {
   assert.match(handler, /normalizeDirectMessageDeliveryOptions\(body\)/);
   assert.match(handler, /Boolean\(Number\(persistedRow\.silent/);
   assert.match(handler, /persistedRow\.scheduled_at_ms/);
+  assert.match(handler, /persistedRow\.destination_json/);
+  assert.match(handler, /normalizeDirectMessageDestination\(body\.destination\)/);
   assert.match(handler, /sender_user_id = \? OR delivery_state = 'delivered'/);
   assert.match(handler, /UPDATE direct_messages SET delivery_state = 'delivered'/);
   assert.match(workerEntry, /async scheduled\(controller, env, ctx\)/);
   assert.match(workerEntry, /activateDueDirectMessages\(db, controller\?\.scheduledTime \|\| Date\.now\(\)\)/);
   assert.match(wrangler, /crons = \["\* \* \* \* \*"\]/);
+});
+
+
+test('direct-message destination normalization preserves canonical child identity and fails closed', () => {
+  assert.deepEqual(normalizeDirectMessageDestination({
+    conversationId: 'chat:root',
+    child: null,
+  }), {
+    conversationId: 'chat:root',
+    child: null,
+  });
+  assert.deepEqual(normalizeDirectMessageDestination({
+    conversationId: 'forum:root',
+    child: { kind: 'topic', rootMessageId: 'message:topic-root' },
+  }), {
+    conversationId: 'forum:root',
+    child: { kind: 'topic', rootMessageId: 'message:topic-root' },
+  });
+  assert.deepEqual(normalizeDirectMessageDestination({
+    conversationId: 'saved:self',
+    child: { kind: 'savedSublist', participantId: 'human:peer' },
+  }), {
+    conversationId: 'saved:self',
+    child: { kind: 'savedSublist', participantId: 'human:peer' },
+  });
+  assert.deepEqual(normalizeDirectMessageDestination({
+    conversationId: 'group:parent',
+    child: { kind: 'conversation', conversationId: 'group:child' },
+  }), {
+    conversationId: 'group:parent',
+    child: { kind: 'conversation', conversationId: 'group:child' },
+  });
+  assert.throws(
+    () => normalizeDirectMessageDestination({
+      conversationId: 'chat:root',
+      child: { kind: 'savedSublist', participantId: '' },
+    }),
+    /participantId/,
+  );
+  assert.throws(
+    () => normalizeDirectMessageDestination({
+      conversationId: 'chat:root',
+      child: { kind: 'unknown', conversationId: 'child' },
+    }),
+    /kind/,
+  );
 });
 
 test('router exposes the endpoints consumed by canonical apps and the CLI', () => {
