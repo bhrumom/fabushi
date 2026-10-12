@@ -1,0 +1,128 @@
+name: Message retention production rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact canonical main SHA to migrate and deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: message-retention-production-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    name: Exact-main message retention production rollout
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
+
+    steps:
+      - name: Checkout requested exact source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Require canonical main exact-head binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_SHA" = "$EXPECTED_SOURCE_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          remote_main="$(git ls-remote https://github.com/$GITHUB_REPOSITORY.git refs/heads/main | awk '{print $1}')"
+          test -n "$remote_main"
+          if [ "$remote_main" != "$EXPECTED_SOURCE_SHA" ]; then
+            echo "::error::Canonical main drifted: requested=$EXPECTED_SOURCE_SHA current=$remote_main"
+            exit 1
+          fi
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+
+      - name: Require merged retention authority before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s fabushi/web/migrations/20261013_direct_message_retention.sql
+          test -s fabushi/web/src/handlers/friends.js
+          test -s fabushi/web/src/routes/community-routes.js
+          grep -Fq 'direct_message_retention_policies' fabushi/web/migrations/20261013_direct_message_retention.sql
+          grep -Fq 'expires_at_ms' fabushi/web/migrations/20261013_direct_message_retention.sql
+          grep -Fq 'handleSetDirectMessageRetention' fabushi/web/src/handlers/friends.js
+          grep -Fq '/api/social/message-retention' fabushi/web/src/routes/community-routes.js
+
+      - name: Require production Worker security contract
+        working-directory: fabushi/web
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ../../.github/scripts/assert-worker-security-secrets.sh production
+
+      - name: Apply canonical production D1 migrations
+        working-directory: fabushi/web
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB production
+
+      - name: Deploy exact-main production Worker
+        id: deploy
+        working-directory: fabushi/web
+        shell: bash
+        run: |
+          set -euo pipefail
+          deploy_log="$RUNNER_TEMP/wrangler-deploy.log"
+          npx --yes wrangler@latest deploy --env production 2>&1 | tee "$deploy_log"
+          grep -F 'api.ombhrum.com' "$deploy_log" >/dev/null
+          {
+            echo "deployed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "worker_name=fabushi-flutter-web-prod"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Prove retention endpoint is live and fail-closed without authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$RUNNER_TEMP/retention-smoke.json"
+          status="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' 'https://api.ombhrum.com/api/social/message-retention?contactId=1')"
+          test "$status" = "401"
+          node -e 'const fs=require("fs"); const p=process.argv[1]; const body=JSON.parse(fs.readFileSync(p,"utf8")); if (body.success !== false || typeof body.error !== "string" || body.error.length === 0) process.exit(1)' "$response"
+
+      - name: Record non-sensitive rollout provenance
+        if: always()
+        shell: bash
+        env:
+          DEPLOYED_AT: ${{ steps.deploy.outputs.deployed_at }}
+          WORKER_NAME: ${{ steps.deploy.outputs.worker_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/message-retention-rollout-evidence"
+          jq -n \
+            --arg schema 'fabushi.message-retention-production-rollout.v1' \
+            --arg sourceSha "$EXPECTED_SOURCE_SHA" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg workerName "${WORKER_NAME:-}" \
+            --arg deployedAt "${DEPLOYED_AT:-}" \
+            '{schema:$schema,sourceSha:$sourceSha,runId:$runId,runAttempt:$runAttempt,workerName:$workerName,deployedAt:$deployedAt,completedAt:(now|todateiso8601)}' \
+            > "$RUNNER_TEMP/message-retention-rollout-evidence/provenance.json"
+
+      - name: Upload non-sensitive rollout provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: message-retention-production-rollout-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/message-retention-rollout-evidence/
+          if-no-files-found: error
+          retention-days: 90
