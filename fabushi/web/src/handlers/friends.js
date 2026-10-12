@@ -6,7 +6,7 @@ const MAX_MESSAGE_ATTACHMENTS = 6;
 const MAX_MESSAGE_RESOURCE_BYTES = 32 * 1024 * 1024;
 const MAX_MESSAGE_RESOURCE_NAME_CHARS = 255;
 const MAX_REACTION_BYTES = 32;
-const DIRECT_MESSAGE_SELECT_FIELDS = 'id, sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, read_at, reply_to_message_id, attachments_json, silent, scheduled_at_ms, delivery_state, delivered_at';
+const DIRECT_MESSAGE_SELECT_FIELDS = 'id, sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, read_at, reply_to_message_id, attachments_json, silent, scheduled_at_ms, delivery_state, delivered_at, destination_json';
 
 export function normalizeDirectMessageDeliveryOptions(body, nowMs = Date.now()) {
   const silent = body?.silent ?? false;
@@ -31,6 +31,78 @@ export function normalizeDirectMessageDeliveryOptions(body, nowMs = Date.now()) 
     deliveryState: scheduled ? 'scheduled' : 'delivered',
     deliveredAt: scheduled ? null : new Date(nowMs).toISOString(),
   };
+}
+
+function canonicalDestinationId(value, label) {
+  if (typeof value !== 'string') throw new Error(label + ' 必须是字符串');
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 200) {
+    throw new Error(label + ' 必须是 1 到 200 个字符');
+  }
+  return normalized;
+}
+
+export function normalizeDirectMessageDestination(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('destination 必须是对象');
+  }
+  const conversationId = canonicalDestinationId(value.conversationId, 'destination.conversationId');
+  const rawChild = value.child;
+  if (rawChild === undefined || rawChild === null) {
+    return { conversationId, child: null };
+  }
+  if (typeof rawChild !== 'object' || Array.isArray(rawChild)) {
+    throw new Error('destination.child 必须是对象或 null');
+  }
+  switch (rawChild.kind) {
+    case 'topic':
+      return {
+        conversationId,
+        child: {
+          kind: 'topic',
+          rootMessageId: canonicalDestinationId(
+            rawChild.rootMessageId,
+            'destination.child.rootMessageId',
+          ),
+        },
+      };
+    case 'savedSublist':
+      return {
+        conversationId,
+        child: {
+          kind: 'savedSublist',
+          participantId: canonicalDestinationId(
+            rawChild.participantId,
+            'destination.child.participantId',
+          ),
+        },
+      };
+    case 'conversation':
+      return {
+        conversationId,
+        child: {
+          kind: 'conversation',
+          conversationId: canonicalDestinationId(
+            rawChild.conversationId,
+            'destination.child.conversationId',
+          ),
+        },
+      };
+    default:
+      throw new Error('destination.child.kind 不受支持');
+  }
+}
+
+function parseStoredDestination(value) {
+  if (value == null || value === '') return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error('direct message destination metadata is invalid JSON');
+  }
+  return normalizeDirectMessageDestination(parsed);
 }
 
 export async function activateDueDirectMessages(db, nowMs = Date.now()) {
@@ -168,6 +240,7 @@ function projectDirectMessage(row, currentUserId, reactions = []) {
     replyToMessageId: row.reply_to_message_id ?? null,
     attachments: parseStoredAttachments(row.attachments_json),
     reactions,
+    destination: parseStoredDestination(row.destination_json),
   };
 }
 
@@ -537,6 +610,13 @@ export async function handleSendDirectMessage(request, env, db) {
 
   const text = String(body.text ?? body.message ?? '').trim();
   const clientRequestId = String(body.clientRequestId || '').trim() || null;
+  let destination;
+  try {
+    destination = normalizeDirectMessageDestination(body.destination);
+  } catch (error) {
+    return jsonResponse({ success: false, error: error.message }, 400);
+  }
+  const destinationJson = destination == null ? null : JSON.stringify(destination);
   let delivery;
   try {
     delivery = normalizeDirectMessageDeliveryOptions(body);
@@ -576,7 +656,7 @@ export async function handleSendDirectMessage(request, env, db) {
   const attachmentsJson = JSON.stringify(attachments);
   const createdAt = new Date().toISOString();
   const result = await db.prepare(
-    "INSERT INTO direct_messages (sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, reply_to_message_id, attachments_json, silent, scheduled_at_ms, delivery_state, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(sender_user_id, client_request_id) WHERE client_request_id IS NOT NULL DO NOTHING"
+    "INSERT INTO direct_messages (sender_user_id, sender_username, recipient_user_id, recipient_username, body, client_request_id, created_at, reply_to_message_id, attachments_json, silent, scheduled_at_ms, delivery_state, delivered_at, destination_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(sender_user_id, client_request_id) WHERE client_request_id IS NOT NULL DO NOTHING"
   ).bind(
     auth.userId,
     auth.username,
@@ -591,6 +671,7 @@ export async function handleSendDirectMessage(request, env, db) {
     delivery.scheduledAtMs,
     delivery.deliveryState,
     delivery.deliveredAt,
+    destinationJson,
   ).run();
 
   let persistedRow = null;
@@ -623,7 +704,8 @@ export async function handleSendDirectMessage(request, env, db) {
       && (persistedRow.reply_to_message_id == null ? null : Number(persistedRow.reply_to_message_id)) === replyToMessageId
       && JSON.stringify(storedAttachments) === attachmentsJson
       && Boolean(Number(persistedRow.silent || 0)) === delivery.silent
-      && (persistedRow.scheduled_at_ms == null ? null : Number(persistedRow.scheduled_at_ms)) === delivery.scheduledAtMs;
+      && (persistedRow.scheduled_at_ms == null ? null : Number(persistedRow.scheduled_at_ms)) === delivery.scheduledAtMs
+      && (persistedRow.destination_json == null ? null : String(persistedRow.destination_json)) === destinationJson;
     if (!samePayload) {
       return jsonResponse({ success: false, error: '消息请求编号已用于不同内容' }, 409);
     }
