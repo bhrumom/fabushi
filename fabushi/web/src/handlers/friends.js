@@ -42,6 +42,46 @@ function canonicalDestinationId(value, label) {
   return normalized;
 }
 
+export async function canonicalHumanDirectConversationId(firstUserId, secondUserId) {
+  const participantIds = [String(firstUserId), String(secondUserId)].sort();
+  const encoder = new TextEncoder();
+  const encoded = participantIds.map((value) => encoder.encode(value));
+  const totalLength = encoded.reduce((sum, bytes) => sum + 8 + bytes.byteLength, 0);
+  const payload = new Uint8Array(totalLength);
+  const view = new DataView(payload.buffer);
+  let offset = 0;
+  for (const bytes of encoded) {
+    view.setBigUint64(offset, BigInt(bytes.byteLength), false);
+    offset += 8;
+    payload.set(bytes, offset);
+    offset += bytes.byteLength;
+  }
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', payload));
+  const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `human-direct-${hex}`;
+}
+
+export async function authorizeDirectMessageDestination(
+  destination,
+  authenticatedUserId,
+  targetUserId,
+) {
+  if (destination?.child?.kind !== 'savedSublist') return destination;
+
+  const expectedConversationId = await canonicalHumanDirectConversationId(
+    authenticatedUserId,
+    targetUserId,
+  );
+  const expectedParticipantId = String(targetUserId);
+  if (
+    destination.conversationId !== expectedConversationId
+    || destination.child.participantId !== expectedParticipantId
+  ) {
+    throw new Error('SavedSublist destination is not authorized for this Human conversation');
+  }
+  return destination;
+}
+
 export function normalizeDirectMessageDestination(value) {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'object' || Array.isArray(value)) {
@@ -615,6 +655,15 @@ export async function handleSendDirectMessage(request, env, db) {
     destination = normalizeDirectMessageDestination(body.destination);
   } catch (error) {
     return jsonResponse({ success: false, error: error.message }, 400);
+  }
+  try {
+    destination = await authorizeDirectMessageDestination(
+      destination,
+      auth.userId,
+      target.id,
+    );
+  } catch (error) {
+    return jsonResponse({ success: false, error: error.message }, 403);
   }
   const destinationJson = destination == null ? null : JSON.stringify(destination);
   let delivery;
