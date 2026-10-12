@@ -69,6 +69,13 @@ jobs:
           set -euo pipefail
           bash ../../.github/scripts/assert-worker-security-secrets.sh production
 
+      - name: Reconcile verified historical D1 migration ledger
+        working-directory: fabushi/web
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ../../.github/scripts/reconcile-production-d1-migration-ledger.sh DB production
+
       - name: Apply canonical production D1 migrations
         working-directory: fabushi/web
         shell: bash
