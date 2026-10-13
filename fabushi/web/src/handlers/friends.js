@@ -1047,6 +1047,9 @@ export async function handleSetConversationChildDraft(request, env, db) {
   } catch {
     return jsonResponse({ success: false, error: 'ConversationChild 草稿请求格式无效' }, 400);
   }
+  if (body == null || typeof body !== 'object' || Array.isArray(body)) {
+    return jsonResponse({ success: false, error: 'ConversationChild 草稿请求格式无效' }, 400);
+  }
 
   let resolved;
   try {
@@ -1067,8 +1070,8 @@ export async function handleSetConversationChildDraft(request, env, db) {
     return jsonResponse({ success: false, error: '草稿文本必须是长度不超过 4000 的字符串' }, 400);
   }
   const expectedRevision = body.expectedRevision;
-  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
-    return jsonResponse({ success: false, error: 'expectedRevision 必须是非负安全整数' }, 400);
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || expectedRevision >= Number.MAX_SAFE_INTEGER) {
+    return jsonResponse({ success: false, error: 'expectedRevision 必须是可安全递增的非负整数' }, 400);
   }
 
   let replyToMessageId;
