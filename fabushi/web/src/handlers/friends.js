@@ -171,6 +171,71 @@ async function readDirectMessageRetention(db, firstUserId, secondUserId) {
   };
 }
 
+function conversationChildDraftIdentity(destination) {
+  const child = destination?.child;
+  if (child?.kind === 'topic') return { childKind: 'topic', childId: child.rootMessageId };
+  if (child?.kind === 'savedSublist') return { childKind: 'savedSublist', childId: child.participantId };
+  if (child?.kind === 'conversation') return { childKind: 'conversation', childId: child.conversationId };
+  throw new Error('conversation child draft requires a typed child destination');
+}
+
+function projectConversationChildDraft(destination, row) {
+  return {
+    destination,
+    text: row?.draft_text == null ? '' : String(row.draft_text),
+    replyToMessageId: row?.reply_to_message_id == null ? null : String(row.reply_to_message_id),
+    revision: row == null ? 0 : Number(row.draft_revision),
+    updatedAt: row?.updated_at == null ? null : String(row.updated_at),
+  };
+}
+
+async function readConversationChildDraft(db, ownerUserId, destination) {
+  const { childKind, childId } = conversationChildDraftIdentity(destination);
+  const row = await db.prepare(
+    'SELECT draft_text, reply_to_message_id, draft_revision, updated_at FROM conversation_child_drafts WHERE owner_user_id = ? AND conversation_id = ? AND child_kind = ? AND child_id = ? LIMIT 1'
+  ).bind(ownerUserId, destination.conversationId, childKind, childId).first();
+  return projectConversationChildDraft(destination, row);
+}
+
+async function resolveSavedSublistDraftDestination(db, ownerUserId, targetIdentifier, rawDestination = null) {
+  const target = await findUser(db, targetIdentifier);
+  if (!target) throw new Error('未找到联系人');
+  if (!(await areFriends(db, ownerUserId, target.id))) {
+    throw new Error('只能同步已添加好友的 SavedSublist 草稿');
+  }
+  const canonicalDestination = {
+    conversationId: await canonicalHumanDirectConversationId(ownerUserId, target.id),
+    child: { kind: 'savedSublist', participantId: String(target.id) },
+  };
+  if (rawDestination == null) return { target, destination: canonicalDestination };
+  const destination = normalizeDirectMessageDestination(rawDestination);
+  if (destination?.child?.kind !== 'savedSublist') {
+    throw new Error('SavedSublist 草稿必须使用 savedSublist child destination');
+  }
+  await authorizeDirectMessageDestination(destination, ownerUserId, target.id);
+  return { target, destination };
+}
+
+async function validateConversationChildDraftReply(db, ownerUserId, targetUserId, destination, rawMessageId) {
+  if (rawMessageId === undefined || rawMessageId === null || rawMessageId === '') return null;
+  const rawReplyId = String(rawMessageId).trim();
+  const messageId = positiveMessageId(
+    rawReplyId.startsWith('human-server-message:')
+      ? rawReplyId.slice('human-server-message:'.length)
+      : rawReplyId,
+  );
+  if (messageId == null) throw new Error('草稿回复目标消息编号无效');
+  const row = await db.prepare(
+    "SELECT id, destination_json FROM direct_messages WHERE id = ? AND expired_at_ms IS NULL AND ((sender_user_id = ? AND recipient_user_id = ?) OR (sender_user_id = ? AND recipient_user_id = ?)) AND (sender_user_id = ? OR delivery_state = 'delivered') LIMIT 1"
+  ).bind(messageId, ownerUserId, targetUserId, targetUserId, ownerUserId, ownerUserId).first();
+  if (!row) throw new Error('草稿回复目标不属于当前会话');
+  const storedDestination = parseStoredDestination(row.destination_json);
+  if (JSON.stringify(storedDestination) !== JSON.stringify(destination)) {
+    throw new Error('草稿回复目标不属于当前 ConversationChild');
+  }
+  return messageId;
+}
+
 export async function settleExpiredDirectMessages(db, nowMs = Date.now()) {
   if (!Number.isSafeInteger(nowMs) || nowMs <= 0) {
     throw new Error('direct message expiry settlement requires a positive safe integer timestamp');
@@ -950,6 +1015,127 @@ export async function handleSetDirectMessageRetention(request, env, db) {
       conversationId: current.conversationId,
       retentionSeconds,
       revision: nextRevision,
+    },
+  });
+}
+
+export async function handleGetConversationChildDraft(request, env, db) {
+  const auth = await requireStableAuth(request, env, db);
+  if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
+  const url = new URL(request.url);
+  let resolved;
+  try {
+    resolved = await resolveSavedSublistDraftDestination(
+      db,
+      auth.userId,
+      url.searchParams.get('contactId') || url.searchParams.get('username'),
+    );
+  } catch (error) {
+    const status = error.message === '未找到联系人' ? 404 : 403;
+    return jsonResponse({ success: false, error: error.message }, status);
+  }
+  const draft = await readConversationChildDraft(db, auth.userId, resolved.destination);
+  return jsonResponse({ success: true, draft });
+}
+
+export async function handleSetConversationChildDraft(request, env, db) {
+  const auth = await requireStableAuth(request, env, db);
+  if (auth.error) return jsonResponse({ success: false, error: auth.error }, auth.status);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ success: false, error: 'ConversationChild 草稿请求格式无效' }, 400);
+  }
+  if (body == null || typeof body !== 'object' || Array.isArray(body)) {
+    return jsonResponse({ success: false, error: 'ConversationChild 草稿请求格式无效' }, 400);
+  }
+
+  let resolved;
+  try {
+    resolved = await resolveSavedSublistDraftDestination(
+      db,
+      auth.userId,
+      body.contactId ?? body.targetUserId ?? body.targetUsername ?? body.username,
+      body.destination,
+    );
+  } catch (error) {
+    const status = error.message === '未找到联系人' ? 404
+      : error.message.includes('已添加好友') ? 403
+        : 400;
+    return jsonResponse({ success: false, error: error.message }, status);
+  }
+
+  if (typeof body.text !== 'string' || body.text.length > MAX_MESSAGE_LENGTH) {
+    return jsonResponse({ success: false, error: '草稿文本必须是长度不超过 4000 的字符串' }, 400);
+  }
+  const expectedRevision = body.expectedRevision;
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || expectedRevision >= Number.MAX_SAFE_INTEGER) {
+    return jsonResponse({ success: false, error: 'expectedRevision 必须是可安全递增的非负整数' }, 400);
+  }
+
+  let replyToMessageId;
+  try {
+    replyToMessageId = await validateConversationChildDraftReply(
+      db,
+      auth.userId,
+      resolved.target.id,
+      resolved.destination,
+      body.replyToMessageId,
+    );
+  } catch (error) {
+    return jsonResponse({ success: false, error: error.message }, 400);
+  }
+
+  const current = await readConversationChildDraft(db, auth.userId, resolved.destination);
+  if (current.revision !== expectedRevision) {
+    return jsonResponse({ success: false, error: 'ConversationChild 草稿版本已过期', draft: current }, 409);
+  }
+
+  const { childKind, childId } = conversationChildDraftIdentity(resolved.destination);
+  const nextRevision = expectedRevision + 1;
+  const updatedAt = new Date().toISOString();
+  let result;
+  if (expectedRevision === 0) {
+    result = await db.prepare(
+      'INSERT INTO conversation_child_drafts (owner_user_id, conversation_id, child_kind, child_id, draft_text, reply_to_message_id, draft_revision, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(owner_user_id, conversation_id, child_kind, child_id) DO NOTHING'
+    ).bind(
+      auth.userId,
+      resolved.destination.conversationId,
+      childKind,
+      childId,
+      body.text,
+      replyToMessageId,
+      nextRevision,
+      updatedAt,
+    ).run();
+  } else {
+    result = await db.prepare(
+      'UPDATE conversation_child_drafts SET draft_text = ?, reply_to_message_id = ?, draft_revision = ?, updated_at = ? WHERE owner_user_id = ? AND conversation_id = ? AND child_kind = ? AND child_id = ? AND draft_revision = ?'
+    ).bind(
+      body.text,
+      replyToMessageId,
+      nextRevision,
+      updatedAt,
+      auth.userId,
+      resolved.destination.conversationId,
+      childKind,
+      childId,
+      expectedRevision,
+    ).run();
+  }
+  if (Number(result?.meta?.changes || 0) !== 1) {
+    const latest = await readConversationChildDraft(db, auth.userId, resolved.destination);
+    return jsonResponse({ success: false, error: 'ConversationChild 草稿版本已过期', draft: latest }, 409);
+  }
+  return jsonResponse({
+    success: true,
+    draft: {
+      destination: resolved.destination,
+      text: body.text,
+      replyToMessageId: replyToMessageId == null ? null : String(replyToMessageId),
+      revision: nextRevision,
+      updatedAt,
     },
   });
 }
