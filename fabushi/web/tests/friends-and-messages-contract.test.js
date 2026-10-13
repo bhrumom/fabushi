@@ -33,6 +33,10 @@ const retentionMigration = readFileSync(
   join(root, 'migrations/20261013_direct_message_retention.sql'),
   'utf8',
 );
+const childDraftMigration = readFileSync(
+  join(root, 'migrations/20261013_conversation_child_drafts.sql'),
+  'utf8',
+);
 const workerEntry = readFileSync(join(root, 'worker-modular.js'), 'utf8');
 const wrangler = readFileSync(join(root, 'wrangler.toml'), 'utf8');
 
@@ -59,6 +63,10 @@ test('friend and direct-message storage has durable identities and indexes', () 
   assert.match(retentionMigration, /ADD COLUMN expires_at_ms INTEGER/i);
   assert.match(retentionMigration, /ADD COLUMN expired_at_ms INTEGER/i);
   assert.match(retentionMigration, /idx_direct_messages_due_expiry/i);
+  assert.match(childDraftMigration, /CREATE TABLE IF NOT EXISTS conversation_child_drafts/i);
+  assert.match(childDraftMigration, /PRIMARY KEY \(owner_user_id, conversation_id, child_kind, child_id\)/i);
+  assert.match(childDraftMigration, /draft_revision INTEGER NOT NULL DEFAULT 0/i);
+  assert.match(childDraftMigration, /reply_to_message_id INTEGER/i);
 });
 
 test('friend handlers require stable authenticated account identities', () => {
@@ -90,8 +98,14 @@ test('friend handlers require stable authenticated account identities', () => {
   assert.match(handler, /settleExpiredDirectMessages/);
   assert.match(handler, /expired_at_ms IS NULL/);
   assert.match(handler, /expires_at_ms/);
+  assert.match(handler, /handleGetConversationChildDraft/);
+  assert.match(handler, /handleSetConversationChildDraft/);
+  assert.match(handler, /ConversationChild 草稿版本已过期/);
+  assert.match(handler, /conversation_child_drafts/);
+  assert.match(handler, /draft_revision = \?/);
   assert.match(handler, /success:\s*false,[\s\S]*error:\s*'消息请求编号对应的消息已经按保留策略到期'/);
   assert.match(communityRouter, /\/api\/social\/message-retention/);
+  assert.match(communityRouter, /\/api\/social\/conversation-child-draft/);
   assert.match(workerEntry, /async scheduled\(controller, env, ctx\)/);
   assert.match(workerEntry, /activateDueDirectMessages\(db, controller\?\.scheduledTime \|\| Date\.now\(\)\)/);
   assert.match(wrangler, /crons = \["\* \* \* \* \*"\]/);
