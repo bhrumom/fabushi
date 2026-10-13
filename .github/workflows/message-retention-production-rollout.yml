@@ -106,6 +106,51 @@ jobs:
           test "$status" = "401"
           node -e 'const fs=require("fs"); const p=process.argv[1]; const body=JSON.parse(fs.readFileSync(p,"utf8")); if (body.success !== false || typeof body.error !== "string" || body.error.length === 0) process.exit(1)' "$response"
 
+      - name: Authenticate two bounded production device sessions
+        env:
+          FABUSHI_CI_TEST_USERNAME: ${{ secrets.FABUSHI_CI_TEST_USERNAME }}
+          FABUSHI_CI_TEST_PASSWORD: ${{ secrets.FABUSHI_CI_TEST_PASSWORD }}
+          FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$FABUSHI_CI_TEST_USERNAME"
+          test -n "$FABUSHI_CI_TEST_PASSWORD"
+
+          login_device() {
+            local suffix="$1"
+            export DEVICE_ID="gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-retention-${suffix}"
+            export FABUSHI_ACCOUNT_SESSION_FILE="$RUNNER_TEMP/retention-login-${suffix}.json"
+            export FABUSHI_CI_ACCOUNT_SESSION_FILE="$RUNNER_TEMP/retention-session-${suffix}.json"
+            node chatgpt-vps-control/scripts/login-ci-test-account.mjs
+            node chatgpt-vps-control/scripts/export-ci-app-account-session.mjs
+            rm -f "$FABUSHI_ACCOUNT_SESSION_FILE"
+          }
+
+          login_device a
+          login_device b
+
+      - name: Prove authenticated retention convergence expiry and anti-replay
+        env:
+          FABUSHI_API_BASE_URL: ${{ vars.FABUSHI_API_BASE_URL || 'https://api.ombhrum.com' }}
+          FABUSHI_RETENTION_SESSION_A: ${{ runner.temp }}/retention-session-a.json
+          FABUSHI_RETENTION_SESSION_B: ${{ runner.temp }}/retention-session-b.json
+          FABUSHI_RETENTION_ACCEPTANCE_EVIDENCE_FILE: ${{ runner.temp }}/message-retention-rollout-evidence/production-acceptance.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          node chatgpt-vps-control/scripts/accept-production-message-retention.mjs
+
+      - name: Remove bounded production device sessions
+        if: always()
+        shell: bash
+        run: |
+          rm -f \
+            "$RUNNER_TEMP/retention-login-a.json" \
+            "$RUNNER_TEMP/retention-login-b.json" \
+            "$RUNNER_TEMP/retention-session-a.json" \
+            "$RUNNER_TEMP/retention-session-b.json"
+
       - name: Record non-sensitive rollout provenance
         if: always()
         shell: bash
