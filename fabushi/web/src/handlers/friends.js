@@ -218,7 +218,12 @@ async function resolveSavedSublistDraftDestination(db, ownerUserId, targetIdenti
 
 async function validateConversationChildDraftReply(db, ownerUserId, targetUserId, destination, rawMessageId) {
   if (rawMessageId === undefined || rawMessageId === null || rawMessageId === '') return null;
-  const messageId = positiveMessageId(rawMessageId);
+  const rawReplyId = String(rawMessageId).trim();
+  const messageId = positiveMessageId(
+    rawReplyId.startsWith('human-server-message:')
+      ? rawReplyId.slice('human-server-message:'.length)
+      : rawReplyId,
+  );
   if (messageId == null) throw new Error('草稿回复目标消息编号无效');
   const row = await db.prepare(
     "SELECT id, destination_json FROM direct_messages WHERE id = ? AND expired_at_ms IS NULL AND ((sender_user_id = ? AND recipient_user_id = ?) OR (sender_user_id = ? AND recipient_user_id = ?)) AND (sender_user_id = ? OR delivery_state = 'delivered') LIMIT 1"
