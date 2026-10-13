@@ -101,6 +101,8 @@ test('friend handlers require stable authenticated account identities', () => {
   assert.match(handler, /handleGetConversationChildDraft/);
   assert.match(handler, /handleSetConversationChildDraft/);
   assert.match(handler, /ConversationChild 草稿版本已过期/);
+  assert.match(handler, /body == null \|\| typeof body !== 'object' \|\| Array\.isArray\(body\)/);
+  assert.match(handler, /expectedRevision >= Number\.MAX_SAFE_INTEGER/);
   assert.match(handler, /conversation_child_drafts/);
   assert.match(handler, /draft_revision = \?/);
   assert.match(handler, /success:\s*false,[\s\S]*error:\s*'消息请求编号对应的消息已经按保留策略到期'/);
