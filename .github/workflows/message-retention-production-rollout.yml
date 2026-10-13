@@ -119,7 +119,7 @@ jobs:
 
           login_device() {
             local suffix="$1"
-            export DEVICE_ID="gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-retention-${suffix}"
+            export DEVICE_ID="gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-retention-app-${suffix}"
             export FABUSHI_ACCOUNT_SESSION_FILE="$RUNNER_TEMP/retention-login-${suffix}.json"
             export FABUSHI_CI_ACCOUNT_SESSION_FILE="$RUNNER_TEMP/retention-session-${suffix}.json"
             node chatgpt-vps-control/scripts/login-ci-test-account.mjs
