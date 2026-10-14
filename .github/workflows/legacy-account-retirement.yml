@@ -1,0 +1,21 @@
+name: Legacy Account Provisioning Retirement
+on:
+  pull_request:
+    paths: ['.github/workflows/ci.yml', '.github/workflows/provision-mcp-ci-test-account.yml', '.github/workflows/legacy-account-retirement.yml', '.github/scripts/legacy-account-retirement.test.mjs']
+  push:
+    branches: [codex/retire-production-test-account]
+    paths: ['.github/workflows/ci.yml', '.github/workflows/provision-mcp-ci-test-account.yml', '.github/workflows/legacy-account-retirement.yml', '.github/scripts/legacy-account-retirement.test.mjs']
+permissions:
+  contents: read
+jobs:
+  retirement:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: node --test .github/scripts/legacy-account-retirement.test.mjs

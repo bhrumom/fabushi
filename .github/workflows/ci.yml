@@ -1,49 +1,29 @@
-name: CI
-
+name: Legacy archive CI
 on:
   pull_request:
     branches: [main]
   merge_group:
   workflow_dispatch:
-
 permissions:
   contents: read
-
-concurrency:
-  group: ci-no-test-${{ github.event.pull_request.number || github.event.merge_group.head_sha || github.sha }}
-  cancel-in-progress: true
-
 jobs:
   release-policy:
-    name: No-test release governance
-    runs-on: ubuntu-latest
+    name: Legacy archive status
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: Record FCM-023 no-test policy
-        shell: bash
-        run: |
-          set -euo pipefail
-          {
-            echo '## FCM-023 no-test CI gate'
-            echo
-            echo '- This required gate intentionally runs no product tests, E2E, builds, simulators, emulators, browser journeys, or native suites.'
-            echo '- Test/beta release behavioral testing is forbidden.'
-            echo '- Formal behavioral validation is manual and external through the Fabushi official MCP against Action-hosted App-owned devices.'
-            echo '- Release construction workflows remain responsible for exact-source ancestry, signing, package integrity and provenance.'
-          } >> "$GITHUB_STEP_SUMMARY"
-
+      - run: |
+          echo 'Legacy source archive only. Product behavior NOT_VERIFIED.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'FCM-027 layered quality gates belong to canonical fabushi-governance and split product repositories.' >> "$GITHUB_STEP_SUMMARY"
   result:
     name: CI result
     if: always()
     needs: [release-policy]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: Require no-test governance gate
-        shell: bash
-        env:
-          GOVERNANCE_RESULT: ${{ needs.release-policy.result }}
+      - env:
+          ARCHIVE_RESULT: ${{ needs.release-policy.result }}
         run: |
-          set -euo pipefail
-          test "$GOVERNANCE_RESULT" = success
-          echo 'CI result: success (FCM-023 no-test policy; no product tests executed).'
+          test "$ARCHIVE_RESULT" = success
+          echo 'Archive status only; this is not product test or release acceptance.'
