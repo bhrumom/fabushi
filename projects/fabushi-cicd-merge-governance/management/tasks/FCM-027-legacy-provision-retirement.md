@@ -44,3 +44,14 @@ Canonical Backend docs/specs/isolated-ci-account-factory.md.
 | --- | --- | --- |
 | R1..R3 / AC-1 | blocked | Exact-head Actions pending |
 | AC-2 | blocked | PR/integration pending |
+
+## Verified source review
+
+R1 passed: retired workflow has no production environment, secrets, remote D1 or
+INSERT/UPDATE authority; dispatch explicitly exits 1 and routes to Backend.
+R2 passed: archive CI explicitly labels product behavior NOT_VERIFIED.
+R3 passed: no production identities or secrets changed, only source migration
+workflows and their contract tests. AC-1 passed: 2 tests, zero failure, exit 0 in
+Actions run 38593466603, head 51bd4b34d4a0c7df190e248d7d460c9b15bc91fc.
+Portfolio validator run 38593466576 also passed. AC-2 remains blocked until merge
+and canonical readback. Full program and hosted lifecycle remain pending.
