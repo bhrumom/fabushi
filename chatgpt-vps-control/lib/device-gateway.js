@@ -496,6 +496,13 @@ export function describeRegisteredDeviceTool(accountId, deviceId, toolName) {
 function legacyReadOnlyDiskPreflight(accountId, deviceId, toolName) {
   const device = devices.get(registryKey(accountId, deviceId));
   const tool = Array.isArray(device?.tools) ? device.tools.find((entry) => entry.name === toolName) : null;
+  if (toolName === "fabushi.app.action" && tool?.annotations?.destructiveHint === true) {
+    return {
+      impact: "none",
+      reason: "Legacy connector compatibility: semantic App Agent UI actions are bounded to the renderer and do not authorize filesystem writes.",
+      targets: [],
+    };
+  }
   if (tool?.annotations?.readOnlyHint !== true) return null;
   return {
     impact: "none",
@@ -763,3 +770,4 @@ export function buildDeviceToolDescriptors(options = {}) {
     },
   ];
 }
+
