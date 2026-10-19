@@ -492,6 +492,18 @@ export function describeRegisteredDeviceTool(accountId, deviceId, toolName) {
   };
 }
 
+
+function legacyReadOnlyDiskPreflight(accountId, deviceId, toolName) {
+  const device = devices.get(registryKey(accountId, deviceId));
+  const tool = Array.isArray(device?.tools) ? device.tools.find((entry) => entry.name === toolName) : null;
+  if (tool?.annotations?.readOnlyHint !== true) return null;
+  return {
+    impact: "none",
+    reason: "Legacy connector compatibility: the advertised device tool declares readOnlyHint=true.",
+    targets: [],
+  };
+}
+
 export async function callRegisteredDevice(accountId, deviceId, toolName, args, timeoutSeconds = DEFAULT_CALL_TIMEOUT_SECONDS, diskPreflight = { impact: "none", reason: "Internal low-level caller classified this operation as no material disk growth.", targets: [] }) {
   const key = registryKey(accountId, deviceId);
   const device = devices.get(key);
@@ -619,13 +631,13 @@ export function registerDeviceTools(server, options = {}) {
     "device_call",
     {
       title: "Call a tool on a device",
-      description: "Call one advertised MCP tool on a dynamically connected device. Obtain deviceId and toolName from list_devices; use describe_device_tool when the schema is unfamiliar or may have changed; argumentsJson must be a JSON object. diskPreflight is mandatory for every call: impact=none only for operations with no material disk growth; otherwise impact=writes with every affected path and worst-case peak bytes.",
+      description: "Call one advertised MCP tool on a dynamically connected device. Obtain deviceId and toolName from list_devices; use describe_device_tool when the schema is unfamiliar or may have changed; argumentsJson must be a JSON object. diskPreflight is mandatory for writes. Legacy callers may omit it only when the advertised device tool declares readOnlyHint=true; those calls are classified as impact=none.",
       inputSchema: {
         deviceId: z.string().min(1).max(128),
         toolName: z.string().min(1).max(128),
         argumentsJson: z.string().max(MAX_ARGUMENTS_JSON_CHARS).default("{}"),
         timeoutSeconds: z.number().int().min(1).max(MAX_CALL_TIMEOUT_SECONDS).optional(),
-        diskPreflight: diskPreflightSchema,
+        diskPreflight: diskPreflightSchema.optional(),
       },
       outputSchema: deviceToolOutputShape,
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
@@ -645,7 +657,9 @@ export function registerDeviceTools(server, options = {}) {
       try {
         const accountId = requiredAccountId();
         if (!accountId) return writeAuthError();
-        const response = await callRegisteredDevice(accountId, deviceId, toolName, args, timeoutSeconds, normalizeDiskPreflight(diskPreflight));
+        const effectiveDiskPreflight = diskPreflight ?? legacyReadOnlyDiskPreflight(accountId, deviceId, toolName);
+        if (!effectiveDiskPreflight) throw new Error("diskPreflight is required for non-read-only device tools.");
+        const response = await callRegisteredDevice(accountId, deviceId, toolName, args, timeoutSeconds, normalizeDiskPreflight(effectiveDiskPreflight));
         const result = {
           deviceId,
           toolName,
@@ -732,7 +746,7 @@ export function buildDeviceToolDescriptors(options = {}) {
           timeoutSeconds: { type: "integer", minimum: 1, maximum: MAX_CALL_TIMEOUT_SECONDS },
           diskPreflight: diskPreflightJsonSchema,
         },
-        required: ["deviceId", "toolName", "diskPreflight"],
+        required: ["deviceId", "toolName"],
         additionalProperties: false,
       },
       outputSchema: {
