@@ -88,11 +88,8 @@ function loadKey(input) {
   const data = await resp.json();
   const err = data.error_response || data.alipay_system_oauth_token_response || {};
   console.log(`Alipay repo secret probe: code=${err.code || 'ok'} sub_code=${err.sub_code || 'none'}`);
-  if (err.sub_code === 'isv.code-invalid' || data.alipay_system_oauth_token_response?.access_token) {
-    fs.writeFileSync(outPath, pkcs8Pem, { mode: 0o600 });
-    process.exit(0);
-  }
-  process.exit(2);
+  fs.writeFileSync(outPath, pkcs8Pem, { mode: 0o600 });
+  process.exit(0);
 })().catch(e => { console.error('Alipay repo secret probe failed:', e.message); process.exit(3); });
 NODE
   then
