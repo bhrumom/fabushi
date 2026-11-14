@@ -1709,6 +1709,14 @@ fn browser_result_page_for_device(
     if device_id == "fabushi-web-wasm" || device_id.starts_with("fabushi-web-") {
         return browser_web_result_page(success, message, attempt_id);
     }
+    if device_id.starts_with("gpui-telegram") {
+        let gpui_msg = if success {
+            "登录完成，正在返回 GPUI Telegram"
+        } else {
+            message
+        };
+        return browser_gpui_result_page(success, gpui_msg, attempt_id);
+    }
     if success {
         if let Some(request_id) = device_id.strip_prefix("mcp-oauth-") {
             let valid = (32..=128).contains(&request_id.len())
@@ -1766,6 +1774,47 @@ fn browser_web_result_page(
             "请返回 Fabushi Web 后重新发起登录。"
         },
         close_script = close_script,
+    ))
+}
+
+fn browser_gpui_result_page(
+    success: bool,
+    message: &str,
+    attempt_id: Option<&str>,
+) -> Result<Response> {
+    let status = if success { "completed" } else { "failed" };
+    let deep_link = attempt_id.map(|id| {
+        format!("gpui-telegram://auth/complete?attemptId={id}&status={status}")
+    });
+    let link_markup = deep_link
+        .as_deref()
+        .map(|link| {
+            format!(
+                r#"<a class="return" href="{}">返回 GPUI Telegram</a>"#,
+                html_escape(link)
+            )
+        })
+        .unwrap_or_default();
+    let wake_script = if success {
+        if let Some(ref link) = deep_link {
+            let lit = serde_json::to_string(link).unwrap_or_else(|_| "null".into());
+            format!("if({lit})setTimeout(()=>{{try{{location.href={lit}}}catch{{}}}},180);")
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+    let tone = if success { "ok" } else { "warn" };
+    let eyebrow = if success { "AUTHENTICATED" } else { "LOGIN INTERRUPTED" };
+    browser_html_response(format!(
+        r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GPUI Telegram 登录</title><style>*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;background:#080808;color:#f6f6f2;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}body{{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 35%,rgba(56,189,248,.14),transparent 29%),#080808}}main{{width:min(440px,100%);padding:42px;border:1px solid rgba(255,255,255,.1);border-radius:28px;background:rgba(18,18,18,.94);box-shadow:0 40px 100px rgba(0,0,0,.55);text-align:center}}.eyebrow{{margin:0 0 10px;color:#38bdf8;font-size:10px;font-weight:850;letter-spacing:.17em}}h1{{margin:0;font-size:26px;font-weight:580;letter-spacing:-.035em}}p{{margin:14px auto 0;color:#8f8f8f;font-size:13px;line-height:1.65}}.state{{width:9px;height:9px;display:inline-block;margin-right:7px;border-radius:50%;background:#72d8ad;box-shadow:0 0 0 6px rgba(114,216,173,.08)}}main[data-tone="warn"] .state{{background:#ff9b7f;box-shadow:0 0 0 6px rgba(255,155,127,.08)}}.return{{height:46px;margin-top:26px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:#38bdf8;color:#081018;text-decoration:none;font-size:13px;font-weight:780}}small{{display:block;margin-top:18px;color:#5f5f5f;font-size:10px;line-height:1.6}}</style></head><body><main data-tone="{tone}"><p class="eyebrow"><span class="state"></span>{eyebrow}</p><h1>{title}</h1><p>{message}</p>{link_markup}<small>返回按钮用于唤醒已安装的 GPUI Telegram 客户端；登录会话已通过 Google Cloud 安全同步。</small></main><script>{wake_script}</script></body></html>"#,
+        tone = tone,
+        eyebrow = eyebrow,
+        title = if success { "登录成功" } else { "登录未完成" },
+        message = html_escape(message),
+        link_markup = link_markup,
+        wake_script = wake_script,
     ))
 }
 
