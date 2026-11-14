@@ -71,7 +71,7 @@ jobs:
         run: cargo check --locked --manifest-path "$MAHAYANA_MANIFEST" --target wasm32-unknown-unknown --package mahayana-platform-worker
 
       - name: Install Cloudflare Worker build tool
-        run: cargo install worker-build --locked
+        run: cargo install worker-build --version 0.8.5 --locked
 
       - id: identity-bridge
         name: Configure deployed identity bridge
