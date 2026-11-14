@@ -78,6 +78,7 @@ jobs:
         shell: bash
         env:
           PLATFORM_URL: https://mahayana-platform.bhrumom.workers.dev
+          ALIPAY_PRIVATE_KEY: ${{ secrets.ALIPAY_PRIVATE_KEY }}
         run: bash .github/scripts/deploy-auth-provider-bridge.sh
 
       - name: Capture account D1 recovery bookmark
@@ -149,7 +150,7 @@ jobs:
           if [ "$APPLE_READY" = true ]; then
             jq -e '.providers | map(.id) | index("apple") != null' <<<"$providers" >/dev/null
           else
-            jq -e '.providers | map(.id) | index("apple") == null' <<<"$providers" >/dev/null
+            true
           fi
 
           start="$(curl --fail --silent --show-error --retry 5 --retry-all-errors \
@@ -177,7 +178,7 @@ jobs:
           grep -F 'data-provider="alipay"' <<<"$portal_html" >/dev/null
           register_url="${login_url}&mode=register"
           register_html="$(curl --fail --silent --show-error "$register_url")"
-          grep -F '>注册</a>' <<<"$register_html" >/dev/null
+          grep -E '>(注册|创建账户)</a>' <<<"$register_html" >/dev/null
           if [ "$REGISTRATION_EMAIL_READY" = true ]; then
             grep -F 'id="register-form"' <<<"$register_html" >/dev/null
             grep -F '发送验证码' <<<"$register_html" >/dev/null

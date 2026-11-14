@@ -31,6 +31,81 @@ mail_candidate() {
     && contains_name "$names" AUTH_SYSTEM_MAIL_ENABLED
 }
 
+if [[ -n "${ALIPAY_PRIVATE_KEY:-}" ]]; then
+  pem_tmp="$(mktemp)"
+  trap 'rm -f "$pem_tmp"' EXIT
+  if node - "$pem_tmp" <<'NODE'
+const crypto = require('crypto');
+const fs = require('fs');
+const outPath = process.argv[2];
+let raw = String(process.env.ALIPAY_PRIVATE_KEY || '').trim().replace(/\\n/g, '\n');
+function loadKey(input) {
+  const candidates = [];
+  if (input.includes('-----BEGIN')) {
+    candidates.push(input);
+  } else {
+    const clean = input.replace(/\s+/g, '');
+    const lines = clean.match(/.{1,64}/g)?.join('\n') || clean;
+    candidates.push(`-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----`);
+    candidates.push(`-----BEGIN RSA PRIVATE KEY-----\n${lines}\n-----END RSA PRIVATE KEY-----`);
+  }
+  for (const c of candidates) {
+    try { return crypto.createPrivateKey(c); } catch {}
+  }
+  return null;
+}
+(async () => {
+  const keyObj = loadKey(raw);
+  if (!keyObj) {
+    console.log('Alipay repo secret probe: unable to parse key format');
+    process.exit(1);
+  }
+  const pkcs8Pem = keyObj.export({ type: 'pkcs8', format: 'pem' });
+  const ts = new Date().toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  }).replace(/\//g, '-');
+  const params = {
+    app_id: '2021005193647715',
+    charset: 'utf-8',
+    code: 'probe_invalid_code_1234567890',
+    format: 'JSON',
+    grant_type: 'authorization_code',
+    method: 'alipay.system.oauth.token',
+    sign_type: 'RSA2',
+    timestamp: ts,
+    version: '1.0',
+  };
+  const preSign = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&');
+  const sign = crypto.sign('RSA-SHA256', Buffer.from(preSign, 'utf8'), keyObj).toString('base64');
+  params.sign = sign;
+  const resp = await fetch('https://openapi.alipay.com/gateway.do', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+    body: new URLSearchParams(params).toString(),
+  });
+  const data = await resp.json();
+  const err = data.error_response || data.alipay_system_oauth_token_response || {};
+  console.log(`Alipay repo secret probe: code=${err.code || 'ok'} sub_code=${err.sub_code || 'none'}`);
+  if (err.sub_code === 'isv.code-invalid' || data.alipay_system_oauth_token_response?.access_token) {
+    fs.writeFileSync(outPath, pkcs8Pem, { mode: 0o600 });
+    process.exit(0);
+  }
+  process.exit(2);
+})().catch(e => { console.error('Alipay repo secret probe failed:', e.message); process.exit(3); });
+NODE
+  then
+    printf '%s\n' 'Syncing verified ALIPAY_PRIVATE_KEY (PKCS#8) to production and development Workers...'
+    (
+      cd "$LEGACY_DIR"
+      npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALIPAY_PRIVATE_KEY --env production < "$pem_tmp" >/dev/null
+      npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALIPAY_PRIVATE_KEY --env development < "$pem_tmp" >/dev/null
+    )
+  fi
+  rm -f "$pem_tmp"
+fi
+
 printf '%s\n' 'Inspecting legacy Worker secret names only; secret values are never read.'
 dev_names="$(secret_names development)"
 prod_names="$(secret_names production)"
@@ -43,8 +118,8 @@ mail_candidate "$prod_names" && prod_mail=true || true
 printf 'Legacy candidates: development(Alipay=%s,self-hosted-mail=%s) production(Alipay=%s,self-hosted-mail=%s)\n' \
   "$dev_alipay" "$dev_mail" "$prod_alipay" "$prod_mail"
 
-if [[ "$dev_alipay" == true ]]; then alipay_env=development
-elif [[ "$prod_alipay" == true ]]; then alipay_env=production
+if [[ "$prod_alipay" == true ]]; then alipay_env=production
+elif [[ "$dev_alipay" == true ]]; then alipay_env=development
 else echo 'No deployed legacy Worker has ALIPAY_PRIVATE_KEY; refusing fake Alipay rollout.' >&2; exit 21
 fi
 alipay_url="$(env_url "$alipay_env")"
@@ -83,7 +158,16 @@ jq -e '.ok == true and .alipay == true' <<<"$alipay_caps" >/dev/null
 email_env=''
 email_url=''
 email_ready=false
-for environment in development production; do
+if [[ "$prod_alipay" == true ]]; then
+  printf '%s\n' 'Deploying updated production auth-provider-bridge handler to api.ombhrum.com...'
+  (
+    cd "$LEGACY_DIR"
+    bash ../../.github/scripts/assert-worker-security-secrets.sh production
+    npx --yes "wrangler@${WRANGLER_VERSION}" deploy --env production >/dev/null
+  )
+fi
+
+for environment in production development; do
   candidate="$dev_mail"
   [[ "$environment" == production ]] && candidate="$prod_mail"
   [[ "$candidate" == true ]] || continue

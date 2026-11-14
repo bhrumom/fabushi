@@ -85,7 +85,7 @@ async function handleAlipayExchange(request, env) {
   }
   const { getAlipayUserInfo } = await import('../../alipay-login-functions.js');
   const identity = await getAlipayUserInfo(authCode, env);
-  if (!identity || identity.error || identity.isMock) {
+  if (!identity || (identity.error && !identity.partial) || identity.isMock) {
     return jsonResponse({ ok: false, error: 'alipay_identity_exchange_failed' }, 401);
   }
   const subject = String(
